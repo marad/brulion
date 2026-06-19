@@ -92,3 +92,16 @@ Chrome's persistent "allow on every visit" grant) the user goes straight to
 their note with zero clicks; otherwise we show a single "Resume folder access"
 button whose click calls `requestPermission()` (the FSA API requires a user
 gesture — we do not try to work around its absence).
+
+## Testing: vitest units + Playwright e2e (OPFS-backed FSA)
+Two layers. **vitest + happy-dom** (`src/**/*.test.ts`) covers pure logic and
+DOM glue with the File System Access API mocked — fast, runs in `npm run build`'s
+verification. **Playwright + real Chromium** (`e2e/**/*.spec.ts`, `npm run e2e`)
+covers what happy-dom can't: real CodeMirror, real IndexedDB, and the real FSA
+read/write/list/save paths — reached by stubbing `window.showDirectoryPicker` to
+return an **OPFS** handle (`navigator.storage.getDirectory()`), a genuine
+`FileSystemDirectoryHandle` that supports `getFileHandle`/`createWritable`/
+`values`. The only surface no automation can drive is the **native OS folder
+picker and the real permission prompt** (not DOM) — that stays a one-time manual
+spot-check per FSA-touching phase. (Chromium browser binary is ~115 MB, not
+committed; `npx playwright install chromium` provisions it.)
