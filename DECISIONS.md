@@ -14,8 +14,20 @@ flexible, which we want for the bespoke editor in M3.
 
 ## No auto-naming; user names notes
 The user names their own notes and adds them when they want. One default seed
-note `start`, created only when the folder is empty. (Rejected: auto-name from
-first line; "open first `.md` in folder" — there is no meaningful "first".)
+note `start` (`start.md`). (Rejected: auto-name from first line; "open first
+`.md` in folder" — there is no meaningful "first".)
+
+## `start.md` is created on first save, not on open (M1, Phase 4)
+The editor always works on `start.md`: if it exists, its content is loaded; if
+not, the editor opens an empty buffer and the file is written to disk only on
+the **first save** (autosave or Ctrl+S). Nothing is written to the user's folder
+merely by opening it — a file appears only when the user actually captures
+something. This supersedes the earlier "seed created only when the folder is
+empty": "on first capture" is more precise, never litters someone's existing
+notes folder with an empty `start.md`, and treats empty and non-empty folders
+uniformly. (Rejected: create-on-open-when-empty — leaves a non-empty folder
+without `start.md` as a dead-end in M1; always-create-on-open — litters any
+opened folder.)
 
 ## Links are out of MVP
 A `papier` gap and a genuine differentiator, but the real pain is quick-capture,
