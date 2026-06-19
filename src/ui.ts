@@ -32,9 +32,9 @@ export async function openFolder(
   try {
     const dir = await pickFolder()
     if (!dir) return // dismissed — leave everything as it was
+    await showFolder(dir, list) // list first; persist only a folder we could read
     await saveFolder(dir)
     resumeButton.hidden = true
-    await showFolder(dir, list)
   } catch (err) {
     console.error("Failed to open folder:", err)
   }

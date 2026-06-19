@@ -116,6 +116,7 @@ describe("restoreFolder", () => {
     await restoreFolder(list, resume)
 
     expect(liTexts(list)).toEqual(["note.md"])
+    expect(listMarkdownFiles).toHaveBeenCalledWith(HANDLE)
     expect(resume.hidden).toBe(true)
     expect(requestAccess).not.toHaveBeenCalled()
   })
@@ -134,12 +135,15 @@ describe("restoreFolder", () => {
 
   it("restores access on a resume click that is granted (AC-3)", async () => {
     const { list, resume } = elements()
+    resume.hidden = true // initial state from index.html
     loadFolder.mockResolvedValue(HANDLE)
     hasPermission.mockResolvedValue(false)
     requestAccess.mockResolvedValue(true)
     listMarkdownFiles.mockResolvedValue(["note.md"])
 
     await restoreFolder(list, resume)
+    expect(resume.hidden).toBe(false) // restoreFolder revealed the button
+
     resume.click()
     await vi.waitFor(() => expect(liTexts(list)).toEqual(["note.md"]))
 
@@ -157,7 +161,7 @@ describe("restoreFolder", () => {
     await vi.waitFor(() => expect(requestAccess).toHaveBeenCalled())
 
     expect(resume.hidden).toBe(false)
-    expect(liTexts(list)).toEqual([])
+    expect(listMarkdownFiles).not.toHaveBeenCalled() // declined => never lists
   })
 })
 
