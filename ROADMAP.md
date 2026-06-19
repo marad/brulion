@@ -70,7 +70,4 @@ foundation. User names notes themselves.
 ## Open decisions
 
 See `DECISIONS.md` for settled ones. Still open:
-- **Framework**: vanilla TS vs micro-framework (Preact/Solid/Svelte). Settle
-  before writing M1 code. CodeMirror is framework-agnostic, so this is about UI
-  state ergonomics, not the editor.
 - **Default note name** `start` — tentative, open to a better idea.

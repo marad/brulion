@@ -38,6 +38,16 @@ Static frontend on GitHub Pages — https satisfies the secure-context requireme
 for the File System Access API, zero cost, zero servers. Update = `git push`;
 user data is untouched because it lives on their disk.
 
+## UI framework: none for M1 (vanilla TypeScript)
+CodeMirror is framework-agnostic, so the framework question is only about UI
+state ergonomics — and M1 has almost no UI state (one "Open folder" button plus
+the editor mount). Real note state (list/switch/delete) is M3, by which point
+the project may have a different shape; choosing a framework now is premature
+optimization for a problem we don't yet have. So M1 is plain TypeScript owning
+the DOM, no runtime. Adding Preact (~3 kB, React-like API) or Solid/Svelte later
+is cheap and local — the editor stays untouched — so we defer the decision to
+M3, when UI state actually starts to hurt. (Open: revisit at M3.)
+
 ## Project tracking: markdown in the repo
 `ROADMAP.md` (direction, milestones, scope) + `DECISIONS.md` (this file) live in
 the repo — version-controlled, survive closing the chat, congruent with the
