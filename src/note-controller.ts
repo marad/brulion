@@ -33,17 +33,29 @@ export function createNoteController(
   let lastModified: number | null = null
   let dirty = false
   let conflict = false
+  let saving = false
 
+  // Serialize saves: a `saving` guard means flush() and a fired debounce can
+  // never run two writes at once. Edits arriving mid-save re-set `dirty`, and
+  // the loop saves them in another pass — so nothing is lost and the file is
+  // never written concurrently.
   const doSave = async () => {
-    if (!dir || !dirty || conflict) return
-    const result = await saveNote(dir, view.state.doc.toString(), lastModified)
-    if (result.status === "conflict") {
-      conflict = true // stop autosaving so we never clobber the on-disk change
-      opts.onConflict?.()
-      return
+    if (saving || !dir || conflict || !dirty) return
+    saving = true
+    try {
+      while (dirty && !conflict) {
+        dirty = false // claim the current edits before the await
+        const result = await saveNote(dir, view.state.doc.toString(), lastModified)
+        if (result.status === "conflict") {
+          conflict = true // stop saving so we never clobber the on-disk change
+          opts.onConflict?.()
+          return
+        }
+        lastModified = result.lastModified
+      }
+    } finally {
+      saving = false
     }
-    lastModified = result.lastModified
-    dirty = false
   }
 
   const autosave = debounce(() => void doSave(), opts.debounceMs ?? 600)

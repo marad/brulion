@@ -1,6 +1,7 @@
 import { mountEditor } from "./editor"
 import { createNoteController, type NoteController } from "./note-controller"
 import { wireOpenFolder, restoreFolder } from "./ui"
+import { wireFlushOnHide } from "./flush"
 
 const editorEl = document.querySelector<HTMLDivElement>("#editor")
 const openButton = document.querySelector<HTMLButtonElement>("#open-folder")
@@ -32,7 +33,4 @@ wireOpenFolder(openButton, fileList, resumeButton, openNote)
 void restoreFolder(fileList, resumeButton, openNote)
 
 // Flush pending edits before the page can go away.
-window.addEventListener("blur", () => controller.flush())
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) controller.flush()
-})
+wireFlushOnHide(() => controller.flush())

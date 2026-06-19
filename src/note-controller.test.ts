@@ -60,6 +60,41 @@ describe("autosave", () => {
   })
 })
 
+describe("concurrency", () => {
+  it("never runs two saves at once and persists edits made mid-save", async () => {
+    const view = mountView()
+    let inFlight = 0
+    let maxInFlight = 0
+    let release: (() => void) | undefined
+    saveNote.mockImplementation(async () => {
+      inFlight += 1
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      await new Promise<void>((r) => {
+        release = r
+      })
+      inFlight -= 1
+      return { status: "saved", lastModified: 1 }
+    })
+    const controller = createNoteController(view, { debounceMs: 5 })
+    await controller.open(DIR)
+
+    type(view, "first")
+    controller.handleChange()
+    await vi.waitFor(() => expect(saveNote).toHaveBeenCalledTimes(1)) // save #1 in flight
+
+    // Edit again while the first save is blocked, then force a flush.
+    type(view, " second")
+    controller.handleChange()
+    controller.flush()
+    release?.() // let save #1 finish; the loop should now save the newer content
+
+    await vi.waitFor(() => expect(saveNote).toHaveBeenCalledTimes(2))
+    if (release) release()
+    expect(maxInFlight).toBe(1) // never concurrent
+    expect(saveNote).toHaveBeenLastCalledWith(DIR, "first second", 1)
+  })
+})
+
 describe("flush", () => {
   it("saves immediately (AC-4)", async () => {
     const view = mountView()

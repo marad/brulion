@@ -98,6 +98,7 @@ test("a save does not overwrite an externally changed start.md (AC-5)", async ({
 
   await expect(page.locator("#status")).toBeVisible()
   expect(await readStartMd(page)).toBe("changed by someone else") // not clobbered
+  await expect(editor(page)).toContainText("my edit") // user's buffer preserved
 })
 
 test("saved content survives a reload (AC-6)", async ({ page }) => {

@@ -7,8 +7,8 @@ import { Annotation } from "@codemirror/state"
 const External = Annotation.define<boolean>()
 
 export interface EditorOptions {
-  /** Called on a user edit with the new document text. */
-  onChange?: (doc: string) => void
+  /** Called on a user edit (the document text is read from the view on save). */
+  onChange?: () => void
   /** Called when the user presses Ctrl/Cmd+S. */
   onSave?: () => void
 }
@@ -38,7 +38,7 @@ export function mountEditor(
       EditorView.updateListener.of((update) => {
         if (!update.docChanged) return
         if (update.transactions.some((tr) => tr.annotation(External))) return
-        opts.onChange?.(update.state.doc.toString())
+        opts.onChange?.()
       }),
     ],
     parent,
