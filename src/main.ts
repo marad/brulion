@@ -1,5 +1,5 @@
 import { mountEditor } from "./editor"
-import { pickFolder, listMarkdownFiles } from "./fs"
+import { wireOpenFolder } from "./ui"
 
 const editorEl = document.querySelector<HTMLDivElement>("#editor")
 const openButton = document.querySelector<HTMLButtonElement>("#open-folder")
@@ -9,19 +9,4 @@ if (!editorEl || !openButton || !fileList) {
 }
 
 mountEditor(editorEl)
-
-openButton.addEventListener("click", async () => {
-  const dir = await pickFolder()
-  if (!dir) return // picker dismissed — leave everything as it was
-  renderFileList(fileList, await listMarkdownFiles(dir))
-})
-
-function renderFileList(list: HTMLUListElement, names: string[]): void {
-  list.replaceChildren(
-    ...names.map((name) => {
-      const item = document.createElement("li")
-      item.textContent = name
-      return item
-    }),
-  )
-}
+wireOpenFolder(openButton, fileList)

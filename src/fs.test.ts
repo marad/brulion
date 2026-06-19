@@ -56,6 +56,14 @@ describe("pickFolder", () => {
     expect(await pickFolder()).toBeNull()
   })
 
+  it("treats any AbortError-named rejection as dismissal, even non-DOMException", async () => {
+    ;(window as unknown as Record<string, unknown>).showDirectoryPicker = vi
+      .fn()
+      .mockRejectedValue({ name: "AbortError", message: "polyfill abort" })
+
+    expect(await pickFolder()).toBeNull()
+  })
+
   it("rethrows non-abort errors", async () => {
     ;(window as unknown as Record<string, unknown>).showDirectoryPicker = vi
       .fn()

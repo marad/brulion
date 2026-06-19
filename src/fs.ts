@@ -13,9 +13,22 @@ export async function pickFolder(): Promise<FileSystemDirectoryHandle | null> {
   try {
     return await window.showDirectoryPicker({ mode: "readwrite" })
   } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") return null
+    if (isAbortError(err)) return null
     throw err
   }
+}
+
+/**
+ * True when `err` represents the user dismissing a picker. Matches on `name`
+ * rather than `instanceof DOMException` so it also holds for polyfilled or
+ * cross-realm rejections that are AbortError-shaped but not real DOMExceptions.
+ */
+function isAbortError(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { name?: unknown }).name === "AbortError"
+  )
 }
 
 /**
