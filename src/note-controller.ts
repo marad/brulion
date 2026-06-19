@@ -1,0 +1,70 @@
+import type { EditorView } from "codemirror"
+import { setEditorText } from "./editor"
+import { readNote, saveNote } from "./note"
+import { debounce } from "./debounce"
+
+export interface NoteControllerOptions {
+  /** Called when a save is refused because the file changed on disk. */
+  onConflict?: () => void
+  /** Autosave debounce in ms (default 600). */
+  debounceMs?: number
+}
+
+export interface NoteController {
+  /** Bind to a folder: load `start.md` into the editor (or an empty buffer). */
+  open(dir: FileSystemDirectoryHandle): Promise<void>
+  /** Note a user edit — schedules a debounced autosave. */
+  handleChange(): void
+  /** Save any pending changes immediately (focus loss / Ctrl+S). */
+  flush(): void
+}
+
+/**
+ * Owns the live save state for `start.md`: which folder, the last-seen
+ * `lastModified`, whether there are unsaved edits, and whether we've hit a
+ * conflict. Routes debounced autosave, immediate flushes, and the no-silent-
+ * clobber guard through one `doSave`.
+ */
+export function createNoteController(
+  view: EditorView,
+  opts: NoteControllerOptions = {},
+): NoteController {
+  let dir: FileSystemDirectoryHandle | null = null
+  let lastModified: number | null = null
+  let dirty = false
+  let conflict = false
+
+  const doSave = async () => {
+    if (!dir || !dirty || conflict) return
+    const result = await saveNote(dir, view.state.doc.toString(), lastModified)
+    if (result.status === "conflict") {
+      conflict = true // stop autosaving so we never clobber the on-disk change
+      opts.onConflict?.()
+      return
+    }
+    lastModified = result.lastModified
+    dirty = false
+  }
+
+  const autosave = debounce(() => void doSave(), opts.debounceMs ?? 600)
+
+  return {
+    async open(folder) {
+      dir = folder
+      dirty = false
+      conflict = false
+      const note = await readNote(folder)
+      lastModified = note.lastModified
+      setEditorText(view, note.content)
+    },
+    handleChange() {
+      if (conflict) return
+      dirty = true
+      autosave.trigger()
+    },
+    flush() {
+      autosave.cancel()
+      void doSave()
+    },
+  }
+}
