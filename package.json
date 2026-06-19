@@ -10,7 +10,8 @@
     "test": "vitest"
   },
   "dependencies": {
-    "codemirror": "^6.0.1"
+    "codemirror": "^6.0.1",
+    "idb-keyval": "^6.2.1"
   },
   "devDependencies": {
     "@types/wicg-file-system-access": "^2023.10.5",
