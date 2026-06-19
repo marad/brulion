@@ -6,5 +6,6 @@ export default defineConfig({
   base: "/brulion/",
   test: {
     environment: "happy-dom",
+    include: ["src/**/*.test.ts"], // unit tests only; e2e/ is Playwright's
   },
 })
