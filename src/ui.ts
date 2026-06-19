@@ -32,9 +32,9 @@ export async function openFolder(
   try {
     const dir = await pickFolder()
     if (!dir) return // dismissed — leave everything as it was
+    resumeButton.hidden = true // a fresh pick supersedes the resume-this-folder flow
     await showFolder(dir, list) // list first; persist only a folder we could read
     await saveFolder(dir)
-    resumeButton.hidden = true
   } catch (err) {
     console.error("Failed to open folder:", err)
   }

@@ -78,8 +78,9 @@ describe("openFolder", () => {
     expect(saveFolder).not.toHaveBeenCalled()
   })
 
-  it("does not throw and preserves the list when listing fails", async () => {
+  it("does not throw, preserves the list, and does not persist when listing fails", async () => {
     const { list, resume } = elements()
+    resume.hidden = false
     renderFileList(list, ["keep.md"])
     pickFolder.mockResolvedValue(HANDLE)
     listMarkdownFiles.mockRejectedValue(new Error("io failure"))
@@ -88,6 +89,8 @@ describe("openFolder", () => {
     await expect(openFolder(list, resume)).resolves.toBeUndefined()
 
     expect(liTexts(list)).toEqual(["keep.md"])
+    expect(saveFolder).not.toHaveBeenCalled() // an unreadable handle is not persisted
+    expect(resume.hidden).toBe(true) // a fresh pick supersedes the resume flow
     expect(errorSpy).toHaveBeenCalled()
     errorSpy.mockRestore()
   })
@@ -161,6 +164,7 @@ describe("restoreFolder", () => {
     await vi.waitFor(() => expect(requestAccess).toHaveBeenCalled())
 
     expect(resume.hidden).toBe(false)
+    expect(liTexts(list)).toEqual([]) // nothing rendered
     expect(listMarkdownFiles).not.toHaveBeenCalled() // declined => never lists
   })
 })
