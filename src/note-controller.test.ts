@@ -65,13 +65,11 @@ describe("concurrency", () => {
     const view = mountView()
     let inFlight = 0
     let maxInFlight = 0
-    let release: (() => void) | undefined
+    const resolvers: Array<() => void> = [] // one per saveNote call, released by index
     saveNote.mockImplementation(async () => {
       inFlight += 1
       maxInFlight = Math.max(maxInFlight, inFlight)
-      await new Promise<void>((r) => {
-        release = r
-      })
+      await new Promise<void>((resolve) => resolvers.push(resolve))
       inFlight -= 1
       return { status: "saved", lastModified: 1 }
     })
@@ -82,15 +80,21 @@ describe("concurrency", () => {
     controller.handleChange()
     await vi.waitFor(() => expect(saveNote).toHaveBeenCalledTimes(1)) // save #1 in flight
 
-    // Edit again while the first save is blocked, then force a flush.
+    // Edit again and flush while save #1 is still blocked. Without the saving
+    // guard, flush() would synchronously start a second concurrent saveNote
+    // (saveNote's body bumps inFlight before its await) — these assertions catch
+    // exactly that regression.
     type(view, " second")
     controller.handleChange()
     controller.flush()
-    release?.() // let save #1 finish; the loop should now save the newer content
+    expect(saveNote).toHaveBeenCalledTimes(1) // no second save started concurrently
+    expect(maxInFlight).toBe(1)
 
+    resolvers[0]() // finish save #1; the loop should now save the newer content
     await vi.waitFor(() => expect(saveNote).toHaveBeenCalledTimes(2))
-    if (release) release()
-    expect(maxInFlight).toBe(1) // never concurrent
+    expect(maxInFlight).toBe(1) // the second save started only after the first ended
+
+    resolvers[1]()
     expect(saveNote).toHaveBeenLastCalledWith(DIR, "first second", 1)
   })
 })
