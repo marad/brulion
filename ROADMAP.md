@@ -56,6 +56,19 @@ is the differentiator over `papier`, so it comes before multi-note.
 **Goal:** list, create, switch, delete notes. Plain UI on top of the M1+M2
 foundation. User names notes themselves.
 
+### M4 — External edits & conflict handling
+**Goal:** make Brulion a well-behaved *view* on a folder that other tools also
+write to (AI, CLI, vinote, a native capture helper). The folder is the API; the
+app must not own or clobber the data. See `DECISIONS.md` → "Files are the
+interface" and "External edits & conflict handling".
+- Detect files changed/added/removed from outside — watch or poll
+  `getFile().lastModified`; refresh the view.
+- Conflict resolution UX when the on-disk file moved under an open edit (M1 only
+  ships the cheap stale-write guard that *detects* this and refuses silent
+  overwrite; M4 is the real handling).
+- Moat-relevant (silent clobber = data loss), so a candidate to pull earlier
+  than this slot if it starts biting.
+
 ## Later / backlog (out of MVP, on purpose)
 
 - **Links** between notes (a `papier` gap and a differentiator, but separate
@@ -69,5 +82,6 @@ foundation. User names notes themselves.
 
 ## Open decisions
 
-See `DECISIONS.md` for settled ones. Still open:
-- **Default note name** `start` — tentative, open to a better idea.
+See `DECISIONS.md` for settled ones. Nothing currently open for M1 —
+the framework, save strategy, default note name, and permission flow are all
+settled there.

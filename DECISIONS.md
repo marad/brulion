@@ -55,3 +55,40 @@ product's own "plain files you own" ethos. GitHub Issues for granular execution
 tracking once the repo is pushed. GSD deferred (too much ceremony for a solo
 weekend project); the `spec` skill is for later, when designing the concrete
 shape of a specific milestone.
+
+## Files are the interface; the app is one view, not the owner
+The deeper framing of the moat: the markdown files in the folder **are the API**
+(Unix philosophy — a dumb shared format as the integration layer, tools around
+it interchangeable). Capture is pluggable: many tools may write to the same
+folder (an AI session, a CLI, vinote, a native global-hotkey helper), all
+equivalent because the contract is just "a file in the folder". Brulion is one
+*view* onto that folder, not the data's owner. This is why the next decision
+(conflict handling) is a design requirement, not a nice-to-have.
+
+## Save strategy: guarded debounced autosave (M1, Phase 4)
+Quick-capture wants zero friction, so saving is **debounced autosave** (~600 ms
+after the last keystroke) plus a flush on `blur`/`visibilitychange` (closes the
+data-loss window between the last keystroke and the debounce). `Ctrl+S` also
+forces an explicit save. All three paths funnel into one `save()`. Crucially,
+every save first checks the on-disk file's `lastModified` against what we last
+read: if it changed under us (another writer touched it), we **do not silently
+overwrite** — we surface the conflict. Naive autosave without this guard would
+clobber external edits and break the file-fidelity moat. (Rejected: explicit-
+save-only — too much friction for quick-capture and easy to forget.)
+
+## External edits & conflict handling is its own milestone
+Because the folder has many writers (see "Files are the interface"), the app
+*must* tolerate files appearing/changing from outside — watch/poll
+`getFile().lastModified`, refresh the view, and resolve conflicts. This is a
+first-class requirement, not a pitfall, so it deserves real design rather than a
+bolt-on in the de-risking milestone. M1 ships only the cheap stale-write guard
+(above) to prevent silent data loss; the full watch + conflict UX is a separate
+milestone (moat-relevant, a candidate to pull earlier than its slot).
+
+## Folder permission re-grant flow (M1, Phase 3)
+The directory handle is persisted in IndexedDB (`idb-keyval`). On reload we call
+`queryPermission({ mode: "readwrite" })` silently: if `granted` (e.g. via
+Chrome's persistent "allow on every visit" grant) the user goes straight to
+their note with zero clicks; otherwise we show a single "Resume folder access"
+button whose click calls `requestPermission()` (the FSA API requires a user
+gesture — we do not try to work around its absence).
