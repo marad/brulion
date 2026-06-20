@@ -27,6 +27,17 @@ describe("markdownSyntaxRanges", () => {
     expect(hiddenText("### Three")).toEqual(["### "])
   })
 
+  it("keeps a bare heading marker visible until a space completes it (AC-8)", () => {
+    // `##` with no trailing space: still visible, not styled — so the user sees
+    // what they're typing and learns the space finishes the heading.
+    expect(ranges("##")).toEqual({ hidden: [], marks: [] })
+    expect(ranges("##text")).toEqual({ hidden: [], marks: [] }) // not a heading
+    // Once the space arrives, the marker + space hide and styling applies.
+    expect(hiddenText("## ")).toEqual(["## "])
+    expect(hiddenText("## done")).toEqual(["## "])
+    expect(markText("## done")).toEqual([["done", "cm-heading cm-h2"]])
+  })
+
   it("hides bold markers (** and __) and styles the inner text", () => {
     expect(hiddenText("a **b** c")).toEqual(["**", "**"])
     expect(markText("a **b** c")).toEqual([["b", "cm-strong"]])

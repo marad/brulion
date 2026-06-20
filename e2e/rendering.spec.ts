@@ -54,6 +54,20 @@ test("hides heading markers and styles the heading (AC-1)", async ({ page }) => 
   expect(fontSize).toBeGreaterThan(bodyFontSize)
 })
 
+test("a bare heading marker stays visible until a space completes it (AC-8)", async ({
+  page,
+}) => {
+  await type(page, "##")
+  // No space yet: the markers must be visible so the user sees what they type.
+  expect(await renderedText(page)).toContain("##")
+  await expect(page.locator(".cm-heading")).toHaveCount(0)
+
+  // Adding the space completes the heading: markers vanish, styling applies.
+  await page.keyboard.type(" Heading")
+  expect(await renderedText(page)).not.toContain("#")
+  await expect(page.locator(".cm-heading")).toContainText("Heading")
+})
+
 test("hides bold markers and renders bold (AC-2)", async ({ page }) => {
   await type(page, "say **hello** now")
 

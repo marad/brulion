@@ -80,12 +80,15 @@ export function markdownSyntaxRanges(
       if (!markChildren.length) return
 
       if (node.name.startsWith("ATXHeading")) {
-        // One leading HeaderMark. Hide the `#` run plus its trailing space, and
-        // style only the heading text — never the markers, so the styled span
-        // contains no hidden runs (which would offset the drawn selection).
+        // One leading HeaderMark. Only collapse the heading once the marker is
+        // completed by a trailing space: a bare `#`/`##` (no space yet) stays
+        // visible so the user sees what they're typing and learns the space
+        // finishes the heading — instead of the `#` vanishing into a blank line.
         const mark = markChildren[0]
-        let hideEnd = mark.to
-        if (doc.sliceString(hideEnd, hideEnd + 1) === " ") hideEnd += 1
+        if (doc.sliceString(mark.to, mark.to + 1) !== " ") return
+        const hideEnd = mark.to + 1 // hide the `#` run plus the single space
+        // Style only the heading text — never the markers, so the styled span
+        // contains no hidden runs (which would offset the drawn selection).
         hidden.push({ from: mark.from, to: hideEnd })
         if (node.to > hideEnd) marks.push({ from: hideEnd, to: node.to, cls })
         return
