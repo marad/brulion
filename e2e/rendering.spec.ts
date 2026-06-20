@@ -144,3 +144,90 @@ test("the caret steps over hidden markers atomically (AC-7)", async ({
 
   await expect.poll(() => readStartMd(page)).toBe("X**bold**")
 })
+
+// --- FEAT-0016: block constructs ---
+
+test("collapses the fences and renders a code block (AC-1)", async ({ page }) => {
+  await type(page, "```js")
+  await page.keyboard.press("Enter")
+  await page.keyboard.type("const x = 1")
+  await page.keyboard.press("Enter")
+  await page.keyboard.type("```")
+
+  // Neither fence shows; the body reads as a monospace code block.
+  expect(await renderedText(page)).not.toContain("```")
+  await expect(editor(page)).toContainText("const x = 1")
+  const family = await page
+    .locator(".cm-code-block")
+    .first()
+    .evaluate((el) => getComputedStyle(el).fontFamily)
+  expect(family.toLowerCase()).toContain("monospace")
+})
+
+test("hides the blockquote marker and styles the quote (AC-2)", async ({ page }) => {
+  await type(page, "> quoted line")
+
+  expect(await renderedText(page)).not.toContain(">")
+  await expect(editor(page)).toContainText("quoted line")
+  await expect(page.locator(".cm-blockquote")).toHaveCount(1)
+})
+
+test("hides the bullet marker and renders a list item (AC-4)", async ({ page }) => {
+  await type(page, "* a list item")
+
+  // The literal `*` is gone; a bullet is drawn by CSS ::before (not in innerText).
+  expect(await renderedText(page)).not.toContain("*")
+  await expect(editor(page)).toContainText("a list item")
+  const bullet = await page
+    .locator(".cm-list-item")
+    .first()
+    .evaluate((el) => getComputedStyle(el, "::before").content)
+  expect(bullet).toContain("•")
+})
+
+test("block markup stays hidden when the caret is on the line (AC-5)", async ({
+  page,
+}) => {
+  await type(page, "* a list item")
+  await page.keyboard.press("Home") // caret onto the line; marker must not reveal
+  expect(await renderedText(page)).not.toContain("*")
+})
+
+test("rendering does not alter a saved code block and quote (AC-6)", async ({
+  page,
+}) => {
+  await page.locator("#open-folder").click()
+
+  // The fences are collapsed in the view and the `>` is hidden, but the bytes
+  // must survive verbatim. (The list marker's byte round-trip is covered by AC-7;
+  // mixing a third block here only fights the editor's Enter-continues-markup
+  // behavior, which is pre-existing and orthogonal to rendering.)
+  await type(page, "```js")
+  await page.keyboard.press("Enter")
+  await page.keyboard.type("const x = 1")
+  await page.keyboard.press("Enter")
+  await page.keyboard.type("```")
+  await page.keyboard.press("Enter")
+  await page.keyboard.type("> quoted")
+  await page.keyboard.press("Control+s")
+
+  await expect
+    .poll(() => readStartMd(page))
+    .toBe("```js\nconst x = 1\n```\n> quoted")
+})
+
+test("the caret steps over a hidden list marker atomically (AC-7)", async ({
+  page,
+}) => {
+  await page.locator("#open-folder").click()
+
+  await type(page, "* item")
+  // Home lands on the visible text (after the hidden `* `). Left must jump the
+  // whole `* ` run to the line start, so an inserted char lands before it.
+  await page.keyboard.press("Home")
+  await page.keyboard.press("ArrowLeft")
+  await page.keyboard.type("X")
+  await page.keyboard.press("Control+s")
+
+  await expect.poll(() => readStartMd(page)).toBe("X* item")
+})
