@@ -25,8 +25,11 @@ file changed (or was deleted) while the buffer has unsaved local edits. It is
 reached two ways, which converge on one state: proactively, when the poll loop
 (FEAT-0013/0014) sees the change while edits are pending; or reactively, when an
 autosave/flush is refused by the stale-write guard. On entering, Brulion surfaces
-the conflict in the UI and stops autosaving (so it never clobbers the disk behind
-the user's back). The user's buffer is left exactly as they typed it.
+the conflict **modally**: a choice the user must make before doing anything else.
+While it stands, autosave is suspended, the editor is read-only, and the
+navigation that would re-point the editor (switch / create / delete a note) is
+refused — so the conflict cannot be dismissed by a stray click that silently
+abandons the unsaved buffer. The user's buffer is left exactly as they typed it.
 
 **Resolving — keep my version.** The user chooses to keep their edits. Brulion
 writes the buffer to the file, overwriting the on-disk version (re-basing on the
@@ -107,3 +110,10 @@ Given the note is in conflict,
 When the user has not yet chosen,
 Then the on-disk file is unchanged and the buffer is unchanged, and autosave does
 not write.
+
+**AC-7** — The conflict is modal until resolved.
+Given the note is in conflict,
+When the user attempts to switch to another note, create a note, delete a note,
+or edit the buffer (rather than choosing keep/take),
+Then that action is refused (no note switch/create/delete, no buffer edit) and the
+conflict remains, so the only way forward is one of the two resolution choices.
