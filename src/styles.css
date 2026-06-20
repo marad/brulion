@@ -1,0 +1,76 @@
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  font-family:
+    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  color: #1a1a1a;
+  background: #fbfbfa;
+}
+
+header {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid #ececec;
+}
+
+header button {
+  font: inherit;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid #d4d4d4;
+  border-radius: 6px;
+  background: #fff;
+  color: #1a1a1a;
+  cursor: pointer;
+}
+
+header button:hover {
+  background: #f2f2f1;
+}
+
+#file-list {
+  margin: 0;
+  padding: 0.4rem 1rem;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  color: #8a8a8a;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+/* No folder open / empty folder — don't show an empty bordered strip. */
+#file-list:empty {
+  display: none;
+}
+
+#status {
+  margin: 0;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  color: #9a3b2f;
+  background: #fdf3f1;
+  border-bottom: 1px solid #f3ddd8;
+}
+
+#editor {
+  flex: 1;
+  min-height: 0;
+}
+
+.cm-editor {
+  height: 100%;
+}

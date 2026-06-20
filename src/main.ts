@@ -1,3 +1,4 @@
+import "./styles.css"
 import { mountEditor } from "./editor"
 import { createNoteController, type NoteController } from "./note-controller"
 import { wireOpenFolder, restoreFolder } from "./ui"

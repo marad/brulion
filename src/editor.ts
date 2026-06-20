@@ -2,6 +2,29 @@ import { EditorView, basicSetup } from "codemirror"
 import { keymap } from "@codemirror/view"
 import { Annotation } from "@codemirror/state"
 
+/** System reading-font stack — no web-font downloads (zero-config / offline). */
+const FONT_STACK =
+  'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
+
+/** Clean, prose-friendly typography: proportional font, readable measure,
+ * comfortable spacing, no code-like gutter. No syntax hiding — that is M2. */
+const typography = EditorView.theme({
+  "&": { height: "100%", fontSize: "16px", color: "#1a1a1a" },
+  ".cm-scroller": {
+    fontFamily: FONT_STACK,
+    lineHeight: "1.6",
+    overflow: "auto",
+  },
+  ".cm-content": {
+    maxWidth: "68ch",
+    margin: "0 auto",
+    padding: "2.5rem 1.25rem",
+    caretColor: "#1a1a1a",
+  },
+  ".cm-gutters": { display: "none" },
+  "&.cm-focused": { outline: "none" },
+})
+
 /** Marks transactions that load content programmatically, so they aren't
  * mistaken for user edits (which would trigger an autosave of just-loaded text). */
 const External = Annotation.define<boolean>()
@@ -25,6 +48,7 @@ export function mountEditor(
     doc: "",
     extensions: [
       basicSetup,
+      typography,
       keymap.of([
         {
           key: "Mod-s",
