@@ -142,4 +142,9 @@ describe("deleteNote (AC-9)", () => {
     await deleteNote(folder.dir, "gone.md")
     expect(folder.has("gone.md")).toBe(false)
   })
+
+  it("is a no-op when the note is already gone (many writers)", async () => {
+    const folder = fakeFolder()
+    await expect(deleteNote(folder.dir, "never.md")).resolves.toBeUndefined()
+  })
 })

@@ -86,12 +86,17 @@ export async function createNote(
   return { status: "created" }
 }
 
-/** Remove `name` from the folder. */
+/** Remove `name` from the folder. Already-absent is a no-op (idempotent): the
+ * folder has many writers, so a note we mean to delete may already be gone. */
 export async function deleteNote(
   dir: FileSystemDirectoryHandle,
   name: string,
 ): Promise<void> {
-  await dir.removeEntry(name)
+  try {
+    await dir.removeEntry(name)
+  } catch (err) {
+    if (!isNotFound(err)) throw err
+  }
 }
 
 /** The file handle for `name` if it exists, else `null`. */
