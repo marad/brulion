@@ -28,7 +28,9 @@ async function writeNote(page: Page, name: string, text: string) {
 }
 
 const editor = (page: Page) => page.locator(".cm-content")
+// The row div (carries the .active class); click via its name button.
 const row = (page: Page, name: string) => page.locator(".note-row", { hasText: name })
+const open = (page: Page, name: string) => row(page, name).locator(".note-name").click()
 
 test("lists the folder's notes and switches between them (AC-1, AC-3)", async ({ page }) => {
   await stubPicker(page)
@@ -38,15 +40,15 @@ test("lists the folder's notes and switches between them (AC-1, AC-3)", async ({
 
   await page.locator("#open-folder").click()
 
-  await expect(page.locator(".note-row")).toHaveText(["alpha", "beta"])
+  await expect(page.locator(".note-name")).toHaveText(["alpha", "beta"])
   // One of the two is loaded and marked active.
   await expect(page.locator(".note-row.active")).toHaveCount(1)
 
-  await row(page, "beta").click()
+  await open(page, "beta")
   await expect(editor(page)).toHaveText("beta body")
   await expect(row(page, "beta")).toHaveClass(/active/)
 
-  await row(page, "alpha").click()
+  await open(page, "alpha")
   await expect(editor(page)).toHaveText("alpha body")
   await expect(row(page, "alpha")).toHaveClass(/active/)
 })
@@ -58,13 +60,13 @@ test("switching flushes the open note's unsaved edits (AC-4)", async ({ page }) 
   await writeNote(page, "beta.md", "beta body")
 
   await page.locator("#open-folder").click()
-  await row(page, "alpha").click()
+  await open(page, "alpha")
   await expect(editor(page)).toHaveText("alpha body")
 
   await editor(page).click()
   await page.keyboard.type(" — appended")
   // Switch immediately, before the autosave debounce fires.
-  await row(page, "beta").click()
+  await open(page, "beta")
   await expect(editor(page)).toHaveText("beta body")
 
   // alpha.md on disk must contain the appended text (flushed on switch).
@@ -84,7 +86,7 @@ test("remembers the active note across a reload (AC-6)", async ({ page }) => {
   await writeNote(page, "beta.md", "beta body")
 
   await page.locator("#open-folder").click()
-  await row(page, "beta").click()
+  await open(page, "beta")
   await expect(editor(page)).toHaveText("beta body")
 
   await page.reload()

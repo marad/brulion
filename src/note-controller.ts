@@ -1,10 +1,14 @@
 import type { EditorView } from "codemirror"
 import { setEditorText } from "./editor"
-import { readNote, saveNote, listNotes } from "./note"
+import { readNote, saveNote, listNotes, createNote, deleteNote } from "./note"
+import { normalizeNoteName } from "./note-name"
 import { saveActiveNote, loadActiveNote } from "./session"
 import { debounce } from "./debounce"
 
 const SEED_NOTE = "start.md"
+
+/** The outcome of {@link NoteController.addNote}. */
+export type AddNoteResult = { ok: true } | { ok: false; reason: string }
 
 export interface NoteControllerOptions {
   /** Called when a save is refused because the file changed on disk. */
@@ -20,6 +24,10 @@ export interface NoteController {
   open(dir: FileSystemDirectoryHandle): Promise<void>
   /** Switch the editor to `name`, flushing the open note's edits first. */
   switchTo(name: string): Promise<void>
+  /** Create a note from a user-typed name and open it. Reports why it failed. */
+  addNote(name: string): Promise<AddNoteResult>
+  /** Delete `name`'s file; if it was active, switch to another note. */
+  removeNote(name: string): Promise<void>
   /** Note a user edit — schedules a debounced autosave. */
   handleChange(): void
   /** Save any pending changes immediately (focus loss / Ctrl+S). */
@@ -110,6 +118,14 @@ export function createNoteController(
     dirty = false // discard any stray edit typed on the old content during the read
   }
 
+  // Make `name` the active note and announce it. The caller has already flushed
+  // (or deliberately dropped) the previously open note's edits.
+  const activate = async (folder: FileSystemDirectoryHandle, name: string): Promise<void> => {
+    await load(folder, name)
+    await saveActiveNote(name)
+    opts.onListChanged?.(notes, name)
+  }
+
   // Serialize folder/active-note changes so two fast clicks (open, or switching
   // between rows) can't interleave their loads and leave the editor content,
   // the highlighted row, and `lastModified` pointing at different notes.
@@ -130,18 +146,47 @@ export function createNoteController(
         dir = folder
         notes = await listNotes(folder)
         const active = pickActiveNote(notes, await loadActiveNote())
-        await load(folder, active)
-        await saveActiveNote(active)
-        opts.onListChanged?.(notes, active)
+        await activate(folder, active)
       })
     },
     switchTo(name) {
       return serialize(async () => {
         if (!dir || name === activeName) return
         await flushAndWait() // flush the open note before re-pointing the editor
-        await load(dir, name)
-        await saveActiveNote(name)
-        opts.onListChanged?.(notes, name)
+        await activate(dir, name)
+      })
+    },
+    addNote(name) {
+      return serialize<AddNoteResult>(async () => {
+        if (!dir) return { ok: false, reason: "Open a folder first." }
+        const normalized = normalizeNoteName(name)
+        if (!normalized.ok) return { ok: false, reason: normalized.reason }
+        const created = await createNote(dir, normalized.filename)
+        if (created.status === "exists") {
+          return { ok: false, reason: "A note with that name already exists." }
+        }
+        notes = await listNotes(dir)
+        await flushAndWait() // flush the open note before opening the new one
+        await activate(dir, normalized.filename)
+        return { ok: true }
+      })
+    },
+    removeNote(name) {
+      return serialize(async () => {
+        if (!dir) return
+        if (name === activeName) {
+          autosave.cancel() // dropping a deleted note's edits — don't resurrect it
+          dirty = false
+        } else {
+          await flushAndWait() // deleting another note: flush the open one first
+        }
+        await deleteNote(dir, name)
+        notes = await listNotes(dir)
+        if (name === activeName) {
+          await activate(dir, pickActiveNote(notes, null))
+        } else {
+          opts.onListChanged?.(notes, activeName)
+        }
       })
     },
     handleChange() {

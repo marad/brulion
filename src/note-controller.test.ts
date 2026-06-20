@@ -278,17 +278,16 @@ describe("addNote (FEAT-0012)", () => {
       order.push(`save:${name}`)
       return { status: "saved", lastModified: 9 }
     })
-    createNote.mockImplementation(async (_dir, name) => {
-      order.push(`create:${name}`)
-      return { status: "created" }
+    readNote.mockImplementation(async (_dir, name) => {
+      order.push(`read:${name}`)
+      return {
+        content: name === "a.md" ? "A body" : "",
+        lastModified: name === "a.md" ? 1 : null,
+      }
     })
     const view = mountView()
     listNotes.mockResolvedValueOnce(["a.md"]).mockResolvedValue(["a.md", "new.md"])
     loadActiveNote.mockResolvedValue("a.md")
-    readNote.mockImplementation(async (_dir, name) => ({
-      content: name === "a.md" ? "A body" : "",
-      lastModified: name === "a.md" ? 1 : null,
-    }))
     const controller = createNoteController(view, { debounceMs: 10_000 })
     await controller.open(DIR)
 
@@ -296,8 +295,10 @@ describe("addNote (FEAT-0012)", () => {
     controller.handleChange()
     await controller.addNote("new")
 
+    // A's pending edits land in A's file, and that flush happens before the new
+    // note is loaded into the editor (no keystrokes lost on the way out of A).
     expect(saveNote).toHaveBeenCalledWith(DIR, "a.md", "A body edited", 1)
-    expect(order.indexOf("save:a.md")).toBeLessThan(order.indexOf("create:new.md"))
+    expect(order.indexOf("save:a.md")).toBeLessThan(order.indexOf("read:new.md"))
     expect(view.state.doc.toString()).toBe("")
   })
 

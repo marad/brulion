@@ -12,7 +12,18 @@
     </header>
     <p id="status" hidden></p>
     <main class="workspace">
-      <aside id="note-list" aria-label="Notes"></aside>
+      <aside id="sidebar" hidden>
+        <form id="new-note">
+          <input
+            id="new-note-input"
+            type="text"
+            placeholder="New note…"
+            aria-label="New note name"
+            autocomplete="off"
+          />
+        </form>
+        <div id="note-list" aria-label="Notes"></div>
+      </aside>
       <div id="editor"></div>
     </main>
     <script type="module" src="/src/main.ts"></script>

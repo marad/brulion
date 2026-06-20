@@ -61,31 +61,70 @@ async function resumeAccess(
   }
 }
 
+/** Callbacks for a note row: open it, or delete it. */
+export interface NoteListHandlers {
+  onSelect: (name: string) => void
+  onDelete: (name: string) => void
+}
+
 /**
- * Render the folder's notes into `container` as a list of clickable rows. The
- * display name drops the `.md` extension (the file on disk keeps it); the active
- * note's row is marked. Clicking a row calls `onSelect` with the note's
- * filename. Rebuilds the container each call (re-render on open / switch).
+ * Render the folder's notes into `container`, one row each. A row has a name
+ * button (display name drops the `.md` extension; the file keeps it) and a
+ * delete button. The active note's row is marked. Clicking the name calls
+ * `onSelect`; clicking the delete button calls `onDelete` (with the filename).
+ * Rebuilds the container each call (re-render on open / switch / mutate).
  */
 export function renderNoteList(
   container: HTMLElement,
   notes: string[],
   active: string,
-  onSelect: (name: string) => void,
+  handlers: NoteListHandlers,
 ): void {
   container.replaceChildren()
   for (const name of notes) {
-    const row = document.createElement("button")
-    row.type = "button"
+    const row = document.createElement("div")
     row.className = "note-row"
-    row.textContent = name.replace(/\.md$/i, "")
     if (name === active) {
       row.classList.add("active")
       row.setAttribute("aria-current", "true")
     }
-    row.addEventListener("click", () => onSelect(name))
+
+    const nameButton = document.createElement("button")
+    nameButton.type = "button"
+    nameButton.className = "note-name"
+    nameButton.textContent = name.replace(/\.md$/i, "")
+    nameButton.addEventListener("click", () => handlers.onSelect(name))
+
+    const deleteButton = document.createElement("button")
+    deleteButton.type = "button"
+    deleteButton.className = "note-delete"
+    deleteButton.textContent = "×"
+    deleteButton.title = `Delete ${nameButton.textContent}`
+    deleteButton.setAttribute("aria-label", `Delete ${nameButton.textContent}`)
+    deleteButton.addEventListener("click", () => handlers.onDelete(name))
+
+    row.append(nameButton, deleteButton)
     container.append(row)
   }
+}
+
+/**
+ * Wire a new-note form: on submit, pass the trimmed input value to `onCreate`
+ * and clear the field. An empty/whitespace-only value is ignored. The caller
+ * surfaces any creation error (invalid name, duplicate) itself.
+ */
+export function wireNewNote(
+  form: HTMLFormElement,
+  input: HTMLInputElement,
+  onCreate: (name: string) => void,
+): void {
+  form.addEventListener("submit", (event) => {
+    event.preventDefault()
+    const value = input.value.trim()
+    if (!value) return
+    input.value = ""
+    onCreate(value)
+  })
 }
 
 /** Wire `button`'s click (the required user gesture) to {@link openFolder}. */
