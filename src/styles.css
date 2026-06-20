@@ -65,6 +65,18 @@ header button:hover {
   display: none;
 }
 
+/* Collapsed (FEAT-0020): a user preference, separate from `[hidden]` (folder
+   open). Hiding the sidebar lets the editor (flex: 1) fill the width. The class
+   sits on .workspace so its specificity beats the bare `#sidebar` flex rule. */
+.workspace.sidebar-collapsed #sidebar {
+  display: none;
+}
+
+/* The toggle reads as pressed (sidebar hidden) so the state is legible. */
+#toggle-sidebar[aria-pressed="true"] {
+  background: #ececec;
+}
+
 #new-note {
   padding: 0.5rem;
   border-bottom: 1px solid #ececec;

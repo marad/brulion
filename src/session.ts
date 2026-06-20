@@ -8,6 +8,7 @@ import { get, set } from "idb-keyval"
 
 const DIR_KEY = "brulion:dir"
 const ACTIVE_KEY = "brulion:active"
+const SIDEBAR_KEY = "brulion:sidebar-collapsed"
 const MODE = { mode: "readwrite" } as const
 
 /** Persist the directory handle so it survives a reload. */
@@ -28,6 +29,16 @@ export function saveActiveNote(name: string): Promise<void> {
 /** The last-active note's filename, or `undefined` if none was stored. */
 export function loadActiveNote(): Promise<string | undefined> {
   return get<string>(ACTIVE_KEY)
+}
+
+/** Remember whether the note sidebar is collapsed (FEAT-0020). */
+export function saveSidebarCollapsed(collapsed: boolean): Promise<void> {
+  return set(SIDEBAR_KEY, collapsed)
+}
+
+/** Whether the sidebar was left collapsed; defaults to `false` (expanded). */
+export async function loadSidebarCollapsed(): Promise<boolean> {
+  return (await get<boolean>(SIDEBAR_KEY)) === true
 }
 
 /** Whether the handle already has readwrite permission (no prompt — silent). */

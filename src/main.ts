@@ -1,7 +1,14 @@
 import "./styles.css"
 import { mountEditor, setEditorEditable } from "./editor"
 import { createNoteController, type NoteController } from "./note-controller"
-import { wireOpenFolder, restoreFolder, renderNoteList, wireNewNote } from "./ui"
+import {
+  wireOpenFolder,
+  restoreFolder,
+  renderNoteList,
+  wireNewNote,
+  wireSidebarToggle,
+} from "./ui"
+import { saveSidebarCollapsed, loadSidebarCollapsed } from "./session"
 import { displayName } from "./note-name"
 import { wireFlushOnHide } from "./flush"
 import { createPoller } from "./watch"
@@ -10,7 +17,9 @@ import { createPoller } from "./watch"
 const POLL_MS = 2000
 
 const editorEl = document.querySelector<HTMLDivElement>("#editor")
+const workspaceEl = document.querySelector<HTMLElement>(".workspace")
 const sidebarEl = document.querySelector<HTMLElement>("#sidebar")
+const toggleSidebarEl = document.querySelector<HTMLButtonElement>("#toggle-sidebar")
 const listEl = document.querySelector<HTMLElement>("#note-list")
 const newNoteForm = document.querySelector<HTMLFormElement>("#new-note")
 const newNoteInput = document.querySelector<HTMLInputElement>("#new-note-input")
@@ -22,7 +31,9 @@ const keepButton = document.querySelector<HTMLButtonElement>("#conflict-keep")
 const diskButton = document.querySelector<HTMLButtonElement>("#conflict-disk")
 if (
   !editorEl ||
+  !workspaceEl ||
   !sidebarEl ||
+  !toggleSidebarEl ||
   !listEl ||
   !newNoteForm ||
   !newNoteInput ||
@@ -55,7 +66,11 @@ controller = createNoteController(view, {
     setEditorEditable(view, true)
   },
   onListChanged: (notes, active) => {
-    sidebarEl.hidden = false // a folder is open — reveal the list and new-note control
+    // A folder is open — reveal the list/new-note control and the collapse
+    // toggle. The collapse preference (a CSS class on .workspace) is orthogonal:
+    // if the user left the sidebar collapsed it stays hidden by CSS regardless.
+    sidebarEl.hidden = false
+    toggleSidebarEl.hidden = false
     renderNoteList(listEl, notes, active, {
       onSelect: (name) => void controller.switchTo(name),
       onDelete: (name) => {
@@ -101,6 +116,22 @@ diskButton.addEventListener("click", () => void controller.resolveTakeTheirs())
 
 wireOpenFolder(openButton, resumeButton, openNote)
 void restoreFolder(resumeButton, openNote)
+
+// Sidebar collapse (FEAT-0020): restore the saved preference, wire the header
+// toggle, and bind Ctrl+\ to the same flip. CodeMirror has no binding for that
+// chord, so the event bubbles to window and never disturbs the editor shortcuts.
+void loadSidebarCollapsed().then((collapsed) => {
+  const sidebar = wireSidebarToggle(toggleSidebarEl, workspaceEl, {
+    initialCollapsed: collapsed,
+    onChange: (value) => void saveSidebarCollapsed(value),
+  })
+  window.addEventListener("keydown", (event) => {
+    if (event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && event.key === "\\") {
+      event.preventDefault()
+      sidebar.toggle()
+    }
+  })
+})
 
 // Flush pending edits before the page can go away.
 wireFlushOnHide(() => controller.flush())

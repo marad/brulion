@@ -7,6 +7,8 @@ import {
   requestAccess,
   saveActiveNote,
   loadActiveNote,
+  saveSidebarCollapsed,
+  loadSidebarCollapsed,
 } from "./session"
 
 vi.mock("idb-keyval", () => ({
@@ -66,6 +68,26 @@ describe("saveActiveNote / loadActiveNote", () => {
   it("returns undefined when no active note is stored", async () => {
     get.mockResolvedValue(undefined)
     expect(await loadActiveNote()).toBeUndefined()
+  })
+})
+
+describe("saveSidebarCollapsed / loadSidebarCollapsed", () => {
+  it("saves the flag under a stable key (FEAT-0020 AC-4)", async () => {
+    await saveSidebarCollapsed(true)
+    expect(set).toHaveBeenCalledWith("brulion:sidebar-collapsed", true)
+    await saveSidebarCollapsed(false)
+    expect(set).toHaveBeenCalledWith("brulion:sidebar-collapsed", false)
+  })
+
+  it("loads the stored flag", async () => {
+    get.mockResolvedValue(true)
+    expect(await loadSidebarCollapsed()).toBe(true)
+    expect(get).toHaveBeenCalledWith("brulion:sidebar-collapsed")
+  })
+
+  it("defaults to false (expanded) when nothing is stored", async () => {
+    get.mockResolvedValue(undefined)
+    expect(await loadSidebarCollapsed()).toBe(false)
   })
 })
 

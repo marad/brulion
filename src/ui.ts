@@ -138,3 +138,37 @@ export function wireOpenFolder(
     void openFolder(resumeButton, onOpen)
   })
 }
+
+/** A handle on the sidebar collapse state, so a keyboard shortcut can flip it. */
+export interface SidebarToggle {
+  /** Flip collapsed/expanded, updating the DOM and notifying `onChange`. */
+  toggle(): void
+}
+
+/**
+ * Wire the sidebar collapse toggle (FEAT-0020). Collapse is expressed as the
+ * `sidebar-collapsed` class on `workspace` — deliberately separate from the
+ * `#sidebar[hidden]` attribute that encodes folder-open, so the two are
+ * orthogonal (toggling never touches `hidden`, and a collapsed sidebar stays
+ * hidden by CSS even once a folder opens). Applies the restored state on wire so
+ * the page loads in the mode the user left it.
+ */
+export function wireSidebarToggle(
+  button: HTMLButtonElement,
+  workspace: HTMLElement,
+  opts: { initialCollapsed: boolean; onChange: (collapsed: boolean) => void },
+): SidebarToggle {
+  let collapsed = opts.initialCollapsed
+  const apply = () => {
+    workspace.classList.toggle("sidebar-collapsed", collapsed)
+    button.setAttribute("aria-pressed", String(collapsed))
+  }
+  const toggle = () => {
+    collapsed = !collapsed
+    apply()
+    opts.onChange(collapsed)
+  }
+  apply() // reflect the restored state before any interaction
+  button.addEventListener("click", toggle)
+  return { toggle }
+}
