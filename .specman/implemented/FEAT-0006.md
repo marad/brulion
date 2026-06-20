@@ -30,9 +30,14 @@ typing raw markdown and watching it render.
 The editor parses the document as markdown (Lezer markdown grammar) and decorates
 the visible viewport so that:
 
-- **ATX headings** (`# ` … `###### `): the leading `#` run and the single space
-  after it are hidden; the heading text is styled larger/bolder by level (at
-  least H1, H2, H3 are visually distinct).
+- **ATX headings** (`# ` … `###### `): once the marker is *completed* by a
+  trailing space, the leading `#` run and that space are hidden and the heading
+  text is styled larger/bolder by level (at least H1, H2, H3 are visually
+  distinct). A bare `#`/`##` with **no** trailing space yet stays fully visible
+  and unstyled — so a user typing a heading sees the markers they are typing and
+  discovers that the space completes the heading (rather than the `#` vanishing
+  into a blank line). The moment the space is typed, the `#`s and the space
+  disappear together and the heading styling applies.
 - **Bold** (`**text**` or `__text__`): the surrounding `**`/`__` marks are hidden;
   the inner text renders bold.
 - **Italic** (`*text*` or `_text_`): the surrounding `*`/`_` marks are hidden; the
@@ -112,3 +117,10 @@ Given a line containing `**bold**` with the caret at the line start,
 When the user presses the Right arrow into the word,
 Then the caret lands on the visible text side of the hidden `**`, never between
 the two `*` characters.
+
+**AC-8** — A heading marker stays visible until completed by a space.
+Given the user has typed `##` at the start of a line with no following space,
+When the editor renders it,
+Then the `##` is still visible (not hidden, not styled as a heading); and once a
+space is added (`## `), the `##` and the space are hidden together and the
+heading styling applies.
