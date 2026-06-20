@@ -951,6 +951,32 @@ describe("conflict resolution (FEAT-0015)", () => {
     expect(saveNote).toHaveBeenCalledWith(DIR, "start.md", "body mine", null)
   })
 
+  it("clears the conflict UI when the user navigates away instead of resolving", async () => {
+    const view = mountView()
+    const onConflictResolved = vi.fn()
+    listNotes.mockResolvedValue(["other.md", "start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, {
+      onConflict: vi.fn(),
+      onConflictResolved,
+      onListChanged: vi.fn(),
+      debounceMs: 10_000,
+    })
+    await controller.open(DIR)
+    type(view, " mine")
+    controller.handleChange()
+    statNote.mockResolvedValue(2)
+    await controller.refreshFromDisk() // conflict raised
+
+    readNote.mockResolvedValue({ content: "other body", lastModified: 3 })
+    await controller.switchTo("other.md") // navigate away instead of resolving
+
+    expect(onConflictResolved).toHaveBeenCalledTimes(1) // banner cleared, not stuck
+    expect(view.state.doc.toString()).toBe("other body")
+  })
+
   it("take-theirs on a deleted open note switches off it (AC-5)", async () => {
     const view = mountView()
     listNotes.mockResolvedValue(["other.md", "start.md"])

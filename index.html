@@ -11,6 +11,11 @@
       <button id="resume-access" type="button" hidden>Resume folder access</button>
     </header>
     <p id="status" hidden></p>
+    <div id="conflict" role="alertdialog" aria-label="Note changed on disk" hidden>
+      <span>This note changed on disk. Keep your version or take the one on disk?</span>
+      <button id="conflict-keep" type="button">Keep my version</button>
+      <button id="conflict-disk" type="button">Use the version on disk</button>
+    </div>
     <main class="workspace">
       <aside id="sidebar" hidden>
         <form id="new-note">

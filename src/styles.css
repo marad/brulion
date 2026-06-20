@@ -157,6 +157,42 @@ header button:hover {
   border-bottom: 1px solid #f3ddd8;
 }
 
+/* Conflict banner: the open note changed on disk under unsaved edits. Visible
+   but not alarming — a calm choice, not an error. */
+#conflict {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  color: #6b4a16;
+  background: #fdf6e3;
+  border-bottom: 1px solid #efe4c4;
+}
+
+#conflict[hidden] {
+  display: none;
+}
+
+#conflict span {
+  margin-right: auto;
+}
+
+#conflict button {
+  font: inherit;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid #d8c79a;
+  border-radius: 6px;
+  background: #fff;
+  color: #1a1a1a;
+  cursor: pointer;
+}
+
+#conflict button:hover {
+  background: #fbf3df;
+}
+
 #editor {
   flex: 1;
   min-width: 0;

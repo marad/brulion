@@ -96,7 +96,8 @@ test("a save does not overwrite an externally changed start.md (AC-5)", async ({
   await typeInEditor(page, " — my edit")
   await page.keyboard.press("Control+s")
 
-  await expect(page.locator("#status")).toBeVisible()
+  // M4 surfaces the refused save as the conflict banner (was the #status line).
+  await expect(page.locator("#conflict")).toBeVisible()
   expect(await readStartMd(page)).toBe("changed by someone else") // not clobbered
   await expect(editor(page)).toContainText("my edit") // user's buffer preserved
 })

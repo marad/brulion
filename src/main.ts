@@ -17,6 +17,9 @@ const newNoteInput = document.querySelector<HTMLInputElement>("#new-note-input")
 const openButton = document.querySelector<HTMLButtonElement>("#open-folder")
 const resumeButton = document.querySelector<HTMLButtonElement>("#resume-access")
 const statusEl = document.querySelector<HTMLParagraphElement>("#status")
+const conflictEl = document.querySelector<HTMLDivElement>("#conflict")
+const keepButton = document.querySelector<HTMLButtonElement>("#conflict-keep")
+const diskButton = document.querySelector<HTMLButtonElement>("#conflict-disk")
 if (
   !editorEl ||
   !sidebarEl ||
@@ -25,7 +28,10 @@ if (
   !newNoteInput ||
   !openButton ||
   !resumeButton ||
-  !statusEl
+  !statusEl ||
+  !conflictEl ||
+  !keepButton ||
+  !diskButton
 ) {
   throw new Error("missing mount points in index.html")
 }
@@ -39,9 +45,10 @@ const view = mountEditor(editorEl, {
 })
 controller = createNoteController(view, {
   onConflict: () => {
-    statusEl.textContent =
-      "This note changed on disk — your edits were not saved, to avoid overwriting it."
-    statusEl.hidden = false
+    conflictEl.hidden = false // offer the keep-mine / take-theirs choice
+  },
+  onConflictResolved: () => {
+    conflictEl.hidden = true
   },
   onListChanged: (notes, active) => {
     sidebarEl.hidden = false // a folder is open — reveal the list and new-note control
@@ -83,6 +90,10 @@ const openNote = async (dir: FileSystemDirectoryHandle) => {
   await controller.open(dir)
   poller.start()
 }
+
+// The two ways out of a conflict; the controller clears it via onConflictResolved.
+keepButton.addEventListener("click", () => void controller.resolveKeepMine())
+diskButton.addEventListener("click", () => void controller.resolveTakeTheirs())
 
 wireOpenFolder(openButton, resumeButton, openNote)
 void restoreFolder(resumeButton, openNote)

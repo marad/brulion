@@ -69,8 +69,10 @@ function sameNotes(a: string[], b: string[]): boolean {
 }
 
 export interface NoteControllerOptions {
-  /** Called when a save is refused because the file changed on disk. */
+  /** Called when the open note changed on disk under unsaved edits (conflict). */
   onConflict?: () => void
+  /** Called when a standing conflict is resolved (either way) — clears the UI. */
+  onConflictResolved?: () => void
   /** Called whenever the note list or the active note changes. */
   onListChanged?: (notes: string[], active: string) => void
   /** Autosave debounce in ms (default 600). */
@@ -100,10 +102,22 @@ export interface NoteController {
    * Reflect the disk for the non-conflicting cases: refresh the list, and (only
    * when there are no unsaved local edits) reload the open note's external edit
    * or switch off it if it was deleted. A no-op with no folder open or while a
-   * save is in flight. Collisions with unsaved edits are left to the conflict
-   * handling (FEAT-0015).
+   * save is in flight. A collision with unsaved edits instead surfaces a
+   * conflict (see {@link resolveKeepMine} / {@link resolveTakeTheirs}).
    */
   refreshFromDisk(): Promise<void>
+  /**
+   * Resolve a standing conflict by keeping the buffer: overwrite the on-disk
+   * file with the editor's content (re-creating it if it was deleted). Clears
+   * the conflict. A no-op when there is no conflict.
+   */
+  resolveKeepMine(): Promise<void>
+  /**
+   * Resolve a standing conflict by taking the disk: discard local edits and
+   * load the on-disk content, or switch off the note if it was deleted. Clears
+   * the conflict. A no-op when there is no conflict.
+   */
+  resolveTakeTheirs(): Promise<void>
 }
 
 /**
@@ -153,8 +167,7 @@ export function createNoteController(
           dirty = false // claim the current edits before the await
           const result = await saveNote(dir!, activeName, view.state.doc.toString(), lastModified)
           if (result.status === "conflict") {
-            conflict = true // stop saving so we never clobber the on-disk change
-            opts.onConflict?.()
+            raiseConflict() // the reactive path into the one conflict state
             return
           }
           lastModified = result.lastModified
@@ -181,9 +194,15 @@ export function createNoteController(
   }
 
   // Point the editor at `name`: load its content and reset the save state.
+  // Re-pointing the editor also resolves any standing conflict (the conflicted
+  // buffer is left behind — an implicit "take theirs" when the user navigates
+  // away instead of choosing), so tell the UI to drop the banner.
   const load = async (folder: FileSystemDirectoryHandle, name: string): Promise<void> => {
     activeName = name
-    conflict = false
+    if (conflict) {
+      conflict = false
+      opts.onConflictResolved?.()
+    }
     const note = await readNote(folder, name)
     lastModified = note.lastModified
     setEditorText(view, note.content)
@@ -218,6 +237,14 @@ export function createNoteController(
   // Checked live (not from a snapshot) right before mutating, since these can
   // change across the awaits inside refreshFromDisk.
   const safeToReplaceBuffer = (): boolean => !dirty && !conflict && !savePromise
+
+  // Enter the conflict state and announce it once. Reached either reactively
+  // (a save refused by the stale-write guard) or proactively (the poll loop
+  // noticing an external change while edits are pending) — one state, one UX.
+  const raiseConflict = (): void => {
+    conflict = true // stop autosaving so we never clobber the on-disk change
+    opts.onConflict?.()
+  }
 
   // Serialize folder/active-note changes so two fast clicks (open, or switching
   // between rows) can't interleave their loads and leave the editor content,
@@ -314,37 +341,73 @@ export function createNoteController(
         // picks the next note from the up-to-date listing.
         if (check.listChanged) notes = check.listChanged
 
-        // Act on the open note only in the non-conflicting case: no unsaved
-        // local edits and no standing conflict. A collision with unsaved edits
-        // is left untouched (handled by FEAT-0015 / the save-time guard).
+        // The open note changed or was deleted on disk. With no unsaved local
+        // edits it's safe to track the disk; with edits in flight it's a
+        // conflict the user must resolve (keep mine / take theirs).
         const active = check.active
-        if (active && !active.dirty && !conflict) {
-          if (active.kind === "deleted") {
-            // The open note vanished — switch off it. Re-check live state first:
-            // `active.dirty` is a snapshot from before probeDisk's awaits, during
-            // which the user may have typed or a save may have begun (doSave runs
-            // off this queue). If so, defer to FEAT-0015 / the save-time guard.
-            if (safeToReplaceBuffer()) {
-              // `activate` loads, persists the active note, and announces with
-              // the already-updated list.
-              await activate(folder, pickActiveNote(notes, null))
-              return
-            }
+        if (active && !conflict) {
+          if (!safeToReplaceBuffer()) {
+            // Unsaved edits (or a save in flight) collide with the external
+            // change — surface the conflict proactively, before autosave hits
+            // the save-time guard. Both paths converge on the same state.
+            raiseConflict()
+          } else if (active.kind === "deleted") {
+            // The open note vanished and we have nothing to lose — switch off it.
+            // `activate` loads, persists, and announces with the updated list.
+            await activate(folder, pickActiveNote(notes, null))
+            return
           } else {
             // Changed on disk: catch the buffer up and adopt the new mtime so
             // the next save bases off the absorbed version. Re-check live state
-            // after the read for the same reason as above — never clobber a
-            // keystroke typed during the reload window.
+            // after the read — a keystroke landing during it turns this into a
+            // conflict rather than a silent clobber.
             const note = await readNote(folder, activeName)
             if (safeToReplaceBuffer()) {
               lastModified = note.lastModified
               setEditorText(view, note.content)
               dirty = false
+            } else {
+              raiseConflict()
             }
           }
         }
 
         if (check.listChanged) opts.onListChanged?.(notes, activeName)
+      })
+    },
+    resolveKeepMine() {
+      return serialize(async () => {
+        const folder = dir
+        if (!folder || !conflict) return
+        // Re-base on the file's current on-disk state so the guarded write goes
+        // through (a deleted file has no handle, so it is simply re-created).
+        const current = await statNote(folder, activeName)
+        const result = await saveNote(folder, activeName, view.state.doc.toString(), current)
+        if (result.status !== "saved") return // raced again — leave the conflict standing
+        lastModified = result.lastModified
+        conflict = false
+        dirty = false
+        if (!notes.includes(activeName)) notes = await listNotes(folder) // re-created note
+        opts.onListChanged?.(notes, activeName)
+        opts.onConflictResolved?.()
+      })
+    },
+    resolveTakeTheirs() {
+      return serialize(async () => {
+        const folder = dir
+        if (!folder || !conflict) return
+        // `load`/`activate` both reset `conflict` as they re-point the editor.
+        if ((await statNote(folder, activeName)) === null) {
+          // Deleted on disk — switch off it, like an external delete with no
+          // edits. `activate` → `load` clears the conflict and notifies the UI.
+          notes = await listNotes(folder)
+          await activate(folder, pickActiveNote(notes, null))
+        } else {
+          // Changed on disk — adopt its content and mtime, dropping local edits.
+          // `load` clears the conflict and fires onConflictResolved.
+          await load(folder, activeName)
+          opts.onListChanged?.(notes, activeName)
+        }
       })
     },
   }

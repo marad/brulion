@@ -267,6 +267,23 @@ conflict banner with two buttons; resolving either way clears the state and
 re-enables saving. (Rejected: diff/merge UI — too heavy for the ethos and the
 audience; auto-pick a winner — silently loses one side's data, breaking the moat.)
 
+## Navigating away from a standing conflict resolves it as "take theirs" (M4)
+A conflict (FEAT-0015) gives the user two buttons — keep mine / take theirs — but
+they may instead click another note, create one, or re-pick the folder while the
+banner is up. Re-pointing the editor can't carry the conflicted, unsaved buffer
+with it (there is one buffer, and it could not be flushed — that's *why* it's a
+conflict). So any navigation that loads a different note **clears the conflict and
+abandons the conflicted buffer**, which is equivalent to choosing "take theirs"
+for the note left behind (its on-disk version stands; the unsaved keystrokes are
+dropped). This is centralized in `load`: whenever it clears a standing conflict it
+fires `onConflictResolved`, so the banner never lingers over an unrelated note
+(the alternative — leaving a stuck, now-inert banner — was the bug this replaces).
+Consequence: the conflict banner is *not* modal; you can navigate away from it,
+and doing so keeps the disk version. (Rejected: block all navigation until the
+conflict is resolved — heavier UX, and clicking a note doing nothing is its own
+confusion; keep the conflicted edits across a switch — impossible with a single
+buffer, and stashing per-note unsaved state is well beyond the lean scope.)
+
 ## Switching notes flushes the open note first (M3)
 When the user picks another note, the controller flushes the currently open
 note's pending edits **before** loading the new one, reusing the same guarded
