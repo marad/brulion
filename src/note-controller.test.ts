@@ -821,6 +821,163 @@ describe("refreshFromDisk (FEAT-0014)", () => {
   })
 })
 
+describe("conflict resolution (FEAT-0015)", () => {
+  // Drive the controller into a conflict: open a note, make an unsaved edit,
+  // then a poll sees the file changed on disk underneath it.
+  async function enterConflict(
+    view: EditorView,
+    onConflict = vi.fn(),
+    onConflictResolved = vi.fn(),
+  ) {
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, {
+      onConflict,
+      onConflictResolved,
+      onListChanged: vi.fn(),
+      debounceMs: 10_000,
+    })
+    await controller.open(DIR)
+    type(view, " mine") // unsaved local edit
+    controller.handleChange()
+    statNote.mockResolvedValue(2) // external edit lands while we have edits
+    await controller.refreshFromDisk()
+    return controller
+  }
+
+  it("surfaces a conflict without clobbering when edits collide (AC-1, AC-6)", async () => {
+    const view = mountView()
+    const onConflict = vi.fn()
+    saveNote.mockClear()
+
+    await enterConflict(view, onConflict)
+
+    expect(onConflict).toHaveBeenCalledTimes(1)
+    expect(saveNote).not.toHaveBeenCalled() // nothing written before the user chooses
+    expect(view.state.doc.toString()).toBe("body mine") // buffer preserved
+  })
+
+  it("keeps my version: writes the buffer over the disk and clears the conflict (AC-2)", async () => {
+    const view = mountView()
+    const onConflictResolved = vi.fn()
+    const controller = await enterConflict(view, vi.fn(), onConflictResolved)
+
+    statNote.mockResolvedValue(2) // current on-disk mtime to re-base on
+    saveNote.mockResolvedValue({ status: "saved", lastModified: 3 })
+    await controller.resolveKeepMine()
+
+    // Re-based on the disk's current mtime so the guarded write goes through.
+    expect(saveNote).toHaveBeenCalledWith(DIR, "start.md", "body mine", 2)
+    expect(onConflictResolved).toHaveBeenCalledTimes(1)
+  })
+
+  it("uses the disk version: loads it and drops local edits (AC-3)", async () => {
+    const view = mountView()
+    const onConflictResolved = vi.fn()
+    const controller = await enterConflict(view, vi.fn(), onConflictResolved)
+
+    statNote.mockResolvedValue(2) // present on disk → the "changed" resolution
+    readNote.mockResolvedValue({ content: "their version", lastModified: 2 })
+    await controller.resolveTakeTheirs()
+
+    expect(view.state.doc.toString()).toBe("their version")
+    expect(onConflictResolved).toHaveBeenCalledTimes(1)
+  })
+
+  it("re-enables autosave after keep-mine (AC-4)", async () => {
+    const view = mountView()
+    const controller = await enterConflict(view)
+
+    statNote.mockResolvedValue(2)
+    saveNote.mockResolvedValue({ status: "saved", lastModified: 3 })
+    await controller.resolveKeepMine()
+
+    saveNote.mockClear()
+    type(view, "!")
+    controller.handleChange()
+    controller.flush()
+    await vi.waitFor(() => expect(saveNote).toHaveBeenCalled())
+  })
+
+  it("re-enables autosave after take-theirs (AC-4)", async () => {
+    const view = mountView()
+    const controller = await enterConflict(view)
+
+    statNote.mockResolvedValue(2)
+    readNote.mockResolvedValue({ content: "their version", lastModified: 2 })
+    await controller.resolveTakeTheirs()
+
+    saveNote.mockClear()
+    saveNote.mockResolvedValue({ status: "saved", lastModified: 9 })
+    type(view, "!")
+    controller.handleChange()
+    controller.flush()
+    // The save bases off the adopted disk mtime (2), proving it was taken.
+    await vi.waitFor(() =>
+      expect(saveNote).toHaveBeenCalledWith(DIR, "start.md", "their version!", 2),
+    )
+  })
+
+  it("treats the open note deleted under unsaved edits as the same conflict (AC-5)", async () => {
+    const view = mountView()
+    const onConflict = vi.fn()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, {
+      onConflict,
+      onListChanged: vi.fn(),
+      debounceMs: 10_000,
+    })
+    await controller.open(DIR)
+    type(view, " mine")
+    controller.handleChange()
+
+    statNote.mockResolvedValue(null) // deleted on disk while we have edits
+    listNotes.mockResolvedValue([])
+    await controller.refreshFromDisk()
+
+    expect(onConflict).toHaveBeenCalledTimes(1)
+
+    // keep-mine re-creates the file from the buffer.
+    statNote.mockResolvedValue(null)
+    saveNote.mockResolvedValue({ status: "saved", lastModified: 5 })
+    listNotes.mockResolvedValue(["start.md"])
+    await controller.resolveKeepMine()
+
+    expect(saveNote).toHaveBeenCalledWith(DIR, "start.md", "body mine", null)
+  })
+
+  it("take-theirs on a deleted open note switches off it (AC-5)", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["other.md", "start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, {
+      onListChanged: vi.fn(),
+      debounceMs: 10_000,
+    })
+    await controller.open(DIR)
+    type(view, " mine")
+    controller.handleChange()
+
+    statNote.mockResolvedValue(null) // start.md deleted under edits
+    listNotes.mockResolvedValue(["other.md"])
+    await controller.refreshFromDisk()
+
+    statNote.mockResolvedValue(null)
+    readNote.mockResolvedValue({ content: "other body", lastModified: 7 })
+    await controller.resolveTakeTheirs()
+
+    expect(view.state.doc.toString()).toBe("other body")
+    expect(saveActiveNote).toHaveBeenCalledWith("other.md")
+  })
+})
+
 describe("conflict (AC-5 of FEAT-0004 preserved)", () => {
   it("calls onConflict and stops saving once a save is refused", async () => {
     const view = mountView()
