@@ -2,18 +2,16 @@ import { EditorView, basicSetup } from "codemirror"
 import { keymap } from "@codemirror/view"
 import { Annotation } from "@codemirror/state"
 
-/** System reading-font stack — no web-font downloads (zero-config / offline). */
-const FONT_STACK =
-  'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
-
 /** Clean, prose-friendly typography: proportional font, readable measure,
- * comfortable spacing, no code-like gutter. No syntax hiding — that is M2. */
+ * comfortable spacing, no code-like gutter. No syntax hiding — that is M2.
+ * `--font-stack` is defined in styles.css (loaded by main.ts). */
 const typography = EditorView.theme({
   "&": { height: "100%", fontSize: "16px", color: "#1a1a1a" },
   ".cm-scroller": {
-    fontFamily: FONT_STACK,
+    fontFamily: "var(--font-stack)",
     lineHeight: "1.6",
     overflow: "auto",
+    scrollbarGutter: "stable both-edges", // keep the text column centered when a scrollbar appears
   },
   ".cm-content": {
     maxWidth: "68ch",
