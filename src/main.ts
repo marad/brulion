@@ -1,14 +1,15 @@
 import "./styles.css"
 import { mountEditor } from "./editor"
 import { createNoteController, type NoteController } from "./note-controller"
-import { wireOpenFolder, restoreFolder } from "./ui"
+import { wireOpenFolder, restoreFolder, renderNoteList } from "./ui"
 import { wireFlushOnHide } from "./flush"
 
 const editorEl = document.querySelector<HTMLDivElement>("#editor")
+const listEl = document.querySelector<HTMLElement>("#note-list")
 const openButton = document.querySelector<HTMLButtonElement>("#open-folder")
 const resumeButton = document.querySelector<HTMLButtonElement>("#resume-access")
 const statusEl = document.querySelector<HTMLParagraphElement>("#status")
-if (!editorEl || !openButton || !resumeButton || !statusEl) {
+if (!editorEl || !listEl || !openButton || !resumeButton || !statusEl) {
   throw new Error("missing mount points in index.html")
 }
 
@@ -22,8 +23,11 @@ const view = mountEditor(editorEl, {
 controller = createNoteController(view, {
   onConflict: () => {
     statusEl.textContent =
-      "start.md changed on disk — your edits were not saved, to avoid overwriting it."
+      "This note changed on disk — your edits were not saved, to avoid overwriting it."
     statusEl.hidden = false
+  },
+  onListChanged: (notes, active) => {
+    renderNoteList(listEl, notes, active, (name) => void controller.switchTo(name))
   },
 })
 

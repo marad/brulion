@@ -61,6 +61,33 @@ async function resumeAccess(
   }
 }
 
+/**
+ * Render the folder's notes into `container` as a list of clickable rows. The
+ * display name drops the `.md` extension (the file on disk keeps it); the active
+ * note's row is marked. Clicking a row calls `onSelect` with the note's
+ * filename. Rebuilds the container each call (re-render on open / switch).
+ */
+export function renderNoteList(
+  container: HTMLElement,
+  notes: string[],
+  active: string,
+  onSelect: (name: string) => void,
+): void {
+  container.replaceChildren()
+  for (const name of notes) {
+    const row = document.createElement("button")
+    row.type = "button"
+    row.className = "note-row"
+    row.textContent = name.replace(/\.md$/i, "")
+    if (name === active) {
+      row.classList.add("active")
+      row.setAttribute("aria-current", "true")
+    }
+    row.addEventListener("click", () => onSelect(name))
+    container.append(row)
+  }
+}
+
 /** Wire `button`'s click (the required user gesture) to {@link openFolder}. */
 export function wireOpenFolder(
   button: HTMLButtonElement,
