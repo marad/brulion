@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { EditorView } from "codemirror"
 import * as note from "./note"
 import * as session from "./session"
-import { createNoteController, pickActiveNote } from "./note-controller"
+import { createNoteController, pickActiveNote, classifyDiskCheck } from "./note-controller"
 
 vi.mock("./note", () => ({
   readNote: vi.fn(),
@@ -10,6 +10,7 @@ vi.mock("./note", () => ({
   listNotes: vi.fn(),
   createNote: vi.fn(),
   deleteNote: vi.fn(),
+  statNote: vi.fn(),
 }))
 vi.mock("./session", () => ({ saveActiveNote: vi.fn(), loadActiveNote: vi.fn() }))
 const readNote = vi.mocked(note.readNote)
@@ -17,6 +18,7 @@ const saveNote = vi.mocked(note.saveNote)
 const listNotes = vi.mocked(note.listNotes)
 const createNote = vi.mocked(note.createNote)
 const deleteNote = vi.mocked(note.deleteNote)
+const statNote = vi.mocked(note.statNote)
 const loadActiveNote = vi.mocked(session.loadActiveNote)
 const saveActiveNote = vi.mocked(session.saveActiveNote)
 
@@ -37,6 +39,7 @@ beforeEach(() => {
   listNotes.mockResolvedValue([])
   createNote.mockResolvedValue({ status: "created" })
   deleteNote.mockResolvedValue(undefined)
+  statNote.mockResolvedValue(null)
   loadActiveNote.mockResolvedValue(undefined)
 })
 
@@ -429,6 +432,206 @@ describe("removeNote (FEAT-0012)", () => {
     await removed
     // The in-flight write of a.md completes BEFORE the delete, so the file ends deleted.
     expect(order.indexOf("save-end:a.md")).toBeLessThan(order.indexOf("delete:a.md"))
+  })
+})
+
+describe("classifyDiskCheck (pure)", () => {
+  const base = {
+    knownNotes: ["a.md"],
+    diskNotes: ["a.md"],
+    knownLastModified: 1,
+    diskActiveLastModified: 1,
+    dirty: false,
+  }
+
+  describe("listChanged", () => {
+    it("is null when the sorted sets are identical", () => {
+      expect(
+        classifyDiskCheck({ ...base, knownNotes: ["a.md", "b.md"], diskNotes: ["a.md", "b.md"] })
+          .listChanged,
+      ).toBeNull()
+    })
+
+    it("is the new listing when a note was added", () => {
+      expect(
+        classifyDiskCheck({ ...base, knownNotes: ["a.md"], diskNotes: ["a.md", "b.md"] })
+          .listChanged,
+      ).toEqual(["a.md", "b.md"])
+    })
+
+    it("is the new listing when a note was removed", () => {
+      expect(
+        classifyDiskCheck({ ...base, knownNotes: ["a.md", "b.md"], diskNotes: ["a.md"] })
+          .listChanged,
+      ).toEqual(["a.md"])
+    })
+  })
+
+  describe("active", () => {
+    it("is deleted when the active file is absent and we had it before", () => {
+      expect(
+        classifyDiskCheck({ ...base, knownLastModified: 5, diskActiveLastModified: null }).active,
+      ).toEqual({ kind: "deleted", dirty: false })
+    })
+
+    it("is null when the active file is absent and we never had it (unmaterialized seed)", () => {
+      expect(
+        classifyDiskCheck({ ...base, knownLastModified: null, diskActiveLastModified: null })
+          .active,
+      ).toBeNull()
+    })
+
+    it("is changed when present with a different mtime", () => {
+      expect(
+        classifyDiskCheck({ ...base, knownLastModified: 1, diskActiveLastModified: 2 }).active,
+      ).toEqual({ kind: "changed", lastModified: 2, dirty: false })
+    })
+
+    it("is changed when a file appeared where we had none (null -> value)", () => {
+      expect(
+        classifyDiskCheck({ ...base, knownLastModified: null, diskActiveLastModified: 7 }).active,
+      ).toEqual({ kind: "changed", lastModified: 7, dirty: false })
+    })
+
+    it("is null when present with the same mtime", () => {
+      expect(
+        classifyDiskCheck({ ...base, knownLastModified: 4, diskActiveLastModified: 4 }).active,
+      ).toBeNull()
+    })
+
+    it("passes dirty through into a changed state", () => {
+      expect(
+        classifyDiskCheck({ ...base, knownLastModified: 1, diskActiveLastModified: 2, dirty: true })
+          .active,
+      ).toEqual({ kind: "changed", lastModified: 2, dirty: true })
+    })
+
+    it("passes dirty through into a deleted state", () => {
+      expect(
+        classifyDiskCheck({
+          ...base,
+          knownLastModified: 1,
+          diskActiveLastModified: null,
+          dirty: true,
+        }).active,
+      ).toEqual({ kind: "deleted", dirty: true })
+    })
+  })
+})
+
+describe("checkDisk (AC-4..AC-7)", () => {
+  it("is a no-op with no folder open", async () => {
+    const view = mountView()
+    const controller = createNoteController(view)
+
+    expect(await controller.checkDisk()).toEqual({ listChanged: null, active: null })
+  })
+
+  it("reports a note added to the folder", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["start.md"])
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, { debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    listNotes.mockResolvedValue(["new.md", "start.md"])
+    const result = await controller.checkDisk()
+
+    expect(result.listChanged).toEqual(["new.md", "start.md"])
+  })
+
+  it("reports a note removed from the folder", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["a.md", "start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, { debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    listNotes.mockResolvedValue(["start.md"])
+    const result = await controller.checkDisk()
+
+    expect(result.listChanged).toEqual(["start.md"])
+  })
+
+  it("reports the active note changed on disk", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    const controller = createNoteController(view, { debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    statNote.mockResolvedValue(2) // mtime moved forward externally
+    const result = await controller.checkDisk()
+
+    expect(result.active).toEqual({ kind: "changed", lastModified: 2, dirty: false })
+  })
+
+  it("reports the active note deleted on disk", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    const controller = createNoteController(view, { debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    statNote.mockResolvedValue(null) // active file vanished
+    listNotes.mockResolvedValue([])
+    const result = await controller.checkDisk()
+
+    expect(result.active).toEqual({ kind: "deleted", dirty: false })
+  })
+
+  it("is non-destructive: no write, no buffer change, and it does not adopt the new state", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    const controller = createNoteController(view, { debounceMs: 10_000 })
+    await controller.open(DIR)
+    const bufferBefore = view.state.doc.toString()
+
+    saveNote.mockClear()
+    statNote.mockResolvedValue(2) // an unresolved external change
+
+    const first = await controller.checkDisk()
+    const second = await controller.checkDisk()
+
+    // No write happened during detection.
+    expect(saveNote).not.toHaveBeenCalled()
+    // The editor buffer is untouched.
+    expect(view.state.doc.toString()).toBe(bufferBefore)
+    // It did not adopt the change: the same change is reported both times.
+    expect(first.active).toEqual({ kind: "changed", lastModified: 2, dirty: false })
+    expect(second.active).toEqual({ kind: "changed", lastModified: 2, dirty: false })
+  })
+
+  it("skips the check while our own save is in flight (no self-write false positive)", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    const controller = createNoteController(view, { debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    // A save that never settles keeps savePromise in flight (doSave runs on its
+    // own mutex, off the serialize queue, so checkDisk isn't blocked by it).
+    saveNote.mockReturnValue(new Promise<never>(() => {}))
+    type(view, "x")
+    controller.handleChange()
+    controller.flush() // starts doSave; savePromise is now non-null
+
+    statNote.mockClear()
+    statNote.mockResolvedValue(2) // an external change that we must NOT report mid-save
+    listNotes.mockResolvedValue(["start.md", "new.md"])
+
+    const result = await controller.checkDisk()
+
+    expect(result).toEqual({ listChanged: null, active: null })
+    expect(statNote).not.toHaveBeenCalled() // bailed before probing the disk
   })
 })
 

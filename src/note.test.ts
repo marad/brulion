@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { readNote, saveNote, listNotes, createNote, deleteNote } from "./note"
+import { readNote, saveNote, listNotes, createNote, deleteNote, statNote } from "./note"
 
 interface Entry {
   kind: "file" | "directory"
@@ -146,5 +146,17 @@ describe("deleteNote (AC-9)", () => {
   it("is a no-op when the note is already gone (many writers)", async () => {
     const folder = fakeFolder()
     await expect(deleteNote(folder.dir, "never.md")).resolves.toBeUndefined()
+  })
+})
+
+describe("statNote", () => {
+  it("returns an existing file's lastModified", async () => {
+    const folder = fakeFolder({ "n.md": { kind: "file", content: "x", lastModified: 42 } })
+    expect(await statNote(folder.dir, "n.md")).toBe(42)
+  })
+
+  it("returns null when the file does not exist", async () => {
+    const folder = fakeFolder()
+    expect(await statNote(folder.dir, "missing.md")).toBeNull()
   })
 })
