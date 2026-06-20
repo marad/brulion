@@ -42,19 +42,30 @@ concrete consequences for the UI and the project**. Then keep going. The user
 reviews the whole batch only once the milestone is implemented (see "Milestone
 review").
 
-**Each phase runs the same assembly line, autonomously, one phase at a time:**
+**Each phase runs the same assembly line, autonomously, one phase at a time.**
+These steps are a checklist in order, not suggestions — **MUST**, not "should".
+"I already know the design" is not a reason to skip a step; that rationalization
+is exactly what these rules exist to stop (it has cost us real bugs — a rendering
+contract bug that a tests-first pass would have caught surfaced only from a user
+report instead).
 
 1. **Spec** it with **specman** (`/spec`) — Intent + Given/When/Then ACs — before
    any code. One spec per phase (`FEAT-000N`); keep it to that phase's scope.
-2. **Implement** with **`chisel`** (small change, ~1–3 files) or **`excavate`**
-   (larger feature / new module). Load-bearing decisions stay explicit; tests
-   before bodies.
-3. **Review**: run **`/code-review --fix`** in a loop until no noteworthy
-   findings remain (it has caught real concurrency bugs and weak tests here —
-   take it seriously, and improve tests it flags).
-4. **Verify & seal**: `specman verify` then `specman seal`. Every implementation
+2. **Plan with `specman sync` BEFORE writing any code.** The sync plan is the
+   implementation guide, not paperwork generated afterward. Implement from it.
+3. **Implement by invoking the skill — always:** **`excavate`** for any **new
+   module** (top-down: module diagram → signature stubs → signature-fit review →
+   tests → bodies), **`chisel`** for a **small change** (~1–3 files, no new
+   module). Do **not** hand-write a module straight into existence. **Tests come
+   before bodies** — write the failing test first, then the implementation
+   (`excavate`/`chisel` enforce this; honor it even on the rare direct edit).
+4. **Review**: run **`/code-review --fix`** (the skill, every phase — not an
+   ad-hoc reviewer) in a loop until no noteworthy findings remain (it has caught
+   real concurrency bugs and weak tests here — take it seriously, and improve
+   tests it flags).
+5. **Verify & seal**: `specman verify` then `specman seal`. Every implementation
    commit carries a `Spec: FEAT-000N/AC-M` trailer.
-5. **Ship**: push to `main` → GitHub Actions redeploys to Pages. Tick the phase
+6. **Ship**: push to `main` → GitHub Actions redeploys to Pages. Tick the phase
    in `milestones/MX.md` only once its "**Done =**" is met.
 
 Drive this end-to-end without pausing for the user — don't seek approval
