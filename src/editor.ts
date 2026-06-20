@@ -3,6 +3,7 @@ import { keymap } from "@codemirror/view"
 import { Annotation } from "@codemirror/state"
 import { markdownRendering } from "./markdown-render"
 import { markdownCommands } from "./markdown-commands"
+import { slashCommands } from "./slash-commands"
 
 /** Clean, prose-friendly typography: proportional font, readable measure,
  * comfortable spacing, no code-like gutter. No syntax hiding — that is M2.
@@ -51,6 +52,7 @@ export function mountEditor(
       EditorView.lineWrapping, // wrap long lines at the column width — prose, not code
       markdownRendering, // hide markdown markup; render text as rich content
       markdownCommands, // Ctrl+B/I/E and heading shortcuts reshape the markdown
+      slashCommands, // "/" at line start opens a menu to reshape the line
       typography,
       keymap.of([
         {
