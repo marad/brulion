@@ -271,7 +271,7 @@ export function createNoteController(
     },
     switchTo(name) {
       return serialize(async () => {
-        if (!dir || name === activeName) return
+        if (!dir || name === activeName || conflict) return // conflict is modal
         await flushAndWait() // flush the open note before re-pointing the editor
         await activate(dir, name)
       })
@@ -279,6 +279,7 @@ export function createNoteController(
     addNote(name) {
       return serialize<AddNoteResult>(async () => {
         if (!dir) return { ok: false, reason: "Open a folder first." }
+        if (conflict) return { ok: false, reason: "Resolve the conflict first." }
         const normalized = normalizeNoteName(name)
         if (!normalized.ok) return { ok: false, reason: normalized.reason }
         const created = await createNote(dir, normalized.filename)
@@ -293,7 +294,7 @@ export function createNoteController(
     },
     removeNote(name) {
       return serialize(async () => {
-        if (!dir) return
+        if (!dir || conflict) return // conflict is modal — resolve it first
         // Drop the deleted note's unsaved edits so the flush below won't write
         // them back. Then await flushAndWait regardless: it settles any save
         // already in flight (which would otherwise complete and re-create the

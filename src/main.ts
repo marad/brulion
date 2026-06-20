@@ -1,5 +1,5 @@
 import "./styles.css"
-import { mountEditor } from "./editor"
+import { mountEditor, setEditorEditable } from "./editor"
 import { createNoteController, type NoteController } from "./note-controller"
 import { wireOpenFolder, restoreFolder, renderNoteList, wireNewNote } from "./ui"
 import { displayName } from "./note-name"
@@ -17,7 +17,7 @@ const newNoteInput = document.querySelector<HTMLInputElement>("#new-note-input")
 const openButton = document.querySelector<HTMLButtonElement>("#open-folder")
 const resumeButton = document.querySelector<HTMLButtonElement>("#resume-access")
 const statusEl = document.querySelector<HTMLParagraphElement>("#status")
-const conflictEl = document.querySelector<HTMLDivElement>("#conflict")
+const conflictBackdropEl = document.querySelector<HTMLDivElement>("#conflict-backdrop")
 const keepButton = document.querySelector<HTMLButtonElement>("#conflict-keep")
 const diskButton = document.querySelector<HTMLButtonElement>("#conflict-disk")
 if (
@@ -29,7 +29,7 @@ if (
   !openButton ||
   !resumeButton ||
   !statusEl ||
-  !conflictEl ||
+  !conflictBackdropEl ||
   !keepButton ||
   !diskButton
 ) {
@@ -45,10 +45,14 @@ const view = mountEditor(editorEl, {
 })
 controller = createNoteController(view, {
   onConflict: () => {
-    conflictEl.hidden = false // offer the keep-mine / take-theirs choice
+    // Modal: show the choice and lock the editor; navigation is blocked in the
+    // controller. The only way forward is one of the two resolution buttons.
+    conflictBackdropEl.hidden = false
+    setEditorEditable(view, false)
   },
   onConflictResolved: () => {
-    conflictEl.hidden = true
+    conflictBackdropEl.hidden = true
+    setEditorEditable(view, true)
   },
   onListChanged: (notes, active) => {
     sidebarEl.hidden = false // a folder is open — reveal the list and new-note control

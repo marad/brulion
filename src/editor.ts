@@ -1,5 +1,5 @@
 import { EditorView, keymap, highlightSpecialChars } from "@codemirror/view"
-import { Annotation } from "@codemirror/state"
+import { Annotation, Compartment, EditorState } from "@codemirror/state"
 import { history, historyKeymap, defaultKeymap } from "@codemirror/commands"
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete"
 import { markdownRendering } from "./markdown-render"
@@ -32,6 +32,10 @@ const typography = EditorView.theme({
  * mistaken for user edits (which would trigger an autosave of just-loaded text). */
 const External = Annotation.define<boolean>()
 
+/** Toggles the editor between writable and read-only (used to lock it while a
+ * conflict is being resolved — FEAT-0015). */
+const editable = new Compartment()
+
 export interface EditorOptions {
   /** Called on a user edit (the document text is read from the view on save). */
   onChange?: () => void
@@ -61,6 +65,7 @@ export function mountEditor(
       autocompletion(),
       highlightSpecialChars(),
       keymap.of([...completionKeymap, ...defaultKeymap, ...historyKeymap]),
+      editable.of([]), // writable by default; toggled by setEditorEditable
       EditorView.lineWrapping, // wrap long lines at the column width — prose, not code
       markdownRendering, // hide markdown markup; render text as rich content
       markdownCommands, // Ctrl+B/I/E and heading shortcuts reshape the markdown
@@ -92,5 +97,14 @@ export function setEditorText(view: EditorView, text: string): void {
   view.dispatch({
     changes: { from: 0, to: view.state.doc.length, insert: text },
     annotations: External.of(true),
+  })
+}
+
+/** Lock or unlock the editor for typing (locked while a conflict is unresolved). */
+export function setEditorEditable(view: EditorView, value: boolean): void {
+  view.dispatch({
+    effects: editable.reconfigure(
+      value ? [] : [EditorState.readOnly.of(true), EditorView.editable.of(false)],
+    ),
   })
 }

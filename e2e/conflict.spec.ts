@@ -62,6 +62,33 @@ test("keep my version writes the buffer over the external change", async ({ page
   expect(await readFile(page, folder, "log.md")).toBe("original mine")
 })
 
+test("the conflict is modal: the editor is locked until resolved", async ({ page }) => {
+  const folder = "e2e-conflict-modal"
+  await stubPicker(page, folder)
+  await page.goto("/brulion/")
+  await writeNote(page, folder, "log.md", "original")
+
+  await page.locator("#open-folder").click()
+  await expect(editor(page)).toHaveText("original")
+
+  await editor(page).click()
+  await page.keyboard.type(" mine")
+  await writeNote(page, folder, "log.md", "theirs from outside")
+  await expect(conflict(page)).toBeVisible()
+
+  // The editor is read-only while the conflict stands: keystrokes do nothing.
+  await page.keyboard.type("XYZ")
+  await expect(editor(page)).not.toContainText("XYZ")
+  await expect(conflict(page)).toBeVisible() // still modal
+
+  // Resolving unlocks editing again.
+  await page.locator("#conflict-keep").click()
+  await expect(conflict(page)).toBeHidden()
+  await editor(page).click()
+  await page.keyboard.type(" again")
+  await expect(editor(page)).toContainText("again")
+})
+
 test("use the version on disk discards local edits", async ({ page }) => {
   const folder = "e2e-conflict-disk"
   await stubPicker(page, folder)
