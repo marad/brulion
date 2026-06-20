@@ -7,9 +7,8 @@ import { wireFlushOnHide } from "./flush"
 const editorEl = document.querySelector<HTMLDivElement>("#editor")
 const openButton = document.querySelector<HTMLButtonElement>("#open-folder")
 const resumeButton = document.querySelector<HTMLButtonElement>("#resume-access")
-const fileList = document.querySelector<HTMLUListElement>("#file-list")
 const statusEl = document.querySelector<HTMLParagraphElement>("#status")
-if (!editorEl || !openButton || !resumeButton || !fileList || !statusEl) {
+if (!editorEl || !openButton || !resumeButton || !statusEl) {
   throw new Error("missing mount points in index.html")
 }
 
@@ -30,8 +29,8 @@ controller = createNoteController(view, {
 
 const openNote = (dir: FileSystemDirectoryHandle) => controller.open(dir)
 
-wireOpenFolder(openButton, fileList, resumeButton, openNote)
-void restoreFolder(fileList, resumeButton, openNote)
+wireOpenFolder(openButton, resumeButton, openNote)
+void restoreFolder(resumeButton, openNote)
 
 // Flush pending edits before the page can go away.
 wireFlushOnHide(() => controller.flush())

@@ -1,12 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import * as fs from "./fs"
 import * as session from "./session"
-import { renderFileList, openFolder, restoreFolder, wireOpenFolder } from "./ui"
+import { openFolder, restoreFolder, wireOpenFolder } from "./ui"
 
-vi.mock("./fs", () => ({
-  pickFolder: vi.fn(),
-  listMarkdownFiles: vi.fn(),
-}))
+vi.mock("./fs", () => ({ pickFolder: vi.fn() }))
 vi.mock("./session", () => ({
   saveFolder: vi.fn(),
   loadFolder: vi.fn(),
@@ -15,7 +12,6 @@ vi.mock("./session", () => ({
 }))
 
 const pickFolder = vi.mocked(fs.pickFolder)
-const listMarkdownFiles = vi.mocked(fs.listMarkdownFiles)
 const saveFolder = vi.mocked(session.saveFolder)
 const loadFolder = vi.mocked(session.loadFolder)
 const hasPermission = vi.mocked(session.hasPermission)
@@ -23,12 +19,8 @@ const requestAccess = vi.mocked(session.requestAccess)
 
 const HANDLE = { kind: "directory", name: "root" } as unknown as FileSystemDirectoryHandle
 
-const liTexts = (ul: HTMLUListElement) =>
-  [...ul.querySelectorAll("li")].map((li) => li.textContent)
-
-function elements() {
+function fixture() {
   return {
-    list: document.createElement("ul"),
     resume: document.createElement("button"),
     onOpen: vi.fn().mockResolvedValue(undefined),
   }
@@ -36,154 +28,122 @@ function elements() {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  listMarkdownFiles.mockResolvedValue([])
-})
-
-describe("renderFileList", () => {
-  it("renders one li per name", () => {
-    const ul = document.createElement("ul")
-    renderFileList(ul, ["a.md", "b.md"])
-    expect(liTexts(ul)).toEqual(["a.md", "b.md"])
-  })
-
-  it("clears a previously rendered list when given an empty array", () => {
-    const ul = document.createElement("ul")
-    renderFileList(ul, ["old.md"])
-    renderFileList(ul, [])
-    expect(liTexts(ul)).toEqual([])
-  })
 })
 
 describe("openFolder", () => {
-  it("persists and lists the picked folder, hiding the resume button (AC-1)", async () => {
-    const { list, resume, onOpen } = elements()
+  it("opens and persists the picked folder, hiding the resume button (AC-1)", async () => {
+    const { resume, onOpen } = fixture()
     resume.hidden = false
     pickFolder.mockResolvedValue(HANDLE)
-    listMarkdownFiles.mockResolvedValue(["x.md", "y.md"])
 
-    await openFolder(list, resume, onOpen)
+    await openFolder(resume, onOpen)
 
-    expect(saveFolder).toHaveBeenCalledWith(HANDLE)
     expect(onOpen).toHaveBeenCalledWith(HANDLE)
+    expect(saveFolder).toHaveBeenCalledWith(HANDLE)
     expect(resume.hidden).toBe(true)
-    expect(liTexts(list)).toEqual(["x.md", "y.md"])
   })
 
-  it("leaves an existing list unchanged when the picker is dismissed", async () => {
-    const { list, resume, onOpen } = elements()
-    renderFileList(list, ["keep.md"])
+  it("is a no-op when the picker is dismissed (AC-4)", async () => {
+    const { resume, onOpen } = fixture()
     pickFolder.mockResolvedValue(null)
 
-    await openFolder(list, resume, onOpen)
+    await openFolder(resume, onOpen)
 
-    expect(liTexts(list)).toEqual(["keep.md"])
-    expect(saveFolder).not.toHaveBeenCalled()
     expect(onOpen).not.toHaveBeenCalled()
+    expect(saveFolder).not.toHaveBeenCalled()
   })
 
-  it("does not throw, preserves the list, and does not persist when listing fails", async () => {
-    const { list, resume, onOpen } = elements()
+  it("does not throw and does not persist when opening fails", async () => {
+    const { resume, onOpen } = fixture()
     resume.hidden = false
-    renderFileList(list, ["keep.md"])
     pickFolder.mockResolvedValue(HANDLE)
-    listMarkdownFiles.mockRejectedValue(new Error("io failure"))
+    onOpen.mockRejectedValue(new Error("read failure"))
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 
-    await expect(openFolder(list, resume, onOpen)).resolves.toBeUndefined()
+    await expect(openFolder(resume, onOpen)).resolves.toBeUndefined()
 
-    expect(liTexts(list)).toEqual(["keep.md"])
-    expect(onOpen).not.toHaveBeenCalled() // never reached the open step
-    expect(saveFolder).not.toHaveBeenCalled() // an unreadable handle is not persisted
-    expect(resume.hidden).toBe(true) // a fresh pick supersedes the resume flow
+    expect(saveFolder).not.toHaveBeenCalled() // an unusable handle is not persisted
     expect(errorSpy).toHaveBeenCalled()
     errorSpy.mockRestore()
   })
 })
 
 describe("restoreFolder", () => {
-  it("does nothing when no folder is persisted (AC-4)", async () => {
-    const { list, resume, onOpen } = elements()
-    resume.hidden = true // initial state from index.html
+  it("does nothing when no folder is persisted", async () => {
+    const { resume, onOpen } = fixture()
+    resume.hidden = true
     loadFolder.mockResolvedValue(undefined)
 
-    await restoreFolder(list, resume, onOpen)
+    await restoreFolder(resume, onOpen)
 
-    expect(resume.hidden).toBe(true) // not revealed
-    expect(liTexts(list)).toEqual([])
-    expect(hasPermission).not.toHaveBeenCalled()
+    expect(resume.hidden).toBe(true)
     expect(onOpen).not.toHaveBeenCalled()
+    expect(hasPermission).not.toHaveBeenCalled()
   })
 
-  it("lists files with zero clicks when permission is still granted (AC-2)", async () => {
-    const { list, resume, onOpen } = elements()
+  it("opens with zero clicks when permission is still granted", async () => {
+    const { resume, onOpen } = fixture()
     resume.hidden = true
     loadFolder.mockResolvedValue(HANDLE)
     hasPermission.mockResolvedValue(true)
-    listMarkdownFiles.mockResolvedValue(["note.md"])
 
-    await restoreFolder(list, resume, onOpen)
+    await restoreFolder(resume, onOpen)
 
-    expect(liTexts(list)).toEqual(["note.md"])
-    expect(listMarkdownFiles).toHaveBeenCalledWith(HANDLE)
     expect(onOpen).toHaveBeenCalledWith(HANDLE)
     expect(resume.hidden).toBe(true)
     expect(requestAccess).not.toHaveBeenCalled()
   })
 
-  it("shows the resume button when permission must be re-granted (AC-3)", async () => {
-    const { list, resume, onOpen } = elements()
+  it("reveals the resume button when permission must be re-granted", async () => {
+    const { resume, onOpen } = fixture()
     resume.hidden = true
     loadFolder.mockResolvedValue(HANDLE)
     hasPermission.mockResolvedValue(false)
 
-    await restoreFolder(list, resume, onOpen)
+    await restoreFolder(resume, onOpen)
 
     expect(resume.hidden).toBe(false)
-    expect(liTexts(list)).toEqual([])
+    expect(onOpen).not.toHaveBeenCalled()
   })
 
-  it("restores access on a resume click that is granted (AC-3)", async () => {
-    const { list, resume, onOpen } = elements()
-    resume.hidden = true // initial state from index.html
+  it("opens on a resume click that is granted", async () => {
+    const { resume, onOpen } = fixture()
+    resume.hidden = true
     loadFolder.mockResolvedValue(HANDLE)
     hasPermission.mockResolvedValue(false)
     requestAccess.mockResolvedValue(true)
-    listMarkdownFiles.mockResolvedValue(["note.md"])
 
-    await restoreFolder(list, resume, onOpen)
-    expect(resume.hidden).toBe(false) // restoreFolder revealed the button
+    await restoreFolder(resume, onOpen)
+    expect(resume.hidden).toBe(false) // restoreFolder revealed it
 
     resume.click()
-    await vi.waitFor(() => expect(liTexts(list)).toEqual(["note.md"]))
+    await vi.waitFor(() => expect(onOpen).toHaveBeenCalledWith(HANDLE))
 
     expect(resume.hidden).toBe(true)
-    expect(onOpen).toHaveBeenCalledWith(HANDLE)
   })
 
-  it("keeps the resume button when a resume click is declined (AC-3)", async () => {
-    const { list, resume, onOpen } = elements()
+  it("keeps the resume button when a resume click is declined", async () => {
+    const { resume, onOpen } = fixture()
     loadFolder.mockResolvedValue(HANDLE)
     hasPermission.mockResolvedValue(false)
     requestAccess.mockResolvedValue(false)
 
-    await restoreFolder(list, resume, onOpen)
+    await restoreFolder(resume, onOpen)
     resume.click()
     await vi.waitFor(() => expect(requestAccess).toHaveBeenCalled())
 
     expect(resume.hidden).toBe(false)
-    expect(liTexts(list)).toEqual([]) // nothing rendered
-    expect(listMarkdownFiles).not.toHaveBeenCalled() // declined => never lists
     expect(onOpen).not.toHaveBeenCalled()
   })
 })
 
 describe("wireOpenFolder", () => {
-  it("calls pickFolder on click, never on load", async () => {
-    const { list, resume, onOpen } = elements()
+  it("calls pickFolder on click, never on load (AC-1)", async () => {
+    const { resume, onOpen } = fixture()
     const button = document.createElement("button")
     pickFolder.mockResolvedValue(null)
 
-    wireOpenFolder(button, list, resume, onOpen)
+    wireOpenFolder(button, resume, onOpen)
     expect(pickFolder).not.toHaveBeenCalled()
 
     button.click()

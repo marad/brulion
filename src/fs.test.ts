@@ -1,38 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { pickFolder, listMarkdownFiles } from "./fs"
-
-type FakeEntry = { kind: "file" | "directory"; name: string }
-
-function fakeDir(entries: FakeEntry[]): FileSystemDirectoryHandle {
-  return {
-    async *values() {
-      for (const entry of entries) yield entry
-    },
-  } as unknown as FileSystemDirectoryHandle
-}
-
-describe("listMarkdownFiles", () => {
-  it("keeps only .md file entries, sorted, ignoring case and sub-directories", async () => {
-    const dir = fakeDir([
-      { kind: "file", name: "zebra.md" },
-      { kind: "file", name: "notes.txt" },
-      { kind: "file", name: "Alpha.MD" },
-      { kind: "directory", name: "archive.md" },
-      { kind: "file", name: "beta.md" },
-    ])
-
-    expect(await listMarkdownFiles(dir)).toEqual(["Alpha.MD", "beta.md", "zebra.md"])
-  })
-
-  it("returns an empty list for a folder with no markdown", async () => {
-    const dir = fakeDir([
-      { kind: "file", name: "a.txt" },
-      { kind: "directory", name: "sub" },
-    ])
-
-    expect(await listMarkdownFiles(dir)).toEqual([])
-  })
-})
+import { pickFolder } from "./fs"
 
 describe("pickFolder", () => {
   afterEach(() => {
