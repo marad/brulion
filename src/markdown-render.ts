@@ -4,6 +4,7 @@ import {
   EditorView,
   ViewPlugin,
   type ViewUpdate,
+  WidgetType,
 } from "@codemirror/view"
 import {
   type EditorState,
@@ -44,12 +45,28 @@ export interface SyntaxRanges {
   marks: MarkRange[]
 }
 
+/** An unordered-list marker run to replace with a fixed-width bullet widget. */
+export interface BulletMark {
+  /** Start of the marker run (the `*`/`-`). */
+  from: number
+  /** End of the run, past the single trailing space (the whole `* `/`- ` run). */
+  to: number
+  /** The marker character that was typed — selects the glyph (`•` vs `–`). */
+  marker: "*" | "-"
+}
+
 /** Block-construct ranges (fenced code, blockquote, list) — fed to a StateField. */
 export interface BlockRanges {
-  /** Markup runs to hide (`>`, list markers, the fence text on each fence line). */
+  /** Markup runs to hide (`>`, the fence text on each fence line). */
   hidden: HiddenRange[]
-  /** Whole lines to decorate as blocks (code block, blockquote, list item). */
+  /** Whole lines to decorate as blocks (code block, blockquote). */
   lines: LineMark[]
+  /**
+   * List-marker runs to replace with a bullet widget. Replacing the run (rather
+   * than hiding it and drawing a `::before` glyph over the emptied line) keeps the
+   * caret and the glyph in sync as the marker is typed — FEAT-0019.
+   */
+  bullets: BulletMark[]
 }
 
 /** Container node name → class applied to its whole range. */
@@ -144,6 +161,7 @@ export function blockSyntaxRanges(
 ): BlockRanges {
   const hidden: HiddenRange[] = []
   const lines: LineMark[] = []
+  const bullets: BulletMark[] = []
   const doc = state.doc
 
   syntaxTree(state).iterate({
@@ -207,19 +225,48 @@ export function blockSyntaxRanges(
         let mark = node.node.firstChild
         while (mark && mark.name !== "ListMark") mark = mark.nextSibling
         if (!mark) return
-        const hasSpace = doc.sliceString(mark.to, mark.to + 1) === " "
-        hidden.push({ from: mark.from, to: hasSpace ? mark.to + 1 : mark.to })
-        // Distinct glyph per marker so `*` and `-` read differently when mixed.
-        const cls = doc.sliceString(mark.from, mark.to) === "*" ? "cm-list-disc" : "cm-list-dash"
-        lines.push({ from: doc.lineAt(mark.from).from, cls })
+        // Only render once a trailing space completes the marker — a bare `*`/`-`
+        // stays a literal visible char (the bare-`#` heading rule, FEAT-0019 AC-2);
+        // that's also when there's nothing drawn over the marker to disagree with
+        // the caret as it's typed.
+        if (doc.sliceString(mark.to, mark.to + 1) !== " ") return
+        // Replace the whole `* `/`- ` run with a bullet widget (not hide-plus-
+        // `::before`) so caret and glyph stay in sync — FEAT-0019.
+        const marker = doc.sliceString(mark.from, mark.to) === "*" ? "*" : "-"
+        bullets.push({ from: mark.from, to: mark.to + 1, marker })
       }
     },
   })
 
-  return { hidden, lines }
+  return { hidden, lines, bullets }
 }
 
 const hideMark = Decoration.replace({})
+
+/**
+ * Draws a list bullet in place of the `*`/`- ` marker run it replaces. A
+ * fixed-width inline-block so the content always starts at the same x and the
+ * caret (which maps around the replaced range) lines up with the glyph — the
+ * FEAT-0019 fix for the marker/caret drift. `*` renders as a filled disc, `-` as
+ * an en-dash, so mixed markdown still reads distinctly.
+ */
+class BulletWidget extends WidgetType {
+  constructor(readonly marker: "*" | "-") {
+    super()
+  }
+
+  eq(other: BulletWidget) {
+    return other.marker === this.marker
+  }
+
+  toDOM() {
+    const span = document.createElement("span")
+    span.className =
+      this.marker === "*" ? "cm-bullet cm-bullet-disc" : "cm-bullet cm-bullet-dash"
+    span.textContent = this.marker === "*" ? "•" : "–"
+    return span
+  }
+}
 
 /** Build the display decorations and the (separate) atomic hidden set for a view. */
 function buildDecorations(view: EditorView): {
@@ -301,12 +348,22 @@ function buildBlockDecorations(state: EditorState): {
   all: DecorationSet
   hidden: DecorationSet
 } {
-  const { hidden: hides, lines } = blockSyntaxRanges(state)
+  const { hidden: hides, lines, bullets } = blockSyntaxRanges(state)
   const all: Range<Decoration>[] = []
   const hidden: Range<Decoration>[] = []
   for (const l of lines) all.push(Decoration.line({ class: l.cls }).range(l.from))
   for (const h of hides) {
     const r = hideMark.range(h.from, h.to)
+    all.push(r)
+    hidden.push(r)
+  }
+  // Replace each list marker with its bullet widget, and make the run atomic so
+  // the caret steps over it onto the item text (FEAT-0016 AC-7 / FEAT-0019).
+  for (const b of bullets) {
+    const r = Decoration.replace({ widget: new BulletWidget(b.marker) }).range(
+      b.from,
+      b.to,
+    )
     all.push(r)
     hidden.push(r)
   }
@@ -376,11 +433,16 @@ const renderTheme = EditorView.baseTheme({
     color: "rgba(0,0,0,0.65)",
     fontStyle: "italic",
   },
-  // The `*`/`-` marker is hidden; draw a glyph in its place, flush with the text's
-  // left edge (no negative indent that would overhang into the left margin). `*`
-  // and `-` get distinct glyphs so mixed markdown reads unambiguously.
-  ".cm-list-disc::before": { content: '"•  "', opacity: "0.6" },
-  ".cm-list-dash::before": { content: '"–  "', opacity: "0.6" },
+  // The `*`/`- ` marker run is replaced by this widget (FEAT-0019). A fixed-width
+  // inline-block sized to the marker keeps the content's left edge stable and the
+  // caret aligned with the glyph; flush with the text's left edge (no negative
+  // indent overhang). `*` and `-` get distinct glyphs so mixed markdown reads
+  // unambiguously.
+  ".cm-bullet": {
+    display: "inline-block",
+    width: "1.4em",
+    opacity: "0.6",
+  },
 })
 
 /**

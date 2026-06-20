@@ -175,24 +175,20 @@ test("hides the blockquote marker and styles the quote (AC-2)", async ({ page })
 test("hides a `*` bullet and renders a disc glyph (AC-4)", async ({ page }) => {
   await type(page, "* a list item")
 
-  // The literal `*` is gone; a disc is drawn by CSS ::before (not in innerText).
-  expect(await renderedText(page)).not.toContain("*")
+  // The literal `*` is gone; the disc lives in a widget that replaces the marker
+  // run (FEAT-0019), so it IS in the rendered text — the `*` marker is not.
   await expect(editor(page)).toContainText("a list item")
-  const disc = await page
-    .locator(".cm-list-disc")
-    .first()
-    .evaluate((el) => getComputedStyle(el, "::before").content)
+  const disc = await page.locator(".cm-bullet-disc").first().textContent()
   expect(disc).toContain("•")
+  // No literal asterisk marker leaks (the disc glyph is what shows instead).
+  expect(await renderedText(page)).not.toContain("*")
 })
 
 test("a `-` bullet renders a distinct dash glyph (AC-4)", async ({ page }) => {
   await type(page, "- a dash item")
 
   await expect(editor(page)).toContainText("a dash item")
-  const dash = await page
-    .locator(".cm-list-dash")
-    .first()
-    .evaluate((el) => getComputedStyle(el, "::before").content)
+  const dash = await page.locator(".cm-bullet-dash").first().textContent()
   expect(dash).toContain("–")
   expect(dash).not.toContain("•") // distinct glyph from the `*` disc
 })

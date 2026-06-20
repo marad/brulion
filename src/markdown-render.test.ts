@@ -27,6 +27,10 @@ const lineMarks = (doc: string) =>
     return [doc.slice(l.from, nl === -1 ? doc.length : nl), l.cls] as const
   })
 
+/** Bullet-marker replacements, as `[replaced run, marker]` pairs (FEAT-0019). */
+const bulletMarks = (doc: string) =>
+  blocks(doc).bullets.map((b) => [doc.slice(b.from, b.to), b.marker] as const)
+
 describe("markdownSyntaxRanges", () => {
   it("hides the heading marker plus its trailing space, styles the text", () => {
     // The styled span is the heading TEXT only — never the hidden markers, or
@@ -124,7 +128,7 @@ describe("blockSyntaxRanges", () => {
   it("leaves an unclosed code block fully visible (don't vanish mid-typing)", () => {
     // Only one fence so far — styling/hiding it would make the ``` the user just
     // typed disappear, same anti-pattern as a bare heading marker (AC-8 spirit).
-    expect(blocks("```js\ncode")).toEqual({ hidden: [], lines: [] })
+    expect(blocks("```js\ncode")).toEqual({ hidden: [], lines: [], bullets: [] })
   })
 
   it("hides the blockquote marker and styles the line as a quote (AC-2)", () => {
@@ -166,26 +170,45 @@ describe("blockSyntaxRanges", () => {
     expect(blockHiddenText("> a > b")).toEqual(["> "])
   })
 
-  it("hides the bullet marker and emits distinct lines for * and - (AC-4)", () => {
-    expect(blockHiddenText("* item")).toEqual(["* "])
-    expect(lineMarks("* item")).toEqual([["* item", "cm-list-disc"]])
-    // `-` gets a different glyph class so mixed markdown reads distinctly.
-    expect(blockHiddenText("- item")).toEqual(["- "])
-    expect(lineMarks("- item")).toEqual([["- item", "cm-list-dash"]])
+  it("replaces the bullet marker with a widget run, not a hide+line (FEAT-0019 AC-1)", () => {
+    // The whole `* `/`- ` run is replaced by a bullet widget — no separate hide
+    // and no `cm-list-*` line decoration drawn over an emptied line.
+    expect(bulletMarks("* item")).toEqual([["* ", "*"]])
+    expect(blockHiddenText("* item")).toEqual([])
+    expect(lineMarks("* item")).toEqual([])
+    expect(bulletMarks("- item")).toEqual([["- ", "-"]])
+    expect(blockHiddenText("- item")).toEqual([])
+    expect(lineMarks("- item")).toEqual([])
   })
 
-  it("hides the marker on each item of a multi-item list (AC-4)", () => {
+  it("keeps a bare bullet marker visible until a space completes it (FEAT-0019 AC-2)", () => {
+    // No trailing space yet: nothing replaced, nothing hidden — the `*`/`-` stays
+    // a literal char (the bare-`#` heading rule), so the caret has nothing to
+    // disagree with while the marker is being typed.
+    expect(blocks("*")).toEqual({ hidden: [], lines: [], bullets: [] })
+    expect(blocks("-")).toEqual({ hidden: [], lines: [], bullets: [] })
+  })
+
+  it("replaces the marker on each item of a multi-item list (FEAT-0019 AC-1)", () => {
     const doc = "* one\n* two"
-    expect(blockHiddenText(doc)).toEqual(["* ", "* "])
-    expect(lineMarks(doc)).toEqual([
-      ["* one", "cm-list-disc"],
-      ["* two", "cm-list-disc"],
+    expect(bulletMarks(doc)).toEqual([
+      ["* ", "*"],
+      ["* ", "*"],
+    ])
+    expect(blockHiddenText(doc)).toEqual([])
+  })
+
+  it("renders distinct markers for * and - (FEAT-0019 AC-3)", () => {
+    const doc = "* disc\n- dash"
+    expect(bulletMarks(doc)).toEqual([
+      ["* ", "*"],
+      ["- ", "-"],
     ])
   })
 
   it("leaves ordered lists and plain prose untouched (out of scope, AC-8)", () => {
-    expect(blocks("1. item")).toEqual({ hidden: [], lines: [] })
-    expect(blocks("just some words")).toEqual({ hidden: [], lines: [] })
+    expect(blocks("1. item")).toEqual({ hidden: [], lines: [], bullets: [] })
+    expect(blocks("just some words")).toEqual({ hidden: [], lines: [], bullets: [] })
   })
 
   it("composes with inline rendering: a quote marker hides, inner bold still renders", () => {
