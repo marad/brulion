@@ -300,3 +300,64 @@ back to `start` / the first note if it's gone). (Rejected: switch without
 flushing and rely on the debounce — loses the last <600 ms of edits on every
 switch; track active note in the URL — premature, and workspaces/URL state are a
 later concern.)
+
+## Block constructs render through a StateField, not the inline ViewPlugin (M5)
+FEAT-0016 renders fenced code, blockquotes, and unordered lists with their markup
+hidden. The inline renderer (FEAT-0006) is a viewport-scoped `ViewPlugin`, but the
+block constructs could not all live there: collapsing a fenced-code *fence line*
+means replacing a line break, and CodeMirror forbids a ViewPlugin from providing
+decorations that change the document's vertical layout (line-break-replacing or
+block decorations) — they must come from a `StateField`, computed before layout.
+A first attempt to do it from the plugin silently dropped the decorations and even
+broke typing once a block closed. So block rendering lives in a new whole-doc
+`blockRenderingField` (`blockSyntaxRanges`), while inline markup stays in the
+viewport plugin. Consequence: two rendering layers in `markdown-render.ts` — a
+viewport plugin for inline/heading marks (the frequent, perf-sensitive case) and a
+state field for the three block constructs (rare, small, so a whole-doc scan is
+cheap and the field can legally collapse lines). Both are pure-read; bytes are
+untouched. (Rejected: one viewport plugin for everything — illegal for line
+collapsing; converting all rendering to a whole-doc field — would drop the
+viewport-scoping FEAT-0006 keeps for responsiveness on long notes.)
+
+## A code block's body is a span mark, not a line decoration (M5)
+Collapsing a fenced block's opening fence line eats the newline after it, which
+*merges* the first body line into the (now empty) fence line — so a `Decoration.line`
+anchored at the body line's start is no longer at a visual line start and silently
+fails to attach. The code body is therefore styled with a `Decoration.mark` (a span
+over the body text) rather than a line decoration. Blockquotes and list items keep
+line decorations, because hiding their `>`/`*` markers never crosses a line break,
+so their line starts are unaffected. Consequence: the code block reads as monospace
+with a subtle background behind the text (not a full-width line band); the quote
+gets a left border and the list a CSS `::before` bullet via line decorations.
+
+## Unclosed fenced blocks stay fully visible (M5)
+A fenced block is only collapsed once it has *both* fences. While the user is still
+typing the opening ```` ``` ````, nothing is hidden — mirroring the FEAT-0006 rule
+that a bare `#` stays visible until a space completes the heading. Consequence:
+the ```` ``` ```` you are typing never vanishes into a blank line before you've
+closed the block; the collapse happens the moment the closing fence is typed.
+
+## Clear Formatting strips all rendered markup, but not ordered lists or fences (M5)
+FEAT-0017 makes "Clear formatting" / `/clear` remove every inline mark
+(bold/italic/inline code) and block prefix (heading, blockquote, unordered-list
+marker) the editor renders — not just the heading level it used to reset. Stripping
+is driven by the parsed syntax tree (the marker nodes), never a character scan, so
+nested marks fully unwrap and a `*` inside `**` is unambiguous. Two things are
+deliberately left intact: **ordered-list numbers** (`1.`, not part of the FEAT-0016
+rendered set) and **fenced-code fences** (removing them would reflow multi-line code
+into prose — a destructive structural change, not a formatting reset). Both menu and
+slash route through one transform (`clearFormatting`/`clearFormattingRanges`).
+`/clear` strips the line *after* removing its own token (parsing the de-tokened line
+in isolation), so typing `/clear` before a block marker can't hide that marker from
+the parser. Consequence: the escape hatch the UI advertises now actually returns any
+styled line to plain text; code blocks and numbered lists survive a clear.
+
+## Enter continues a blockquote/list prefix — pre-existing, left as-is (M5)
+While verifying FEAT-0016 we confirmed that pressing Enter inside a blockquote or a
+bullet list carries the `>`/`*` prefix onto the next line (e.g. `> a` + Enter →
+`> ` on the new line). This is the markdown language's indentation behavior
+(`insertNewlineAndIndent` over the `markdown()` grammar), present since M1's editor,
+not introduced by the block rendering. It is reasonable quick-capture UX (continue
+the construct), so it is left in place; it only complicated a naive multi-construct
+e2e test, which was rewritten to not fight it. Noted here so it isn't re-investigated
+as a rendering bug. (No change made.)
