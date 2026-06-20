@@ -1,6 +1,7 @@
 import { EditorView, basicSetup } from "codemirror"
 import { keymap } from "@codemirror/view"
 import { Annotation } from "@codemirror/state"
+import { markdownRendering } from "./markdown-render"
 
 /** Clean, prose-friendly typography: proportional font, readable measure,
  * comfortable spacing, no code-like gutter. No syntax hiding — that is M2.
@@ -47,6 +48,7 @@ export function mountEditor(
     extensions: [
       basicSetup,
       EditorView.lineWrapping, // wrap long lines at the column width — prose, not code
+      markdownRendering, // hide markdown markup; render text as rich content
       typography,
       keymap.of([
         {
