@@ -1,5 +1,6 @@
 import { pickFolder } from "./fs"
 import { saveFolder, loadFolder, hasPermission, requestAccess } from "./session"
+import { displayName } from "./note-name"
 
 /** Called once folder access is in hand (fresh pick or restored). */
 export type OpenHandler = (dir: FileSystemDirectoryHandle) => Promise<void>
@@ -92,7 +93,7 @@ export function renderNoteList(
     const nameButton = document.createElement("button")
     nameButton.type = "button"
     nameButton.className = "note-name"
-    nameButton.textContent = name.replace(/\.md$/i, "")
+    nameButton.textContent = displayName(name)
     nameButton.addEventListener("click", () => handlers.onSelect(name))
 
     const deleteButton = document.createElement("button")

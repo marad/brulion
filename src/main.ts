@@ -2,6 +2,7 @@ import "./styles.css"
 import { mountEditor } from "./editor"
 import { createNoteController, type NoteController } from "./note-controller"
 import { wireOpenFolder, restoreFolder, renderNoteList, wireNewNote } from "./ui"
+import { displayName } from "./note-name"
 import { wireFlushOnHide } from "./flush"
 
 const editorEl = document.querySelector<HTMLDivElement>("#editor")
@@ -43,8 +44,9 @@ controller = createNoteController(view, {
     renderNoteList(listEl, notes, active, {
       onSelect: (name) => void controller.switchTo(name),
       onDelete: (name) => {
-        const display = name.replace(/\.md$/i, "")
-        if (window.confirm(`Delete "${display}"? This removes the file from your folder.`)) {
+        if (
+          window.confirm(`Delete "${displayName(name)}"? This removes the file from your folder.`)
+        ) {
           void controller.removeNote(name)
         }
       },

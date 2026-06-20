@@ -397,6 +397,39 @@ describe("removeNote (FEAT-0012)", () => {
     // The deleted note must not be written back by a flush.
     expect(saveNote).not.toHaveBeenCalledWith(DIR, "a.md", expect.anything(), expect.anything())
   })
+
+  it("waits for an in-flight save to settle before deleting (no resurrection)", async () => {
+    const order: string[] = []
+    let release: () => void = () => {}
+    saveNote.mockImplementation(async (_dir, name) => {
+      order.push(`save-start:${name}`)
+      await new Promise<void>((resolve) => (release = resolve))
+      order.push(`save-end:${name}`)
+      return { status: "saved", lastModified: 9 }
+    })
+    deleteNote.mockImplementation(async (_dir, name) => {
+      order.push(`delete:${name}`)
+    })
+    const view = mountView()
+    listNotes.mockResolvedValueOnce(["a.md", "b.md"]).mockResolvedValue(["b.md"])
+    loadActiveNote.mockResolvedValue("a.md")
+    readNote.mockImplementation(async (_dir, name) => ({ content: `${name} body`, lastModified: 1 }))
+    const controller = createNoteController(view, { debounceMs: 5 })
+    await controller.open(DIR)
+
+    type(view, " edit")
+    controller.handleChange()
+    await vi.waitFor(() => expect(order).toContain("save-start:a.md")) // autosave in flight
+
+    const removed = controller.removeNote("a.md") // must not delete until the save settles
+    await Promise.resolve()
+    expect(order).not.toContain("delete:a.md") // still waiting on the in-flight write
+
+    release()
+    await removed
+    // The in-flight write of a.md completes BEFORE the delete, so the file ends deleted.
+    expect(order.indexOf("save-end:a.md")).toBeLessThan(order.indexOf("delete:a.md"))
+  })
 })
 
 describe("conflict (AC-5 of FEAT-0004 preserved)", () => {

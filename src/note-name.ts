@@ -39,3 +39,10 @@ export function normalizeNoteName(input: string): NormalizeResult {
   if (!base) return { ok: false, reason: "Name cannot be empty." }
   return { ok: true, filename: `${base}.md` }
 }
+
+/** The user-facing label for a note filename: the name without its `.md`
+ * extension (the file on disk keeps it). One definition so the list, the
+ * delete prompt, and any other surface always show the same thing. */
+export function displayName(filename: string): string {
+  return filename.replace(/\.md$/i, "")
+}

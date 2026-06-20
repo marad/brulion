@@ -174,12 +174,14 @@ export function createNoteController(
     removeNote(name) {
       return serialize(async () => {
         if (!dir) return
-        if (name === activeName) {
-          autosave.cancel() // dropping a deleted note's edits — don't resurrect it
-          dirty = false
-        } else {
-          await flushAndWait() // deleting another note: flush the open one first
-        }
+        // Drop the deleted note's unsaved edits so the flush below won't write
+        // them back. Then await flushAndWait regardless: it settles any save
+        // already in flight (which would otherwise complete and re-create the
+        // file after we delete it) before we remove it — `doSave` runs on its
+        // own mutex outside this queue, so cancelling alone can't stop a write
+        // already mid-flight.
+        if (name === activeName) dirty = false
+        await flushAndWait()
         await deleteNote(dir, name)
         notes = await listNotes(dir)
         if (name === activeName) {
