@@ -3,6 +3,9 @@ import { setEditorText } from "./editor"
 import { readNote, saveNote } from "./note"
 import { debounce } from "./debounce"
 
+// FEAT-0011 wires the active note; until then the controller stays on `start.md`.
+const NOTE_NAME = "start.md"
+
 export interface NoteControllerOptions {
   /** Called when a save is refused because the file changed on disk. */
   onConflict?: () => void
@@ -45,7 +48,7 @@ export function createNoteController(
     try {
       while (dirty && !conflict) {
         dirty = false // claim the current edits before the await
-        const result = await saveNote(dir, view.state.doc.toString(), lastModified)
+        const result = await saveNote(dir, NOTE_NAME, view.state.doc.toString(), lastModified)
         if (result.status === "conflict") {
           conflict = true // stop saving so we never clobber the on-disk change
           opts.onConflict?.()
@@ -65,7 +68,7 @@ export function createNoteController(
       dir = folder
       dirty = false
       conflict = false
-      const note = await readNote(folder)
+      const note = await readNote(folder, NOTE_NAME)
       lastModified = note.lastModified
       setEditorText(view, note.content)
     },

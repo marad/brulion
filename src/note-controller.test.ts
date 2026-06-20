@@ -45,7 +45,7 @@ describe("autosave", () => {
     type(view, "hi")
     controller.handleChange()
 
-    await vi.waitFor(() => expect(saveNote).toHaveBeenCalledWith(DIR, "hi", 42))
+    await vi.waitFor(() => expect(saveNote).toHaveBeenCalledWith(DIR, "start.md", "hi", 42))
   })
 
   it("does not save when there are no pending changes", async () => {
@@ -95,7 +95,7 @@ describe("concurrency", () => {
     expect(maxInFlight).toBe(1) // the second save started only after the first ended
 
     resolvers[1]()
-    expect(saveNote).toHaveBeenLastCalledWith(DIR, "first second", 1)
+    expect(saveNote).toHaveBeenLastCalledWith(DIR, "start.md", "first second", 1)
   })
 })
 
