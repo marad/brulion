@@ -187,3 +187,46 @@ reshapes the remaining line, so surrounding text is preserved — fixing an earl
 bug where accepting could wipe the row. (Rejected: trigger on every `/` — would
 fire inside URLs and `and/or`; keep line-start-only — the original too-narrow
 behavior the user rejected.)
+
+## UI framework: still none for M3 (vanilla TypeScript) — decision settled
+The M1 entry deferred the framework choice to M3, "when UI state actually starts
+to hurt". It doesn't yet. M3's entire UI state is a list of note names plus which
+one is active — a flat array and one selected key, re-rendered on three discrete
+events (open folder, create, delete) and a click. That's a dozen lines of
+imperative DOM, not a reactivity problem; a runtime (Preact/Solid/Svelte) would
+add a dependency, a build wrinkle, and a second mental model next to the
+CodeMirror-owned editor for no real ergonomic win. The lean ethos says take the
+simplest thing that holds. So M3 stays plain TypeScript owning the DOM. The
+escape hatch is unchanged: the editor is framework-agnostic, so introducing a
+runtime later (if note state grows tabs/search/drag-reorder) stays cheap and
+local. (Rejected: adopt Preact now — premature for list+active-key state;
+the cost lands before the benefit.)
+
+## A note is a `.md` file in the folder root; the filename is the name (M3)
+Multiple notes are just the folder's `*.md` files — no index file, no metadata
+sidecar, no database. The folder listing is the single source of truth, which is
+the moat: the user's notes stay portable plain files that any other tool reads
+and writes identically, and Brulion claims no ownership over them. Consequences:
+listing a folder = enumerating `*.md` (sorted case-insensitively); the note's
+**name is its filename**, shown in the UI without the `.md` extension for a
+cleaner read while the file on disk keeps it; creating/deleting a note is exactly
+creating/deleting a file; notes live in the **root** only (no nesting in M3 —
+lean). The seed note stays `start` (`start.md`), created on first capture per the
+existing FEAT-0004 decision. (Rejected: a `.brulion/index.json` or frontmatter
+registry — faster listing and free ordering/metadata, but it's a second source of
+truth that drifts from the files and dirties the folder with app-private state,
+breaking the "files are the interface" moat.)
+
+## Switching notes flushes the open note first (M3)
+When the user picks another note, the controller flushes the currently open
+note's pending edits **before** loading the new one, reusing the same guarded
+`save()` as autosave/blur/Ctrl+S. Switching is just another moment the open
+buffer might have unsaved keystrokes, so it funnels through the one save path
+rather than inventing a second. Consequence: clicking away from a note you were
+typing in never drops the tail of your typing, and the no-silent-clobber guard
+still applies to that final write. The active note is persisted in IndexedDB
+(`brulion:active`) so a reload returns to the note you were last editing (falling
+back to `start` / the first note if it's gone). (Rejected: switch without
+flushing and rely on the debounce — loses the last <600 ms of edits on every
+switch; track active note in the URL — premature, and workspaces/URL state are a
+later concern.)
