@@ -398,3 +398,57 @@ really an M6 "editor comfort" item pulled forward because it bit during the M5 r
 (Rejected: `nonTightLists:false` alone — fixes lists but not quotes; binding at
 Prec.highest to beat the language keymap — fragile precedence juggling vs. just turning
 the language keymap off.)
+
+## Bullet rendered as a replace-widget, not hide-plus-`::before` (M6 → FEAT-0019)
+The M5 bullet rendering hid the `*`/`- ` marker run (atomic, zero-width) and drew the
+glyph with a line `::before`. Because the `::before` glyph (`•  ` with trailing
+spaces) and the hidden run have different widths, the caret and the bullet drifted
+apart *while the marker was being typed* — typing a bare `*` showed the caret one
+space in while the document was still just `*`, so the next char landed before the
+`*`, which popped back to the line start. Fix: render the bullet as a
+`Decoration.replace({ widget })` over the whole `* `/`- ` run (a fixed-width
+inline-block `.cm-bullet`), and only once a trailing space completes the marker
+(the same bare-`#` rule headings already use). The widget occupies the marker's
+document range, so the caret maps around it and stays in sync with the glyph; a bare
+marker stays a literal visible char. Consequence: the `.cm-list-disc/-dash::before`
+glyphs are gone, replaced by a `BulletWidget` (disc for `*`, en-dash for `-`); the
+on-disk bytes are still untouched (display-only). The marker run is kept atomic, so
+the FEAT-0016 AC-7 "caret steps over the marker" behavior is preserved.
+
+## Sidebar collapse: idb-keyval + a CSS class orthogonal to `[hidden]`, Ctrl+\ (M6 → FEAT-0020)
+Three choices for the collapsible note list:
+- **Persist via the existing `idb-keyval` layer** (`brulion:sidebar-collapsed`), not
+  a new `localStorage` path. The sidebar is revealed only *after* the async
+  folder-restore, so there is no first-paint flash that a synchronous read would
+  avoid — keeping one persistence mechanism (folder handle, active note, and now
+  this) is leaner than introducing a second store.
+- **Collapse is a CSS class on `.workspace` (`sidebar-collapsed`), separate from the
+  `#sidebar[hidden]` attribute** that already encodes folder-open. The two are
+  orthogonal: toggling never touches `hidden`, and a collapsed sidebar stays hidden
+  by CSS even after a folder opens. Consequence: opening a folder no longer forces
+  the list back into view if the user collapsed it.
+- **The toggle lives in the header (not in the sidebar) and Ctrl+\ drives it.** It
+  must stay reachable when the sidebar is gone, so it can't live inside it. Ctrl+\
+  has no CodeMirror/editor binding, so a window keydown listener catches it after it
+  bubbles past the editor — no clash with the format/slash/Enter shortcuts.
+
+## Vim mode: a precedence-first compartment, eagerly loaded, behind an opt-in toggle (M6 → FEAT-0021)
+Opt-in Vim (`@replit/codemirror-vim`), off by default, persisted in `idb-keyval`
+(`brulion:vim`). Key decisions:
+- **Wired through a CodeMirror compartment placed FIRST in the extensions array.**
+  First = highest precedence, so the Vim plugin's keydown handler runs before our
+  keymaps. The library binds Enter, Ctrl+B/E/I only in *normal* context, so in insert
+  mode they fall through to our slash/format/markdown-Enter commands unchanged, while
+  in normal mode Vim owns them (the point of opting in). Verified by e2e in a real
+  browser, not just by reasoning. With Vim off the compartment holds `[]`, so the
+  config is byte-identical to before — no Vim artifacts for the default user.
+- **Eagerly imported, not lazy-loaded.** The library adds ~140 kB to the bundle even
+  though most users never enable Vim. A dynamic `import()` would shave that off the
+  common path but makes `setVimMode` async and the toggle more complex. For a static
+  site (cached after first load) and the weekend-scale lean ethos, the simpler
+  synchronous eager import wins; bundle size is not the moat. Revisit if startup cost
+  ever bites.
+- **The two-state toggle mechanics were generalized.** FEAT-0020's `wireSidebarToggle`
+  became a shared `wireToggle(button, { initialOn, apply, onChange })` used by both
+  the sidebar and Vim toggles, so the aria-pressed + persist-on-flip logic isn't
+  duplicated. Pure refactor — FEAT-0020 behavior and its tests are unchanged.
