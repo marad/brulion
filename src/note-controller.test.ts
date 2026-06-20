@@ -718,6 +718,35 @@ describe("refreshFromDisk (FEAT-0014)", () => {
     expect(view.state.doc.toString()).toBe("body local") // buffer preserved
   })
 
+  it("abandons the silent reload if the user types during the read (AC-4 race)", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, { debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    statNote.mockResolvedValue(2) // external change detected by the probe
+    // Hold the reload's read open so we can type mid-reload.
+    let resolveRead: (v: { content: string; lastModified: number | null }) => void = () => {}
+    readNote.mockClear()
+    readNote.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRead = resolve
+      }),
+    )
+
+    const refreshing = controller.refreshFromDisk()
+    await vi.waitFor(() => expect(readNote).toHaveBeenCalledTimes(1)) // reached the read
+    type(view, " typed") // user starts editing during the reload window
+    controller.handleChange()
+    resolveRead({ content: "new body", lastModified: 2 })
+    await refreshing
+
+    expect(view.state.doc.toString()).toBe("body typed") // keystroke preserved, no clobber
+  })
+
   it("switches to another note when the open note is deleted externally (AC-5)", async () => {
     const view = mountView()
     const onListChanged = vi.fn()

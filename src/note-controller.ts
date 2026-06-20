@@ -96,6 +96,14 @@ export interface NoteController {
    * reload, no state mutation); a no-op with no folder open.
    */
   checkDisk(): Promise<DiskCheck>
+  /**
+   * Reflect the disk for the non-conflicting cases: refresh the list, and (only
+   * when there are no unsaved local edits) reload the open note's external edit
+   * or switch off it if it was deleted. A no-op with no folder open or while a
+   * save is in flight. Collisions with unsaved edits are left to the conflict
+   * handling (FEAT-0015).
+   */
+  refreshFromDisk(): Promise<void>
 }
 
 /**
@@ -190,6 +198,27 @@ export function createNoteController(
     opts.onListChanged?.(notes, name)
   }
 
+  // Probe the disk and classify it against the controller's current view. No
+  // state is adopted — detection only. Callers run this inside a serialize slot
+  // so `notes`/`activeName`/`lastModified` stay stable across its awaits.
+  const probeDisk = async (folder: FileSystemDirectoryHandle): Promise<DiskCheck> => {
+    const diskNotes = await listNotes(folder)
+    const diskActiveLastModified = await statNote(folder, activeName)
+    return classifyDiskCheck({
+      knownNotes: notes,
+      diskNotes,
+      knownLastModified: lastModified,
+      diskActiveLastModified,
+      dirty,
+    })
+  }
+
+  // Whether a refresh may replace the editor buffer right now: only when there
+  // are no unsaved local edits, no standing conflict, and no save in flight.
+  // Checked live (not from a snapshot) right before mutating, since these can
+  // change across the awaits inside refreshFromDisk.
+  const safeToReplaceBuffer = (): boolean => !dirty && !conflict && !savePromise
+
   // Serialize folder/active-note changes so two fast clicks (open, or switching
   // between rows) can't interleave their loads and leave the editor content,
   // the highlighted row, and `lastModified` pointing at different notes.
@@ -266,26 +295,56 @@ export function createNoteController(
     checkDisk() {
       return serialize<DiskCheck>(async () => {
         const folder = dir
-        if (!folder) return { listChanged: null, active: null }
-        // Skip while our own save is in flight: doSave runs on its own mutex
-        // outside this queue, so mid-save the file's mtime has moved but our
-        // `lastModified` hasn't caught up yet — checking now would report our
-        // own write as an external change. The next poll (or a manual check)
-        // sees a settled, consistent state.
-        if (savePromise) return { listChanged: null, active: null }
-        // Probe the disk; classify against the controller's current view. No
-        // state is adopted here (that would disarm the save-time conflict
-        // guard) — detection only. The serialize queue keeps activeName/notes
-        // stable across these awaits.
-        const diskNotes = await listNotes(folder)
-        const diskActiveLastModified = await statNote(folder, activeName)
-        return classifyDiskCheck({
-          knownNotes: notes,
-          diskNotes,
-          knownLastModified: lastModified,
-          diskActiveLastModified,
-          dirty,
-        })
+        // Skip with no folder, or while our own save is in flight: doSave runs
+        // on its own mutex outside this queue, so mid-save the file's mtime has
+        // moved but our `lastModified` hasn't caught up — checking now would
+        // report our own write as an external change. The next poll sees a
+        // settled, consistent state.
+        if (!folder || savePromise) return { listChanged: null, active: null }
+        return probeDisk(folder)
+      })
+    },
+    refreshFromDisk() {
+      return serialize(async () => {
+        const folder = dir
+        if (!folder || savePromise) return // same skip rationale as checkDisk
+        const check = await probeDisk(folder)
+
+        // Adopt an external list change first, so a follow-on switch (below)
+        // picks the next note from the up-to-date listing.
+        if (check.listChanged) notes = check.listChanged
+
+        // Act on the open note only in the non-conflicting case: no unsaved
+        // local edits and no standing conflict. A collision with unsaved edits
+        // is left untouched (handled by FEAT-0015 / the save-time guard).
+        const active = check.active
+        if (active && !active.dirty && !conflict) {
+          if (active.kind === "deleted") {
+            // The open note vanished — switch off it. Re-check live state first:
+            // `active.dirty` is a snapshot from before probeDisk's awaits, during
+            // which the user may have typed or a save may have begun (doSave runs
+            // off this queue). If so, defer to FEAT-0015 / the save-time guard.
+            if (safeToReplaceBuffer()) {
+              // `activate` loads, persists the active note, and announces with
+              // the already-updated list.
+              await activate(folder, pickActiveNote(notes, null))
+              return
+            }
+          } else {
+            // Changed on disk: catch the buffer up and adopt the new mtime so
+            // the next save bases off the absorbed version. Re-check live state
+            // after the read for the same reason as above — never clobber a
+            // keystroke typed during the reload window.
+            const note = await readNote(folder, activeName)
+            if (safeToReplaceBuffer()) {
+              lastModified = note.lastModified
+              setEditorText(view, note.content)
+              dirty = false
+            }
+          }
+        }
+
+        if (check.listChanged) opts.onListChanged?.(notes, activeName)
       })
     },
   }

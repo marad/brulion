@@ -4,6 +4,10 @@ import { createNoteController, type NoteController } from "./note-controller"
 import { wireOpenFolder, restoreFolder, renderNoteList, wireNewNote } from "./ui"
 import { displayName } from "./note-name"
 import { wireFlushOnHide } from "./flush"
+import { createPoller } from "./watch"
+
+/** How often to poll the folder for changes made by other tools (FEAT-0014). */
+const POLL_MS = 2000
 
 const editorEl = document.querySelector<HTMLDivElement>("#editor")
 const sidebarEl = document.querySelector<HTMLElement>("#sidebar")
@@ -71,7 +75,14 @@ wireNewNote(newNoteForm, newNoteInput, (name) => {
   })
 })
 
-const openNote = (dir: FileSystemDirectoryHandle) => controller.open(dir)
+// One poll loop, started once a folder is open; `start()` is idempotent, so
+// re-picking a folder doesn't double-arm it — the single loop follows whichever
+// folder the controller currently holds.
+const poller = createPoller(() => controller.refreshFromDisk(), POLL_MS)
+const openNote = async (dir: FileSystemDirectoryHandle) => {
+  await controller.open(dir)
+  poller.start()
+}
 
 wireOpenFolder(openButton, resumeButton, openNote)
 void restoreFolder(resumeButton, openNote)
