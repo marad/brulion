@@ -80,8 +80,8 @@ export function createNoteController(
           lastModified = result.lastModified
           // A first save can materialize a note that wasn't listed yet (the
           // lazy seed). Surface it in the list.
-          if (dir && !notes.includes(activeName)) {
-            notes = await listNotes(dir)
+          if (!notes.includes(activeName)) {
+            notes = await listNotes(dir!)
             opts.onListChanged?.(notes, activeName)
           }
         }
@@ -103,29 +103,46 @@ export function createNoteController(
   // Point the editor at `name`: load its content and reset the save state.
   const load = async (folder: FileSystemDirectoryHandle, name: string): Promise<void> => {
     activeName = name
-    dirty = false
     conflict = false
     const note = await readNote(folder, name)
     lastModified = note.lastModified
     setEditorText(view, note.content)
+    dirty = false // discard any stray edit typed on the old content during the read
+  }
+
+  // Serialize folder/active-note changes so two fast clicks (open, or switching
+  // between rows) can't interleave their loads and leave the editor content,
+  // the highlighted row, and `lastModified` pointing at different notes.
+  let queue: Promise<unknown> = Promise.resolve()
+  const serialize = <T>(op: () => Promise<T>): Promise<T> => {
+    const run = queue.then(op, op)
+    queue = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    return run
   }
 
   return {
-    async open(folder) {
-      if (dir) await flushAndWait() // re-picking a folder: don't lose the open note
-      dir = folder
-      notes = await listNotes(folder)
-      const active = pickActiveNote(notes, await loadActiveNote())
-      await load(folder, active)
-      await saveActiveNote(active)
-      opts.onListChanged?.(notes, active)
+    open(folder) {
+      return serialize(async () => {
+        if (dir) await flushAndWait() // re-picking a folder: don't lose the open note
+        dir = folder
+        notes = await listNotes(folder)
+        const active = pickActiveNote(notes, await loadActiveNote())
+        await load(folder, active)
+        await saveActiveNote(active)
+        opts.onListChanged?.(notes, active)
+      })
     },
-    async switchTo(name) {
-      if (!dir || name === activeName) return
-      await flushAndWait() // flush the open note before re-pointing the editor
-      await load(dir, name)
-      await saveActiveNote(name)
-      opts.onListChanged?.(notes, name)
+    switchTo(name) {
+      return serialize(async () => {
+        if (!dir || name === activeName) return
+        await flushAndWait() // flush the open note before re-pointing the editor
+        await load(dir, name)
+        await saveActiveNote(name)
+        opts.onListChanged?.(notes, name)
+      })
     },
     handleChange() {
       if (conflict) return

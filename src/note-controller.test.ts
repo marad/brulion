@@ -187,6 +187,31 @@ describe("switchTo", () => {
     await vi.waitFor(() => expect(saveNote).toHaveBeenCalledWith(DIR, "b.md", "B body more", 2))
   })
 
+  it("serializes overlapping switches so content and active note stay in sync", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["a.md", "b.md", "c.md"])
+    loadActiveNote.mockResolvedValue("a.md")
+    // b.md reads slowly, c.md fast: without serialization the slow b could land last.
+    readNote.mockImplementation(async (_dir, name) => {
+      if (name === "b.md") {
+        await new Promise((r) => setTimeout(r, 30))
+        return { content: "B body", lastModified: 2 }
+      }
+      if (name === "c.md") return { content: "C body", lastModified: 3 }
+      return { content: "A body", lastModified: 1 }
+    })
+    const onListChanged = vi.fn()
+    const controller = createNoteController(view, { onListChanged, debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    const first = controller.switchTo("b.md")
+    const second = controller.switchTo("c.md")
+    await Promise.all([first, second])
+
+    expect(view.state.doc.toString()).toBe("C body") // last switch wins, not the slow one
+    expect(onListChanged).toHaveBeenLastCalledWith(["a.md", "b.md", "c.md"], "c.md")
+  })
+
   it("is a no-op when switching to the already-active note", async () => {
     const { controller } = twoNoteController()
     await controller.open(DIR)
