@@ -34,6 +34,14 @@ path (this is why CodeMirror won over Tiptap; see `DECISIONS.md`).
 Work descends through four levels: **milestone → phase → spec → implementation**.
 A **milestone** (`ROADMAP.md`) is split into **phases** (`milestones/MX.md`).
 
+**Operating pattern: build first with `/goal`, review after with `/elicit`.**
+Kick a milestone off with **`/goal`** (e.g. *"implement MX"*) and build the
+**whole** milestone — every phase, end-to-end, autonomously — without stopping
+between phases. Only once it's implemented and deployed, run the **milestone
+review with `/elicit`** to talk through the recorded decisions and apply any
+corrections. Don't invert this (no per-decision questions mid-build); the review
+is the single, batched, live checkpoint at the end.
+
 **Decisions are made autonomously, reviewed at the end.** Don't stop to ask the
 user about a milestone's open decisions up front. Make the call yourself — pick
 the option that best serves the **file-fidelity moat** and the **lean ethos** —
