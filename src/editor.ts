@@ -2,8 +2,9 @@ import { EditorView, keymap, highlightSpecialChars } from "@codemirror/view"
 import { Annotation, Compartment, EditorState } from "@codemirror/state"
 import { history, historyKeymap, defaultKeymap } from "@codemirror/commands"
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete"
+import { deleteMarkupBackward } from "@codemirror/lang-markdown"
 import { markdownRendering } from "./markdown-render"
-import { markdownCommands } from "./markdown-commands"
+import { markdownCommands, continueOrExitMarkup } from "./markdown-commands"
 import { slashCommands } from "./slash-commands"
 import { contextMenu } from "./context-menu"
 
@@ -64,7 +65,20 @@ export function mountEditor(
       history(),
       autocompletion(),
       highlightSpecialChars(),
-      keymap.of([...completionKeymap, ...defaultKeymap, ...historyKeymap]),
+      keymap.of([
+        ...completionKeymap,
+        // Markdown-aware Enter (FEAT-0018): continue a list/blockquote, and on an
+        // empty item remove the marker to exit. After completionKeymap so the
+        // slash menu still accepts on Enter; before defaultKeymap, to which it
+        // falls through on a plain line (the command returns false there).
+        { key: "Enter", run: continueOrExitMarkup },
+        // Backspace at the start of a list/quote marker removes the marker — the
+        // counterpart the language keymap used to provide (now off, see
+        // markdownRendering). Falls through to the default delete otherwise.
+        { key: "Backspace", run: deleteMarkupBackward },
+        ...defaultKeymap,
+        ...historyKeymap,
+      ]),
       editable.of([]), // writable by default; toggled by setEditorEditable
       EditorView.lineWrapping, // wrap long lines at the column width — prose, not code
       markdownRendering, // hide markdown markup; render text as rich content

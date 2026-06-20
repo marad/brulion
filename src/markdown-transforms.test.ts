@@ -16,6 +16,7 @@ import {
   setHeading,
   setHeadingLines,
   clearFormatting,
+  isEmptyMarkerLine,
 } from "./markdown-transforms"
 
 /** Build a state with a selection, marked `|` for caret or `[`…`]` for a range. */
@@ -277,5 +278,19 @@ describe("clearFormatting", () => {
   it("does not clear the next line when a selection ends at its start", () => {
     // Selection covers "# a\n" and stops at the start of "## b": only "a" clears.
     expect(clear("[# a\n]## b")).toBe("a\n## b")
+  })
+})
+
+describe("isEmptyMarkerLine", () => {
+  it("is true for a line that is only a list/quote marker (+ whitespace)", () => {
+    for (const t of ["* ", "- ", "+ ", "> ", ">", "1. ", "2) ", "  * ", "> > "]) {
+      expect(isEmptyMarkerLine(t)).toBe(true)
+    }
+  })
+
+  it("is false when the marker carries content, or there is no marker", () => {
+    for (const t of ["* a", "> a", "1. x", "plain", "   ", "", "a > b"]) {
+      expect(isEmptyMarkerLine(t)).toBe(false)
+    }
   })
 })

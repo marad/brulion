@@ -290,3 +290,13 @@ export function clearFormatting(state: EditorState): TransactionSpec | null {
   if (!ranges.length) return null
   return { changes: ranges.map((r) => ({ from: r.from, to: r.to })) }
 }
+
+/**
+ * True when `lineText` is an *empty* list or blockquote line: nothing but the
+ * marker(s) (`>`, `*`/`-`/`+`, `1.`/`1)`) and whitespace, no content. Used by the
+ * markdown-aware Enter (FEAT-0018) to decide between continuing the construct and
+ * exiting it — pressing Enter on such a line removes the marker.
+ */
+export function isEmptyMarkerLine(lineText: string): boolean {
+  return /\S/.test(lineText) && /^[\s>]*(?:[-*+]|\d+[.)])?\s*$/.test(lineText)
+}

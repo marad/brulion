@@ -389,7 +389,10 @@ const renderTheme = EditorView.baseTheme({
  * content, on every line including the caret line.
  */
 export const markdownRendering: Extension = [
-  markdown(),
+  // `addKeymap: false`: don't let the language install its own Prec.high Enter/
+  // Backspace bindings — Enter is owned by our markdown-aware command (FEAT-0018,
+  // wired in editor.ts), and a Prec.high library binding would shadow it.
+  markdown({ addKeymap: false }),
   renderPlugin,
   blockRenderingField,
   renderTheme,

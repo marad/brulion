@@ -30,8 +30,10 @@ Enter is bound to the markdown package's continuation command
 - continues an unordered list (`*`/`-`), an ordered list (`1.`), and a blockquote
   (`>`): the new line starts with the same marker, ready to type;
 - on an **empty** item or quote line (the marker with no content after it),
-  removes that marker instead of continuing — exiting the construct and leaving a
-  plain line. For a nested construct this exits one level at a time.
+  removes the marker(s) instead of continuing — exiting the construct and leaving
+  a plain line. The whole empty marker line is cleared, so a nested empty item
+  exits all its levels at once (uniform across lists and blockquotes; the library
+  command alone would need two Enters to leave a quote, which we avoid).
 - on a plain (non-list, non-quote) line, falls through to the normal newline
   behavior — Enter there is unchanged.
 
