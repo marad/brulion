@@ -69,44 +69,55 @@ interface" and "External edits & conflict handling".
 - Moat-relevant (silent clobber = data loss), so a candidate to pull earlier
   than this slot if it starts biting.
 
+### M5 — Finish the editor (rendering gaps)
+**Goal:** pay down the debt on the heart of the product. M2 promised to hide
+markdown markup, but several constructs still show raw markers — reported from
+real use. This is not a new feature; it's M2's promise kept. Likely
+`markdown-render.ts` decorations plus `markdown-transforms.ts` for clear-format.
+
+In:
+- **Fenced / multi-line code blocks** (```` ``` ````) render as a code block,
+  not raw fences.
+- **Blockquotes** (`> …`) render as quoted content, not a literal `>`.
+- **Unordered lists** (`*`, `-`) render as list items, not a literal marker.
+- **Clear Formatting strips inline code** (`` `…` ``) too — and audit whether it
+  misses other inline/block marks while fixing.
+
+### M6 — Editor comfort
+**Goal:** make daily writing nicer. Two independent, lean additions living in the
+CodeMirror layer, neither of which touches the file format.
+- **Collapsible note list** — hide/show the left sidebar for a distraction-free,
+  editor-only view; remember the state.
+- **Vim mode** — opt-in Vim keybinding layer (`@replit/codemirror-vim`); must not
+  fight the slash/format commands.
+
+### M7 — Conflict diff/preview
+**Goal:** make the M4 conflict choice an informed one. When the conflict modal
+(FEAT-0015) appears, show *what* changed — your version vs the on-disk version —
+so "use the version on disk" isn't blind. A diff view and the UI to show both sides.
+
+### M8 — Links & subfolders
+**Goal:** stop treating the folder as a flat list. Grouped because both are the
+same domain — paths, not just names.
+- **Links between notes** — parsing, path resolution, navigation, missing-target
+  handling (a `papier` gap and a differentiator).
+- **Subfolders** — nested folder support: recursive listing, a tree UI in the
+  sidebar, name/path handling, and how create/delete and the M4 poller behave
+  across nesting.
+
+### M9 — PWA
+**Goal:** make Brulion installable and offline-capable. Installable window/icon,
+`beforeinstallprompt`, offline via service worker.
+
 ## Later / backlog (out of MVP, on purpose)
 
-- **Conflict diff/preview** — when the conflict dialog (M4 / FEAT-0015) appears,
-  show *what* changed (your version vs the on-disk version) so "use the version
-  on disk" isn't a blind choice. M4 ships the lean two-way pick with no diff;
-  this is the follow-up the user asked for. Separate work: a diff view and the
-  UI to present both sides.
-- **Subfolders in the notes folder** — let the folder be nested instead of flat
-  (M3 deliberately kept notes root-only). Needs recursive listing, a tree UI in
-  the sidebar, name/path handling, and a think about how create/delete and the
-  M4 poller behave across nesting.
-- **Collapsible note list** — let the user hide/show the left sidebar (the note
-  list) to get a distraction-free, editor-only view; remember the state.
-- **Vim mode** — a Vim keybinding layer for the editor (CodeMirror has
-  `@replit/codemirror-vim`); opt-in, must not fight the slash/format commands.
-- **Links** between notes (a `papier` gap and a differentiator, but separate
-  work: parsing, path resolution, navigation, missing-target handling).
-- **PWA** — installable window/icon, `beforeinstallprompt`, offline via service
-  worker.
+Everything concrete is now scheduled in M5–M9 above. What remains here is
+deliberately unscheduled — needs product-market-fit or a real demand signal first.
+
 - **Workspaces** — `?ws=diablo`, multiple folder handles per origin in IndexedDB.
 - **Sync (paid)** — BYO-cloud (Dropbox/Drive/OneDrive) via OAuth PKCE,
   client-side, no data hosted by us. License validation via merchant-of-record
   (Lemon Squeezy / Paddle). Not before product-market-fit.
-
-## Known rendering gaps (M2 hidden-syntax, to fix)
-
-The M2 editor hides/styles inline marks (bold, italic, inline code) and headings,
-but several markdown constructs aren't rendered as rich content yet — they show
-their raw markers. Reported from real use; each is a candidate fix (likely
-`markdown-render.ts` decorations and, for clear-formatting, `markdown-transforms.ts`).
-
-- **Clear Formatting skips inline code** — "clear to paragraph" doesn't strip a
-  code span (text between `` ` ``). Audit whether it also misses other inline/block
-  marks while fixing.
-- **Fenced / multi-line code blocks** (```` ``` ````) don't render correctly.
-- **Blockquotes** (`> quoted text`) don't render — the `>` shows literally.
-- **Unordered lists** (`*` and `-` bullets) don't render — the marker shows
-  literally instead of a list item.
 
 ## Open decisions
 
