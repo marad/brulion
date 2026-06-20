@@ -197,18 +197,30 @@ export const setHeading =
     changeHeading(state, () => level)
 
 /**
+ * The first..last line numbers the range `[from, to)` covers. A selection ending
+ * exactly at a line start doesn't really include that line (it stops at the
+ * newline before it), so it's excluded — don't touch the unselected next line.
+ */
+function selectedLineRange(
+  state: EditorState,
+  from: number,
+  to: number,
+): { first: number; last: number } {
+  const first = state.doc.lineAt(from).number
+  const lastLineObj = state.doc.lineAt(to)
+  const last =
+    to > from && lastLineObj.from === to ? lastLineObj.number - 1 : lastLineObj.number
+  return { first, last: Math.max(last, first) }
+}
+
+/**
  * Set every line touched by the selection to heading `level` (0 = plain
  * paragraph). For the right-click menu, where a selection may span many lines.
  * Returns `null` when no line actually changes.
  */
 export function setHeadingLines(state: EditorState, level: number): TransactionSpec | null {
   const { from, to } = state.selection.main
-  const firstLine = state.doc.lineAt(from).number
-  const lastLineObj = state.doc.lineAt(to)
-  // A selection ending exactly at a line start doesn't really include that line
-  // (it stops at the newline before it) — don't format the unselected next line.
-  const lastLine =
-    to > from && lastLineObj.from === to ? lastLineObj.number - 1 : lastLineObj.number
+  const { first: firstLine, last: lastLine } = selectedLineRange(state, from, to)
   const changes: { from: number; to: number; insert: string }[] = []
   for (let n = firstLine; n <= lastLine; n++) {
     const line = state.doc.line(n)
@@ -218,4 +230,63 @@ export function setHeadingLines(state: EditorState, level: number): TransactionS
     }
   }
   return changes.length ? { changes } : null
+}
+
+/**
+ * The marker-character ranges to delete to clear all formatting on every line
+ * that `[from, to)` touches: inline marks (bold/italic/inline code) and block
+ * prefixes (heading `#`, blockquote `>`, unordered-list `*`/`-`, each with its
+ * trailing space). Driven by the parsed structure — not a character scan — so
+ * nested marks fully unwrap and a `*` inside `**` is unambiguous. Ordered-list
+ * numbers and fenced-code fences are deliberately left intact (see FEAT-0017).
+ * Ranges come out in ascending, non-overlapping document order. Exported so the
+ * slash command can merge them with its token removal in one transaction.
+ */
+export function clearFormattingRanges(
+  state: EditorState,
+  from: number,
+  to: number,
+): { from: number; to: number }[] {
+  const doc = state.doc
+  const { first, last } = selectedLineRange(state, from, to)
+  const start = doc.line(first).from
+  const end = doc.line(last).to
+
+  // A block-prefix marker swallows the single space after it, when present.
+  const withTrailingSpace = (mFrom: number, mTo: number) => ({
+    from: mFrom,
+    to: doc.sliceString(mTo, mTo + 1) === " " ? mTo + 1 : mTo,
+  })
+
+  const ranges: { from: number; to: number }[] = []
+  syntaxTree(state).iterate({
+    from: start,
+    to: end,
+    enter(node) {
+      const n = node.name
+      if (n === "EmphasisMark") {
+        ranges.push({ from: node.from, to: node.to })
+      } else if (n === "CodeMark" && node.node.parent?.name === "InlineCode") {
+        ranges.push({ from: node.from, to: node.to })
+      } else if (n === "HeaderMark" || n === "QuoteMark") {
+        ranges.push(withTrailingSpace(node.from, node.to))
+      } else if (n === "ListMark" && node.node.parent?.parent?.name === "BulletList") {
+        ranges.push(withTrailingSpace(node.from, node.to))
+      }
+    },
+  })
+  return ranges
+}
+
+/**
+ * Clear all formatting on the lines the main selection touches: unwrap inline
+ * marks and strip block prefixes, leaving plain paragraph text. Returns `null`
+ * when nothing would change (no marker found), so a no-op clear issues no
+ * transaction — the same contract as the heading transforms.
+ */
+export function clearFormatting(state: EditorState): TransactionSpec | null {
+  const { from, to } = state.selection.main
+  const ranges = clearFormattingRanges(state, from, to)
+  if (!ranges.length) return null
+  return { changes: ranges.map((r) => ({ from: r.from, to: r.to })) }
 }

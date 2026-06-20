@@ -103,6 +103,20 @@ test("Clear formatting strips headings across the selection (AC-4)", async ({
   await expect.poll(() => readStartMd(page)).toBe("one\ntwo")
 })
 
+test("Clear formatting unwraps inline marks too, not just headings (AC-1/AC-9)", async ({
+  page,
+}) => {
+  // The M5 gap: the menu used to clear only headings. It must now strip inline
+  // marks as well — matching what /clear does (AC-9, the single shared transform).
+  await page.keyboard.type("a **b** and *i* and `c`")
+  await page.keyboard.press("Control+a")
+  await openMenu(page)
+  await item(page, "Clear formatting").click()
+
+  await page.keyboard.press("Control+s")
+  await expect.poll(() => readStartMd(page)).toBe("a b and i and c")
+})
+
 test("Esc dismisses the menu without changing the document (AC-5)", async ({
   page,
 }) => {

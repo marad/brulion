@@ -15,6 +15,7 @@ import {
   demoteHeading,
   setHeading,
   setHeadingLines,
+  clearFormatting,
 } from "./markdown-transforms"
 
 /** Build a state with a selection, marked `|` for caret or `[`…`]` for a range. */
@@ -216,5 +217,65 @@ describe("setHeadingLines (multi-line, for the right-click menu)", () => {
   it("handles a single-line selection", () => {
     const s = stateOf("[solo]")
     expect(apply(s, setHeadingLines(s, 3)).doc.toString()).toBe("### solo")
+  })
+})
+
+const clear = (marked: string) => {
+  const s = stateOf(marked)
+  return applied(s, clearFormatting(s)).doc
+}
+
+describe("clearFormatting", () => {
+  it("unwraps inline marks to plain text (AC-1)", () => {
+    expect(clear("[a **bold** and *italic* and `code`]")).toBe(
+      "a bold and italic and code",
+    )
+    // underscore variants too
+    expect(clear("[a __b__ and _i_]")).toBe("a b and i")
+  })
+
+  it("strips a heading prefix (AC-2)", () => {
+    expect(clear("|## Title")).toBe("Title")
+    expect(clear("|###### deep")).toBe("deep")
+  })
+
+  it("strips a blockquote marker (AC-3)", () => {
+    expect(clear("|> quoted")).toBe("quoted")
+  })
+
+  it("strips an unordered-list marker (AC-4)", () => {
+    expect(clear("|* item")).toBe("item")
+    expect(clear("|- item")).toBe("item")
+  })
+
+  it("strips block prefix and inline marks together on the caret line", () => {
+    expect(clear("|## A **bold** title")).toBe("A bold title")
+    expect(clear("|> a *quote*")).toBe("a quote")
+  })
+
+  it("clears every line a multi-line selection touches (AC-5)", () => {
+    expect(clear("[# Heading\n**bold** here\n> quote]")).toBe(
+      "Heading\nbold here\nquote",
+    )
+  })
+
+  it("unwraps nested inline marks completely (AC-6)", () => {
+    expect(clear("|**_x_**")).toBe("x")
+  })
+
+  it("is a no-op on an unformatted line (AC-7)", () => {
+    const s = stateOf("|just text")
+    expect(clearFormatting(s)).toBeNull()
+  })
+
+  it("leaves ordered-list numbers and fenced-code fences intact (AC-10)", () => {
+    expect(clearFormatting(stateOf("|1. item"))).toBeNull()
+    // A fenced block: fences (and the body) are out of scope, so no change.
+    expect(clearFormatting(stateOf("|```js\ncode\n```"))).toBeNull()
+  })
+
+  it("does not clear the next line when a selection ends at its start", () => {
+    // Selection covers "# a\n" and stops at the start of "## b": only "a" clears.
+    expect(clear("[# a\n]## b")).toBe("a\n## b")
   })
 })

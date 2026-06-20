@@ -1,6 +1,13 @@
 import { EditorView, ViewPlugin } from "@codemirror/view"
 import { type Extension, type EditorState, type TransactionSpec } from "@codemirror/state"
-import { BOLD, ITALIC, CODE, toggleInline, setHeadingLines } from "./markdown-transforms"
+import {
+  BOLD,
+  ITALIC,
+  CODE,
+  toggleInline,
+  setHeadingLines,
+  clearFormatting,
+} from "./markdown-transforms"
 
 /**
  * Right-click formatting popup. Replaces the native context menu inside the
@@ -22,7 +29,7 @@ const ITEMS: MenuItem[] = [
   { label: "Heading 1", run: (s) => setHeadingLines(s, 1) },
   { label: "Heading 2", run: (s) => setHeadingLines(s, 2) },
   { label: "Heading 3", run: (s) => setHeadingLines(s, 3) },
-  { label: "Clear formatting", run: (s) => setHeadingLines(s, 0) },
+  { label: "Clear formatting", run: (s) => clearFormatting(s) },
 ]
 
 /** The single open menu and the teardown that removes it + its listeners. */

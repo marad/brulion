@@ -89,6 +89,20 @@ test("/clear strips the heading back to a paragraph (AC-4)", async ({ page }) =>
   await expect.poll(() => readStartMd(page)).toBe("Heading")
 })
 
+test("/clear strips inline marks and a block prefix, removing its token (AC-8)", async ({
+  page,
+}) => {
+  // A quoted line with bold; clearing it should drop the `>`, the `**`, and the
+  // `/clear` token itself, leaving plain text.
+  await page.keyboard.type("> a **bold** word ")
+  await page.keyboard.type("/clear")
+  await expect(menu(page)).toBeVisible()
+  await accept(page, "/clear")
+
+  await page.keyboard.press("Control+s")
+  await expect.poll(() => readStartMd(page)).toBe("a bold word ")
+})
+
 test("Esc dismisses the menu and leaves the typed text (AC-5)", async ({
   page,
 }) => {
