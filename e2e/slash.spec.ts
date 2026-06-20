@@ -101,10 +101,26 @@ test("Esc dismisses the menu and leaves the typed text (AC-5)", async ({
   await expect.poll(() => readStartMd(page)).toBe("/h") // text stays, no reshape
 })
 
-test("a slash mid-line does not open the menu (AC-6)", async ({ page }) => {
-  await page.keyboard.type("see ")
-  await page.keyboard.type("/")
+test("a slash after a space opens the menu; inside a word/URL it does not (AC-6)", async ({
+  page,
+}) => {
+  // Inside a word: no menu.
+  await page.keyboard.type("and/")
   await expect(menu(page)).toBeHidden()
+
+  // After a space: the menu opens.
+  await page.keyboard.press("End")
+  await page.keyboard.type(" /h")
+  await expect(menu(page)).toBeVisible()
+})
+
+test("accepting a command preserves the rest of the line (AC-7)", async ({
+  page,
+}) => {
+  await page.keyboard.type("note /h2")
+  await expect(menu(page)).toBeVisible()
+  await accept(page, "/h2")
+
   await page.keyboard.press("Control+s")
-  await expect.poll(() => readStartMd(page)).toBe("see /")
+  await expect.poll(() => readStartMd(page)).toBe("## note ") // 'note' not wiped
 })

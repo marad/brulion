@@ -70,26 +70,33 @@ export function markdownSyntaxRanges(
     to,
     enter(node) {
       const cls = CONTAINER_CLASS[node.name]
-      if (cls && node.to > node.from) {
-        marks.push({ from: node.from, to: node.to, cls })
+      if (!cls) return // only container nodes carry styling; marks come via them
+
+      // Collect this node's own markup-mark children (the `#`/`*`/`` ` `` runs).
+      const markChildren = []
+      for (let c = node.node.firstChild; c; c = c.nextSibling) {
+        if (MARK_NODES.has(c.name)) markChildren.push(c)
+      }
+      if (!markChildren.length) return
+
+      if (node.name.startsWith("ATXHeading")) {
+        // One leading HeaderMark. Hide the `#` run plus its trailing space, and
+        // style only the heading text — never the markers, so the styled span
+        // contains no hidden runs (which would offset the drawn selection).
+        const mark = markChildren[0]
+        let hideEnd = mark.to
+        if (doc.sliceString(hideEnd, hideEnd + 1) === " ") hideEnd += 1
+        hidden.push({ from: mark.from, to: hideEnd })
+        if (node.to > hideEnd) marks.push({ from: hideEnd, to: node.to, cls })
         return
       }
-      if (!MARK_NODES.has(node.name)) return
 
-      if (node.name === "HeaderMark") {
-        // HeaderMark also occurs in Setext headings (the `===`/`---` underline),
-        // which this phase doesn't style. Hiding only the ATX `#` run keeps
-        // setext markup fully visible rather than hidden-but-unstyled.
-        if (!node.node.parent?.name.startsWith("ATXHeading")) return
-        let end = node.to
-        // The `#`s own only themselves; hide the single space after them too so
-        // the heading text starts flush.
-        if (doc.sliceString(end, end + 1) === " ") end += 1
-        hidden.push({ from: node.from, to: end })
-        return
-      }
-
-      hidden.push({ from: node.from, to: node.to })
+      // Inline: hide the opening and closing marks; style only the text between.
+      const open = markChildren[0]
+      const close = markChildren[markChildren.length - 1]
+      hidden.push({ from: open.from, to: open.to })
+      hidden.push({ from: close.from, to: close.to })
+      if (close.from > open.to) marks.push({ from: open.to, to: close.from, cls })
     },
   })
 

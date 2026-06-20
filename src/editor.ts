@@ -1,6 +1,7 @@
-import { EditorView, basicSetup } from "codemirror"
-import { keymap } from "@codemirror/view"
+import { EditorView, keymap, highlightSpecialChars } from "@codemirror/view"
 import { Annotation } from "@codemirror/state"
+import { history, historyKeymap, defaultKeymap } from "@codemirror/commands"
+import { autocompletion, completionKeymap } from "@codemirror/autocomplete"
 import { markdownRendering } from "./markdown-render"
 import { markdownCommands } from "./markdown-commands"
 import { slashCommands } from "./slash-commands"
@@ -49,7 +50,17 @@ export function mountEditor(
   return new EditorView({
     doc: "",
     extensions: [
-      basicSetup,
+      // A curated, prose-friendly base — deliberately NOT CodeMirror's
+      // `basicSetup`. We drop `drawSelection` (its custom selection layer
+      // mismeasures positions after hidden `Decoration.replace` runs, so the
+      // highlight drew offset from the text — the browser's native selection is
+      // correct) along with all the code-editor chrome (line numbers, gutters,
+      // bracket matching, active-line highlight). We keep undo history and
+      // autocomplete (the slash-command menu rides on it).
+      history(),
+      autocompletion(),
+      highlightSpecialChars(),
+      keymap.of([...completionKeymap, ...defaultKeymap, ...historyKeymap]),
       EditorView.lineWrapping, // wrap long lines at the column width — prose, not code
       markdownRendering, // hide markdown markup; render text as rich content
       markdownCommands, // Ctrl+B/I/E and heading shortcuts reshape the markdown

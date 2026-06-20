@@ -156,3 +156,34 @@ unit-tested place (the part where a bug means a corrupted file), so the three
 input methods can't drift apart in how they edit the markdown. Consequence: the
 heavy correctness testing lives in fast vitest unit tests; the e2e layer only
 checks that each surface is wired to the transforms and renders hidden.
+
+## Curated extension set instead of `basicSetup`; native browser selection (M2)
+CodeMirror's `basicSetup` bundles `drawSelection`, which paints a **custom**
+selection layer using `coordsAtPos`. With our `Decoration.replace` runs hiding
+the markup, that layer mismeasured: every position after a hidden run was placed
+~its width too far right, so the selection highlight drew offset from the text
+(visibly covering the wrong word). The browser's **native** selection, measured
+against the real (post-decoration) DOM, is correct. So we drop `basicSetup` for a
+hand-picked set — `history`, `autocompletion` (the slash menu rides on it),
+`highlightSpecialChars`, `defaultKeymap`/`historyKeymap`/`completionKeymap`,
+`lineWrapping` — deliberately **without** `drawSelection` (native selection wins)
+and without the code-editor chrome a prose notepad doesn't want (line numbers,
+gutters, fold, bracket matching, close-brackets, active-line highlight,
+default-highlight coloring). Consequence: selection/caret are the browser's own
+(correct over hidden ranges), the editor looks like prose not code, and we own
+exactly the extensions we use. (Rejected: keep `basicSetup` and patch
+`drawSelection` — no clean way to disable one bundled extension, and the custom
+layer is the bug; CSS-hiding markers instead of `replace` — leaves them
+selectable/measurable and pollutes copied text.)
+
+## Slash trigger: line start or after whitespace (M2)
+The slash menu first triggered only when `/` was the very first thing on a line.
+That made it feel broken — you couldn't reach it after typing anything on the
+line. It now opens when `/` sits at a **line-start or post-whitespace boundary**,
+so it works anywhere you'd naturally start a command, while a `/` inside a word
+or URL (`and/or`, `http://`) still does nothing. Accepting removes **only** the
+`/command` token (it starts the completion at the `/`, not the line start) and
+reshapes the remaining line, so surrounding text is preserved — fixing an earlier
+bug where accepting could wipe the row. (Rejected: trigger on every `/` — would
+fire inside URLs and `and/or`; keep line-start-only — the original too-narrow
+behavior the user rejected.)

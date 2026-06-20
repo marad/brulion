@@ -15,33 +15,35 @@ const markText = (doc: string) =>
   ranges(doc).marks.map((m) => [doc.slice(m.from, m.to), m.cls] as const)
 
 describe("markdownSyntaxRanges", () => {
-  it("hides the heading marker plus its trailing space, styles the heading", () => {
+  it("hides the heading marker plus its trailing space, styles the text", () => {
+    // The styled span is the heading TEXT only — never the hidden markers, or
+    // the drawn selection would be offset by their width.
     expect(hiddenText("# Title")).toEqual(["# "])
-    expect(markText("# Title")).toEqual([["# Title", "cm-heading cm-h1"]])
+    expect(markText("# Title")).toEqual([["Title", "cm-heading cm-h1"]])
   })
 
   it("distinguishes heading levels", () => {
-    expect(markText("### Three")).toEqual([["### Three", "cm-heading cm-h3"]])
+    expect(markText("### Three")).toEqual([["Three", "cm-heading cm-h3"]])
     expect(hiddenText("### Three")).toEqual(["### "])
   })
 
-  it("hides bold markers (** and __) and styles the span", () => {
+  it("hides bold markers (** and __) and styles the inner text", () => {
     expect(hiddenText("a **b** c")).toEqual(["**", "**"])
-    expect(markText("a **b** c")).toEqual([["**b**", "cm-strong"]])
+    expect(markText("a **b** c")).toEqual([["b", "cm-strong"]])
     expect(hiddenText("a __b__ c")).toEqual(["__", "__"])
-    expect(markText("a __b__ c")).toEqual([["__b__", "cm-strong"]])
+    expect(markText("a __b__ c")).toEqual([["b", "cm-strong"]])
   })
 
-  it("hides italic markers (* and _) and styles the span", () => {
+  it("hides italic markers (* and _) and styles the inner text", () => {
     expect(hiddenText("a *b* c")).toEqual(["*", "*"])
-    expect(markText("a *b* c")).toEqual([["*b*", "cm-em"]])
+    expect(markText("a *b* c")).toEqual([["b", "cm-em"]])
     expect(hiddenText("a _b_ c")).toEqual(["_", "_"])
-    expect(markText("a _b_ c")).toEqual([["_b_", "cm-em"]])
+    expect(markText("a _b_ c")).toEqual([["b", "cm-em"]])
   })
 
-  it("hides inline-code backticks and styles the span", () => {
+  it("hides inline-code backticks and styles the inner text", () => {
     expect(hiddenText("a `b` c")).toEqual(["`", "`"])
-    expect(markText("a `b` c")).toEqual([["`b`", "cm-inline-code"]])
+    expect(markText("a `b` c")).toEqual([["b", "cm-inline-code"]])
   })
 
   it("leaves plain prose untouched", () => {
@@ -64,6 +66,6 @@ describe("markdownSyntaxRanges", () => {
     const state = EditorState.create({ doc, extensions: [markdown()] })
     // Restrict to the second heading's region only.
     const r = markdownSyntaxRanges(state, 7, doc.length)
-    expect(r.marks.map((m) => doc.slice(m.from, m.to))).toEqual(["# Two"])
+    expect(r.marks.map((m) => doc.slice(m.from, m.to))).toEqual(["Two"])
   })
 })
