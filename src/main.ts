@@ -1,14 +1,19 @@
 import "./styles.css"
-import { mountEditor, setEditorEditable } from "./editor"
+import { mountEditor, setEditorEditable, setVimMode } from "./editor"
 import { createNoteController, type NoteController } from "./note-controller"
 import {
   wireOpenFolder,
   restoreFolder,
   renderNoteList,
   wireNewNote,
-  wireSidebarToggle,
+  wireToggle,
 } from "./ui"
-import { saveSidebarCollapsed, loadSidebarCollapsed } from "./session"
+import {
+  saveSidebarCollapsed,
+  loadSidebarCollapsed,
+  saveVimMode,
+  loadVimMode,
+} from "./session"
 import { displayName } from "./note-name"
 import { wireFlushOnHide } from "./flush"
 import { createPoller } from "./watch"
@@ -20,6 +25,7 @@ const editorEl = document.querySelector<HTMLDivElement>("#editor")
 const workspaceEl = document.querySelector<HTMLElement>(".workspace")
 const sidebarEl = document.querySelector<HTMLElement>("#sidebar")
 const toggleSidebarEl = document.querySelector<HTMLButtonElement>("#toggle-sidebar")
+const toggleVimEl = document.querySelector<HTMLButtonElement>("#toggle-vim")
 const listEl = document.querySelector<HTMLElement>("#note-list")
 const newNoteForm = document.querySelector<HTMLFormElement>("#new-note")
 const newNoteInput = document.querySelector<HTMLInputElement>("#new-note-input")
@@ -34,6 +40,7 @@ if (
   !workspaceEl ||
   !sidebarEl ||
   !toggleSidebarEl ||
+  !toggleVimEl ||
   !listEl ||
   !newNoteForm ||
   !newNoteInput ||
@@ -71,6 +78,7 @@ controller = createNoteController(view, {
     // if the user left the sidebar collapsed it stays hidden by CSS regardless.
     sidebarEl.hidden = false
     toggleSidebarEl.hidden = false
+    toggleVimEl.hidden = false
     renderNoteList(listEl, notes, active, {
       onSelect: (name) => void controller.switchTo(name),
       onDelete: (name) => {
@@ -121,15 +129,27 @@ void restoreFolder(resumeButton, openNote)
 // toggle, and bind Ctrl+\ to the same flip. CodeMirror has no binding for that
 // chord, so the event bubbles to window and never disturbs the editor shortcuts.
 void loadSidebarCollapsed().then((collapsed) => {
-  const sidebar = wireSidebarToggle(toggleSidebarEl, workspaceEl, {
-    initialCollapsed: collapsed,
-    onChange: (value) => void saveSidebarCollapsed(value),
+  const sidebar = wireToggle(toggleSidebarEl, {
+    initialOn: collapsed,
+    apply: (on) => workspaceEl.classList.toggle("sidebar-collapsed", on),
+    onChange: (on) => void saveSidebarCollapsed(on),
   })
   window.addEventListener("keydown", (event) => {
     if (event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && event.key === "\\") {
       event.preventDefault()
       sidebar.toggle()
     }
+  })
+})
+
+// Opt-in Vim mode (FEAT-0021): restore the saved choice and wire the header
+// toggle. Off by default; turning it on reconfigures the editor's Vim compartment
+// in place (no remount).
+void loadVimMode().then((on) => {
+  wireToggle(toggleVimEl, {
+    initialOn: on,
+    apply: (value) => setVimMode(view, value),
+    onChange: (value) => void saveVimMode(value),
   })
 })
 

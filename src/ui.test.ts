@@ -7,7 +7,7 @@ import {
   wireOpenFolder,
   renderNoteList,
   wireNewNote,
-  wireSidebarToggle,
+  wireToggle,
 } from "./ui"
 
 vi.mock("./fs", () => ({ pickFolder: vi.fn() }))
@@ -222,56 +222,45 @@ describe("wireNewNote", () => {
   })
 })
 
-describe("wireSidebarToggle", () => {
-  function sidebarFixture(initialCollapsed = false) {
+describe("wireToggle", () => {
+  function toggleFixture(initialOn = false) {
     const button = document.createElement("button")
-    const workspace = document.createElement("div")
-    workspace.className = "workspace"
+    const apply = vi.fn()
     const onChange = vi.fn()
-    const handle = wireSidebarToggle(button, workspace, { initialCollapsed, onChange })
-    return { button, workspace, onChange, handle }
+    const handle = wireToggle(button, { initialOn, apply, onChange })
+    return { button, apply, onChange, handle }
   }
 
-  it("reflects the restored state on wire, untouched by interaction (AC-4)", () => {
-    const { workspace, button } = sidebarFixture(true)
-    expect(workspace.classList.contains("sidebar-collapsed")).toBe(true)
+  it("applies the restored state on wire and mirrors it in aria-pressed (FEAT-0020/0021 AC-4/AC-3)", () => {
+    const { button, apply, onChange } = toggleFixture(true)
+    // `apply` runs on wire (so the page loads in the saved mode); `onChange`
+    // (persistence) does NOT — only a user flip should write back.
+    expect(apply).toHaveBeenCalledOnce()
+    expect(apply).toHaveBeenCalledWith(true)
     expect(button.getAttribute("aria-pressed")).toBe("true")
+    expect(onChange).not.toHaveBeenCalled()
   })
 
-  it("a click collapses, another restores, notifying onChange each time (AC-1)", () => {
-    const { button, workspace, onChange } = sidebarFixture(false)
-    expect(workspace.classList.contains("sidebar-collapsed")).toBe(false)
+  it("a click flips the state, re-applying and notifying onChange each time (AC-1/AC-2)", () => {
+    const { button, apply, onChange } = toggleFixture(false)
+    expect(apply).toHaveBeenLastCalledWith(false)
 
     button.click()
-    expect(workspace.classList.contains("sidebar-collapsed")).toBe(true)
+    expect(apply).toHaveBeenLastCalledWith(true)
     expect(button.getAttribute("aria-pressed")).toBe("true")
     expect(onChange).toHaveBeenLastCalledWith(true)
 
     button.click()
-    expect(workspace.classList.contains("sidebar-collapsed")).toBe(false)
+    expect(apply).toHaveBeenLastCalledWith(false)
     expect(button.getAttribute("aria-pressed")).toBe("false")
     expect(onChange).toHaveBeenLastCalledWith(false)
   })
 
-  it("the returned toggle() flips the state like a click (AC-3 — keyboard path)", () => {
-    const { handle, workspace, onChange } = sidebarFixture(false)
+  it("the returned toggle() flips the state like a click (the keyboard path, AC-3)", () => {
+    const { handle, apply, onChange } = toggleFixture(false)
     handle.toggle()
-    expect(workspace.classList.contains("sidebar-collapsed")).toBe(true)
+    expect(apply).toHaveBeenLastCalledWith(true)
     expect(onChange).toHaveBeenLastCalledWith(true)
-  })
-
-  it("toggling never touches the sidebar's `hidden` attribute (AC-6)", () => {
-    // Collapse is orthogonal to folder-open. The toggle only flips the workspace
-    // class; the `#sidebar[hidden]` (folder-open) state is owned elsewhere.
-    const { button, workspace } = sidebarFixture(false)
-    const sidebar = document.createElement("aside")
-    sidebar.hidden = true
-    workspace.append(sidebar)
-
-    button.click() // collapse
-    expect(sidebar.hidden).toBe(true) // unchanged by the toggle
-    button.click() // restore
-    expect(sidebar.hidden).toBe(true) // still owned by folder-open, not the toggle
   })
 })
 

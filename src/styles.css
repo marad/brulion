@@ -72,9 +72,15 @@ header button:hover {
   display: none;
 }
 
-/* The toggle reads as pressed (sidebar hidden) so the state is legible. */
-#toggle-sidebar[aria-pressed="true"] {
+/* Header toggles read as pressed (sidebar hidden / Vim on) so state is legible. */
+#toggle-sidebar[aria-pressed="true"],
+#toggle-vim[aria-pressed="true"] {
   background: #ececec;
+}
+
+/* Push the Vim toggle to the right, away from the folder controls. */
+#toggle-vim {
+  margin-left: auto;
 }
 
 #new-note {

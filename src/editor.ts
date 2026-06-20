@@ -3,6 +3,7 @@ import { Annotation, Compartment, EditorState } from "@codemirror/state"
 import { history, historyKeymap, defaultKeymap } from "@codemirror/commands"
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete"
 import { deleteMarkupBackward } from "@codemirror/lang-markdown"
+import { vim } from "@replit/codemirror-vim"
 import { markdownRendering } from "./markdown-render"
 import { markdownCommands, continueOrExitMarkup } from "./markdown-commands"
 import { slashCommands } from "./slash-commands"
@@ -37,6 +38,9 @@ const External = Annotation.define<boolean>()
  * conflict is being resolved — FEAT-0015). */
 const editable = new Compartment()
 
+/** Holds the opt-in Vim layer (FEAT-0021): `vim()` when on, nothing when off. */
+const vimMode = new Compartment()
+
 export interface EditorOptions {
   /** Called on a user edit (the document text is read from the view on save). */
   onChange?: () => void
@@ -55,6 +59,12 @@ export function mountEditor(
   return new EditorView({
     doc: "",
     extensions: [
+      // Vim layer (FEAT-0021), off by default. First in the array → highest
+      // precedence, so the Vim plugin's keydown handler runs before our keymaps:
+      // in normal mode Vim owns the keys (the point of opting in); in insert mode
+      // Vim binds none of `/`, Enter, or Ctrl+B/I/E, so they fall through to our
+      // slash/format/Enter commands unchanged.
+      vimMode.of([]),
       // A curated, prose-friendly base — deliberately NOT CodeMirror's
       // `basicSetup`. We drop `drawSelection` (its custom selection layer
       // mismeasures positions after hidden `Decoration.replace` runs, so the
@@ -121,4 +131,9 @@ export function setEditorEditable(view: EditorView, value: boolean): void {
       value ? [] : [EditorState.readOnly.of(true), EditorView.editable.of(false)],
     ),
   })
+}
+
+/** Turn the opt-in Vim keybinding layer on or off in place (FEAT-0021). */
+export function setVimMode(view: EditorView, on: boolean): void {
+  view.dispatch({ effects: vimMode.reconfigure(on ? vim() : []) })
 }

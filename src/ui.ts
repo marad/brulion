@@ -139,36 +139,38 @@ export function wireOpenFolder(
   })
 }
 
-/** A handle on the sidebar collapse state, so a keyboard shortcut can flip it. */
-export interface SidebarToggle {
-  /** Flip collapsed/expanded, updating the DOM and notifying `onChange`. */
+/** A handle on a toggle's state, so a keyboard shortcut can flip it too. */
+export interface Toggle {
+  /** Flip the state: re-`apply` it, update `aria-pressed`, and notify `onChange`. */
   toggle(): void
 }
 
 /**
- * Wire the sidebar collapse toggle (FEAT-0020). Collapse is expressed as the
- * `sidebar-collapsed` class on `workspace` — deliberately separate from the
- * `#sidebar[hidden]` attribute that encodes folder-open, so the two are
- * orthogonal (toggling never touches `hidden`, and a collapsed sidebar stays
- * hidden by CSS even once a folder opens). Applies the restored state on wire so
- * the page loads in the mode the user left it.
+ * Wire a two-state toggle button (FEAT-0020 sidebar, FEAT-0021 Vim). `apply(on)`
+ * effects the state in the UI/editor and runs on wire *and* on every flip, so the
+ * page loads in the mode the user left it; `onChange(on)` persists and runs only
+ * on a user flip. The pressed state is mirrored in `aria-pressed`. Returns a
+ * handle so a keyboard shortcut can drive the same flip as a click.
  */
-export function wireSidebarToggle(
+export function wireToggle(
   button: HTMLButtonElement,
-  workspace: HTMLElement,
-  opts: { initialCollapsed: boolean; onChange: (collapsed: boolean) => void },
-): SidebarToggle {
-  let collapsed = opts.initialCollapsed
-  const apply = () => {
-    workspace.classList.toggle("sidebar-collapsed", collapsed)
-    button.setAttribute("aria-pressed", String(collapsed))
+  opts: {
+    initialOn: boolean
+    apply: (on: boolean) => void
+    onChange: (on: boolean) => void
+  },
+): Toggle {
+  let on = opts.initialOn
+  const render = () => {
+    opts.apply(on)
+    button.setAttribute("aria-pressed", String(on))
   }
   const toggle = () => {
-    collapsed = !collapsed
-    apply()
-    opts.onChange(collapsed)
+    on = !on
+    render()
+    opts.onChange(on)
   }
-  apply() // reflect the restored state before any interaction
+  render() // reflect the restored state before any interaction
   button.addEventListener("click", toggle)
   return { toggle }
 }

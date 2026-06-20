@@ -9,6 +9,7 @@ import { get, set } from "idb-keyval"
 const DIR_KEY = "brulion:dir"
 const ACTIVE_KEY = "brulion:active"
 const SIDEBAR_KEY = "brulion:sidebar-collapsed"
+const VIM_KEY = "brulion:vim"
 const MODE = { mode: "readwrite" } as const
 
 /** Persist the directory handle so it survives a reload. */
@@ -39,6 +40,16 @@ export function saveSidebarCollapsed(collapsed: boolean): Promise<void> {
 /** Whether the sidebar was left collapsed; defaults to `false` (expanded). */
 export async function loadSidebarCollapsed(): Promise<boolean> {
   return (await get<boolean>(SIDEBAR_KEY)) === true
+}
+
+/** Remember whether the opt-in Vim mode is enabled (FEAT-0021). */
+export function saveVimMode(on: boolean): Promise<void> {
+  return set(VIM_KEY, on)
+}
+
+/** Whether Vim mode was left on; defaults to `false` (off — opt-in). */
+export async function loadVimMode(): Promise<boolean> {
+  return (await get<boolean>(VIM_KEY)) === true
 }
 
 /** Whether the handle already has readwrite permission (no prompt — silent). */
