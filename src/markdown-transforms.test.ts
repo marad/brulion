@@ -37,9 +37,10 @@ function stateOf(marked: string): EditorState {
   })
 }
 
-/** Apply a transform and return the resulting document + selection text. */
-function applied(state: EditorState, spec: TransactionSpec) {
-  const next = state.update(spec).state
+/** Apply a transform and return the resulting document + selection text.
+ * A `null` spec (no-op) leaves the state unchanged. */
+function applied(state: EditorState, spec: TransactionSpec | null) {
+  const next = spec ? state.update(spec).state : state
   const { from, to } = next.selection.main
   return { doc: next.doc.toString(), selected: next.doc.sliceString(from, to) }
 }
@@ -73,7 +74,7 @@ describe("toggleInline", () => {
 
   it("inserts empty markers with the caret between them on no selection (AC-4)", () => {
     const s = stateOf("x|")
-    const next = s.update(toggleInline(s, BOLD)).state
+    const next = s.update(toggleInline(s, BOLD)!).state
     expect(next.doc.toString()).toBe("x****")
     expect(next.selection.main.empty).toBe(true)
     expect(next.selection.main.head).toBe(3) // between the two **
@@ -104,6 +105,11 @@ describe("toggleInline", () => {
 
   it("skips blank lines when wrapping a multi-line selection", () => {
     expect(toggle("[a\n\nb]", BOLD).doc).toBe("**a**\n\n**b**")
+  })
+
+  it("returns null when a multi-line selection has nothing to wrap", () => {
+    // Selecting only blank lines: no change, and no empty transaction.
+    expect(toggleInline(stateOf("[\n\n]"), BOLD)).toBeNull()
   })
 })
 

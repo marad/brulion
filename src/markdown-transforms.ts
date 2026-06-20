@@ -91,7 +91,7 @@ function unwrap(state: EditorState, nodes: SyntaxNode[]): TransactionSpec {
 export function toggleInline(
   state: EditorState,
   { marker, nodeName }: InlineMarker,
-): TransactionSpec {
+): TransactionSpec | null {
   const { from, to } = state.selection.main
 
   if (from === to) {
@@ -132,7 +132,10 @@ export function toggleInline(
       changes.push({ from: segFrom, insert: marker }, { from: segTo, insert: marker })
     }
   }
-  return changes.length ? { changes } : {}
+  // `null` (not `{}`) when nothing would change, so callers don't dispatch an
+  // empty transaction that pollutes the undo history — same contract as the
+  // heading transforms.
+  return changes.length ? { changes } : null
 }
 
 /** The ATX heading level of a line (1–6), or 0 for a plain paragraph. */

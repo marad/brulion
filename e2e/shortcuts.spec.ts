@@ -106,10 +106,16 @@ test("Ctrl+ArrowDown demotes and can remove the heading (AC-6)", async ({
   await expect.poll(() => readStartMd(page)).toBe("note") // heading removed
 })
 
-test("Ctrl+Shift+2 sets the line directly to H2 (AC-7)", async ({ page }) => {
+test("Ctrl+Shift+1/2/3 set the line directly to that heading (AC-7)", async ({
+  page,
+}) => {
   await page.keyboard.type("note")
   await page.keyboard.press("Control+Shift+Digit2")
   await expect.poll(() => readStartMd(page)).toBe("## note")
+  await page.keyboard.press("Control+Shift+Digit1")
+  await expect.poll(() => readStartMd(page)).toBe("# note")
+  await page.keyboard.press("Control+Shift+Digit3")
+  await expect.poll(() => readStartMd(page)).toBe("### note")
 })
 
 test("Ctrl+U inserts no underline markup (AC-9)", async ({ page }) => {
