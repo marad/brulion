@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import * as idb from "idb-keyval"
-import { saveFolder, loadFolder, hasPermission, requestAccess } from "./session"
+import {
+  saveFolder,
+  loadFolder,
+  hasPermission,
+  requestAccess,
+  saveActiveNote,
+  loadActiveNote,
+} from "./session"
 
 vi.mock("idb-keyval", () => ({
   get: vi.fn(),
@@ -41,6 +48,24 @@ describe("saveFolder / loadFolder", () => {
   it("returns undefined when nothing is stored", async () => {
     get.mockResolvedValue(undefined)
     expect(await loadFolder()).toBeUndefined()
+  })
+})
+
+describe("saveActiveNote / loadActiveNote", () => {
+  it("saves the active note's filename under its own key", async () => {
+    await saveActiveNote("diablo.md")
+    expect(set).toHaveBeenCalledWith("brulion:active", "diablo.md")
+  })
+
+  it("loads from the same key", async () => {
+    get.mockResolvedValue("diablo.md")
+    expect(await loadActiveNote()).toBe("diablo.md")
+    expect(get).toHaveBeenCalledWith("brulion:active")
+  })
+
+  it("returns undefined when no active note is stored", async () => {
+    get.mockResolvedValue(undefined)
+    expect(await loadActiveNote()).toBeUndefined()
   })
 })
 

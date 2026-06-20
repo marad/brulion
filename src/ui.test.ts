@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import * as fs from "./fs"
 import * as session from "./session"
-import { openFolder, restoreFolder, wireOpenFolder } from "./ui"
+import { openFolder, restoreFolder, wireOpenFolder, renderNoteList } from "./ui"
 
 vi.mock("./fs", () => ({ pickFolder: vi.fn() }))
 vi.mock("./session", () => ({
@@ -134,6 +134,43 @@ describe("restoreFolder", () => {
 
     expect(resume.hidden).toBe(false)
     expect(onOpen).not.toHaveBeenCalled()
+  })
+})
+
+describe("renderNoteList", () => {
+  it("renders one row per note, by name without the .md extension (AC-1)", () => {
+    const container = document.createElement("div")
+    renderNoteList(container, ["apple.md", "Banana.md"], "apple.md", vi.fn())
+
+    const rows = container.querySelectorAll(".note-row")
+    expect([...rows].map((r) => r.textContent)).toEqual(["apple", "Banana"])
+  })
+
+  it("marks exactly the active note's row (AC-2)", () => {
+    const container = document.createElement("div")
+    renderNoteList(container, ["apple.md", "banana.md"], "banana.md", vi.fn())
+
+    const active = container.querySelectorAll(".note-row.active")
+    expect(active).toHaveLength(1)
+    expect(active[0].textContent).toBe("banana")
+    expect(active[0].getAttribute("aria-current")).toBe("true")
+  })
+
+  it("calls onSelect with the filename when a row is clicked (AC-3)", () => {
+    const container = document.createElement("div")
+    const onSelect = vi.fn()
+    renderNoteList(container, ["apple.md", "banana.md"], "apple.md", onSelect)
+
+    container.querySelectorAll<HTMLElement>(".note-row")[1].click()
+    expect(onSelect).toHaveBeenCalledWith("banana.md")
+  })
+
+  it("replaces previous rows on re-render", () => {
+    const container = document.createElement("div")
+    renderNoteList(container, ["a.md", "b.md"], "a.md", vi.fn())
+    renderNoteList(container, ["c.md"], "c.md", vi.fn())
+
+    expect([...container.querySelectorAll(".note-row")].map((r) => r.textContent)).toEqual(["c"])
   })
 })
 
