@@ -172,17 +172,29 @@ test("hides the blockquote marker and styles the quote (AC-2)", async ({ page })
   await expect(page.locator(".cm-blockquote")).toHaveCount(1)
 })
 
-test("hides the bullet marker and renders a list item (AC-4)", async ({ page }) => {
+test("hides a `*` bullet and renders a disc glyph (AC-4)", async ({ page }) => {
   await type(page, "* a list item")
 
-  // The literal `*` is gone; a bullet is drawn by CSS ::before (not in innerText).
+  // The literal `*` is gone; a disc is drawn by CSS ::before (not in innerText).
   expect(await renderedText(page)).not.toContain("*")
   await expect(editor(page)).toContainText("a list item")
-  const bullet = await page
-    .locator(".cm-list-item")
+  const disc = await page
+    .locator(".cm-list-disc")
     .first()
     .evaluate((el) => getComputedStyle(el, "::before").content)
-  expect(bullet).toContain("•")
+  expect(disc).toContain("•")
+})
+
+test("a `-` bullet renders a distinct dash glyph (AC-4)", async ({ page }) => {
+  await type(page, "- a dash item")
+
+  await expect(editor(page)).toContainText("a dash item")
+  const dash = await page
+    .locator(".cm-list-dash")
+    .first()
+    .evaluate((el) => getComputedStyle(el, "::before").content)
+  expect(dash).toContain("–")
+  expect(dash).not.toContain("•") // distinct glyph from the `*` disc
 })
 
 test("block markup stays hidden when the caret is on the line (AC-5)", async ({

@@ -20,10 +20,6 @@ const blocks = (doc: string) => blockSyntaxRanges(state(doc))
 const blockHiddenText = (doc: string) =>
   blocks(doc).hidden.map((h) => doc.slice(h.from, h.to))
 
-/** Block content spans (the code-block body), as `[text, class]` pairs. */
-const blockMarkText = (doc: string) =>
-  blocks(doc).marks.map((m) => [doc.slice(m.from, m.to), m.cls] as const)
-
 /** Block line decorations, as `[line text, class]` pairs (line starting at `from`). */
 const lineMarks = (doc: string) =>
   blocks(doc).lines.map((l) => {
@@ -99,26 +95,36 @@ describe("markdownSyntaxRanges", () => {
 })
 
 // FEAT-0016: block constructs render through a separate StateField, so they have
-// their own pure function (line-break-replacing hides are illegal from a plugin).
+// their own pure function. None of their hides cross a line break (fence lines are
+// emptied in place, not collapsed), so the line decorations anchor reliably.
 describe("blockSyntaxRanges", () => {
-  it("collapses both fences of a closed code block and styles the body (AC-1)", () => {
+  it("empties both fence lines and styles every block line as a code box (AC-1)", () => {
     const doc = "```js\ncode\n```"
-    // Opening fence line (incl. language + newline) and closing fence line (incl.
-    // its leading newline) are hidden; the body is styled as a code span (a mark,
-    // not a line — the fence collapse merges the body into the fence's line).
-    expect(blockHiddenText(doc)).toEqual(["```js\n", "\n```"])
-    expect(blockMarkText(doc)).toEqual([["code", "cm-code-block"]])
+    // The fence text is hidden in place (each fence line becomes an empty,
+    // styled padding row); every line of the block carries the code-block class,
+    // with rounded top/bottom rows.
+    expect(blockHiddenText(doc)).toEqual(["```js", "```"])
+    expect(lineMarks(doc)).toEqual([
+      ["```js", "cm-code-block cm-code-top"],
+      ["code", "cm-code-block"],
+      ["```", "cm-code-block cm-code-bottom"],
+    ])
   })
 
-  it("styles the whole body of a multi-line code block (AC-1)", () => {
+  it("styles every line of a multi-line code block (AC-1)", () => {
     const doc = "```\na\nb\n```"
-    expect(blockMarkText(doc)).toEqual([["a\nb", "cm-code-block"]])
+    expect(lineMarks(doc)).toEqual([
+      ["```", "cm-code-block cm-code-top"],
+      ["a", "cm-code-block"],
+      ["b", "cm-code-block"],
+      ["```", "cm-code-block cm-code-bottom"],
+    ])
   })
 
   it("leaves an unclosed code block fully visible (don't vanish mid-typing)", () => {
-    // Only one fence so far — collapsing it would make the ``` the user just
+    // Only one fence so far — styling/hiding it would make the ``` the user just
     // typed disappear, same anti-pattern as a bare heading marker (AC-8 spirit).
-    expect(blocks("```js\ncode")).toEqual({ hidden: [], lines: [], marks: [] })
+    expect(blocks("```js\ncode")).toEqual({ hidden: [], lines: [] })
   })
 
   it("hides the blockquote marker and styles the line as a quote (AC-2)", () => {
@@ -135,10 +141,19 @@ describe("blockSyntaxRanges", () => {
     ])
   })
 
-  it("handles a nested blockquote once, with no duplicate hides or lines", () => {
-    // The outer blockquote's subtree walk already collects the inner `>`s and its
-    // line span already covers the nested lines; the inner Blockquote node must be
-    // skipped so we don't emit the same hide / line decoration twice.
+  it("hides a continuation `>` even when the grammar drops the QuoteMark node (AC-3)", () => {
+    // `> a` then `> -`: CommonMark reads the `-` as a Setext underline and folds
+    // line 2 into a SetextHeading2, so its `>` is NOT a QuoteMark node. Hiding by
+    // structural line scan (not by node) keeps the `>` hidden anyway.
+    const doc = "> a\n> -"
+    expect(blockHiddenText(doc)).toEqual(["> ", "> "])
+    expect(lineMarks(doc)).toEqual([
+      ["> a", "cm-blockquote"],
+      ["> -", "cm-blockquote"],
+    ])
+  })
+
+  it("hides both markers of a nested blockquote line, once each", () => {
     const doc = "> outer\n> > nested"
     expect(blockHiddenText(doc)).toEqual(["> ", "> ", "> "])
     expect(lineMarks(doc)).toEqual([
@@ -147,26 +162,30 @@ describe("blockSyntaxRanges", () => {
     ])
   })
 
-  it("hides the bullet marker and emits a list-item line (AC-4)", () => {
+  it("only hides the leading `>` run, not a `>` in the content", () => {
+    expect(blockHiddenText("> a > b")).toEqual(["> "])
+  })
+
+  it("hides the bullet marker and emits distinct lines for * and - (AC-4)", () => {
     expect(blockHiddenText("* item")).toEqual(["* "])
-    expect(lineMarks("* item")).toEqual([["* item", "cm-list-item"]])
-    // `-` markers behave identically.
+    expect(lineMarks("* item")).toEqual([["* item", "cm-list-disc"]])
+    // `-` gets a different glyph class so mixed markdown reads distinctly.
     expect(blockHiddenText("- item")).toEqual(["- "])
-    expect(lineMarks("- item")).toEqual([["- item", "cm-list-item"]])
+    expect(lineMarks("- item")).toEqual([["- item", "cm-list-dash"]])
   })
 
   it("hides the marker on each item of a multi-item list (AC-4)", () => {
     const doc = "* one\n* two"
     expect(blockHiddenText(doc)).toEqual(["* ", "* "])
     expect(lineMarks(doc)).toEqual([
-      ["* one", "cm-list-item"],
-      ["* two", "cm-list-item"],
+      ["* one", "cm-list-disc"],
+      ["* two", "cm-list-disc"],
     ])
   })
 
   it("leaves ordered lists and plain prose untouched (out of scope, AC-8)", () => {
-    expect(blocks("1. item")).toEqual({ hidden: [], lines: [], marks: [] })
-    expect(blocks("just some words")).toEqual({ hidden: [], lines: [], marks: [] })
+    expect(blocks("1. item")).toEqual({ hidden: [], lines: [] })
+    expect(blocks("just some words")).toEqual({ hidden: [], lines: [] })
   })
 
   it("composes with inline rendering: a quote marker hides, inner bold still renders", () => {

@@ -301,34 +301,37 @@ flushing and rely on the debounce — loses the last <600 ms of edits on every
 switch; track active note in the URL — premature, and workspaces/URL state are a
 later concern.)
 
-## Block constructs render through a StateField, not the inline ViewPlugin (M5)
+## Block constructs render through a separate whole-doc StateField (M5)
 FEAT-0016 renders fenced code, blockquotes, and unordered lists with their markup
-hidden. The inline renderer (FEAT-0006) is a viewport-scoped `ViewPlugin`, but the
-block constructs could not all live there: collapsing a fenced-code *fence line*
-means replacing a line break, and CodeMirror forbids a ViewPlugin from providing
-decorations that change the document's vertical layout (line-break-replacing or
-block decorations) — they must come from a `StateField`, computed before layout.
-A first attempt to do it from the plugin silently dropped the decorations and even
-broke typing once a block closed. So block rendering lives in a new whole-doc
-`blockRenderingField` (`blockSyntaxRanges`), while inline markup stays in the
-viewport plugin. Consequence: two rendering layers in `markdown-render.ts` — a
-viewport plugin for inline/heading marks (the frequent, perf-sensitive case) and a
-state field for the three block constructs (rare, small, so a whole-doc scan is
-cheap and the field can legally collapse lines). Both are pure-read; bytes are
-untouched. (Rejected: one viewport plugin for everything — illegal for line
-collapsing; converting all rendering to a whole-doc field — would drop the
-viewport-scoping FEAT-0006 keeps for responsiveness on long notes.)
+hidden. The inline renderer (FEAT-0006) is a viewport-scoped `ViewPlugin`; block
+rendering lives in a separate whole-doc `blockRenderingField` (`blockSyntaxRanges`).
+Originally the field was *forced*: an early code-block design collapsed the fence
+lines (replacing a line break), which CodeMirror forbids from a ViewPlugin — only a
+StateField may emit layout-changing decorations. The M5 review then changed the
+code-block look (see the next entry) so nothing crosses a line break anymore, which
+removed that hard constraint — but the field stays anyway, because keeping block
+rendering whole-doc lets it style *every* line of a block in one pass, and keeping
+it separate from the hot inline plugin is clean. Consequence: two rendering layers
+in `markdown-render.ts` — a viewport plugin for inline/heading marks (the frequent,
+perf-sensitive case) and a whole-doc field for the three block constructs (rare,
+small, so a full scan is cheap). Both are pure-read; bytes are untouched. (Rejected:
+folding block rendering back into the viewport plugin now that it's legal — more
+churn for no gain; the field already works and isolates the block logic.)
 
-## A code block's body is a span mark, not a line decoration (M5)
-Collapsing a fenced block's opening fence line eats the newline after it, which
-*merges* the first body line into the (now empty) fence line — so a `Decoration.line`
-anchored at the body line's start is no longer at a visual line start and silently
-fails to attach. The code body is therefore styled with a `Decoration.mark` (a span
-over the body text) rather than a line decoration. Blockquotes and list items keep
-line decorations, because hiding their `>`/`*` markers never crosses a line break,
-so their line starts are unaffected. Consequence: the code block reads as monospace
-with a subtle background behind the text (not a full-width line band); the quote
-gets a left border and the list a CSS `::before` bullet via line decorations.
+## A fenced code block renders as a full-width box, fences emptied in place (M5)
+Decided in the M5 review (the first cut — a tight background span behind only the
+body text — looked cramped). The block now reads as one full-width rounded box:
+each fence's text is hidden *in place* (the fence line stays as an empty, styled
+row — the box's top/bottom padding) rather than collapsed, and **every** line of
+the block (fences + body) carries a `cm-code-block` line decoration, with rounded
+corners on the first/last row. Because nothing is collapsed, no hide crosses a line
+break, so the line decorations anchor reliably at real line starts (the earlier
+collapse approach merged the first body line into the fence line and made line
+decorations silently fail — which is why that cut used a span; moot now). Consequence:
+a code block looks like a proper grey, padded, rounded code box spanning the column
+width. (Rejected: collapsing the fence lines for a tighter box — reintroduces the
+line-merge/anchor problem and the user preferred visible padding; a span behind the
+text only — looked cramped.)
 
 ## Unclosed fenced blocks stay fully visible (M5)
 A fenced block is only collapsed once it has *both* fences. While the user is still
@@ -361,3 +364,15 @@ not introduced by the block rendering. It is reasonable quick-capture UX (contin
 the construct), so it is left in place; it only complicated a naive multi-construct
 e2e test, which was rewritten to not fight it. Noted here so it isn't re-investigated
 as a rendering bug. (No change made.)
+
+## Distinct bullet glyphs and left-aligned block markers (M5 review)
+Decided in the M5 review. Two list/quote rendering choices:
+- **`*` and `-` get different glyphs** — `*` renders as a filled disc `•`, `-` as
+  an en-dash `–` (CSS `::before`). Markdown often mixes the two markers in one file;
+  distinct glyphs let the reader tell which was used at a glance.
+- **Markers align with the text's left edge, no left overhang.** The first cut used
+  a negative `text-indent` so the bullet hung into the left margin, left of normal
+  text — which read as misaligned. Now the list glyph and the blockquote bar start
+  exactly at the normal-text left edge (no negative indent), and the content flows
+  to their right. Consequence: lists and quotes line up cleanly under surrounding
+  paragraphs instead of poking out to the left.

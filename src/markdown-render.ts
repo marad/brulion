@@ -46,13 +46,10 @@ export interface SyntaxRanges {
 
 /** Block-construct ranges (fenced code, blockquote, list) — fed to a StateField. */
 export interface BlockRanges {
-  /** Markup runs to hide (`>`, list markers, and whole fence lines). */
+  /** Markup runs to hide (`>`, list markers, the fence text on each fence line). */
   hidden: HiddenRange[]
-  /** Whole lines to decorate as blocks (blockquote, list item). */
+  /** Whole lines to decorate as blocks (code block, blockquote, list item). */
   lines: LineMark[]
-  /** Content spans to decorate (the code-block body — a span, not a line, so it
-   * survives the fence-line collapse that merges the body into the fence's line). */
-  marks: MarkRange[]
 }
 
 /** Container node name → class applied to its whole range. */
@@ -131,14 +128,14 @@ export function markdownSyntaxRanges(
 /**
  * Walk the syntax tree over `[from, to)` and collect the block constructs M2 left
  * raw (FEAT-0016): fenced code, blockquotes, unordered lists. Returns the markup
- * to hide — including whole fence lines, whose hide ranges cross a line break —
- * and the whole lines to style as blocks. Pure, like {@link markdownSyntaxRanges}.
+ * to hide and the whole lines to style as blocks. Pure, like
+ * {@link markdownSyntaxRanges}. None of the hides cross a line break (fence lines
+ * are emptied in place, not collapsed), so the line decorations always anchor at a
+ * real visual line start.
  *
- * Kept separate because collapsing a fence *line* replaces a line break, which
- * changes the editor's vertical layout; CodeMirror forbids such decorations from a
- * ViewPlugin (they must come from a StateField, computed before layout). So inline
- * markup renders viewport-scoped via a plugin, and these blocks render whole-doc
- * via a field — see {@link markdownRendering}.
+ * Kept separate from the inline plugin so the (rare, small) block scan can run over
+ * the whole document — letting it style every line of a block — while inline markup
+ * stays viewport-scoped for responsiveness; see {@link markdownRendering}.
  */
 export function blockSyntaxRanges(
   state: EditorState,
@@ -147,17 +144,7 @@ export function blockSyntaxRanges(
 ): BlockRanges {
   const hidden: HiddenRange[] = []
   const lines: LineMark[] = []
-  const marks: MarkRange[] = []
   const doc = state.doc
-
-  // Emit a `cm-` line decoration for every line a block spans, within the scan
-  // window. Used for the (possibly multi-line) blockquote; a single line gets a
-  // direct push at its call site.
-  const markLines = (start: number, end: number, cls: string) => {
-    const first = doc.lineAt(Math.max(start, from)).number
-    const last = doc.lineAt(Math.min(end, to)).number
-    for (let n = first; n <= last; n++) lines.push({ from: doc.line(n).from, cls })
-  }
 
   syntaxTree(state).iterate({
     from,
@@ -168,42 +155,51 @@ export function blockSyntaxRanges(
         for (let c = node.node.firstChild; c; c = c.nextSibling) {
           if (c.name === "CodeMark") codeMarks.push(c)
         }
-        // Only collapse a *closed* block (open + close fence). An unclosed block
+        // Only render a *closed* block (open + close fence). An unclosed block
         // being typed stays visible — don't vanish the ``` the user just typed.
         if (codeMarks.length < 2) return
         const openLine = doc.lineAt(codeMarks[0].from)
         const closeLine = doc.lineAt(codeMarks[codeMarks.length - 1].from)
-        const openHideTo = Math.min(openLine.to + 1, doc.length)
-        const closeHideFrom = Math.max(closeLine.from - 1, 0)
-        if (closeHideFrom <= openHideTo) {
-          // No body line between the fences — collapse the whole block as one run.
-          hidden.push({ from: node.from, to: node.to })
-        } else {
-          hidden.push({ from: openLine.from, to: openHideTo })
-          hidden.push({ from: closeHideFrom, to: closeLine.to })
-          // Style the body as a span, not a line: collapsing the opening fence
-          // merges the first body line into the fence's (now empty) line, so a
-          // line decoration anchored at the body line start would no longer sit
-          // at a visual line start and silently drop. A mark survives the merge.
-          marks.push({ from: openHideTo, to: closeHideFrom, cls: "cm-code-block" })
+        // Hide each fence's text in place (no newline eaten), leaving the fence
+        // lines as empty styled rows — the top/bottom padding of the code box.
+        hidden.push({ from: openLine.from, to: openLine.to })
+        hidden.push({ from: closeLine.from, to: closeLine.to })
+        for (let n = openLine.number; n <= closeLine.number; n++) {
+          const edge =
+            n === openLine.number
+              ? " cm-code-top"
+              : n === closeLine.number
+                ? " cm-code-bottom"
+                : ""
+          lines.push({ from: doc.line(n).from, cls: "cm-code-block" + edge })
         }
         return
       }
 
       if (node.name === "Blockquote") {
-        // A nested blockquote is already covered by its enclosing one's subtree
-        // walk and line span — skip it to avoid duplicate hides and line decos.
+        // A nested blockquote sits on lines the enclosing one already scans — skip
+        // it so each `>` isn't hidden twice (which would overlap and throw).
         for (let p = node.node.parent; p; p = p.parent) {
           if (p.name === "Blockquote") return
         }
-        // QuoteMarks nest inside the inner Paragraph on continuation lines, so
-        // walk the whole subtree, not just direct children.
-        node.node.cursor().iterate((c) => {
-          if (c.name !== "QuoteMark") return
-          const hasSpace = doc.sliceString(c.to, c.to + 1) === " "
-          hidden.push({ from: c.from, to: hasSpace ? c.to + 1 : c.to })
-        })
-        markLines(node.from, node.to, "cm-blockquote")
+        // Hide the leading `>` run on each line structurally rather than by
+        // QuoteMark node: the grammar sometimes drops the node (e.g. a `-`
+        // continuation folds the line into a Setext heading), but inside a
+        // confirmed blockquote the leading `>` is always the marker.
+        const last = doc.lineAt(node.to).number
+        for (let n = doc.lineAt(node.from).number; n <= last; n++) {
+          const line = doc.line(n)
+          let p = line.from
+          while (p < line.to && doc.sliceString(p, p + 1) === " ") p++
+          while (p < line.to && doc.sliceString(p, p + 1) === ">") {
+            const space = doc.sliceString(p + 1, p + 2) === " "
+            const end = space ? p + 2 : p + 1
+            hidden.push({ from: p, to: end })
+            p = end
+            while (p < line.to && doc.sliceString(p, p + 1) === " ") p++
+          }
+          lines.push({ from: line.from, cls: "cm-blockquote" })
+        }
         return
       }
 
@@ -213,12 +209,14 @@ export function blockSyntaxRanges(
         if (!mark) return
         const hasSpace = doc.sliceString(mark.to, mark.to + 1) === " "
         hidden.push({ from: mark.from, to: hasSpace ? mark.to + 1 : mark.to })
-        lines.push({ from: doc.lineAt(mark.from).from, cls: "cm-list-item" })
+        // Distinct glyph per marker so `*` and `-` read differently when mixed.
+        const cls = doc.sliceString(mark.from, mark.to) === "*" ? "cm-list-disc" : "cm-list-dash"
+        lines.push({ from: doc.lineAt(mark.from).from, cls })
       }
     },
   })
 
-  return { hidden, lines, marks }
+  return { hidden, lines }
 }
 
 const hideMark = Decoration.replace({})
@@ -303,11 +301,10 @@ function buildBlockDecorations(state: EditorState): {
   all: DecorationSet
   hidden: DecorationSet
 } {
-  const { hidden: hides, lines, marks } = blockSyntaxRanges(state)
+  const { hidden: hides, lines } = blockSyntaxRanges(state)
   const all: Range<Decoration>[] = []
   const hidden: Range<Decoration>[] = []
   for (const l of lines) all.push(Decoration.line({ class: l.cls }).range(l.from))
-  for (const m of marks) all.push(Decoration.mark({ class: m.cls }).range(m.from, m.to))
   for (const h of hides) {
     const r = hideMark.range(h.from, h.to)
     all.push(r)
@@ -361,22 +358,29 @@ const renderTheme = EditorView.baseTheme({
     borderRadius: "4px",
     padding: "0.1em 0.3em",
   },
-  // Block constructs (FEAT-0016). Code-block lines read as one monospace slab;
-  // contiguous lines share the background so the block looks continuous.
+  // Block constructs (FEAT-0016). A fenced block reads as one full-width box:
+  // every line shares the background; the (emptied) fence lines are its top/bottom
+  // padding rows, which carry the rounded corners.
   ".cm-code-block": {
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
     fontSize: "0.9em",
     background: "rgba(0,0,0,0.05)",
+    paddingLeft: "0.8em",
+    paddingRight: "0.8em",
   },
+  ".cm-code-top": { borderRadius: "6px 6px 0 0" },
+  ".cm-code-bottom": { borderRadius: "0 0 6px 6px" },
   ".cm-blockquote": {
     borderLeft: "3px solid rgba(0,0,0,0.2)",
-    paddingLeft: "0.8em",
+    paddingLeft: "0.7em",
     color: "rgba(0,0,0,0.65)",
     fontStyle: "italic",
   },
-  // The `*`/`-` marker is hidden; draw a real bullet in its place.
-  ".cm-list-item": { paddingLeft: "1.4em", textIndent: "-1.4em" },
-  ".cm-list-item::before": { content: '"•  "', opacity: "0.6" },
+  // The `*`/`-` marker is hidden; draw a glyph in its place, flush with the text's
+  // left edge (no negative indent that would overhang into the left margin). `*`
+  // and `-` get distinct glyphs so mixed markdown reads unambiguously.
+  ".cm-list-disc::before": { content: '"•  "', opacity: "0.6" },
+  ".cm-list-dash::before": { content: '"–  "', opacity: "0.6" },
 })
 
 /**
