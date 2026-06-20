@@ -117,3 +117,42 @@ return an **OPFS** handle (`navigator.storage.getDirectory()`), a genuine
 picker and the real permission prompt** (not DOM) — that stays a one-time manual
 spot-check per FSA-touching phase. (Chromium browser binary is ~115 MB, not
 committed; `npx playwright install chromium` provisions it.)
+
+## No underline support (M2)
+Markdown has no native underline. CommonMark reads `__x__`/`**x**` as **bold**
+and `_x_`/`*x*` as *italic*; the only way to render a true underline is to write
+raw `<u>…</u>` HTML into the file. That dirties the "clean markdown you own"
+moat: the file stops being portable plain prose and starts carrying
+presentation-only HTML that other markdown tools render inconsistently (or
+escape). For a quick-capture notepad whose entire value is file fidelity, that
+trade isn't worth one rarely-needed inline style. So **`Ctrl+U` is not bound**
+and underline is not offered anywhere (no slash command, no context-menu item).
+Consequence for the UI: the formatting surfaces expose bold / italic / inline
+code / headings only. (Rejected: write `<u>` HTML — breaks the moat;
+repurpose `__` as underline — collides with CommonMark bold and would corrupt
+files round-tripped through other tools.)
+
+## Hidden syntax: always hide, never reveal on the cursor line (M2)
+The rendering engine hides markdown markup on **every** line, including the line
+the caret is on — there is no Obsidian-style "reveal the raw `**` when you enter
+the node". Rationale: the ROADMAP's explicit goal is "markup never visible, no
+flicker", and always-hiding is also *simpler* — decorations rebuild only on doc
+and viewport changes, not on every selection move. Hidden markup runs are made
+**atomic** so the caret steps over the invisible characters cleanly instead of
+landing inside them. Editing formatting is therefore done through the shortcuts /
+slash / context-menu transforms, not by hand-editing raw markers. Consequence:
+the editor reads as rich text at all times; the cost is that you can't
+click-and-retype a raw `*` mid-word — you toggle via a command instead, which is
+the intended Notion-like model. (Rejected: reveal-on-cursor-line — the explicit
+"no flicker" non-goal, and forces selection-driven decoration rebuilds.)
+
+## One set of pure transforms behind every formatting surface (M2)
+Bold/italic/code toggles, heading-level cycling, and "clear to paragraph" are
+implemented once as **pure functions** on `(text, selection) → (text,
+selection)`, with no editor or DOM dependency. The keyboard shortcuts (Phase 2),
+slash commands (Phase 3), and right-click popup (Phase 4) are all thin adapters
+that call the same functions. This keeps the file-mutating logic in one
+unit-tested place (the part where a bug means a corrupted file), so the three
+input methods can't drift apart in how they edit the markdown. Consequence: the
+heavy correctness testing lives in fast vitest unit tests; the e2e layer only
+checks that each surface is wired to the transforms and renders hidden.
