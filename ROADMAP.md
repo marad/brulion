@@ -76,6 +76,14 @@ interface" and "External edits & conflict handling".
   on disk" isn't a blind choice. M4 ships the lean two-way pick with no diff;
   this is the follow-up the user asked for. Separate work: a diff view and the
   UI to present both sides.
+- **Subfolders in the notes folder** — let the folder be nested instead of flat
+  (M3 deliberately kept notes root-only). Needs recursive listing, a tree UI in
+  the sidebar, name/path handling, and a think about how create/delete and the
+  M4 poller behave across nesting.
+- **Collapsible note list** — let the user hide/show the left sidebar (the note
+  list) to get a distraction-free, editor-only view; remember the state.
+- **Vim mode** — a Vim keybinding layer for the editor (CodeMirror has
+  `@replit/codemirror-vim`); opt-in, must not fight the slash/format commands.
 - **Links** between notes (a `papier` gap and a differentiator, but separate
   work: parsing, path resolution, navigation, missing-target handling).
 - **PWA** — installable window/icon, `beforeinstallprompt`, offline via service
@@ -84,6 +92,21 @@ interface" and "External edits & conflict handling".
 - **Sync (paid)** — BYO-cloud (Dropbox/Drive/OneDrive) via OAuth PKCE,
   client-side, no data hosted by us. License validation via merchant-of-record
   (Lemon Squeezy / Paddle). Not before product-market-fit.
+
+## Known rendering gaps (M2 hidden-syntax, to fix)
+
+The M2 editor hides/styles inline marks (bold, italic, inline code) and headings,
+but several markdown constructs aren't rendered as rich content yet — they show
+their raw markers. Reported from real use; each is a candidate fix (likely
+`markdown-render.ts` decorations and, for clear-formatting, `markdown-transforms.ts`).
+
+- **Clear Formatting skips inline code** — "clear to paragraph" doesn't strip a
+  code span (text between `` ` ``). Audit whether it also misses other inline/block
+  marks while fixing.
+- **Fenced / multi-line code blocks** (```` ``` ````) don't render correctly.
+- **Blockquotes** (`> quoted text`) don't render — the `>` shows literally.
+- **Unordered lists** (`*` and `-` bullets) don't render — the marker shows
+  literally instead of a list item.
 
 ## Open decisions
 
