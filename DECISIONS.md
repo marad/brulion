@@ -267,22 +267,25 @@ conflict banner with two buttons; resolving either way clears the state and
 re-enables saving. (Rejected: diff/merge UI — too heavy for the ethos and the
 audience; auto-pick a winner — silently loses one side's data, breaking the moat.)
 
-## Navigating away from a standing conflict resolves it as "take theirs" (M4)
-A conflict (FEAT-0015) gives the user two buttons — keep mine / take theirs — but
-they may instead click another note, create one, or re-pick the folder while the
-banner is up. Re-pointing the editor can't carry the conflicted, unsaved buffer
-with it (there is one buffer, and it could not be flushed — that's *why* it's a
-conflict). So any navigation that loads a different note **clears the conflict and
-abandons the conflicted buffer**, which is equivalent to choosing "take theirs"
-for the note left behind (its on-disk version stands; the unsaved keystrokes are
-dropped). This is centralized in `load`: whenever it clears a standing conflict it
-fires `onConflictResolved`, so the banner never lingers over an unrelated note
-(the alternative — leaving a stuck, now-inert banner — was the bug this replaces).
-Consequence: the conflict banner is *not* modal; you can navigate away from it,
-and doing so keeps the disk version. (Rejected: block all navigation until the
-conflict is resolved — heavier UX, and clicking a note doing nothing is its own
-confusion; keep the conflicted edits across a switch — impossible with a single
-buffer, and stashing per-note unsaved state is well beyond the lean scope.)
+## The conflict is modal: resolve before doing anything else (M4)
+A conflict (FEAT-0015) demands a conscious choice — keep mine / take theirs — so
+the banner is **modal**: while it stands, a full-screen backdrop covers the app
+(list, editor, header), the editor is **read-only**, and the controller refuses
+the navigation that would re-point the editor (`switchTo`/`addNote`/`removeNote`
+are no-ops while `conflict`). The only exits are the two resolution buttons; the
+backdrop does not dismiss on a background click or Escape. Rationale: the earlier
+non-modal banner let the user click another note and thereby *silently* abandon
+the conflicted, unsaved buffer (an unconscious "take theirs" reachable by a stray
+click) — which breaks the moat's promise that we never lose the user's work
+without their say-so. Making it modal forces the decision to be deliberate. The
+banner-clearing is still centralized in `load` (it fires `onConflictResolved`
+when it clears a standing conflict), but with navigation blocked the only path
+that reaches it during a conflict is `resolveTakeTheirs`. Consequence: while a
+conflict is open you cannot type, switch, create, or delete — you must pick keep
+or take first; UI-wise the workspace dims behind the dialog. (Rejected: non-modal
+banner you can navigate away from — silently drops unsaved edits on a stray click;
+blocking navigation but leaving the editor writable — a leaky modal where you keep
+typing into a buffer you're about to resolve.)
 
 ## Switching notes flushes the open note first (M3)
 When the user picks another note, the controller flushes the currently open

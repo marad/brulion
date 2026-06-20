@@ -71,6 +71,11 @@ interface" and "External edits & conflict handling".
 
 ## Later / backlog (out of MVP, on purpose)
 
+- **Conflict diff/preview** — when the conflict dialog (M4 / FEAT-0015) appears,
+  show *what* changed (your version vs the on-disk version) so "use the version
+  on disk" isn't a blind choice. M4 ships the lean two-way pick with no diff;
+  this is the follow-up the user asked for. Separate work: a diff view and the
+  UI to present both sides.
 - **Links** between notes (a `papier` gap and a differentiator, but separate
   work: parsing, path resolution, navigation, missing-target handling).
 - **PWA** — installable window/icon, `beforeinstallprompt`, offline via service
