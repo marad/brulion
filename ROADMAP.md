@@ -84,8 +84,21 @@ In:
   misses other inline/block marks while fixing.
 
 ### M6 — Editor comfort
-**Goal:** make daily writing nicer. Two independent, lean additions living in the
-CodeMirror layer, neither of which touches the file format.
+**Goal:** make daily writing nicer. Lean additions living in the CodeMirror layer,
+none of which touches the file format.
+- **Bullet caret/glyph glitch while typing a marker (fix first — M5 follow-up).**
+  When you type a bare `*` or `-`, the caret looks like it already sits one space
+  in (the rendered `•  ` glyph from `::before` carries trailing spaces and the
+  hidden marker is atomic), but the document is still just `*` with no space — so
+  the next character you type appears *before* the literal `*`, which pops back
+  into view at the line start. Conversely, typing the space that completes `* `
+  barely moves the caret (the `* ` hides and the `•  ` glyph takes nearly the same
+  width). Net: caret position and the rendered bullet disagree while the marker is
+  mid-typing. Likely needs the bullet rendered as a fixed-width replacement of the
+  actual `*`/`- ` run (a widget/decoration sized to the marker) instead of a
+  `::before` glyph layered on top of an atomically-hidden marker, so the caret and
+  the glyph stay in sync as you type. Reported in the M5 review; fix before the
+  comfort features below.
 - **Collapsible note list** — hide/show the left sidebar for a distraction-free,
   editor-only view; remember the state.
 - **Vim mode** — opt-in Vim keybinding layer (`@replit/codemirror-vim`); must not
