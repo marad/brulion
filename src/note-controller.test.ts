@@ -635,6 +635,163 @@ describe("checkDisk (AC-4..AC-7)", () => {
   })
 })
 
+describe("refreshFromDisk (FEAT-0014)", () => {
+  it("adopts an externally added note into the list, leaving the editor (AC-1)", async () => {
+    const view = mountView()
+    const onListChanged = vi.fn()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, { onListChanged, debounceMs: 10_000 })
+    await controller.open(DIR)
+    onListChanged.mockClear()
+
+    listNotes.mockResolvedValue(["new.md", "start.md"]) // appeared externally
+    await controller.refreshFromDisk()
+
+    expect(onListChanged).toHaveBeenCalledWith(["new.md", "start.md"], "start.md")
+    expect(view.state.doc.toString()).toBe("body") // editor untouched
+  })
+
+  it("drops an externally removed non-active note from the list (AC-2)", async () => {
+    const view = mountView()
+    const onListChanged = vi.fn()
+    listNotes.mockResolvedValue(["other.md", "start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, { onListChanged, debounceMs: 10_000 })
+    await controller.open(DIR)
+    onListChanged.mockClear()
+
+    listNotes.mockResolvedValue(["start.md"]) // other.md removed externally
+    await controller.refreshFromDisk()
+
+    expect(onListChanged).toHaveBeenCalledWith(["start.md"], "start.md")
+    expect(view.state.doc.toString()).toBe("body")
+  })
+
+  it("reloads the open note's external edit and adopts the new mtime (AC-3)", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, { debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    statNote.mockResolvedValue(2) // edited externally
+    readNote.mockResolvedValue({ content: "new body", lastModified: 2 })
+    await controller.refreshFromDisk()
+
+    expect(view.state.doc.toString()).toBe("new body")
+
+    // The adopted mtime means a later save bases off the new version (no false conflict).
+    type(view, "!")
+    controller.handleChange()
+    controller.flush()
+    await vi.waitFor(() =>
+      expect(saveNote).toHaveBeenCalledWith(DIR, "start.md", "new body!", 2),
+    )
+  })
+
+  it("does not reload when there are unsaved local edits (AC-4)", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, { debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    type(view, " local") // unsaved local edit
+    controller.handleChange()
+    readNote.mockClear()
+    saveNote.mockClear()
+    statNote.mockResolvedValue(2) // external edit collides with local edits
+
+    await controller.refreshFromDisk()
+
+    expect(readNote).not.toHaveBeenCalled() // no silent reload
+    expect(saveNote).not.toHaveBeenCalled() // no silent overwrite
+    expect(view.state.doc.toString()).toBe("body local") // buffer preserved
+  })
+
+  it("switches to another note when the open note is deleted externally (AC-5)", async () => {
+    const view = mountView()
+    const onListChanged = vi.fn()
+    listNotes.mockResolvedValue(["other.md", "start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, { onListChanged, debounceMs: 10_000 })
+    await controller.open(DIR)
+    onListChanged.mockClear()
+
+    statNote.mockResolvedValue(null) // active note deleted externally
+    listNotes.mockResolvedValue(["other.md"])
+    readNote.mockResolvedValue({ content: "other body", lastModified: 5 })
+    await controller.refreshFromDisk()
+
+    expect(view.state.doc.toString()).toBe("other body")
+    expect(saveActiveNote).toHaveBeenCalledWith("other.md")
+    expect(onListChanged).toHaveBeenCalledWith(["other.md"], "other.md")
+  })
+
+  it("falls back to an empty start buffer when the last note is deleted externally (AC-5)", async () => {
+    const view = mountView()
+    const onListChanged = vi.fn()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, { onListChanged, debounceMs: 10_000 })
+    await controller.open(DIR)
+    onListChanged.mockClear()
+
+    statNote.mockResolvedValue(null) // the only note deleted externally
+    listNotes.mockResolvedValue([])
+    readNote.mockResolvedValue({ content: "", lastModified: null })
+    await controller.refreshFromDisk()
+
+    expect(view.state.doc.toString()).toBe("")
+    expect(onListChanged).toHaveBeenCalledWith([], "start.md")
+  })
+
+  it("is a no-op with no folder open (AC-6)", async () => {
+    const view = mountView()
+    const controller = createNoteController(view)
+
+    await controller.refreshFromDisk()
+
+    expect(listNotes).not.toHaveBeenCalled()
+    expect(statNote).not.toHaveBeenCalled()
+  })
+
+  it("is a no-op while a save is in flight (AC-6)", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, { debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    saveNote.mockReturnValue(new Promise<never>(() => {})) // never settles
+    type(view, "x")
+    controller.handleChange()
+    controller.flush() // savePromise now in flight
+
+    listNotes.mockClear()
+    statNote.mockClear()
+    await controller.refreshFromDisk()
+
+    expect(listNotes).not.toHaveBeenCalled()
+    expect(statNote).not.toHaveBeenCalled()
+  })
+})
+
 describe("conflict (AC-5 of FEAT-0004 preserved)", () => {
   it("calls onConflict and stops saving once a save is refused", async () => {
     const view = mountView()
