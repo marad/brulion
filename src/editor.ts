@@ -17,9 +17,9 @@ const typography = EditorView.theme({
     maxWidth: "68ch",
     margin: "0 auto",
     padding: "2.5rem 1.25rem",
-    caretColor: "#1a1a1a",
   },
   ".cm-gutters": { display: "none" },
+  ".cm-activeLine": { backgroundColor: "transparent" }, // no code-editor line highlight
   "&.cm-focused": { outline: "none" },
 })
 
@@ -46,6 +46,7 @@ export function mountEditor(
     doc: "",
     extensions: [
       basicSetup,
+      EditorView.lineWrapping, // wrap long lines at the column width — prose, not code
       typography,
       keymap.of([
         {

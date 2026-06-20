@@ -19,15 +19,19 @@ test("caps the text column to a readable measure and centers it (AC-2)", async (
 }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto("/brulion/")
+  // Exercise the measure against real content: a long line must wrap within the
+  // column, not stretch it (an empty editor would not catch a missing wrap).
+  await page.locator(".cm-content").click()
+  await page.keyboard.type("This is a deliberately long single line of prose. ".repeat(8))
 
   const box = await page.locator(".cm-content").boundingBox()
   const viewport = page.viewportSize()!
   expect(box).not.toBeNull()
 
-  expect(box!.width).toBeLessThan(viewport.width)
+  expect(box!.width).toBeLessThan(viewport.width * 0.75) // capped well under full width
   const leftGap = box!.x
   const rightGap = viewport.width - (box!.x + box!.width)
-  expect(leftGap).toBeGreaterThan(20) // not flush to the edge
+  expect(leftGap).toBeGreaterThan(40) // not flush to the edge
   expect(Math.abs(leftGap - rightGap)).toBeLessThan(4) // centered
 })
 
