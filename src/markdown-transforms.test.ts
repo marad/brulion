@@ -14,6 +14,7 @@ import {
   promoteHeading,
   demoteHeading,
   setHeading,
+  setHeadingLines,
 } from "./markdown-transforms"
 
 /** Build a state with a selection, marked `|` for caret or `[`…`]` for a range. */
@@ -94,6 +95,16 @@ describe("toggleInline", () => {
     // emit invalid `****`; instead the existing span is unwrapped (valid md).
     expect(toggle("x **[bo** y]", BOLD).doc).toBe("x bo y")
   })
+
+  it("wraps each line separately across a multi-line selection (AC: moat)", () => {
+    // `**a\nb\nc**` straddles block boundaries and isn't valid CommonMark;
+    // per-line markers keep the file clean.
+    expect(toggle("[a\nb\nc]", BOLD).doc).toBe("**a**\n**b**\n**c**")
+  })
+
+  it("skips blank lines when wrapping a multi-line selection", () => {
+    expect(toggle("[a\n\nb]", BOLD).doc).toBe("**a**\n\n**b**")
+  })
 })
 
 describe("heading level helpers", () => {
@@ -162,5 +173,42 @@ describe("heading transforms on the caret line", () => {
     const s = stateOf("first\nsec|ond\nthird")
     const next = apply(s, setHeading(1)(s))
     expect(next.doc.toString()).toBe("first\n# second\nthird")
+  })
+})
+
+describe("setHeadingLines (multi-line, for the right-click menu)", () => {
+  const apply = (s: EditorState, spec: TransactionSpec | null) =>
+    spec ? s.update(spec).state : s
+
+  it("turns every line touched by the selection into a heading", () => {
+    const s = stateOf("[a\nb\nc]")
+    expect(apply(s, setHeadingLines(s, 2)).doc.toString()).toBe("## a\n## b\n## c")
+  })
+
+  it("strips headings across the selection when leveled to paragraph", () => {
+    const s = stateOf("[# one\n## two]")
+    expect(apply(s, setHeadingLines(s, 0)).doc.toString()).toBe("one\ntwo")
+  })
+
+  it("covers only the lines the selection touches, not the whole doc", () => {
+    const s = stateOf("keep\n[mid1\nmid2]\nkeep2")
+    expect(apply(s, setHeadingLines(s, 1)).doc.toString()).toBe(
+      "keep\n# mid1\n# mid2\nkeep2",
+    )
+  })
+
+  it("returns null when no line would change", () => {
+    expect(setHeadingLines(stateOf("[already plain]"), 0)).toBeNull()
+  })
+
+  it("does not format the next line when the selection ends at its start", () => {
+    // Selection covers "a\n" and stops at the start of "b": only "a" is headed.
+    const s = stateOf("[a\n]b")
+    expect(apply(s, setHeadingLines(s, 1)).doc.toString()).toBe("# a\nb")
+  })
+
+  it("handles a single-line selection", () => {
+    const s = stateOf("[solo]")
+    expect(apply(s, setHeadingLines(s, 3)).doc.toString()).toBe("### solo")
   })
 })

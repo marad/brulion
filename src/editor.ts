@@ -4,6 +4,7 @@ import { Annotation } from "@codemirror/state"
 import { markdownRendering } from "./markdown-render"
 import { markdownCommands } from "./markdown-commands"
 import { slashCommands } from "./slash-commands"
+import { contextMenu } from "./context-menu"
 
 /** Clean, prose-friendly typography: proportional font, readable measure,
  * comfortable spacing, no code-like gutter. No syntax hiding — that is M2.
@@ -53,6 +54,7 @@ export function mountEditor(
       markdownRendering, // hide markdown markup; render text as rich content
       markdownCommands, // Ctrl+B/I/E and heading shortcuts reshape the markdown
       slashCommands, // "/" at line start opens a menu to reshape the line
+      contextMenu, // right-click opens a formatting popup over the selection
       typography,
       keymap.of([
         {

@@ -107,14 +107,32 @@ export function toggleInline(
   const nodes = nodesIn(state, from, to, nodeName)
   if (nodes.length) return unwrap(state, nodes)
 
-  // Wrap: marker before and after the selection; keep the same text selected.
-  return {
-    changes: [
-      { from, insert: marker },
-      { from: to, insert: marker },
-    ],
-    selection: { anchor: from + marker.length, head: to + marker.length },
+  const fromLine = state.doc.lineAt(from)
+  const toLine = state.doc.lineAt(to)
+  if (fromLine.number === toLine.number) {
+    // Single line: wrap the selection, keep the same text selected.
+    return {
+      changes: [
+        { from, insert: marker },
+        { from: to, insert: marker },
+      ],
+      selection: { anchor: from + marker.length, head: to + marker.length },
+    }
   }
+
+  // Multi-line: wrap each line's selected segment on its own. Wrapping the whole
+  // span (`**line1\nline2**`) would straddle block boundaries and is not valid
+  // CommonMark — per-line markers keep the file clean (the moat).
+  const changes: { from: number; insert: string }[] = []
+  for (let n = fromLine.number; n <= toLine.number; n++) {
+    const line = state.doc.line(n)
+    const segFrom = Math.max(line.from, from)
+    const segTo = Math.min(line.to, to)
+    if (segTo > segFrom) {
+      changes.push({ from: segFrom, insert: marker }, { from: segTo, insert: marker })
+    }
+  }
+  return changes.length ? { changes } : {}
 }
 
 /** The ATX heading level of a line (1–6), or 0 for a plain paragraph. */
@@ -174,3 +192,27 @@ export const setHeading =
   (level: number) =>
   (state: EditorState): TransactionSpec | null =>
     changeHeading(state, () => level)
+
+/**
+ * Set every line touched by the selection to heading `level` (0 = plain
+ * paragraph). For the right-click menu, where a selection may span many lines.
+ * Returns `null` when no line actually changes.
+ */
+export function setHeadingLines(state: EditorState, level: number): TransactionSpec | null {
+  const { from, to } = state.selection.main
+  const firstLine = state.doc.lineAt(from).number
+  const lastLineObj = state.doc.lineAt(to)
+  // A selection ending exactly at a line start doesn't really include that line
+  // (it stops at the newline before it) — don't format the unselected next line.
+  const lastLine =
+    to > from && lastLineObj.from === to ? lastLineObj.number - 1 : lastLineObj.number
+  const changes: { from: number; to: number; insert: string }[] = []
+  for (let n = firstLine; n <= lastLine; n++) {
+    const line = state.doc.line(n)
+    const replaced = withHeadingLevel(line.text, level)
+    if (replaced !== line.text) {
+      changes.push({ from: line.from, to: line.to, insert: replaced })
+    }
+  }
+  return changes.length ? { changes } : null
+}
