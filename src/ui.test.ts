@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import * as fs from "./fs"
 import * as session from "./session"
-import { openFolder, restoreFolder, wireOpenFolder, renderNoteList } from "./ui"
+import { openFolder, restoreFolder, wireOpenFolder, renderNoteList, wireNewNote } from "./ui"
 
 vi.mock("./fs", () => ({ pickFolder: vi.fn() }))
 vi.mock("./session", () => ({
@@ -138,39 +138,80 @@ describe("restoreFolder", () => {
 })
 
 describe("renderNoteList", () => {
+  const handlers = () => ({ onSelect: vi.fn(), onDelete: vi.fn() })
+
   it("renders one row per note, by name without the .md extension (AC-1)", () => {
     const container = document.createElement("div")
-    renderNoteList(container, ["apple.md", "Banana.md"], "apple.md", vi.fn())
+    renderNoteList(container, ["apple.md", "Banana.md"], "apple.md", handlers())
 
-    const rows = container.querySelectorAll(".note-row")
+    const rows = container.querySelectorAll(".note-name")
     expect([...rows].map((r) => r.textContent)).toEqual(["apple", "Banana"])
   })
 
   it("marks exactly the active note's row (AC-2)", () => {
     const container = document.createElement("div")
-    renderNoteList(container, ["apple.md", "banana.md"], "banana.md", vi.fn())
+    renderNoteList(container, ["apple.md", "banana.md"], "banana.md", handlers())
 
     const active = container.querySelectorAll(".note-row.active")
     expect(active).toHaveLength(1)
-    expect(active[0].textContent).toBe("banana")
+    expect(active[0].querySelector(".note-name")?.textContent).toBe("banana")
     expect(active[0].getAttribute("aria-current")).toBe("true")
   })
 
   it("calls onSelect with the filename when a row is clicked (AC-3)", () => {
     const container = document.createElement("div")
-    const onSelect = vi.fn()
-    renderNoteList(container, ["apple.md", "banana.md"], "apple.md", onSelect)
+    const h = handlers()
+    renderNoteList(container, ["apple.md", "banana.md"], "apple.md", h)
 
-    container.querySelectorAll<HTMLElement>(".note-row")[1].click()
-    expect(onSelect).toHaveBeenCalledWith("banana.md")
+    container.querySelectorAll<HTMLElement>(".note-name")[1].click()
+    expect(h.onSelect).toHaveBeenCalledWith("banana.md")
+  })
+
+  it("calls onDelete with the filename when a row's delete button is clicked (AC-5)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["apple.md", "banana.md"], "apple.md", h)
+
+    container.querySelectorAll<HTMLElement>(".note-delete")[1].click()
+    expect(h.onDelete).toHaveBeenCalledWith("banana.md")
+    expect(h.onSelect).not.toHaveBeenCalled() // delete is not a select
   })
 
   it("replaces previous rows on re-render", () => {
     const container = document.createElement("div")
-    renderNoteList(container, ["a.md", "b.md"], "a.md", vi.fn())
-    renderNoteList(container, ["c.md"], "c.md", vi.fn())
+    renderNoteList(container, ["a.md", "b.md"], "a.md", handlers())
+    renderNoteList(container, ["c.md"], "c.md", handlers())
 
-    expect([...container.querySelectorAll(".note-row")].map((r) => r.textContent)).toEqual(["c"])
+    expect([...container.querySelectorAll(".note-name")].map((r) => r.textContent)).toEqual(["c"])
+  })
+})
+
+describe("wireNewNote", () => {
+  it("submits the trimmed input value and clears the field", () => {
+    const form = document.createElement("form")
+    const input = document.createElement("input")
+    form.append(input)
+    const onCreate = vi.fn()
+    wireNewNote(form, input, onCreate)
+
+    input.value = "  My note  "
+    form.requestSubmit()
+
+    expect(onCreate).toHaveBeenCalledWith("My note")
+    expect(input.value).toBe("")
+  })
+
+  it("ignores an empty submission", () => {
+    const form = document.createElement("form")
+    const input = document.createElement("input")
+    form.append(input)
+    const onCreate = vi.fn()
+    wireNewNote(form, input, onCreate)
+
+    input.value = "   "
+    form.requestSubmit()
+
+    expect(onCreate).not.toHaveBeenCalled()
   })
 })
 

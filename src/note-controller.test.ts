@@ -4,11 +4,19 @@ import * as note from "./note"
 import * as session from "./session"
 import { createNoteController, pickActiveNote } from "./note-controller"
 
-vi.mock("./note", () => ({ readNote: vi.fn(), saveNote: vi.fn(), listNotes: vi.fn() }))
+vi.mock("./note", () => ({
+  readNote: vi.fn(),
+  saveNote: vi.fn(),
+  listNotes: vi.fn(),
+  createNote: vi.fn(),
+  deleteNote: vi.fn(),
+}))
 vi.mock("./session", () => ({ saveActiveNote: vi.fn(), loadActiveNote: vi.fn() }))
 const readNote = vi.mocked(note.readNote)
 const saveNote = vi.mocked(note.saveNote)
 const listNotes = vi.mocked(note.listNotes)
+const createNote = vi.mocked(note.createNote)
+const deleteNote = vi.mocked(note.deleteNote)
 const loadActiveNote = vi.mocked(session.loadActiveNote)
 const saveActiveNote = vi.mocked(session.saveActiveNote)
 
@@ -27,6 +35,8 @@ beforeEach(() => {
   readNote.mockResolvedValue({ content: "", lastModified: null })
   saveNote.mockResolvedValue({ status: "saved", lastModified: 1 })
   listNotes.mockResolvedValue([])
+  createNote.mockResolvedValue({ status: "created" })
+  deleteNote.mockResolvedValue(undefined)
   loadActiveNote.mockResolvedValue(undefined)
 })
 
@@ -239,6 +249,152 @@ describe("lazy start.md appears in the list (AC-8)", () => {
     await vi.waitFor(() =>
       expect(onListChanged).toHaveBeenLastCalledWith(["start.md"], "start.md"),
     )
+  })
+})
+
+describe("addNote (FEAT-0012)", () => {
+  it("creates a valid note, opens it, and lists it (AC-1)", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValueOnce(["start.md"]).mockResolvedValue(["Diablo builds.md", "start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    const onListChanged = vi.fn()
+    const controller = createNoteController(view, { onListChanged, debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    const result = await controller.addNote("  Diablo builds  ")
+
+    expect(result).toEqual({ ok: true })
+    expect(createNote).toHaveBeenCalledWith(DIR, "Diablo builds.md")
+    expect(onListChanged).toHaveBeenLastCalledWith(
+      ["Diablo builds.md", "start.md"],
+      "Diablo builds.md",
+    )
+    expect(saveActiveNote).toHaveBeenLastCalledWith("Diablo builds.md")
+  })
+
+  it("flushes the previously open note before opening the new one (AC-2)", async () => {
+    const order: string[] = []
+    saveNote.mockImplementation(async (_dir, name) => {
+      order.push(`save:${name}`)
+      return { status: "saved", lastModified: 9 }
+    })
+    createNote.mockImplementation(async (_dir, name) => {
+      order.push(`create:${name}`)
+      return { status: "created" }
+    })
+    const view = mountView()
+    listNotes.mockResolvedValueOnce(["a.md"]).mockResolvedValue(["a.md", "new.md"])
+    loadActiveNote.mockResolvedValue("a.md")
+    readNote.mockImplementation(async (_dir, name) => ({
+      content: name === "a.md" ? "A body" : "",
+      lastModified: name === "a.md" ? 1 : null,
+    }))
+    const controller = createNoteController(view, { debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    type(view, " edited")
+    controller.handleChange()
+    await controller.addNote("new")
+
+    expect(saveNote).toHaveBeenCalledWith(DIR, "a.md", "A body edited", 1)
+    expect(order.indexOf("save:a.md")).toBeLessThan(order.indexOf("create:new.md"))
+    expect(view.state.doc.toString()).toBe("")
+  })
+
+  it("refuses a duplicate name and leaves the editor untouched (AC-3)", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "start body", lastModified: 1 })
+    createNote.mockResolvedValue({ status: "exists" })
+    const controller = createNoteController(view, { debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    const result = await controller.addNote("start")
+
+    expect(result.ok).toBe(false)
+    expect(result.ok === false && result.reason).toMatch(/exist/i)
+    expect(view.state.doc.toString()).toBe("start body") // editor unchanged
+  })
+
+  it("refuses an invalid name without touching the folder (AC-4)", async () => {
+    const view = mountView()
+    const controller = createNoteController(view)
+    await controller.open(DIR)
+
+    const result = await controller.addNote("bad/name")
+
+    expect(result.ok).toBe(false)
+    expect(createNote).not.toHaveBeenCalled()
+  })
+})
+
+describe("removeNote (FEAT-0012)", () => {
+  async function open(active: string, names: string[]) {
+    const view = mountView()
+    listNotes.mockResolvedValue(names)
+    loadActiveNote.mockResolvedValue(active)
+    readNote.mockImplementation(async (_dir, name) => ({
+      content: `${name} body`,
+      lastModified: 1,
+    }))
+    const onListChanged = vi.fn()
+    const controller = createNoteController(view, { onListChanged, debounceMs: 10_000 })
+    await controller.open(DIR)
+    return { view, controller, onListChanged }
+  }
+
+  it("deletes the file and removes it from the list (AC-6)", async () => {
+    const { controller, onListChanged } = await open("a.md", ["a.md", "b.md"])
+    listNotes.mockResolvedValue(["b.md"])
+
+    await controller.removeNote("a.md")
+
+    expect(deleteNote).toHaveBeenCalledWith(DIR, "a.md")
+    expect(onListChanged.mock.calls.at(-1)?.[0]).toEqual(["b.md"])
+  })
+
+  it("switches to another note when the active one is deleted (AC-7)", async () => {
+    const { view, controller } = await open("a.md", ["a.md", "b.md"])
+    listNotes.mockResolvedValue(["b.md"])
+
+    await controller.removeNote("a.md")
+
+    expect(view.state.doc.toString()).toBe("b.md body")
+  })
+
+  it("falls back to an empty start buffer when the last note is deleted (AC-7)", async () => {
+    const { view, controller, onListChanged } = await open("only.md", ["only.md"])
+    listNotes.mockResolvedValue([])
+    readNote.mockResolvedValue({ content: "", lastModified: null })
+
+    await controller.removeNote("only.md")
+
+    expect(view.state.doc.toString()).toBe("")
+    expect(onListChanged.mock.calls.at(-1)).toEqual([[], "start.md"])
+  })
+
+  it("leaves the editor in place when a non-active note is deleted (AC-8)", async () => {
+    const { view, controller, onListChanged } = await open("a.md", ["a.md", "b.md"])
+    listNotes.mockResolvedValue(["a.md"])
+
+    await controller.removeNote("b.md")
+
+    expect(deleteNote).toHaveBeenCalledWith(DIR, "b.md")
+    expect(view.state.doc.toString()).toBe("a.md body") // still on A
+    expect(onListChanged.mock.calls.at(-1)).toEqual([["a.md"], "a.md"])
+  })
+
+  it("drops the active note's pending edits instead of resurrecting it", async () => {
+    const { view, controller } = await open("a.md", ["a.md", "b.md"])
+    listNotes.mockResolvedValue(["b.md"])
+
+    type(view, " unsaved edit") // a.md is now dirty
+    controller.handleChange()
+    await controller.removeNote("a.md")
+
+    // The deleted note must not be written back by a flush.
+    expect(saveNote).not.toHaveBeenCalledWith(DIR, "a.md", expect.anything(), expect.anything())
   })
 })
 
