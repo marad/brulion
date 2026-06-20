@@ -60,6 +60,19 @@ export async function saveNote(
   return { status: "saved", lastModified }
 }
 
+/**
+ * The `lastModified` of `name`, or `null` if it does not exist — a cheap
+ * existence/mtime probe for change detection that avoids reading the content.
+ */
+export async function statNote(
+  dir: FileSystemDirectoryHandle,
+  name: string,
+): Promise<number | null> {
+  const handle = await getExisting(dir, name)
+  if (!handle) return null
+  return (await handle.getFile()).lastModified
+}
+
 /** The folder's `.md` filenames, sorted case-insensitively. */
 export async function listNotes(
   dir: FileSystemDirectoryHandle,

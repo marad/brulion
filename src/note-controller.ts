@@ -1,6 +1,6 @@
 import type { EditorView } from "codemirror"
 import { setEditorText } from "./editor"
-import { readNote, saveNote, listNotes, createNote, deleteNote } from "./note"
+import { readNote, saveNote, listNotes, createNote, deleteNote, statNote } from "./note"
 import { normalizeNoteName } from "./note-name"
 import { saveActiveNote, loadActiveNote } from "./session"
 import { debounce } from "./debounce"
@@ -9,6 +9,64 @@ const SEED_NOTE = "start.md"
 
 /** The outcome of {@link NoteController.addNote}. */
 export type AddNoteResult = { ok: true } | { ok: false; reason: string }
+
+/** How the active note changed on disk (relative to what the controller saw). */
+export type ActiveDiskState =
+  | { kind: "changed"; lastModified: number; dirty: boolean }
+  | { kind: "deleted"; dirty: boolean }
+
+/**
+ * The result of {@link NoteController.checkDisk}: a classification of what
+ * changed on disk since the controller last looked. Detection only — acting on
+ * it (refresh / conflict) is FEAT-0014 / FEAT-0015.
+ */
+export interface DiskCheck {
+  /** The current listing iff the folder's `*.md` set changed, else `null`. */
+  listChanged: string[] | null
+  /** The active note's on-disk change, or `null` if it is unchanged. */
+  active: ActiveDiskState | null
+}
+
+/**
+ * Classify what changed on disk, purely (no FSA, no DOM) — the testable core of
+ * {@link NoteController.checkDisk}.
+ *
+ * - `listChanged`: the current listing when the sorted `*.md` sets differ, else
+ *   `null` (both inputs are sorted, so equal sets compare element-wise).
+ * - `active`: `deleted` when the active file is absent **and** we had it before
+ *   (`knownLastModified !== null`); a never-materialized seed still absent reads
+ *   as no change. `changed` when present with a different mtime (including
+ *   `null → value`: a file appeared where we had none); else `null`.
+ */
+export function classifyDiskCheck(args: {
+  knownNotes: string[]
+  diskNotes: string[]
+  knownLastModified: number | null
+  diskActiveLastModified: number | null
+  dirty: boolean
+}): DiskCheck {
+  const { knownNotes, diskNotes, knownLastModified, diskActiveLastModified, dirty } = args
+
+  const listChanged = sameNotes(knownNotes, diskNotes) ? null : diskNotes
+
+  let active: ActiveDiskState | null = null
+  if (diskActiveLastModified === null) {
+    // Absent on disk. Only a change if we had it before; a never-materialized
+    // seed that's still absent is not "deleted".
+    if (knownLastModified !== null) active = { kind: "deleted", dirty }
+  } else if (diskActiveLastModified !== knownLastModified) {
+    // Present with a different mtime (incl. null → value: a file appeared).
+    active = { kind: "changed", lastModified: diskActiveLastModified, dirty }
+  }
+
+  return { listChanged, active }
+}
+
+/** Element-wise equality of two pre-sorted listings (see {@link listNotes}). */
+function sameNotes(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false
+  return a.every((name, i) => name === b[i])
+}
 
 export interface NoteControllerOptions {
   /** Called when a save is refused because the file changed on disk. */
@@ -32,6 +90,12 @@ export interface NoteController {
   handleChange(): void
   /** Save any pending changes immediately (focus loss / Ctrl+S). */
   flush(): void
+  /**
+   * Compare the folder against what the controller last saw and classify what
+   * changed on disk. Detection only — non-destructive (no write, no buffer
+   * reload, no state mutation); a no-op with no folder open.
+   */
+  checkDisk(): Promise<DiskCheck>
 }
 
 /**
@@ -198,6 +262,31 @@ export function createNoteController(
     },
     flush() {
       void flushAndWait()
+    },
+    checkDisk() {
+      return serialize<DiskCheck>(async () => {
+        const folder = dir
+        if (!folder) return { listChanged: null, active: null }
+        // Skip while our own save is in flight: doSave runs on its own mutex
+        // outside this queue, so mid-save the file's mtime has moved but our
+        // `lastModified` hasn't caught up yet — checking now would report our
+        // own write as an external change. The next poll (or a manual check)
+        // sees a settled, consistent state.
+        if (savePromise) return { listChanged: null, active: null }
+        // Probe the disk; classify against the controller's current view. No
+        // state is adopted here (that would disarm the save-time conflict
+        // guard) — detection only. The serialize queue keeps activeName/notes
+        // stable across these awaits.
+        const diskNotes = await listNotes(folder)
+        const diskActiveLastModified = await statNote(folder, activeName)
+        return classifyDiskCheck({
+          knownNotes: notes,
+          diskNotes,
+          knownLastModified: lastModified,
+          diskActiveLastModified,
+          dirty,
+        })
+      })
     },
   }
 }
