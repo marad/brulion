@@ -217,6 +217,56 @@ registry — faster listing and free ordering/metadata, but it's a second source
 truth that drifts from the files and dirties the folder with app-private state,
 breaking the "files are the interface" moat.)
 
+## Detect external edits by polling `lastModified`, not a watch API (M4)
+The folder has many writers (see "Files are the interface"), so Brulion must
+notice files appearing/changing/disappearing from outside while it's open. The
+detection mechanism is **polling**: on an interval re-list the folder's `*.md`
+and re-stat the active note's `getFile().lastModified`, comparing against what
+the controller last saw. We deliberately do **not** use `FileSystemObserver`
+(the real file-watch API): it's experimental, Chromium-only and recent, and
+behind differing availability — leaning on it would narrow where Brulion works
+for a feature whose whole point is robustness. Polling `lastModified` works
+everywhere the File System Access API itself works, is a few lines, and is
+plenty for a quick-capture notepad over a handful of small files. The poll loop
+never overlaps its own runs (a tick still in flight is skipped) and runs through
+the controller's existing serialize queue so it can't interleave with
+open/switch/save. Consequence: external changes show up within one poll interval
+(~a couple seconds), not instantly — an acceptable trade for portability and
+simplicity. (Rejected: `FileSystemObserver` — experimental and non-portable;
+no detection, rely only on the save-time guard — leaves the app showing stale
+content and only ever reacts at save time, never reflecting additions/removals.)
+
+## Brulion is a view: the disk wins when there's nothing to lose (M4)
+The common case — an external tool edits a note you're *not* mid-editing, or
+adds/removes a note — is not a conflict, it's just the world moving. In that case
+Brulion silently tracks the disk: the list refreshes and, if the active note
+changed on disk while the buffer has **no local unsaved edits**, the buffer
+reloads from disk and the known `lastModified` updates. No prompt, no friction —
+that's what "the app is one view, not the owner" means in practice. A prompt only
+appears when tracking the disk would *destroy unsaved work* (the conflict case
+below). Consequence: with Brulion open, the folder behaves like a live view of
+what's actually on disk, matching the moat. (Rejected: prompt on every external
+change — friction for the 99% non-conflicting case and trains the user to dismiss
+the very prompt that matters when it's a real conflict.)
+
+## Conflict UX: two-way choice (keep mine / take theirs), no diff (M4)
+When an external change to the active note collides with **local unsaved edits**
+— detected proactively by the poller or reactively by the save-time stale-write
+guard — both paths converge on one conflict state with one resolution UX: **Keep
+my version** (overwrite the on-disk file with the buffer, re-basing on its
+current mtime) or **Use the version on disk** (discard local edits and reload).
+The same UX covers the active note being *deleted* externally mid-edit (keep-mine
+re-creates it; take-theirs moves off it). We do **not** build a diff or
+three-way merge view: it's a large amount of UI and logic for a weekend-scale
+quick-capture tool, and the moat only requires that we never *silently* clobber —
+a clear two-way choice satisfies that. Both options are non-destructive to the
+other side until the user picks; nothing is written or discarded behind their
+back. This also replaces M1's dead-end conflict state (editing froze with no way
+out) with real recovery. Consequence: the formatting/editing surface gains a
+conflict banner with two buttons; resolving either way clears the state and
+re-enables saving. (Rejected: diff/merge UI — too heavy for the ethos and the
+audience; auto-pick a winner — silently loses one side's data, breaking the moat.)
+
 ## Switching notes flushes the open note first (M3)
 When the user picks another note, the controller flushes the currently open
 note's pending edits **before** loading the new one, reusing the same guarded
