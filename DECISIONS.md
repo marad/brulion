@@ -376,3 +376,25 @@ Decided in the M5 review. Two list/quote rendering choices:
   exactly at the normal-text left edge (no negative indent), and the content flows
   to their right. Consequence: lists and quotes line up cleanly under surrounding
   paragraphs instead of poking out to the left.
+
+## Enter continues and exits lists/quotes; the language keymap is taken over (M5 review → FEAT-0018)
+The M5 review asked for "exit on double-Enter": Enter should continue a list/
+blockquote, and on an empty marker line remove the marker and drop to a plain line.
+`@codemirror/lang-markdown` ships `insertNewlineContinueMarkup`, but its empty-item
+handling is uneven — a tight list converts to a *loose* list (inserts a blank line)
+instead of exiting unless you pass `nonTightLists: false`, and a blockquote only
+exits after *two* empty quoted lines. To get one uniform "empty marker line + Enter
+= plain line" for both, we wrap it: `continueOrExitMarkup` clears the whole line when
+it is just a marker (`isEmptyMarkerLine`), else delegates continuation to the library.
+The empty-line test ignores the caret column because the hidden marker is an atomic
+range that snaps the caret to the line start. Crucially, `markdown()` installs its own
+**Prec.high** Enter/Backspace keymap by default, which *shadowed* our binding (Enter
+kept doing the library's loose-list thing); we pass `addKeymap: false` and wire Enter
+(our command) and Backspace (`deleteMarkupBackward`, kept for parity) into the editor
+keymap ourselves, after `completionKeymap` so the slash menu still accepts on Enter.
+Consequence: a nested empty item exits all levels at once (the whole line clears) —
+simpler and uniform, chosen over the library's one-level-at-a-time peel. This is
+really an M6 "editor comfort" item pulled forward because it bit during the M5 review.
+(Rejected: `nonTightLists:false` alone — fixes lists but not quotes; binding at
+Prec.highest to beat the language keymap — fragile precedence juggling vs. just turning
+the language keymap off.)
