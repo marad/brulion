@@ -22,11 +22,13 @@ heading transforms as the shortcuts (FEAT-0007), so there is one definition of
 
 ## Behavior
 
-When the user types `/` at the very start of a line (the line's text so far is
-`/` optionally followed by word characters, and nothing precedes it on the line),
-a completion menu opens listing the slash commands. As the user types more (`/h`,
-`/h1`), the list filters to matching commands. The menu is keyboard-navigable:
-↑/↓ move the highlight, Enter accepts the highlighted command, Esc dismisses it.
+When the user types `/` at the start of a line **or right after a space**, a
+completion menu opens listing the slash commands. (The whitespace/line-start
+boundary is what scopes it — a `/` in the middle of a word or inside a URL like
+`http://` does **not** open the menu, so ordinary text with slashes is
+unaffected.) As the user types more (`/h`, `/h1`), the list filters to matching
+commands. The menu is keyboard-navigable: ↑/↓ move the highlight, Enter accepts
+the highlighted command, Esc dismisses it.
 
 The commands are:
 
@@ -34,12 +36,10 @@ The commands are:
 - **`/clear`** — turn the current line back into a plain paragraph (strip any
   heading prefix).
 
-Accepting a command removes the typed `/command` token from the line and applies
-the transform to whatever text remains on the line, leaving the caret ready to
-keep typing. The menu does not appear for a `/` that is not at the line start
-(e.g. a slash inside a sentence or in a URL), so ordinary text containing slashes
-is unaffected. Dismissing the menu (Esc) leaves the typed text in place as
-ordinary characters.
+Accepting a command removes **only** the typed `/command` token from the line —
+any other text on the line is preserved (the row is never wiped) — and applies
+the transform to what remains, leaving the caret ready to keep typing. Dismissing
+the menu (Esc) leaves the typed text in place as ordinary characters.
 
 Only clean markdown is written — the actions add/remove `#` prefixes exactly like
 the heading shortcuts; the `/command` token never persists in the saved file once
@@ -49,10 +49,10 @@ a command is accepted.
 
 - Reuse the FEAT-0007 heading transforms for the actions; do not re-derive how to
   build a heading.
-- The trigger is `/` at line start only — a slash elsewhere in a line must not
-  open the menu.
-- Accepting a command must remove the `/command` token (it must never be written
-  to disk).
+- The trigger is `/` at a line-start or post-whitespace boundary — a slash inside
+  a word or URL must not open the menu.
+- Accepting a command must remove only the `/command` token (never written to
+  disk) and preserve any other text on the line.
 - Use the editor's existing autocomplete facility for the menu UI (no bespoke
   popup, no toolbar).
 
@@ -93,7 +93,15 @@ When the user presses Esc,
 Then the menu closes and no reshape happens (the line still reads `/h` as typed,
 nothing crashed).
 
-**AC-6** — A slash that is not at the line start does not open the menu.
-Given a line already containing text (e.g. `see `),
-When the user types `/` after that text,
-Then no slash menu appears and the `/` is just an ordinary character.
+**AC-6** — A slash after a space opens the menu mid-line; a slash inside a word
+or URL does not.
+Given a line already containing text,
+When the user types `/` right after a space (e.g. `note /h`),
+Then the slash menu appears; but when a `/` is typed inside a word or URL (e.g.
+`and/or`, `http://`), no menu appears and the `/` is an ordinary character.
+
+**AC-7** — Accepting a command preserves the rest of the line.
+Given a line `note /h2` with the menu open,
+When the user accepts `/h2`,
+Then only the `/h2` token is removed and the remaining text is reshaped — the
+on-disk line is `## note ` (the word `note` is not wiped).
