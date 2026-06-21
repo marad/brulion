@@ -607,3 +607,33 @@ to follow. The M8 review found that too thin and undiscoverable. The review sett
   kept in reserve if caret-reveal proves insufficient.)
 - **External links open via a real anchor click, not `window.open(_, _, "noopener")`** —
   the features-string form opens a popup window rather than a tab in some browsers.
+
+## Reversal: wikilinks ARE supported, by the user's call in the M8 review (M8 → FEAT-0027)
+FEAT-0025 recorded "no wikilinks — not CommonMark, other tools render `[[ ]]`
+literally, keep the files portable." The M8 review **overrode** this: the user
+wants wikilinks, and owns that moat trade. The reasoning that changed the call:
+`[[note]]` is a de-facto standard across the plain-markdown note ecosystem
+(Obsidian, Foam, Logseq, vinote, many static-site generators), and for the
+quick-capture niche it is *more ergonomic* than a full `[text](path.md)` — you
+type a name, not a path. The portability cost (a non-CommonMark tool shows the
+literal `[[…]]`) is the user's accepted trade for that ergonomics, not the
+agent's to refuse. Decisions:
+- **Syntax: `[[note]]` and `[[note|alias]]`** (alias is the standard pipe form;
+  the label shows the alias, the link points at `note`).
+- **Resolution: a bare name matches by basename across the whole tree,
+  case-insensitively** (`[[DiaBlo]]` finds `projects/diablo.md`) — the low-friction
+  point of a wikilink; a name containing `/` is a root-relative path
+  (`[[sub/note]]` → `sub/note.md`). An ambiguous bare name (two same-named notes
+  in different folders) resolves to the first by sorted path — deterministic, and
+  rare at quick-capture scale.
+- **Missing target → broken + create.** A wikilink with no matching note renders
+  broken (`cm-link-broken`) and following it creates the note: a bare name at the
+  **root** (`name.md`), a slashed one at that path. Reuses FEAT-0026's
+  plain-click-follow / reveal-on-caret.
+- **Detected by a scan, not the CommonMark tree** (the parser doesn't know
+  `[[ ]]`), and resolved at render time against the link context so the broken
+  styling and the follow target are computed from the real folder. Wikilinks carry
+  the resolved/create note path in `data-note` (an absolute folder-relative path),
+  distinct from a markdown link's `data-href` (resolved relative to the open note),
+  so the follow handler switches/creates the path directly. Display-only: the file
+  keeps the literal `[[…]]` bytes.
