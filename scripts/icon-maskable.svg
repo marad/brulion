@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Maskable variant: full-bleed accent background with the page kept inside
+       the ~80% safe zone so OS masks never clip the glyph. -->
+  <rect x="0" y="0" width="512" height="512" fill="#9a3b2f"/>
+  <g>
+    <rect x="176" y="146" width="160" height="220" rx="18" fill="#fbfbfa"/>
+    <g stroke="#9a3b2f" stroke-width="13" stroke-linecap="round" opacity="0.85">
+      <line x1="204" y1="196" x2="308" y2="196"/>
+      <line x1="204" y1="238" x2="308" y2="238"/>
+      <line x1="204" y1="280" x2="308" y2="280"/>
+      <line x1="204" y1="322" x2="272" y2="322"/>
+    </g>
+  </g>
+</svg>

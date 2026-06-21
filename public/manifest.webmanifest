@@ -1,0 +1,30 @@
+{
+  "name": "Brulion — quick capture",
+  "short_name": "Brulion",
+  "description": "Zero-config quick-capture notepad. Plain markdown files in a folder on your disk — no backend, no lock-in.",
+  "display": "standalone",
+  "theme_color": "#9a3b2f",
+  "background_color": "#fbfbfa",
+  "start_url": "/brulion/",
+  "scope": "/brulion/",
+  "icons": [
+    {
+      "src": "/brulion/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brulion/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brulion/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

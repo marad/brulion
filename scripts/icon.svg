@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Brulion app icon: a notepad page on the brand accent. Source for the
+       PNG icons in public/icons/ (regenerate with scripts/gen-icons.sh). -->
+  <rect x="0" y="0" width="512" height="512" rx="112" fill="#9a3b2f"/>
+  <g>
+    <rect x="150" y="108" width="212" height="296" rx="22" fill="#fbfbfa"/>
+    <g stroke="#9a3b2f" stroke-width="16" stroke-linecap="round" opacity="0.85">
+      <line x1="186" y1="174" x2="326" y2="174"/>
+      <line x1="186" y1="230" x2="326" y2="230"/>
+      <line x1="186" y1="286" x2="326" y2="286"/>
+      <line x1="186" y1="342" x2="278" y2="342"/>
+    </g>
+  </g>
+</svg>
