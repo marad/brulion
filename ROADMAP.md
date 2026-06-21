@@ -130,6 +130,34 @@ plus tidy header-control visibility before vs after a folder is open. Pure UI on
 the existing foundation; no change to file behavior. Phases:
 [`milestones/M10.md`](milestones/M10.md).
 
+### M11 — Vim caret respects hidden markup
+**Goal:** fix a Vim-mode defect — the Vim cursor can land on characters that are
+visually hidden (line-start `#`, `>`, list markers, inline marks), so navigation
+stops on glyphs the user can't see. Editor-layer fix in the CodeMirror Vim
+integration / decoration layer; no change to file behavior.
+
+In:
+- Vim motions skip over atomically-hidden syntax so the caret only rests on
+  visible content.
+- Audit which hidden constructs are affected (headings, blockquotes, list
+  markers, bold/italic/code marks) and cover them consistently.
+
+### M12 — Quick switcher & note creation (Ctrl+K / Cmd+K)
+**Goal:** one keyboard-first way to find and create notes. `Ctrl+K` (`Cmd+K` on
+mac) opens a quick switcher: fuzzy-search across note names, arrow/Enter to jump.
+When the query matches nothing, Enter **creates** a note with that name — which
+also retires the current weak UX of typing a name into the left-sidebar textbox.
+This is the M3 note-management surface done right; pure UI on the existing
+note list/create/switch logic, no change to file behavior.
+
+In:
+- `Ctrl+K` / `Cmd+K` overlay with fuzzy filtering over existing note names.
+- Keyboard nav (↑/↓, Enter to open, Esc to close); mouse optional.
+- Create-on-miss: Enter on a non-matching query creates that note and opens it,
+  reusing the existing create path.
+- Remove the left-sidebar inline-create textbox — the switcher is now the single
+  way to create a note.
+
 ## Later / backlog (out of MVP, on purpose)
 
 Everything concrete is now scheduled in M5–M10 above. What remains here is
