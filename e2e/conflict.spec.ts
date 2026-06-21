@@ -36,8 +36,11 @@ async function readFile(page: Page, folder: string, name: string) {
   )
 }
 
-const editor = (page: Page) => page.locator(".cm-content")
+// Scope to #editor: while the conflict diff is open, its two panes are also
+// `.cm-content`, so the bare class would match three elements.
+const editor = (page: Page) => page.locator("#editor .cm-content")
 const conflict = (page: Page) => page.locator("#conflict")
+const diff = (page: Page) => page.locator("#conflict-diff .conflict-diff")
 
 test("keep my version writes the buffer over the external change", async ({ page }) => {
   const folder = "e2e-conflict-keep"
@@ -87,6 +90,38 @@ test("the conflict is modal: the editor is locked until resolved", async ({ page
   await editor(page).click()
   await page.keyboard.type(" again")
   await expect(editor(page)).toContainText("again")
+})
+
+test("the conflict shows a diff of both versions, cleared on resolve (FEAT-0022)", async ({
+  page,
+}) => {
+  const folder = "e2e-conflict-diff"
+  await stubPicker(page, folder)
+  await page.goto("/brulion/")
+  await writeNote(page, folder, "log.md", "original")
+
+  await page.locator("#open-folder").click()
+  await expect(editor(page)).toHaveText("original")
+
+  await editor(page).click()
+  await page.keyboard.type(" mine")
+  await writeNote(page, folder, "log.md", "theirs from outside")
+
+  await expect(conflict(page)).toBeVisible()
+
+  // The diff is shown: two labelled panes with each side's content.
+  await expect(diff(page)).toBeVisible()
+  await expect(page.locator(".conflict-diff-labels")).toContainText("Your version")
+  await expect(page.locator(".conflict-diff-labels")).toContainText("On disk")
+  const panes = page.locator(".conflict-diff .cm-content")
+  await expect(panes.first()).toContainText("original mine") // your version
+  await expect(panes.last()).toContainText("theirs from outside") // on disk
+
+  // Resolving clears the diff along with the modal.
+  await page.locator("#conflict-disk").click()
+  await expect(conflict(page)).toBeHidden()
+  await expect(diff(page)).toHaveCount(0)
+  await expect(editor(page)).toHaveText("theirs from outside")
 })
 
 test("use the version on disk discards local edits", async ({ page }) => {

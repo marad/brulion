@@ -1,6 +1,7 @@
 import "./styles.css"
 import { mountEditor, setEditorEditable, setVimMode } from "./editor"
 import { createNoteController, type NoteController } from "./note-controller"
+import { mountConflictDiff, type ConflictDiff } from "./conflict-view"
 import {
   wireOpenFolder,
   restoreFolder,
@@ -33,6 +34,7 @@ const openButton = document.querySelector<HTMLButtonElement>("#open-folder")
 const resumeButton = document.querySelector<HTMLButtonElement>("#resume-access")
 const statusEl = document.querySelector<HTMLParagraphElement>("#status")
 const conflictBackdropEl = document.querySelector<HTMLDivElement>("#conflict-backdrop")
+const conflictDiffEl = document.querySelector<HTMLDivElement>("#conflict-diff")
 const keepButton = document.querySelector<HTMLButtonElement>("#conflict-keep")
 const diskButton = document.querySelector<HTMLButtonElement>("#conflict-disk")
 if (
@@ -48,6 +50,7 @@ if (
   !resumeButton ||
   !statusEl ||
   !conflictBackdropEl ||
+  !conflictDiffEl ||
   !keepButton ||
   !diskButton
 ) {
@@ -61,16 +64,23 @@ const view = mountEditor(editorEl, {
   onChange: () => controller.handleChange(),
   onSave: () => controller.flush(),
 })
+// The diff view shown while a conflict stands (FEAT-0022); null when none does.
+let conflictDiff: ConflictDiff | null = null
 controller = createNoteController(view, {
-  onConflict: () => {
+  onConflict: (versions) => {
     // Modal: show the choice and lock the editor; navigation is blocked in the
     // controller. The only way forward is one of the two resolution buttons.
+    // Show the buffer beside the on-disk content so the pick is informed.
     conflictBackdropEl.hidden = false
     setEditorEditable(view, false)
+    conflictDiff?.destroy() // defensive: never stack two diffs
+    conflictDiff = mountConflictDiff(conflictDiffEl, versions.mine, versions.theirs)
   },
   onConflictResolved: () => {
     conflictBackdropEl.hidden = true
     setEditorEditable(view, true)
+    conflictDiff?.destroy()
+    conflictDiff = null
   },
   onListChanged: (notes, active) => {
     // A folder is open — reveal the list/new-note control and the collapse

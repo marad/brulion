@@ -193,9 +193,13 @@ header button:hover {
   display: none;
 }
 
-/* The dialog itself — visible but calm, a choice and not an error. */
+/* The dialog itself — visible but calm, a choice and not an error. Wide enough
+ * for the side-by-side diff (FEAT-0022), but never past the viewport. */
 #conflict {
-  max-width: 26rem;
+  display: flex;
+  flex-direction: column;
+  width: min(60rem, 100%);
+  max-height: min(80vh, 100%);
   padding: 1.25rem 1.5rem;
   background: #fffdf6;
   border: 1px solid #efe4c4;
@@ -208,6 +212,54 @@ header button:hover {
   margin: 0 0 1rem;
   font-size: 0.95rem;
   line-height: 1.5;
+}
+
+/* The diff: labels row above two read-only panes, bounded so it scrolls rather
+ * than pushing the resolution buttons off-screen. */
+#conflict-diff {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 1rem;
+}
+
+.conflict-diff {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #efe4c4;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.conflict-diff-labels {
+  display: flex;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #7a5a1e;
+  background: #f7efd9;
+  border-bottom: 1px solid #efe4c4;
+}
+
+.conflict-diff-labels span {
+  flex: 1;
+  padding: 0.35rem 0.6rem;
+}
+
+.conflict-diff-labels span:first-child {
+  border-right: 1px solid #efe4c4;
+}
+
+.conflict-diff .cm-mergeView,
+.conflict-diff .cm-mergeViewEditors {
+  height: 100%;
+}
+
+.conflict-diff .cm-editor {
+  max-height: 50vh;
+  font-size: 0.85rem;
 }
 
 .conflict-actions {

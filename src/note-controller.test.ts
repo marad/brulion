@@ -713,7 +713,9 @@ describe("refreshFromDisk (FEAT-0014)", () => {
 
     await controller.refreshFromDisk()
 
-    expect(readNote).not.toHaveBeenCalled() // no silent reload
+    // readNote is now called once — to snapshot the disk content for the conflict
+    // diff (FEAT-0022) — but never to reload the buffer: the buffer is preserved.
+    expect(readNote).toHaveBeenCalledTimes(1)
     expect(saveNote).not.toHaveBeenCalled() // no silent overwrite
     expect(view.state.doc.toString()).toBe("body local") // buffer preserved
   })
@@ -857,6 +859,58 @@ describe("conflict resolution (FEAT-0015)", () => {
     expect(onConflict).toHaveBeenCalledTimes(1)
     expect(saveNote).not.toHaveBeenCalled() // nothing written before the user chooses
     expect(view.state.doc.toString()).toBe("body mine") // buffer preserved
+  })
+
+  it("hands the UI both versions, reading the disk content fresh (FEAT-0022 AC-2)", async () => {
+    const view = mountView()
+    const onConflict = vi.fn()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, {
+      onConflict,
+      onListChanged: vi.fn(),
+      debounceMs: 10_000,
+    })
+    await controller.open(DIR)
+    type(view, " mine")
+    controller.handleChange()
+
+    // The external change lands; raiseConflict reads the disk content for the diff.
+    statNote.mockResolvedValue(2)
+    readNote.mockResolvedValue({ content: "theirs from outside", lastModified: 2 })
+    await controller.refreshFromDisk()
+
+    expect(onConflict).toHaveBeenCalledWith({
+      mine: "body mine",
+      theirs: "theirs from outside",
+    })
+  })
+
+  it("reports theirs=null when the file was deleted on disk (FEAT-0022 AC-2/AC-3)", async () => {
+    const view = mountView()
+    const onConflict = vi.fn()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, {
+      onConflict,
+      onListChanged: vi.fn(),
+      debounceMs: 10_000,
+    })
+    await controller.open(DIR)
+    type(view, " mine")
+    controller.handleChange()
+
+    // Deleted on disk: readNote reports an absent file (null mtime).
+    statNote.mockResolvedValue(null)
+    listNotes.mockResolvedValue([])
+    readNote.mockResolvedValue({ content: "", lastModified: null })
+    await controller.refreshFromDisk()
+
+    expect(onConflict).toHaveBeenCalledWith({ mine: "body mine", theirs: null })
   })
 
   it("keeps my version: writes the buffer over the disk and clears the conflict (AC-2)", async () => {

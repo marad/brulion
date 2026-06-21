@@ -68,9 +68,19 @@ function sameNotes(a: string[], b: string[]): boolean {
   return a.every((name, i) => name === b[i])
 }
 
+/**
+ * The two versions surfaced when a conflict is raised, so the UI can diff them
+ * (FEAT-0022): the unsaved buffer (`mine`) and the on-disk content (`theirs`),
+ * read fresh at raise time. `theirs` is `null` when the file was deleted on disk.
+ */
+export interface ConflictVersions {
+  mine: string
+  theirs: string | null
+}
+
 export interface NoteControllerOptions {
   /** Called when the open note changed on disk under unsaved edits (conflict). */
-  onConflict?: () => void
+  onConflict?: (versions: ConflictVersions) => void
   /** Called when a standing conflict is resolved (either way) — clears the UI. */
   onConflictResolved?: () => void
   /** Called whenever the note list or the active note changes. */
@@ -167,7 +177,7 @@ export function createNoteController(
           dirty = false // claim the current edits before the await
           const result = await saveNote(dir!, activeName, view.state.doc.toString(), lastModified)
           if (result.status === "conflict") {
-            raiseConflict() // the reactive path into the one conflict state
+            await raiseConflict() // the reactive path into the one conflict state
             return
           }
           lastModified = result.lastModified
@@ -238,12 +248,23 @@ export function createNoteController(
   // change across the awaits inside refreshFromDisk.
   const safeToReplaceBuffer = (): boolean => !dirty && !conflict && !savePromise
 
-  // Enter the conflict state and announce it once. Reached either reactively
-  // (a save refused by the stale-write guard) or proactively (the poll loop
-  // noticing an external change while edits are pending) — one state, one UX.
-  const raiseConflict = (): void => {
+  // Enter the conflict state and announce it once, handing the UI both versions
+  // to diff (FEAT-0022): the buffer as-typed and the on-disk content read fresh
+  // here (a `null` mtime means the file was deleted on disk). Reached either
+  // reactively (a save refused by the stale-write guard) or proactively (the
+  // poll loop noticing an external change while edits are pending) — one state,
+  // one UX. `conflict` is set before the await so the save loop and the change
+  // guard see it immediately, and `mine` is captured before the await so a
+  // keystroke landing during the read can't change what is diffed.
+  const raiseConflict = async (): Promise<void> => {
     conflict = true // stop autosaving so we never clobber the on-disk change
-    opts.onConflict?.()
+    const mine = view.state.doc.toString()
+    let theirs: string | null = null
+    if (dir) {
+      const disk = await readNote(dir, activeName)
+      theirs = disk.lastModified === null ? null : disk.content
+    }
+    opts.onConflict?.({ mine, theirs })
   }
 
   // Serialize folder/active-note changes so two fast clicks (open, or switching
@@ -351,7 +372,7 @@ export function createNoteController(
             // Unsaved edits (or a save in flight) collide with the external
             // change — surface the conflict proactively, before autosave hits
             // the save-time guard. Both paths converge on the same state.
-            raiseConflict()
+            await raiseConflict()
           } else if (active.kind === "deleted") {
             // The open note vanished and we have nothing to lose — switch off it.
             // `activate` loads, persists, and announces with the updated list.
@@ -368,7 +389,7 @@ export function createNoteController(
               setEditorText(view, note.content)
               dirty = false
             } else {
-              raiseConflict()
+              await raiseConflict()
             }
           }
         }

@@ -40,7 +40,9 @@ async function readStartMd(page: Page): Promise<string | null> {
   }, FOLDER)
 }
 
-const editor = (page: Page) => page.locator(".cm-content")
+// Scope to #editor: while a conflict diff is open, its two read-only panes are
+// also `.cm-content`, so the bare class would match more than the editor.
+const editor = (page: Page) => page.locator("#editor .cm-content")
 
 async function typeInEditor(page: Page, text: string) {
   await editor(page).click()
