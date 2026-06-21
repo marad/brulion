@@ -253,6 +253,13 @@ describe("createNote (AC-6, AC-7, AC-8)", () => {
     expect(result).toEqual({ status: "exists" })
     expect(folder.content("sub/fresh.md")).toBe("keep me") // untouched
   })
+
+  it("reports exists (not a raw error) when a file occupies a folder segment", async () => {
+    const folder = fakeFolder({ projects: { kind: "file", content: "x", lastModified: 1 } })
+    const result = await createNote(folder.dir, "projects/diablo.md")
+    expect(result).toEqual({ status: "exists" })
+    expect(folder.content("projects")).toBe("x") // the blocking file is untouched
+  })
 })
 
 describe("deleteNote (AC-8)", () => {

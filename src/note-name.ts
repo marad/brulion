@@ -43,7 +43,7 @@ export function normalizeNoteName(input: string): NormalizeResult {
   for (let i = 0; i < raw.length; i++) {
     let segment = raw[i].trim()
     if (i === last) segment = segment.replace(/\.md$/i, "").trim() // strip the extension off the note name only
-    if (!segment) return { ok: false, reason: "Name cannot be empty." }
+    if (!segment) return { ok: false, reason: "Name segments cannot be empty." }
     if (segment === "." || segment === "..") {
       return { ok: false, reason: "Name cannot contain . or .. path segments." }
     }

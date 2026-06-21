@@ -105,6 +105,9 @@ async function collect(
 /**
  * Create an empty `name`. If a file already exists it is left untouched and
  * `{ status: "exists" }` is returned, so a name clash never clobbers content.
+ * A folder segment occupied by a like-named *file* (so the folder can't be
+ * created) is also reported as `exists` — the path is taken — rather than
+ * surfacing a raw `TypeMismatchError`.
  */
 export async function createNote(
   dir: FileSystemDirectoryHandle,
@@ -112,7 +115,13 @@ export async function createNote(
 ): Promise<CreateResult> {
   if (await getExisting(dir, name)) return { status: "exists" }
   const { folders, file } = splitPath(name)
-  const parent = await resolveParent(dir, folders, true)
+  let parent: FileSystemDirectoryHandle
+  try {
+    parent = await resolveParent(dir, folders, true)
+  } catch (err) {
+    if (isAbsent(err)) return { status: "exists" } // a file blocks a folder segment
+    throw err
+  }
   const handle = await parent.getFileHandle(file, { create: true })
   const writable = await handle.createWritable()
   await writable.close() // materialize an empty file
