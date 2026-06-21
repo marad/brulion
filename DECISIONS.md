@@ -452,3 +452,26 @@ Opt-in Vim (`@replit/codemirror-vim`), off by default, persisted in `idb-keyval`
   became a shared `wireToggle(button, { initialOn, apply, onChange })` used by both
   the sidebar and Vim toggles, so the aria-pressed + persist-on-flip logic isn't
   duplicated. Pure refactor — FEAT-0020 behavior and its tests are unchanged.
+
+## Correction: the M2 selection offset was `scrollbar-gutter`, not `Decoration.replace` — drawSelection restored (M6 review → FEAT-0021)
+The M2 decision above ("Curated extension set … native browser selection") blamed
+`drawSelection` mismeasuring **after hidden `Decoration.replace` runs** and dropped
+it for the browser's native selection. That diagnosis was wrong. Opting into Vim
+surfaced it: `@replit/codemirror-vim` hides the native selection to draw its own, so
+with no `drawSelection` the visual-mode selection was invisible. Investigating
+(measuring `coordsAtPos` and the `drawSelection` rectangles against the native
+selection) showed:
+- `coordsAtPos` is **accurate** over hidden-markup runs (Δ=0) — the hidden
+  `Decoration.replace` runs were never the problem.
+- The whole offset came from **`scrollbar-gutter`** on `.cm-scroller` (added to keep
+  the centered column from shifting when a scrollbar appears). `stable both-edges`
+  shifted `drawSelection`'s layer ~15px and blew out the right edge; even one-edge
+  `stable` broke the right edge; only removing the gutter (`auto`) made
+  `drawSelection` pixel-perfect, hidden markup and all.
+Fix (chosen over band-aiding Vim only): **remove `scrollbar-gutter`, restore
+`drawSelection` editor-wide, and drop the native-selection workaround.** Selection
+is now correct everywhere and visible under Vim, with one selection mechanism.
+Consequence/trade: the centered text column may shift slightly when a vertical
+scrollbar appears (the reason the gutter existed) — accepted; can be addressed
+later another way if it bothers. Lesson: the M2 fix treated a symptom; the real
+cause was a layout property, not the decorations.

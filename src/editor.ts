@@ -1,4 +1,4 @@
-import { EditorView, keymap, highlightSpecialChars } from "@codemirror/view"
+import { EditorView, keymap, highlightSpecialChars, drawSelection } from "@codemirror/view"
 import { Annotation, Compartment, EditorState } from "@codemirror/state"
 import { history, historyKeymap, defaultKeymap } from "@codemirror/commands"
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete"
@@ -22,7 +22,11 @@ const typography = EditorView.theme({
     fontFamily: "var(--font-stack)",
     lineHeight: "1.6",
     overflow: "auto",
-    scrollbarGutter: "stable both-edges", // keep the text column centered when a scrollbar appears
+    // NB: no `scrollbar-gutter` here. Reserving the gutter throws off
+    // `drawSelection`'s coordinate math (the real cause of the M2 selection
+    // offset — see the drawSelection note below), so the gutter is given up to
+    // keep the selection correct. The centered column may shift slightly when a
+    // vertical scrollbar appears; that's the accepted trade.
   },
   ".cm-content": {
     maxWidth: "68ch",
@@ -70,15 +74,19 @@ export function mountEditor(
       // slash/format/Enter commands unchanged.
       vimMode.of([]),
       // A curated, prose-friendly base — deliberately NOT CodeMirror's
-      // `basicSetup`. We drop `drawSelection` (its custom selection layer
-      // mismeasures positions after hidden `Decoration.replace` runs, so the
-      // highlight drew offset from the text — the browser's native selection is
-      // correct) along with all the code-editor chrome (line numbers, gutters,
-      // bracket matching, active-line highlight). We keep undo history and
+      // `basicSetup`. We drop the code-editor chrome (line numbers, gutters,
+      // bracket matching, active-line highlight) but keep undo history and
       // autocomplete (the slash-command menu rides on it).
       history(),
       autocompletion(),
       highlightSpecialChars(),
+      // `drawSelection` paints CodeMirror's own selection/cursor. It's needed so
+      // Vim's visual-mode selection is visible (Vim hides the native selection),
+      // and it renders correctly everywhere now that the scroller has no
+      // `scrollbar-gutter` — that gutter, not the hidden-markup `Decoration.replace`
+      // runs, was the real cause of the M2 selection offset (`coordsAtPos` is
+      // accurate over hidden runs). See DECISIONS.md.
+      drawSelection(),
       keymap.of([
         ...completionKeymap,
         // Markdown-aware Enter (FEAT-0018): continue a list/blockquote, and on an

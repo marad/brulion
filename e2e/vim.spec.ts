@@ -140,3 +140,19 @@ test("toggling Vim does not write to the user's folder (AC-8)", async ({ page })
   await expect(vimToggle(page)).toHaveAttribute("aria-pressed", "true")
   expect(await readStartMd(page)).toBe("untouched")
 })
+
+test("with Vim on, the visual-mode selection is visible (AC-9)", async ({ page }) => {
+  await enableVimAndFocus(page)
+  await page.keyboard.press("i")
+  await page.keyboard.type("hello world")
+  await page.keyboard.press("Escape") // normal mode
+  await page.keyboard.press("0") // line start
+  await page.keyboard.press("v") // visual mode
+  await page.keyboard.press("$") // extend to line end
+
+  // drawSelection paints a highlight with real size — not an invisible selection.
+  const bg = page.locator(".cm-selectionLayer .cm-selectionBackground").first()
+  await expect(bg).toBeVisible()
+  const box = await bg.boundingBox()
+  expect(box?.width ?? 0).toBeGreaterThan(0)
+})
