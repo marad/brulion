@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { EditorState } from "@codemirror/state"
 import { markdown } from "@codemirror/lang-markdown"
+import { Autolink } from "@lezer/markdown"
 import {
   markdownSyntaxRanges,
   blockSyntaxRanges,
@@ -267,5 +268,73 @@ describe("markdownSyntaxRanges links (FEAT-0025)", () => {
   it("leaves a shortcut link [x] (no url) untouched", () => {
     const doc = "a [x] b"
     expect(linkRanges(doc, ctx("a.md", []))).toEqual({ hidden: [], marks: [] })
+  })
+})
+
+describe("markdownSyntaxRanges link interaction (FEAT-0026)", () => {
+  const ctx = (active: string, paths: string[]): LinkContext => ({
+    activeNote: active,
+    notePaths: new Set(paths),
+  })
+  const autolink = (doc: string) =>
+    markdownSyntaxRanges(
+      EditorState.create({
+        doc,
+        extensions: [markdown({ extensions: [Autolink] }), linkContext.of(ctx("a.md", []))],
+      }),
+    )
+  const withCaret = (doc: string, c: LinkContext, head: number) =>
+    markdownSyntaxRanges(
+      EditorState.create({ doc, selection: { anchor: head }, extensions: [markdown(), linkContext.of(c)] }),
+    )
+
+  it("styles a bare web URL as an external link, no hidden markup (AC-6)", () => {
+    const r = autolink("visit https://example.com today")
+    expect(r.hidden).toEqual([])
+    expect(r.marks).toEqual([
+      {
+        from: 6,
+        to: 25,
+        cls: "cm-link",
+        attrs: { "data-href": "https://example.com", title: "https://example.com" },
+      },
+    ])
+  })
+
+  it("normalizes a bare www URL to https for following (AC-6)", () => {
+    const r = autolink("see www.foo.org ok")
+    expect(r.marks).toEqual([
+      {
+        from: 4,
+        to: 15,
+        cls: "cm-link",
+        attrs: { "data-href": "https://www.foo.org", title: "https://www.foo.org" },
+      },
+    ])
+  })
+
+  it("leaves a bare email as plain text (AC-7)", () => {
+    expect(autolink("mail a@b.com end")).toEqual({ hidden: [], marks: [] })
+  })
+
+  it("reveals a link's markup when the caret is within it, hides it otherwise (AC-8)", () => {
+    const doc = "see [the note](sub/b.md)" // link span is [4, 24]
+    const c = ctx("a.md", ["a.md", "sub/b.md"])
+    // caret outside the link → rendered (markup hidden, text styled)
+    const outside = withCaret(doc, c, 0)
+    expect(outside.hidden.map((h) => doc.slice(h.from, h.to))).toEqual(["[", "](sub/b.md)"])
+    expect(outside.marks).toHaveLength(1)
+    // caret inside the link span → nothing emitted, raw markdown shows for editing
+    expect(withCaret(doc, c, 8)).toEqual({ hidden: [], marks: [] })
+  })
+
+  it("sets a hover title to the resolved target (AC-9)", () => {
+    const r = markdownSyntaxRanges(
+      EditorState.create({
+        doc: "see [the note](sub/b.md)",
+        extensions: [markdown(), linkContext.of(ctx("a.md", ["a.md", "sub/b.md"]))],
+      }),
+    )
+    expect(r.marks[0].attrs?.title).toBe("sub/b.md")
   })
 })
