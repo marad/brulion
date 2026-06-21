@@ -7,7 +7,6 @@ import {
   wireOpenFolder,
   renderNoteList,
   buildNoteTree,
-  wireNewNote,
   wireToggle,
   showWorkspace,
 } from "./ui"
@@ -298,35 +297,6 @@ describe("renderNoteList tree (FEAT-0024)", () => {
     expect(active).toHaveLength(1)
     expect(active[0].querySelector(".note-name")?.textContent).toBe("b")
     expect(active[0].getAttribute("aria-current")).toBe("true")
-  })
-})
-
-describe("wireNewNote", () => {
-  it("submits the trimmed input value and clears the field", () => {
-    const form = document.createElement("form")
-    const input = document.createElement("input")
-    form.append(input)
-    const onCreate = vi.fn()
-    wireNewNote(form, input, onCreate)
-
-    input.value = "  My note  "
-    form.requestSubmit()
-
-    expect(onCreate).toHaveBeenCalledWith("My note")
-    expect(input.value).toBe("")
-  })
-
-  it("ignores an empty submission", () => {
-    const form = document.createElement("form")
-    const input = document.createElement("input")
-    form.append(input)
-    const onCreate = vi.fn()
-    wireNewNote(form, input, onCreate)
-
-    input.value = "   "
-    form.requestSubmit()
-
-    expect(onCreate).not.toHaveBeenCalled()
   })
 })
 

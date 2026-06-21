@@ -1,3 +1,6 @@
+import { displayName } from "./note-name"
+import { searchNotes } from "./note-search"
+
 /** The result of a create attempt, mirroring the note controller's `addNote`. */
 export interface CreateResult {
   ok: boolean
@@ -46,7 +49,121 @@ export function mountQuickSwitcher(
   els: QuickSwitcherElements,
   deps: QuickSwitcherDeps,
 ): QuickSwitcher {
-  void els
-  void deps
-  throw new Error("stub")
+  const { backdrop, input, list, error } = els
+  let open = false
+  /** Each rendered, selectable row paired with the action it triggers. */
+  let items: { el: HTMLElement; run: () => void }[] = []
+  let highlight = 0
+
+  function setError(message: string | null): void {
+    error.textContent = message ?? ""
+    error.hidden = message === null
+  }
+
+  function applyHighlight(): void {
+    items.forEach((it, i) => it.el.classList.toggle("active", i === highlight))
+    items[highlight]?.el.scrollIntoView({ block: "nearest" })
+  }
+
+  function row(cls: string, label: string, run: () => void): void {
+    const el = document.createElement("button")
+    el.type = "button"
+    el.className = cls
+    el.textContent = label
+    el.addEventListener("click", run)
+    list.append(el)
+    items.push({ el, run })
+  }
+
+  function render(): void {
+    const { matches, create } = searchNotes(input.value, deps.getNotes())
+    list.replaceChildren()
+    items = []
+    for (const path of matches) {
+      row("switch-row", displayName(path), () => {
+        deps.openNote(path)
+        close()
+      })
+    }
+    if (create !== null) {
+      row("switch-create", `Create “${displayName(create)}”`, () => {
+        void create_(create)
+      })
+    }
+    highlight = 0
+    applyHighlight()
+  }
+
+  async function create_(name: string): Promise<void> {
+    const result = await deps.createNote(name)
+    if (result.ok) close()
+    else setError(result.reason ?? "Could not create note.")
+  }
+
+  function onInput(): void {
+    setError(null)
+    render()
+  }
+
+  function onKeydown(event: KeyboardEvent): void {
+    switch (event.key) {
+      case "ArrowDown":
+        event.preventDefault()
+        highlight = Math.min(highlight + 1, items.length - 1)
+        applyHighlight()
+        break
+      case "ArrowUp":
+        event.preventDefault()
+        highlight = Math.max(highlight - 1, 0)
+        applyHighlight()
+        break
+      case "Enter":
+        event.preventDefault()
+        items[highlight]?.run()
+        break
+      case "Escape":
+        event.preventDefault()
+        close()
+        break
+    }
+  }
+
+  function onBackdropClick(event: MouseEvent): void {
+    if (event.target === backdrop) close()
+  }
+
+  function openSwitcher(): void {
+    if (open) {
+      input.focus()
+      return
+    }
+    open = true
+    input.value = ""
+    setError(null)
+    backdrop.hidden = false
+    render()
+    input.focus()
+  }
+
+  function close(): void {
+    open = false
+    backdrop.hidden = true
+    setError(null)
+  }
+
+  input.addEventListener("input", onInput)
+  input.addEventListener("keydown", onKeydown)
+  backdrop.addEventListener("click", onBackdropClick)
+
+  return {
+    open: openSwitcher,
+    close,
+    isOpen: () => open,
+    destroy() {
+      input.removeEventListener("input", onInput)
+      input.removeEventListener("keydown", onKeydown)
+      backdrop.removeEventListener("click", onBackdropClick)
+      close()
+    },
+  }
 }

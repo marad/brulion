@@ -177,7 +177,7 @@ header button:hover {
   position: relative;
 }
 
-/* The note list: a quiet sidebar with a new-note field and clickable rows. */
+/* The note list: a quiet sidebar with a find-or-create button and clickable rows. */
 #sidebar {
   flex: 0 0 14rem;
   min-height: 0;
@@ -205,20 +205,26 @@ header button:hover {
   background: #ececec;
 }
 
-#new-note {
-  padding: 0.5rem;
-  border-bottom: 1px solid #ececec;
-}
-
-#new-note-input {
+/* The sidebar's entry into the quick switcher (FEAT-0033): a faux search box that
+   reads as "type to find or create", replacing the old new-note textbox. */
+#sidebar-search {
   font: inherit;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 0.35rem 0.5rem;
+  margin: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  text-align: left;
   border: 1px solid #d4d4d4;
   border-radius: 6px;
   background: #fff;
-  color: #1a1a1a;
+  color: #8a8a8a;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#sidebar-search:hover {
+  border-color: #b9b9b9;
+  color: #5a5a5a;
 }
 
 #note-list {
@@ -342,13 +348,93 @@ header button:hover {
   display: none;
 }
 
-#status {
+/* Quick switcher (FEAT-0033): a modal find-or-create palette. Same backdrop
+   pattern as the conflict modal, but anchored near the top (palette convention)
+   and calmer — a tool, not an alert. */
+#switcher-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 10vh 1rem 1rem;
+  background: rgb(0 0 0 / 22%);
+}
+
+#switcher-backdrop[hidden] {
+  display: none;
+}
+
+#switcher {
+  display: flex;
+  flex-direction: column;
+  width: min(34rem, 100%);
+  max-height: 70vh;
+  background: #fff;
+  border: 1px solid #e4e4e1;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 22%);
+  overflow: hidden;
+}
+
+#switcher-input {
+  font: inherit;
+  font-size: 1.05rem;
+  padding: 0.7rem 0.9rem;
+  border: 0;
+  border-bottom: 1px solid #ececec;
+  background: #fff;
+  color: #1a1a1a;
+}
+
+#switcher-input:focus {
+  outline: none;
+}
+
+#switcher-error {
   margin: 0;
-  padding: 0.5rem 1rem;
+  padding: 0.4rem 0.9rem;
   font-size: 0.85rem;
   color: #9a3b2f;
   background: #fdf3f1;
   border-bottom: 1px solid #f3ddd8;
+}
+
+#switcher-error[hidden] {
+  display: none;
+}
+
+#switcher-list {
+  overflow-y: auto;
+  padding: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.switch-row,
+.switch-create {
+  font: inherit;
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #1a1a1a;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.switch-create {
+  color: #2f6f9a;
+}
+
+.switch-row.active,
+.switch-create.active {
+  background: #ececec;
 }
 
 /* Conflict resolution is modal: the open note changed on disk under unsaved

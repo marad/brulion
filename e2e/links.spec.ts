@@ -16,8 +16,9 @@ const row = (page: Page, name: string) => page.locator(".note-row", { hasText: n
 const link = (page: Page, text: string) => page.locator(".cm-link", { hasText: text })
 
 async function createNote(page: Page, name: string) {
-  await page.locator("#new-note-input").fill(name)
-  await page.locator("#new-note-input").press("Enter")
+  await page.locator("#sidebar-search").click()
+  await page.locator("#switcher-input").fill(name)
+  await page.locator("#switcher-input").press("Enter")
 }
 
 async function typeInEditor(page: Page, text: string) {

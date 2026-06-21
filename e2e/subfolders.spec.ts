@@ -35,8 +35,9 @@ const folderHeader = (page: Page, name: string) =>
   page.locator(".folder-header", { hasText: name })
 
 async function createNote(page: Page, name: string) {
-  await page.locator("#new-note-input").fill(name)
-  await page.locator("#new-note-input").press("Enter")
+  await page.locator("#sidebar-search").click()
+  await page.locator("#switcher-input").fill(name)
+  await page.locator("#switcher-input").press("Enter")
 }
 
 test("creates a subfolder note, switches, and removes the folder on delete (AC-7, AC-8)", async ({

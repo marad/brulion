@@ -22,10 +22,33 @@ export interface SearchResult {
  * is a better match (contiguous runs and segment-start hits score higher). An
  * empty query scores `0` (matches everything). Pure & total.
  */
+/** Characters that begin a new "segment" of a name — a match right after one (or
+ * at the very start) reads as a word/path-segment start and is rewarded. */
+function isSeparator(ch: string): boolean {
+  return ch === " " || ch === "/" || ch === "-" || ch === "_"
+}
+
 export function fuzzyScore(query: string, target: string): number | null {
-  void query
-  void target
-  throw new Error("stub")
+  const q = query.toLowerCase()
+  const t = target.toLowerCase()
+  if (q.length === 0) return 0
+
+  let score = 0
+  let qi = 0
+  let prevMatch = -1
+  for (let ti = 0; ti < t.length && qi < q.length; ti++) {
+    if (t[ti] !== q[qi]) continue
+    // Skipped chars since the previous match (or the leading distance for the
+    // first match). Gaps are penalized so contiguous, earlier runs win.
+    const gap = prevMatch >= 0 ? ti - prevMatch - 1 : ti
+    let bonus = 0
+    if (ti === 0 || isSeparator(t[ti - 1])) bonus += 10 // segment start
+    if (prevMatch === ti - 1) bonus += 5 // contiguous with the previous match
+    score += 10 + bonus - 3 * gap
+    prevMatch = ti
+    qi++
+  }
+  return qi === q.length ? score : null
 }
 
 /**
@@ -42,9 +65,19 @@ export function fuzzyScore(query: string, target: string): number | null {
  *   the create attempt then surfaces the validation error.
  */
 export function searchNotes(query: string, paths: readonly string[]): SearchResult {
-  void query
-  void paths
-  void displayName
-  void normalizeNoteName
-  throw new Error("stub")
+  const trimmed = query.trim()
+  const matches = paths
+    .map((path) => ({ path, score: fuzzyScore(trimmed, displayName(path)) }))
+    .filter((m): m is { path: string; score: number } => m.score !== null)
+    .sort((a, b) => b.score - a.score || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+    .map((m) => m.path)
+
+  let create: string | null = null
+  if (trimmed) {
+    const norm = normalizeNoteName(trimmed)
+    const exists = norm.ok && paths.includes(norm.filename)
+    if (!exists) create = trimmed
+  }
+
+  return { matches, create }
 }

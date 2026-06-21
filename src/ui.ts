@@ -209,25 +209,6 @@ function renderNoteRow(node: NoteLeaf, active: string, handlers: NoteListHandler
   return row
 }
 
-/**
- * Wire a new-note form: on submit, pass the trimmed input value to `onCreate`
- * and clear the field. An empty/whitespace-only value is ignored. The caller
- * surfaces any creation error (invalid name, duplicate) itself.
- */
-export function wireNewNote(
-  form: HTMLFormElement,
-  input: HTMLInputElement,
-  onCreate: (name: string) => void,
-): void {
-  form.addEventListener("submit", (event) => {
-    event.preventDefault()
-    const value = input.value.trim()
-    if (!value) return
-    input.value = ""
-    onCreate(value)
-  })
-}
-
 /** The elements that flip between the pre-folder welcome state and the workspace. */
 export interface WorkspaceRefs {
   welcome: HTMLElement

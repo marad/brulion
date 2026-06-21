@@ -34,7 +34,19 @@
       <button id="reopen-folder" type="button" hidden>Switch folder</button>
       <button id="install-app" type="button" hidden>Install</button>
     </header>
-    <p id="status" hidden></p>
+    <div id="switcher-backdrop" hidden>
+      <div id="switcher" role="dialog" aria-modal="true" aria-label="Find or create a note">
+        <input
+          id="switcher-input"
+          type="text"
+          placeholder="Find or create a note…"
+          aria-label="Find or create a note"
+          autocomplete="off"
+        />
+        <p id="switcher-error" hidden></p>
+        <div id="switcher-list" aria-label="Results"></div>
+      </div>
+    </div>
     <div id="conflict-backdrop" hidden>
       <div id="conflict" role="alertdialog" aria-modal="true" aria-label="Note changed on disk">
         <p>This note changed on disk. Keep your version or take the one on disk?</p>
@@ -65,15 +77,9 @@
         </div>
       </section>
       <aside id="sidebar" hidden>
-        <form id="new-note">
-          <input
-            id="new-note-input"
-            type="text"
-            placeholder="New note (or folder/name)…"
-            aria-label="New note name"
-            autocomplete="off"
-          />
-        </form>
+        <button id="sidebar-search" type="button" title="Find or create a note (Ctrl+K)">
+          Find or create note…
+        </button>
         <div id="note-list" aria-label="Notes"></div>
       </aside>
       <div id="editor"></div>

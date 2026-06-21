@@ -6,10 +6,10 @@ import {
   wireOpenFolder,
   restoreFolder,
   renderNoteList,
-  wireNewNote,
   wireToggle,
   showWorkspace,
 } from "./ui"
+import { mountQuickSwitcher } from "./quick-switcher"
 import {
   saveSidebarCollapsed,
   loadSidebarCollapsed,
@@ -36,12 +36,14 @@ const toggleSidebarEl = document.querySelector<HTMLButtonElement>("#toggle-sideb
 const toggleVimEl = document.querySelector<HTMLButtonElement>("#toggle-vim")
 const reopenButton = document.querySelector<HTMLButtonElement>("#reopen-folder")
 const listEl = document.querySelector<HTMLElement>("#note-list")
-const newNoteForm = document.querySelector<HTMLFormElement>("#new-note")
-const newNoteInput = document.querySelector<HTMLInputElement>("#new-note-input")
+const sidebarSearchEl = document.querySelector<HTMLButtonElement>("#sidebar-search")
+const switcherBackdropEl = document.querySelector<HTMLDivElement>("#switcher-backdrop")
+const switcherInputEl = document.querySelector<HTMLInputElement>("#switcher-input")
+const switcherListEl = document.querySelector<HTMLElement>("#switcher-list")
+const switcherErrorEl = document.querySelector<HTMLElement>("#switcher-error")
 const openButton = document.querySelector<HTMLButtonElement>("#open-folder")
 const resumeButton = document.querySelector<HTMLButtonElement>("#resume-access")
 const installButton = document.querySelector<HTMLButtonElement>("#install-app")
-const statusEl = document.querySelector<HTMLParagraphElement>("#status")
 const conflictBackdropEl = document.querySelector<HTMLDivElement>("#conflict-backdrop")
 const conflictDiffEl = document.querySelector<HTMLDivElement>("#conflict-diff")
 const keepButton = document.querySelector<HTMLButtonElement>("#conflict-keep")
@@ -56,12 +58,14 @@ if (
   !toggleVimEl ||
   !reopenButton ||
   !listEl ||
-  !newNoteForm ||
-  !newNoteInput ||
+  !sidebarSearchEl ||
+  !switcherBackdropEl ||
+  !switcherInputEl ||
+  !switcherListEl ||
+  !switcherErrorEl ||
   !openButton ||
   !resumeButton ||
   !installButton ||
-  !statusEl ||
   !conflictBackdropEl ||
   !conflictDiffEl ||
   !keepButton ||
@@ -179,22 +183,44 @@ controller = createNoteController(view, {
   },
 })
 
-// Clear any stale status (e.g. a previous create error) on success.
-const clearStatus = () => {
-  statusEl.hidden = true
-  statusEl.textContent = ""
-}
+// Quick switcher (FEAT-0033): the single find-or-create surface, replacing the old
+// sidebar new-note textbox. It reads the in-memory note list and routes to the
+// existing switch/create operations; the only write it can cause is an explicit
+// create.
+const switcher = mountQuickSwitcher(
+  {
+    backdrop: switcherBackdropEl,
+    input: switcherInputEl,
+    list: switcherListEl,
+    error: switcherErrorEl,
+  },
+  {
+    getNotes: () => currentNotes,
+    openNote: (path) => void controller.switchTo(path),
+    createNote: (name) => controller.addNote(name),
+  },
+)
 
-wireNewNote(newNoteForm, newNoteInput, (name) => {
-  void controller.addNote(name).then((result) => {
-    if (result.ok) {
-      clearStatus()
-    } else {
-      statusEl.textContent = result.reason
-      statusEl.hidden = false
+// The sidebar's visible entry point into the switcher (creation is no longer a
+// textbox), and the Ctrl/Cmd+K shortcut. The shortcut is a capture-phase listener
+// so neither CodeMirror nor the Vim layer can swallow it first (AC-9).
+sidebarSearchEl.addEventListener("click", () => switcher.open())
+window.addEventListener(
+  "keydown",
+  (event) => {
+    if (
+      (event.ctrlKey || event.metaKey) &&
+      !event.shiftKey &&
+      !event.altKey &&
+      event.key.toLowerCase() === "k" &&
+      workspaceShown
+    ) {
+      event.preventDefault()
+      switcher.open()
     }
-  })
-})
+  },
+  true,
+)
 
 // One poll loop, started once a folder is open; `start()` is idempotent, so
 // re-picking a folder doesn't double-arm it — the single loop follows whichever

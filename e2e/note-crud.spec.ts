@@ -44,9 +44,12 @@ async function noteExists(page: Page, name: string): Promise<boolean> {
 const editor = (page: Page) => page.locator(".cm-content")
 const row = (page: Page, name: string) => page.locator(".note-row", { hasText: name })
 
+// Creation now goes through the quick switcher (FEAT-0033): open it, type the name,
+// Enter activates the "Create" row when the name matches no existing note.
 async function createNote(page: Page, name: string) {
-  await page.locator("#new-note-input").fill(name)
-  await page.locator("#new-note-input").press("Enter")
+  await page.locator("#sidebar-search").click()
+  await page.locator("#switcher-input").fill(name)
+  await page.locator("#switcher-input").press("Enter")
 }
 
 test("creates a named note and opens it (AC-1)", async ({ page }) => {
@@ -58,21 +61,23 @@ test("creates a named note and opens it (AC-1)", async ({ page }) => {
 
   await expect(row(page, "Diablo builds")).toHaveClass(/active/)
   expect(await noteExists(page, "Diablo builds.md")).toBe(true)
-  await editor(page).click() // focus moved to the new-note input after submit
+  await editor(page).click() // focus was in the switcher input
   await page.keyboard.type("Whirlwind barb")
   await expect(editor(page)).toHaveText("Whirlwind barb")
 })
 
-test("refuses a duplicate name with a message (AC-3)", async ({ page }) => {
+test("typing an existing name opens it rather than duplicating (AC-3)", async ({ page }) => {
   await stubPicker(page)
   await page.goto("/brulion/")
   await writeNote(page, "alpha.md", "alpha body")
   await page.locator("#open-folder").click()
   await expect(row(page, "alpha")).toBeVisible()
 
+  // The switcher offers an existing note to OPEN, never to re-create — so there is
+  // no duplicate and no error path; the note just opens.
   await createNote(page, "alpha")
 
-  await expect(page.locator("#status")).toContainText(/already exists/i)
+  await expect(editor(page)).toHaveText("alpha body")
   await expect(page.locator(".note-row")).toHaveCount(1) // no duplicate row
 })
 
