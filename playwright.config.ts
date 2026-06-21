@@ -14,10 +14,26 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
-  webServer: {
-    command: "npm run dev",
-    url: "http://localhost:5173/brulion/",
-    reuseExistingServer: true,
-    timeout: 60_000,
-  },
+  // Two servers: the dev server for the bulk of the suite (fast feedback, no
+  // service worker — registration is production-only, FEAT-0029), and a
+  // production preview server for the offline PWA test, which needs the real
+  // built shell + the worker. Specs that need preview navigate to its absolute
+  // URL (http://localhost:4173/brulion/) rather than the dev baseURL.
+  webServer: [
+    {
+      command: "npm run dev",
+      url: "http://localhost:5173/brulion/",
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+    },
+    {
+      // Production build + preview for the offline PWA test. reuseExistingServer
+      // is off on CI so the worker is always validated against a fresh build,
+      // never a stale dist/ left running on 4173 (a false-green footgun).
+      command: "npm run build && npm run preview -- --port 4173 --strictPort",
+      url: "http://localhost:4173/brulion/",
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+  ],
 })

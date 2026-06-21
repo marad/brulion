@@ -20,6 +20,7 @@ import {
 import { displayName, isExternalLink, resolveNotePath } from "./note-name"
 import { wireFlushOnHide } from "./flush"
 import { createPoller } from "./watch"
+import { registerServiceWorker } from "./pwa"
 
 /** How often to poll the folder for changes made by other tools (FEAT-0014). */
 const POLL_MS = 2000
@@ -221,3 +222,7 @@ void loadVimMode().then((on) => {
 
 // Flush pending edits before the page can go away.
 wireFlushOnHide(() => controller.flush())
+
+// Register the offline service worker (FEAT-0029) — production builds only; the
+// dev server serves unbundled modules + an HMR client the worker shouldn't cache.
+registerServiceWorker(navigator, import.meta.env.BASE_URL, import.meta.env.PROD)
