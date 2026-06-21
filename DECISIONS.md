@@ -694,3 +694,25 @@ with no network, tipping the app over the installability bar. Choices:
   of user data to drift from disk. (Rejected: caching/syncing the notes through the
   SW — that *is* the index/sidecar the moat forbids; a PWA build plugin — a
   dependency and a second mental model for a weekend-scale static site.)
+
+## PWA install: a custom in-app Install button, not just the browser default (M9 → FEAT-0030)
+With the manifest + offline worker in place Chromium fires `beforeinstallprompt`.
+We capture it (`preventDefault` suppresses the browser's mini-infobar) and surface
+our own **Install** button in the header rather than relying solely on the
+address-bar install icon, which users routinely miss. Choices:
+- **A pure `createInstallPrompt(isStandalone, setVisible)` controller + a thin DOM
+  adapter in `main.ts`**, mirroring the FEAT-0020/0021 toggle split so the
+  show/clear logic is unit-tested once and the wiring stays a few listeners. The
+  button reuses the generic `header button` CSS — no new styles.
+- **The deferred event is single-use.** A click fires `prompt()` once, then the
+  stash is cleared and the button hides regardless of accept/dismiss (the event is
+  spent after `prompt()`); if the browser re-fires `beforeinstallprompt` the button
+  re-appears. (Rejected: restoring the button on dismissal — it would offer a
+  prompt over a spent event.)
+- **Hidden while already installed** (`display-mode: standalone` or iOS
+  `navigator.standalone`) and before the event arrives. **Not production-gated**
+  (unlike the SW): the wiring is harmless in any build and the synthesized-event
+  path is e2e-testable on the dev server. Pure UI around a browser event — no
+  files, no storage, the moat is untouched. iOS (no `beforeinstallprompt`) relies
+  on the manifest + apple-touch-icon for manual "Add to Home Screen" — a guided
+  iOS flow is out of scope.
