@@ -814,3 +814,47 @@ runs are computed from the **same pure functions the renderer uses**
   toward a marker removes its trailing space, which un-hides it).
 - *Moat:* untouched — the filter only corrects the editor selection; nothing is
   read from or written to the user's folder.
+
+## Quick switcher: a Ctrl+K modal that finds or creates, replacing the sidebar textbox (M12 → FEAT-0033)
+
+**What.** A `Ctrl+K` / `Cmd+K` modal overlay (`src/quick-switcher.ts`) fuzzy-finds a
+note and opens it, or — when the query names no existing note — creates it. It
+reads the in-memory note list and routes to the existing `switchTo` / `addNote`
+operations. The old sidebar inline-create textbox (`#new-note` + `wireNewNote`) and
+its `#status` error line are removed; the sidebar gains a small "Find or create
+note…" button that opens the same switcher.
+
+**Why this shape.**
+- *One create surface.* The textbox was poor UX (a bare field, error-only
+  feedback) and a *second* way to create alongside switching. Folding find + create
+  into one palette (the classic quick-switcher pattern) removes the duplicate path
+  and makes creation keyboard-first.
+- *Hand-rolled fuzzy, no dependency.* `src/note-search.ts` holds a small pure
+  `fuzzyScore` (subsequence match, contiguous/segment-start bonuses, gap penalty)
+  and `searchNotes` (rank + create-eligibility). For tens-to-hundreds of notes a
+  library would be dead weight against the lean ethos.
+- *One pure module owns "what matches/creates".* Ranking and the
+  "offer-create-vs-open" decision share inputs and must agree, so they live
+  together; the switcher only renders the result and owns selection/highlight. The
+  create-eligibility check reuses `normalizeNoteName` — the *same* validator
+  `addNote` uses — so the UI decision and the actual create never disagree.
+- *`create` = the query to attempt, not a pre-validated name.* So an invalid name
+  still shows a Create row whose activation surfaces the validator's error inline
+  (AC-7), and validation happens exactly once, at create time.
+- *Capture-phase shortcut.* The `Ctrl/Cmd+K` listener is registered in the capture
+  phase on `window`, so neither CodeMirror nor the Vim layer can swallow it first
+  (AC-9). It is gated on a folder being open *and* the conflict modal being closed
+  (that modal must remain the only forward path).
+
+**Consequences.**
+- *UI:* before — type a name into a sidebar box to create; after — `Ctrl/Cmd+K` (or
+  the sidebar button) opens a palette: fuzzy list, ↑/↓ + Enter to open, type a new
+  name + Enter to create, Esc/backdrop to dismiss. Typing the name of an existing
+  note now *opens* it (no duplicate, no error) rather than refusing it.
+- *Tests:* the create path in several e2e specs (note-crud, links, wikilinks,
+  subfolders, link-interaction) moved from `#new-note-input` to the switcher; the
+  old "refuses a duplicate" test became "typing an existing name opens it".
+- *Moat:* untouched — the switcher only reads the note list and triggers the
+  existing create on explicit user action; nothing else is read or written.
+- *Deferred:* full-text/body search, a general command palette (rename/delete), and
+  recency ordering are out of scope (see `milestones/M12.md`).
