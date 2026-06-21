@@ -53,6 +53,35 @@ header button:hover {
   padding-left: 0.15rem;
 }
 
+/* Loading overlay (FEAT-0031): shown from first paint over the workspace until we
+   know whether a folder auto-restores — so the user never sees the welcome screen
+   flash before the workspace loads. Resolves to either #welcome or the workspace. */
+#loading {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fbfbfa;
+}
+#loading[hidden] {
+  display: none;
+}
+.spinner {
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 2px solid #e7e7e3;
+  border-top-color: #9a3b2f;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* First-run welcome screen (FEAT-0031): an overlay over the workspace shown until
    a folder is open, so the empty editor behind it never greets the user. */
 #welcome {
@@ -174,11 +203,6 @@ header button:hover {
 #toggle-sidebar[aria-pressed="true"],
 #toggle-vim[aria-pressed="true"] {
   background: #ececec;
-}
-
-/* Push the Vim toggle to the right, away from the folder controls. */
-#toggle-vim {
-  margin-left: auto;
 }
 
 #new-note {

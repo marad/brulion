@@ -35,6 +35,9 @@ test("welcome → open folder → workspace, then re-pick (AC-1, AC-4, AC-5)", a
   await stubPicker(page)
   await page.goto("/brulion/")
 
+  // The loading overlay exists so the welcome never flashes before the folder
+  // restore check resolves (M10 review fix); with no folder it gives way to welcome.
+  await expect(page.locator("#loading")).toHaveCount(1)
   // AC-1: the welcome hero greets the user; no bare editor, sidebar hidden.
   await expect(page.locator("#welcome")).toBeVisible()
   await expect(page.locator("#sidebar")).toBeHidden()

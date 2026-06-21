@@ -29,6 +29,7 @@ const POLL_MS = 2000
 
 const editorEl = document.querySelector<HTMLDivElement>("#editor")
 const workspaceEl = document.querySelector<HTMLElement>(".workspace")
+const loadingEl = document.querySelector<HTMLElement>("#loading")
 const welcomeEl = document.querySelector<HTMLElement>("#welcome")
 const sidebarEl = document.querySelector<HTMLElement>("#sidebar")
 const toggleSidebarEl = document.querySelector<HTMLButtonElement>("#toggle-sidebar")
@@ -48,6 +49,7 @@ const diskButton = document.querySelector<HTMLButtonElement>("#conflict-disk")
 if (
   !editorEl ||
   !workspaceEl ||
+  !loadingEl ||
   !welcomeEl ||
   !sidebarEl ||
   !toggleSidebarEl ||
@@ -76,6 +78,10 @@ let controller: NoteController
 // target from one to offer to create.
 let currentActive = ""
 let currentNotes: string[] = []
+// Whether a folder has been opened (workspace shown). Drives the initial
+// loading → welcome-vs-workspace resolution so the welcome never flashes before
+// an auto-restored folder loads (FEAT-0031).
+let workspaceShown = false
 // Follow a resolved internal note path: switch to it if it exists, else offer to
 // create it (shared by markdown links and wikilinks — FEAT-0026/0027).
 const openNotePath = (path: string) => {
@@ -135,6 +141,8 @@ controller = createNoteController(view, {
     // in-note header controls (FEAT-0031). The collapse preference (a CSS class on
     // .workspace) is orthogonal: if the user left the sidebar collapsed it stays
     // hidden by CSS regardless.
+    workspaceShown = true
+    loadingEl.hidden = true
     showWorkspace({
       welcome: welcomeEl,
       sidebar: sidebarEl,
@@ -206,7 +214,14 @@ wireOpenFolder(openButton, resumeButton, openNote)
 // Re-pick a different folder once one is open (FEAT-0031): same open flow, driven
 // from the header (the welcome CTA is hidden behind the workspace by then).
 wireOpenFolder(reopenButton, resumeButton, openNote)
-void restoreFolder(resumeButton, openNote)
+// Try to silently re-attach to the last folder, then settle the first-paint
+// state: the loading overlay gives way to the workspace (if a folder restored) or
+// the welcome screen (if not) — so the welcome never flashes before an
+// auto-restored folder loads (FEAT-0031).
+void restoreFolder(resumeButton, openNote).finally(() => {
+  loadingEl.hidden = true
+  if (!workspaceShown) welcomeEl.hidden = false
+})
 
 // Sidebar collapse (FEAT-0020): restore the saved preference, wire the header
 // toggle, and bind Ctrl+\ to the same flip. CodeMirror has no binding for that

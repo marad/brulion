@@ -748,3 +748,21 @@ open-folder CTA). Decisions:
   now assert the welcome is gone and the state restored, testing the real
   auto-restore path. Pure UI throughout — no file behavior changed, the moat is
   untouched.
+
+### M10 review fixes (live app)
+Two issues surfaced reviewing the deployed app:
+- **The header `☰` sat in the middle.** A stale `#toggle-vim { margin-left: auto }`
+  (from FEAT-0021, when Vim was the rightmost control) collided with the new
+  wordmark's `margin-right: auto`: two `auto` margins split the free space, so the
+  sidebar toggle landed mid-header. Fix: drop the Vim rule — the wordmark's
+  `margin-right: auto` alone now groups every control at the right edge.
+- **The welcome screen flashed on reload before the workspace loaded.** The hero
+  was shown by default, so on reload it painted for a beat before `restoreFolder`
+  auto-reopened the folder and swapped to the workspace. Fix: a neutral **loading
+  overlay** (`#loading`, a small spinner) is shown from first paint instead; the
+  welcome (`hidden` by default) is revealed only once the restore check resolves
+  with no folder, while an auto-restored folder goes straight to the workspace.
+  So the first paint resolves to exactly one of loading → welcome (no folder) or
+  loading → workspace (folder restored) — never welcome → workspace. Tracked by a
+  `workspaceShown` flag set in `onListChanged`; the reload e2e specs assert the
+  welcome stays hidden, guarding against a regression of the flash.
