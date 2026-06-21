@@ -1,7 +1,8 @@
 /**
- * Read, write, list, create, and delete notes — each a `.md` file in the
- * folder the user picked. The folder listing is the source of truth (no index
- * file). The save path guards against silently overwriting a file that changed
+ * Read, write, list, create, and delete notes — each a `.md` file somewhere in
+ * the folder tree the user picked, addressed by its folder-relative POSIX path
+ * (`projects/diablo.md`). The folder tree is the source of truth (no index file).
+ * The save path guards against silently overwriting a file that changed
  * underneath us (another editor, a sync client, an AI writing to the folder) —
  * the file-fidelity moat.
  */
@@ -51,7 +52,9 @@ export async function saveNote(
     }
   }
 
-  const handle = await dir.getFileHandle(name, { create: true })
+  const { folders, file } = splitPath(name)
+  const parent = await resolveParent(dir, folders, true)
+  const handle = await parent.getFileHandle(file, { create: true })
   const writable = await handle.createWritable()
   await writable.write(content)
   await writable.close()
@@ -73,15 +76,30 @@ export async function statNote(
   return (await handle.getFile()).lastModified
 }
 
-/** The folder's `.md` filenames, sorted case-insensitively. */
+/** Every `.md` file in the tree as a `/`-separated relative path, sorted
+ * case-insensitively by full path. Directories are descended into, not listed. */
 export async function listNotes(
   dir: FileSystemDirectoryHandle,
 ): Promise<string[]> {
-  const names: string[] = []
+  const paths: string[] = []
+  await collect(dir, "", paths)
+  return paths.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+}
+
+/** Recurse `dir`, pushing `prefix`-qualified relative paths of `.md` files. The
+ * async iterator yields the sub-directory handle itself, so we recurse directly. */
+async function collect(
+  dir: FileSystemDirectoryHandle,
+  prefix: string,
+  out: string[],
+): Promise<void> {
   for await (const entry of dir.values()) {
-    if (entry.kind === "file" && MD_EXT.test(entry.name)) names.push(entry.name)
+    if (entry.kind === "file") {
+      if (MD_EXT.test(entry.name)) out.push(prefix + entry.name)
+    } else {
+      await collect(entry, prefix + entry.name + "/", out)
+    }
   }
-  return names.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
 }
 
 /**
@@ -93,7 +111,9 @@ export async function createNote(
   name: string,
 ): Promise<CreateResult> {
   if (await getExisting(dir, name)) return { status: "exists" }
-  const handle = await dir.getFileHandle(name, { create: true })
+  const { folders, file } = splitPath(name)
+  const parent = await resolveParent(dir, folders, true)
+  const handle = await parent.getFileHandle(file, { create: true })
   const writable = await handle.createWritable()
   await writable.close() // materialize an empty file
   return { status: "created" }
@@ -106,23 +126,84 @@ export async function deleteNote(
   name: string,
 ): Promise<void> {
   try {
-    await dir.removeEntry(name)
+    const { folders, file } = splitPath(name)
+    const parent = await resolveParent(dir, folders, false)
+    if (!parent) return // a missing intermediate folder means the note is already gone
+    await parent.removeEntry(file)
   } catch (err) {
     if (!isNotFound(err)) throw err
   }
 }
 
-/** The file handle for `name` if it exists, else `null`. */
+/** The file handle for the note at `path` if it exists, else `null` — including
+ * when an intermediate folder on the way to it is missing, or a path segment
+ * names a file where a folder was expected. */
 async function getExisting(
   dir: FileSystemDirectoryHandle,
-  name: string,
+  path: string,
 ): Promise<FileSystemFileHandle | null> {
+  const { folders, file } = splitPath(path)
+  const parent = await resolveParent(dir, folders, false)
+  if (!parent) return null
   try {
-    return await dir.getFileHandle(name)
+    return await parent.getFileHandle(file)
   } catch (err) {
-    if (isNotFound(err)) return null
+    if (isAbsent(err)) return null
     throw err
   }
+}
+
+/** Split a `/`-separated relative path into its folder segments and leaf file —
+ * the single place the path is taken apart, so traversal and the leaf agree. */
+function splitPath(path: string): { folders: string[]; file: string } {
+  const segments = path.split("/")
+  const file = segments.pop() as string // split always yields ≥1 segment
+  return { folders: segments, file }
+}
+
+/**
+ * Walk `dir` into the directory holding the leaf file, one `folders` segment at a
+ * time. With `create`, missing folders are materialized (`getDirectoryHandle`
+ * with `{ create: true }`); without it, a missing folder — or a segment that
+ * names a file, not a folder — returns `null` so the caller treats the note as
+ * absent rather than throwing. An empty `folders` (a root-level note) returns
+ * `dir` unchanged.
+ */
+async function resolveParent(
+  dir: FileSystemDirectoryHandle,
+  folders: string[],
+  create: true,
+): Promise<FileSystemDirectoryHandle>
+async function resolveParent(
+  dir: FileSystemDirectoryHandle,
+  folders: string[],
+  create: boolean,
+): Promise<FileSystemDirectoryHandle | null>
+async function resolveParent(
+  dir: FileSystemDirectoryHandle,
+  folders: string[],
+  create: boolean,
+): Promise<FileSystemDirectoryHandle | null> {
+  let current = dir
+  for (const folder of folders) {
+    try {
+      current = await current.getDirectoryHandle(folder, { create })
+    } catch (err) {
+      if (!create && isAbsent(err)) return null
+      throw err
+    }
+  }
+  return current
+}
+
+/** True for the errors meaning "nothing usable is at this path": the entry is
+ * missing (`NotFoundError`), or a segment names a file where we expected a folder
+ * — or vice versa (`TypeMismatchError`). A folder can collide with a like-named
+ * file when many tools write the same tree, so we treat that as "no note here"
+ * on the read path rather than letting it throw. */
+function isAbsent(err: unknown): boolean {
+  const name = (err as { name?: unknown } | null)?.name
+  return name === "NotFoundError" || name === "TypeMismatchError"
 }
 
 function isNotFound(err: unknown): boolean {

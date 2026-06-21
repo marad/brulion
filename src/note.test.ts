@@ -26,6 +26,12 @@ function notFound(): never {
   throw new DOMException("not found", "NotFoundError")
 }
 
+/** What the real FSA throws when a name exists but is the other kind (a file
+ * asked for as a folder, or vice versa). */
+function typeMismatch(): never {
+  throw new DOMException("type mismatch", "TypeMismatchError")
+}
+
 /**
  * A fake directory handle backing a nested tree. Supports the file read/write
  * surface, sub-directory traversal (`getDirectoryHandle`, with `{ create }`),
@@ -59,13 +65,15 @@ function makeDirHandle(entries: Map<string, Node>, name = ""): FileSystemDirecto
     name,
     getFileHandle: async (fname: string, options?: { create?: boolean }) => {
       const e = entries.get(fname)
-      if ((!e || e.kind !== "file") && !options?.create) notFound()
+      if (e?.kind === "directory") typeMismatch() // a folder where a file was asked for
+      if (!e && !options?.create) notFound()
       if (!e && options?.create) entries.set(fname, { kind: "file", content: "", lastModified: 0 })
       return fileHandleFor(fname)
     },
     getDirectoryHandle: async (dname: string, options?: { create?: boolean }) => {
       let e = entries.get(dname)
-      if (!e || e.kind !== "directory") {
+      if (e && e.kind !== "directory") typeMismatch() // a file where a folder was asked for
+      if (!e) {
         if (!options?.create) notFound()
         e = { kind: "directory", entries: new Map<string, Node>() }
         entries.set(dname, e)
@@ -134,6 +142,13 @@ describe("readNote (AC-1, AC-2)", () => {
     const folder = fakeFolder()
     expect(await readNote(folder.dir, "sub/x.md")).toEqual({ content: "", lastModified: null })
     expect(folder.has("sub")).toBe(false)
+  })
+
+  it("reads empty when a path segment names a file, not a folder (AC-2)", async () => {
+    // `notes` is a file; `notes/x.md` can't exist — treat it as absent, not an error.
+    const folder = fakeFolder({ notes: { kind: "file", content: "x", lastModified: 1 } })
+    expect(await readNote(folder.dir, "notes/x.md")).toEqual({ content: "", lastModified: null })
+    expect(await statNote(folder.dir, "notes/x.md")).toBeNull()
   })
 })
 

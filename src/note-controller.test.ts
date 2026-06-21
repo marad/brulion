@@ -326,7 +326,9 @@ describe("addNote (FEAT-0012)", () => {
     const controller = createNoteController(view)
     await controller.open(DIR)
 
-    const result = await controller.addNote("bad/name")
+    // `bad/name` is now a valid subfolder path (FEAT-0023); use a name that is
+    // still unsafe — a `..` segment must never reach the folder.
+    const result = await controller.addNote("../escape")
 
     expect(result.ok).toBe(false)
     expect(createNote).not.toHaveBeenCalled()

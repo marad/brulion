@@ -8,11 +8,13 @@ export type NormalizeResult =
   | { ok: true; filename: string }
   | { ok: false; reason: string }
 
-/** Path separators plus the Windows-reserved punctuation set. Spaces and
- * hyphens are deliberately allowed — `Diablo builds.md` is a valid note name.
- * Control characters are rejected separately (see {@link hasControlChar}) so
- * this source stays plain ASCII with no embedded control bytes. */
-const UNSAFE = /[/\\<>:"|?*]/
+/** Filename-unsafe punctuation, checked **per path segment** (the `/` separator
+ * is consumed by the split before this runs, so it is not listed here; `\` stays,
+ * as a stray Windows separator inside a segment). Spaces and hyphens are
+ * deliberately allowed — `Diablo builds.md` is a valid segment. Control
+ * characters are rejected separately (see {@link hasControlChar}) so this source
+ * stays plain ASCII with no embedded control bytes. */
+const UNSAFE = /[\\<>:"|?*]/
 
 /** True if `s` contains any C0 control character (U+0000–U+001F). */
 function hasControlChar(s: string): boolean {
@@ -23,21 +25,36 @@ function hasControlChar(s: string): boolean {
 }
 
 /**
- * Normalize `input` to a single-extension `.md` filename. Trims surrounding
- * whitespace; rejects empty/whitespace-only names and names containing unsafe
- * characters; ensures exactly one `.md` extension (case-normalized), so a name
- * the user already typed with `.md` is not given a second one.
+ * Normalize `input` to a folder-relative `.md` path (FEAT-0023). Trims the input,
+ * then splits on `/` into folder segments plus a final note segment. Each segment
+ * is trimmed and validated (non-empty, no unsafe/control character); the last
+ * segment gets exactly one `.md` extension (case-normalized, never doubled). The
+ * `.`/`..` segments are rejected so a normalized path can never escape the folder
+ * the user granted — the moat must not let a note be written outside it. A bare
+ * name with no `/` behaves exactly as the single-file case did.
  */
 export function normalizeNoteName(input: string): NormalizeResult {
   const trimmed = input.trim()
   if (!trimmed) return { ok: false, reason: "Name cannot be empty." }
-  if (UNSAFE.test(trimmed) || hasControlChar(trimmed)) {
-    return { ok: false, reason: 'Name cannot contain / \\ < > : " | ? * or control characters.' }
+
+  const raw = trimmed.split("/")
+  const last = raw.length - 1
+  const segments: string[] = []
+  for (let i = 0; i < raw.length; i++) {
+    let segment = raw[i].trim()
+    if (i === last) segment = segment.replace(/\.md$/i, "").trim() // strip the extension off the note name only
+    if (!segment) return { ok: false, reason: "Name cannot be empty." }
+    if (segment === "." || segment === "..") {
+      return { ok: false, reason: "Name cannot contain . or .. path segments." }
+    }
+    if (UNSAFE.test(segment) || hasControlChar(segment)) {
+      return { ok: false, reason: 'Name cannot contain \\ < > : " | ? * or control characters.' }
+    }
+    segments.push(segment)
   }
 
-  const base = trimmed.replace(/\.md$/i, "").trim()
-  if (!base) return { ok: false, reason: "Name cannot be empty." }
-  return { ok: true, filename: `${base}.md` }
+  segments[last] += ".md"
+  return { ok: true, filename: segments.join("/") }
 }
 
 /** The user-facing label for a note filename: the name without its `.md`
