@@ -575,3 +575,35 @@ The sidebar renders the flat path list (FEAT-0023) as a nested tree. Key choices
   files — nothing to bookkeep, nothing to drift. (Rejected: an explicit new-folder
   action — would create empty folders the listing can't represent, a second kind
   of state outside the files.)
+
+## Link interaction: plain-click follows, modifier-click edits, bare URLs autolink (M8 review → FEAT-0026)
+FEAT-0025 shipped only the link *mechanism* — `[text](url)` rendered, Ctrl/Cmd+click
+to follow. The M8 review found that too thin and undiscoverable. The review settled:
+- **Plain click follows a link; Ctrl/Cmd+click places the caret instead.** The
+  editor always reads as rich content, so a link should behave like a link — a
+  plain click follows it (external → new tab, internal → switch/create). The
+  inverse, Ctrl/Cmd+click, is the *edit* escape hatch: it places the caret in the
+  link (you can't otherwise, since plain click now navigates). This flips
+  FEAT-0025's modifier-to-follow. The cursor signals the mode: `pointer` over a
+  link normally, a text caret while Ctrl/Cmd is held (a window keydown/keyup
+  listener toggles a class). (Rejected: keep modifier-to-follow — undiscoverable,
+  the original complaint.)
+- **Bare web URLs autolink; emails do not.** A typed `http(s)://…` or `www.…`
+  renders as a clickable external link (the GFM Autolink parser extension, without
+  pulling in tables/strikethrough/tasklists). The parser also recognizes bare
+  emails, but the renderer leaves those as plain text — the user didn't want
+  addresses silently turning into `mailto:` links. `www.` opens as `https://www.…`.
+  (Rejected: only `http(s)://` — half-measures surprise more than help; autolink
+  emails too — unwanted.)
+- **A link reveals its raw markdown when the caret is within it** — a deliberate,
+  scoped exception to the M2 "always hide, never reveal on the cursor line" rule.
+  The exception is justified because a link's hidden part (the URL/target) is
+  *content* you must edit, not presentation noise like `**`. Entered via the
+  Ctrl/Cmd+click caret placement above; leaving the link re-renders it. This
+  reintroduces selection-driven decoration rebuilds for the link layer only, which
+  is fine (and the flicker is desirable — you want to see the URL while editing
+  it). A **hover tooltip shows the link's target** as a lighter "where does this
+  go" preview. (Rejected: a popup link editor — a new widget and interaction model;
+  kept in reserve if caret-reveal proves insufficient.)
+- **External links open via a real anchor click, not `window.open(_, _, "noopener")`** —
+  the features-string form opens a popup window rather than a tab in some browsers.
