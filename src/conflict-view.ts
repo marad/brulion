@@ -36,7 +36,7 @@ export function mountConflictDiff(
   const mineLabel = document.createElement("span")
   mineLabel.textContent = "Your version"
   const theirsLabel = document.createElement("span")
-  theirsLabel.textContent = theirs === null ? "On disk (deleted on disk)" : "On disk"
+  theirsLabel.textContent = theirs === null ? "On disk (deleted)" : "On disk"
   labels.append(mineLabel, theirsLabel)
   container.append(labels)
 

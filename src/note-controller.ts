@@ -255,14 +255,22 @@ export function createNoteController(
   // poll loop noticing an external change while edits are pending) — one state,
   // one UX. `conflict` is set before the await so the save loop and the change
   // guard see it immediately, and `mine` is captured before the await so a
-  // keystroke landing during the read can't change what is diffed.
+  // keystroke landing during the read can't change what is diffed. Crucially,
+  // a failed disk read must NOT swallow the announcement: if `readNote` throws
+  // (e.g. a permission lapse or I/O race), we still fire `onConflict` so the
+  // modal appears and the editor is locked — leaving `conflict` true without
+  // surfacing it would freeze the editor silently, with no way out.
   const raiseConflict = async (): Promise<void> => {
     conflict = true // stop autosaving so we never clobber the on-disk change
     const mine = view.state.doc.toString()
     let theirs: string | null = null
     if (dir) {
-      const disk = await readNote(dir, activeName)
-      theirs = disk.lastModified === null ? null : disk.content
+      try {
+        const disk = await readNote(dir, activeName)
+        theirs = disk.lastModified === null ? null : disk.content
+      } catch {
+        theirs = null // couldn't read the disk side; still surface the conflict
+      }
     }
     opts.onConflict?.({ mine, theirs })
   }

@@ -913,6 +913,31 @@ describe("conflict resolution (FEAT-0015)", () => {
     expect(onConflict).toHaveBeenCalledWith({ mine: "body mine", theirs: null })
   })
 
+  it("still surfaces the conflict if the disk read fails (FEAT-0022 AC-2)", async () => {
+    const view = mountView()
+    const onConflict = vi.fn()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, {
+      onConflict,
+      onListChanged: vi.fn(),
+      debounceMs: 10_000,
+    })
+    await controller.open(DIR)
+    type(view, " mine")
+    controller.handleChange()
+
+    // The diff read throws (e.g. a permission lapse) — the conflict must still
+    // surface (modal + editor lock) rather than freeze the editor silently.
+    statNote.mockResolvedValue(2)
+    readNote.mockRejectedValue(new Error("read failed"))
+    await controller.refreshFromDisk()
+
+    expect(onConflict).toHaveBeenCalledWith({ mine: "body mine", theirs: null })
+  })
+
   it("keeps my version: writes the buffer over the disk and clears the conflict (AC-2)", async () => {
     const view = mountView()
     const onConflictResolved = vi.fn()

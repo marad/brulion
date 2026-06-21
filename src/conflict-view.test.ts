@@ -32,7 +32,7 @@ describe("mountConflictDiff (FEAT-0022)", () => {
     mountConflictDiff(parent, "my buffer", null)
 
     const theirsLabel = parent.querySelectorAll(".conflict-diff-labels span")[1]
-    expect(theirsLabel?.textContent).toContain("deleted on disk")
+    expect(theirsLabel?.textContent).toContain("deleted")
 
     const [mine, theirs] = panes(parent)
     expect(mine).toContain("my buffer")
