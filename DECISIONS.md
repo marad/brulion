@@ -475,3 +475,30 @@ Consequence/trade: the centered text column may shift slightly when a vertical
 scrollbar appears (the reason the gutter existed) — accepted; can be addressed
 later another way if it bothers. Lesson: the M2 fix treated a symptom; the real
 cause was a layout property, not the decorations.
+
+## Conflict preview: read-only `@codemirror/merge` side-by-side, not a hand-rolled diff (M7 → FEAT-0022)
+M4 shipped the two-way keep/take conflict choice (FEAT-0015) but deliberately
+deferred showing *what* differs — so "use the version on disk" was a blind
+choice. M7 fills that gap: when the conflict modal stands, show your buffer
+beside the on-disk file, with the changes highlighted, so the pick is informed.
+Key decisions:
+- **Diff via `@codemirror/merge`'s `MergeView`, not a hand-written line diff.**
+  It is the official CodeMirror-family diff component, so it reuses our editor
+  theme/extensions and renders a proper change-highlighted view for free. A
+  hand-rolled LCS line diff would be more code for a worse, unthemed result. The
+  ~modest bundle cost is fine for the same reason Vim's was (static, cached site;
+  bundle size is not the moat).
+- **Read-only, side-by-side, mine on the left / disk on the right** — matching
+  the button order (Keep my version | Use the version on disk). The preview never
+  edits anything; resolution still goes through the controller's existing
+  `resolveKeepMine`/`resolveTakeTheirs` on the serialize queue, re-basing on live
+  disk state per FEAT-0015. Display-only: no new bytes touch the file (the moat).
+- **`onConflict` carries the two versions: `{ mine, theirs }` with `theirs: null`
+  meaning deleted on disk.** `raiseConflict` became async and reads the disk file
+  (via `readNote`, whose `lastModified === null` cleanly signals "deleted") at
+  raise time, so the modal has both sides to render. When deleted, the disk pane
+  shows empty content under a "(deleted on disk)" label; the keep/take semantics
+  are unchanged (keep re-creates, disk switches off).
+- **The MergeView is built fresh per conflict and destroyed on resolve**, mounted
+  into a container inside the existing `#conflict-backdrop`. Conflicts are rare
+  and each carries different content, so a persistent instance buys nothing.
