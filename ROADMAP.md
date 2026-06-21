@@ -125,8 +125,13 @@ same domain — paths, not just names.
 ## Later / backlog (out of MVP, on purpose)
 
 Everything concrete is now scheduled in M5–M9 above. What remains here is
-deliberately unscheduled — needs product-market-fit or a real demand signal first.
+deliberately unscheduled — needs product-market-fit or a real demand signal first
+(the welcome-screen item below is the exception: near-term polish, not PMF-gated).
 
+- **Welcome / empty-screen UX** — the pre-folder-open state is bare (just an "Open
+  folder" button); give the first-run screen a deliberate pass: guidance/layout and
+  how the header controls (the `☰` and `Vim` toggles) appear before a folder is
+  open. Surfaced in the M6 review.
 - **Workspaces** — `?ws=diablo`, multiple folder handles per origin in IndexedDB.
 - **Sync (paid)** — BYO-cloud (Dropbox/Drive/OneDrive) via OAuth PKCE,
   client-side, no data hosted by us. License validation via merchant-of-record

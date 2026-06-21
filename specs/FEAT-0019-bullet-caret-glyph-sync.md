@@ -48,6 +48,18 @@ carried by the widget instead of the `::before`. The previous line-level
 `::before` glyph and its `cm-list-disc`/`cm-list-dash` classes are no longer the
 mechanism that draws the bullet.
 
+**Completing a marker is reversible by Backspace (symmetry).** A trailing space is
+what turns a bare marker into a rendered construct (a bullet here; the same is true
+of the heading and blockquote markers the editor hides). Because the marker run is
+atomic, a default Backspace at the run's end deletes the *whole* marker at once,
+which is surprising: the user typed a space to complete the marker and expects
+Backspace to undo just that space. So when the caret sits immediately after a
+completed marker run (`* `/`- `, and likewise `# `…`###### `, `> `), Backspace
+deletes only the trailing space, leaving the bare literal marker; a second
+Backspace then removes the marker character itself. This is the exact inverse of
+typing the space that completed it. (Nested blockquotes are out of scope, per
+FEAT-0016.)
+
 ## Constraints
 
 - **No document mutation.** The widget only changes display; the on-disk bytes
@@ -99,3 +111,17 @@ Given a note containing a bulleted list,
 When the note is saved to disk,
 Then the file contains exactly that CommonMark, `*`/`- ` markers included (the
 widget changed only the display, not the bytes).
+
+**AC-6** — Backspace after a completed bullet marker deletes only the trailing space.
+Given a bullet line `* ` (or `- `), optionally followed by text, with the caret
+immediately after the marker run,
+When the user presses Backspace,
+Then only the trailing space is deleted, leaving the bare literal marker (`*`/`-`)
+on the line; a second Backspace then deletes the marker character itself.
+
+**AC-7** — The same Backspace symmetry applies to heading and blockquote markers.
+Given the caret is immediately after a completed heading marker (`# `…`###### `) or
+a blockquote marker (`> `),
+When the user presses Backspace,
+Then only the trailing space is deleted, leaving the bare literal marker (`#`…
+`######`, or `>`), rather than the whole marker being removed at once.
