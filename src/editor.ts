@@ -135,8 +135,12 @@ export function mountEditor(
           // A wikilink carries an already-resolved note path (data-note); a
           // markdown/autolink/external link carries a raw href (data-href).
           const note = el.getAttribute("data-note")
-          if (note !== null) opts.onFollowNote?.(note)
-          else opts.onFollowLink?.(el.getAttribute("data-href") as string)
+          if (note !== null) {
+            opts.onFollowNote?.(note)
+          } else {
+            const href = el.getAttribute("data-href")
+            if (href !== null) opts.onFollowLink?.(href)
+          }
           return true
         },
       }),

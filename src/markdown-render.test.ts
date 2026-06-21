@@ -394,6 +394,22 @@ describe("markdownSyntaxRanges wikilinks (FEAT-0027)", () => {
     expect(wl("a [[]] b", ctx([]))).toEqual({ hidden: [], marks: [] })
   })
 
+  it("ignores a wikilink whose target isn't a usable note name", () => {
+    // whitespace-only, a bare extension, a trailing slash, and a root escape all
+    // fail normalizeNoteName, so they render raw rather than as broken links.
+    for (const doc of ["a [[ ]] b", "a [[.md]] b", "a [[foo/]] b", "a [[../x]] b"]) {
+      expect(wl(doc, ctx([]))).toEqual({ hidden: [], marks: [] })
+    }
+  })
+
+  it("trims surrounding whitespace from an aliased label (AC-5)", () => {
+    const doc = "see [[note| the note ]]"
+    const r = wl(doc, ctx(["note.md"]))
+    // the styled label is the trimmed alias; the padding is hidden, not shown
+    const mark = r.marks[0]
+    expect(doc.slice(mark.from, mark.to)).toBe("the note")
+  })
+
   it("reveals a wikilink's markup when the caret is within it", () => {
     const doc = "see [[note]]" // span [4, 12]
     expect(wl(doc, ctx(["note.md"]), 7)).toEqual({ hidden: [], marks: [] })

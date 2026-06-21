@@ -19,7 +19,7 @@ import { markdown } from "@codemirror/lang-markdown"
 import { Autolink } from "@lezer/markdown"
 import { syntaxTree } from "@codemirror/language"
 import type { SyntaxNode } from "@lezer/common"
-import { isExternalLink, resolveNotePath, resolveWikilink } from "./note-name"
+import { isExternalLink, normalizeNoteName, resolveNotePath, resolveWikilink } from "./note-name"
 
 /**
  * What the link decorator needs to tell a valid internal link from a broken one
@@ -215,9 +215,18 @@ function collectWikilinks(
     const end = start + m[0].length
     if (sel.from < end && sel.to > start) continue // selection touches it — reveal for editing
     const [, rawTarget, rawAlias] = m
-    // The label starts after `[[` (no alias) or after `[[target|` (aliased).
-    const labelStart = rawAlias === undefined ? start + 2 : start + 2 + rawTarget.length + 1
-    const labelEnd = end - 2 // before `]]`
+    // Skip a target that isn't a usable note name — whitespace-only (`[[ ]]`),
+    // a `.`/`..` segment (no root escape), a bare `.md`, a trailing slash, etc.
+    // `normalizeNoteName` is the same validator note creation uses.
+    if (!normalizeNoteName(rawTarget).ok) continue
+    // The label is the alias when present, else the target; it runs after `[[`
+    // (or `[[target|`) up to `]]`. Trim its surrounding whitespace into the hidden
+    // runs so `[[foo| bar ]]` doesn't render padding inside the styled link.
+    const label = rawAlias ?? rawTarget
+    const runStart = rawAlias === undefined ? start + 2 : start + 2 + rawTarget.length + 1
+    const labelStart = runStart + (label.length - label.trimStart().length)
+    const labelEnd = end - 2 - (label.length - label.trimEnd().length)
+    if (labelEnd <= labelStart) continue // label is all whitespace
     const { resolved, createPath } = resolveWikilink(rawTarget.trim(), links.notePaths)
     const note = resolved ?? createPath
     hidden.push({ from: start, to: labelStart })
