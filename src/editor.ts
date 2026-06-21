@@ -12,6 +12,7 @@ import {
 } from "./markdown-commands"
 import { slashCommands } from "./slash-commands"
 import { contextMenu } from "./context-menu"
+import { vimCaretGuard } from "./vim-caret"
 
 /** Clean, prose-friendly typography: proportional font, readable measure,
  * comfortable spacing, no code-like gutter. No syntax hiding — that is M2.
@@ -144,6 +145,7 @@ export function mountEditor(
           return true
         },
       }),
+      vimCaretGuard, // keep the (Vim) caret from resting inside hidden markup (FEAT-0032)
       markdownRendering, // hide markdown markup; render text as rich content
       markdownCommands, // Ctrl+B/I/E and heading shortcuts reshape the markdown
       slashCommands, // "/" at line start opens a menu to reshape the line
