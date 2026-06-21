@@ -546,3 +546,32 @@ literal, portable markdown-link bytes. (Rejected: wikilinks — non-portable, di
 the moat; plain left-click to navigate — hijacks normal caret placement in an
 editor; a custom link autocomplete / backlink graph — separable, PMF-gated, and
 links were nearly cut from the MVP entirely.)
+
+## Folder tree derived fresh from the listing; collapse persisted; no "new folder" action (M8 → FEAT-0024)
+The sidebar renders the flat path list (FEAT-0023) as a nested tree. Key choices:
+- **The tree is derived every render by a pure `buildNoteTree(paths)`, not
+  stored.** The on-disk folder tree is the single source of truth (the moat), so
+  the UI tree is a pure projection of `listNotes`'s output — no index, no cached
+  tree that could drift. `buildNoteTree` lives in `ui.ts` (exported, unit-tested)
+  rather than a new module: it is one small pure function, and the repo already
+  keeps pure cores beside their glue (`classifyDiskCheck` in `note-controller`,
+  the range builders in `markdown-render`). A new module would be ceremony.
+- **Folders collapse; the collapsed-path set persists via `idb-keyval`**
+  (`brulion:collapsed-folders`, stored as an array), matching how the sidebar
+  (FEAT-0020) and Vim (FEAT-0021) preferences persist — one storage mechanism, no
+  new path. Toggling flips the children's visibility in place and writes the set;
+  it does not rebuild the list.
+- **Ancestors of the active note always render expanded**, regardless of the
+  persisted collapsed set, and without mutating it. So creating `sub/x` (or
+  reloading onto it) can never leave the active note hidden behind a folder the
+  user previously collapsed — the persisted state is honored for every *other*
+  folder. (Rejected: respect collapse literally even for the active note's
+  ancestors — hides the note you just made; auto-uncollapse and persist that —
+  silently forgets the user's collapse.)
+- **No standalone "new folder" button.** A folder exists exactly when a note
+  path puts a note in it (`folder/name` in the new-note field, already handled by
+  FEAT-0023's path normalization + folder materialization), and disappears when
+  its last note is deleted. This keeps the folder set a pure consequence of the
+  files — nothing to bookkeep, nothing to drift. (Rejected: an explicit new-folder
+  action — would create empty folders the listing can't represent, a second kind
+  of state outside the files.)
