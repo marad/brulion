@@ -104,6 +104,14 @@ describe("resolveNotePath (FEAT-0025 AC-1, AC-2)", () => {
     expect(resolveNotePath("sub/a.md", "<b c.md>")).toBe("sub/b c.md")
   })
 
+  it("decodes percent-encoding so an encoded space-name resolves", () => {
+    expect(resolveNotePath("sub/a.md", "My%20Note.md")).toBe("sub/My Note.md")
+  })
+
+  it("still rejects a root escape hidden behind percent-encoding", () => {
+    expect(resolveNotePath("a.md", "..%2Fx.md")).toBeNull()
+  })
+
   it("returns null when the link escapes the root", () => {
     expect(resolveNotePath("sub/a.md", "../../x.md")).toBeNull()
     expect(resolveNotePath("a.md", "../x.md")).toBeNull()

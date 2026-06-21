@@ -78,10 +78,19 @@ export function isExternalLink(href: string): boolean {
  * when the path would escape the picked root (a `..` above it) or does not name a
  * markdown note (`.md`). Pure — no DOM/FSA — and can never resolve outside the
  * root (the moat). A surrounding `<>` (CommonMark's wrapper for a url with
- * spaces) is stripped first.
+ * spaces) is stripped and percent-encoding is decoded first, so a link another
+ * tool wrote as `My%20Note.md` (or that the user wrapped as `<My Note.md>`)
+ * resolves to the real `My Note.md`. Decoding happens before the `..` check, so
+ * an encoded `..%2F` can't sneak past the root guard.
  */
 export function resolveNotePath(fromNote: string, href: string): string | null {
-  const cleaned = href.replace(/^<(.*)>$/, "$1")
+  const unwrapped = href.replace(/^<(.*)>$/, "$1")
+  let cleaned: string
+  try {
+    cleaned = decodeURIComponent(unwrapped)
+  } catch {
+    cleaned = unwrapped // malformed %-escape — use it as-is rather than throwing
+  }
   const slash = fromNote.lastIndexOf("/")
   const segments = slash === -1 ? [] : fromNote.slice(0, slash).split("/")
   for (const segment of cleaned.split("/")) {
