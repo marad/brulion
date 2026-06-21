@@ -40,8 +40,9 @@ function hiddenSpansOnLine(state: EditorState, pos: number): Span[] {
  * already kept out of atomic ranges by CodeMirror's own motions, but the Vim layer
  * moves by raw character offset and ignores them — so this filter post-corrects
  * any selection-setting transaction whose endpoints land strictly inside a hidden
- * run, snapping them to the nearest edge. For the default caret it's a no-op (its
- * endpoints are never inside a run), so it acts as a shared invariant.
+ * run, snapping them to the nearest edge. It lives in the Vim compartment (wired in
+ * editor.ts) and so is only installed while Vim is on; off-Vim it would be a pure
+ * per-keystroke no-op.
  *
  * Skips transactions that change the document (Vim motions don't; staying off the
  * edit path avoids re-mapping the appended selection) and pointer selections (a

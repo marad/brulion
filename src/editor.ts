@@ -145,7 +145,6 @@ export function mountEditor(
           return true
         },
       }),
-      vimCaretGuard, // keep the (Vim) caret from resting inside hidden markup (FEAT-0032)
       markdownRendering, // hide markdown markup; render text as rich content
       markdownCommands, // Ctrl+B/I/E and heading shortcuts reshape the markdown
       slashCommands, // "/" at line start opens a menu to reshape the line
@@ -200,9 +199,12 @@ export function setEditorEditable(view: EditorView, value: boolean): void {
   })
 }
 
-/** Turn the opt-in Vim keybinding layer on or off in place (FEAT-0021). */
+/** Turn the opt-in Vim keybinding layer on or off in place (FEAT-0021). The caret
+ * guard (FEAT-0032) rides in this compartment so it exists only while Vim does —
+ * the default caret already steps over hidden markup via CodeMirror's atomic
+ * ranges, so off-Vim the guard would only add a per-keystroke no-op. */
 export function setVimMode(view: EditorView, on: boolean): void {
-  view.dispatch({ effects: vimMode.reconfigure(on ? vim() : []) })
+  view.dispatch({ effects: vimMode.reconfigure(on ? [vim(), vimCaretGuard] : []) })
 }
 
 /** Tell the editor which note is open and which notes exist, so links render

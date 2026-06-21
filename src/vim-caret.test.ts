@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest"
-import { snapOutOfSpans, type Span } from "./vim-caret"
+import { EditorState, type SelectionRange } from "@codemirror/state"
+import { markdown } from "@codemirror/lang-markdown"
+import { snapOutOfSpans, vimCaretGuard, type Span } from "./vim-caret"
 
 // FEAT-0032 AC-1..AC-5: the pure rule that keeps a caret endpoint out of a hidden
 // markup run. A position strictly inside a run snaps to an edge — forward when the
@@ -46,5 +48,42 @@ describe("snapOutOfSpans", () => {
 
   it("returns the position unchanged when there are no spans", () => {
     expect(snapOutOfSpans(3, 0, [])).toBe(3)
+  })
+})
+
+// Integration: the real transactionFilter wired against a markdown state. Vim
+// moves by raw offset, so we simulate it with a plain `selection` transaction (no
+// `select.pointer` user event) and assert the filter snapped the caret to a visible
+// edge — exercising the live filter + the appended-selection combine, not just the
+// pure rule.
+describe("vimCaretGuard (transaction filter)", () => {
+  const stateAt = (doc: string, anchor: number) =>
+    EditorState.create({ doc, selection: { anchor }, extensions: [markdown(), vimCaretGuard] })
+
+  const moveTo = (doc: string, from: number, to: number): SelectionRange =>
+    stateAt(doc, from).update({ selection: { anchor: to } }).state.selection.main
+
+  it("snaps a forward Vim motion out of a hidden heading run (AC-1)", () => {
+    // `# Heading`: `# ` is hidden as [0,2). A forward move onto offset 1 lands on H.
+    expect(moveTo("# Heading", 0, 1).head).toBe(2)
+  })
+
+  it("snaps a backward Vim motion to the run's start (AC-5)", () => {
+    expect(moveTo("# Heading", 2, 1).head).toBe(0)
+  })
+
+  it("snaps out of a blockquote marker, proving block ranges are covered (AC-3)", () => {
+    expect(moveTo("> quote", 0, 1).head).toBe(2)
+  })
+
+  it("snaps out of a list marker (AC-4)", () => {
+    expect(moveTo("* item", 0, 1).head).toBe(2)
+  })
+
+  it("leaves a pointer selection alone so a click can reveal markup (AC-7)", () => {
+    const main = stateAt("# Heading", 0)
+      .update({ selection: { anchor: 1 }, userEvent: "select.pointer" })
+      .state.selection.main
+    expect(main.head).toBe(1)
   })
 })
