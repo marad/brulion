@@ -58,6 +58,13 @@ test("creates a subfolder note, switches, and removes the folder on delete (AC-7
   await page.keyboard.type("one body")
   await expect(editor(page)).toHaveText("one body")
 
+  // Collapsing the folder actually hides its notes (the `hidden` attribute must
+  // win over `.folder-children`'s `display: flex` in a real browser).
+  await folderHeader(page, "sub").click()
+  await expect(nested).toBeHidden()
+  await folderHeader(page, "sub").click() // re-expand for the rest of the test
+  await expect(nested).toBeVisible()
+
   // Create a root note and give it distinct content.
   await createNote(page, "top")
   await editor(page).click()

@@ -167,8 +167,7 @@ header button:hover {
 }
 
 /* Folder tree (FEAT-0024). A folder is a header row with a disclosure caret over
- * an indented children container; the `hidden` attribute (UA display:none) hides
- * a collapsed folder's children, so no extra rule is needed for that. */
+ * an indented children container. */
 .note-folder {
   display: flex;
   flex-direction: column;
@@ -213,6 +212,12 @@ header button:hover {
   margin-left: 0.7rem;
   padding-left: 0.4rem;
   border-left: 1px solid #e7e7e3;
+}
+
+/* An author `display` on `.folder-children` overrides the UA `[hidden]` rule, so
+ * a collapsed folder needs this explicit re-hide (same trap as `#sidebar[hidden]`). */
+.folder-children[hidden] {
+  display: none;
 }
 
 #status {
