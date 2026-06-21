@@ -126,22 +126,24 @@ export function markdownSyntaxRanges(
   const marks: MarkRange[] = []
   const doc = state.doc
   const links = state.facet(linkContext)
-  const caret = state.selection.main.head
+  const sel = state.selection.main
 
   syntaxTree(state).iterate({
     from,
     to,
     enter(node) {
       if (node.name === "Link") {
-        collectLink(node.node, doc, links, caret, hidden, marks)
+        collectLink(node.node, doc, links, sel, hidden, marks)
         return
       }
 
-      // A bare autolink (FEAT-0026): a `URL` node not inside a `Link` (a Link's
-      // own `(url)` is handled by collectLink). Only web URLs are linkified;
+      // A bare autolink (FEAT-0026): a `URL` node sitting directly in text. A
+      // Link's own `(url)` and an Image's `(src)` carry a `URL` child too, so
+      // exclude those parents — only standalone URLs autolink. Web URLs only;
       // emails the parser also matches are left as plain text.
-      if (node.name === "URL" && node.node.parent?.name !== "Link") {
-        collectAutolink(node.node, doc, marks)
+      if (node.name === "URL") {
+        const parent = node.node.parent?.name
+        if (parent !== "Link" && parent !== "Image") collectAutolink(node.node, doc, marks)
         return
       }
 
@@ -193,7 +195,7 @@ function collectLink(
   node: SyntaxNode,
   doc: Text,
   links: LinkContext,
-  caret: number,
+  sel: { from: number; to: number },
   hidden: HiddenRange[],
   marks: MarkRange[],
 ): void {
@@ -208,21 +210,18 @@ function collectLink(
   const closeBracket = linkMarks[1] // "]"
   const lastMark = linkMarks[linkMarks.length - 1] // ")"
   if (closeBracket.from <= open.to) return // empty link text — leave it raw
-  // Reveal for editing (FEAT-0026): while the caret is *inside* the link's span,
-  // emit nothing so the raw `[text](url)` shows and the URL can be edited. The
-  // bounds are strict — a caret exactly at `open.from` (before `[`) or
-  // `lastMark.to` (after `)`) is adjacent, not inside, so the link stays rendered.
-  if (caret > open.from && caret < lastMark.to) return
+  // Reveal for editing (FEAT-0026): while the selection touches the link's span,
+  // emit nothing so the raw `[text](url)` shows and the URL can be edited. Using
+  // overlap (not just the caret head) means a selection that *ends* outside the
+  // link still reveals it, so you never delete hidden markup you can't see. An
+  // empty caret exactly at `open.from`/`lastMark.to` is adjacent, not overlapping.
+  if (sel.from < lastMark.to && sel.to > open.from) return
 
   const href = doc.sliceString(url.from, url.to)
+  const { cls, title } = linkInfo(href, links)
   hidden.push({ from: open.from, to: open.to }) // "["
   hidden.push({ from: closeBracket.from, to: lastMark.to }) // "](url)"
-  marks.push({
-    from: open.to,
-    to: closeBracket.from,
-    cls: linkClass(href, links),
-    attrs: { "data-href": href, title: linkTarget(href, links) },
-  })
+  marks.push({ from: open.to, to: closeBracket.from, cls, attrs: { "data-href": href, title } })
 }
 
 /**
@@ -244,19 +243,17 @@ function collectAutolink(node: SyntaxNode, doc: Text, marks: MarkRange[]): void 
   })
 }
 
-/** `cm-link`, plus `cm-link-broken` for an internal link whose target isn't a
- * known note. External links are never broken. */
-function linkClass(href: string, links: LinkContext): string {
-  if (isExternalLink(href)) return "cm-link"
+/**
+ * The class and hover-title for an inline link, resolved once. An external link
+ * is `cm-link` with the url as its title; an internal one resolves against the
+ * folder — its title is the resolved note path and it gains `cm-link-broken` when
+ * that path isn't a known note (FEAT-0025 styling, FEAT-0026 title).
+ */
+function linkInfo(href: string, links: LinkContext): { cls: string; title: string } {
+  if (isExternalLink(href)) return { cls: "cm-link", title: href }
   const target = resolveNotePath(links.activeNote, href)
-  return target && links.notePaths.has(target) ? "cm-link" : "cm-link cm-link-broken"
-}
-
-/** The hover-tooltip target (FEAT-0026): the url for an external link, the
- * resolved note path for an internal one (falling back to the raw href). */
-function linkTarget(href: string, links: LinkContext): string {
-  if (isExternalLink(href)) return href
-  return resolveNotePath(links.activeNote, href) ?? href
+  const known = !!target && links.notePaths.has(target)
+  return { cls: known ? "cm-link" : "cm-link cm-link-broken", title: target ?? href }
 }
 
 /**
@@ -423,8 +420,10 @@ function buildDecorations(view: EditorView): {
 
 /**
  * ViewPlugin that hides markdown markup and styles its content across the visible
- * viewport. Rebuilds only on document or viewport change — never on caret moves,
- * because markup is hidden on every line (no Obsidian-style reveal-on-cursor).
+ * viewport. Rebuilds on document, viewport, link-context, and selection change.
+ * The selection trigger exists only for the link caret-reveal (FEAT-0026); all
+ * other markup (headings, emphasis) ignores the caret and stays always-hidden, so
+ * there is no Obsidian-style reveal-on-cursor for them.
  */
 const renderPlugin = ViewPlugin.fromClass(
   class {

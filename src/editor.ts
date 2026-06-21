@@ -120,7 +120,10 @@ export function mountEditor(
       // edit escape hatch, which also reveals the link's markup (markdown-render).
       EditorView.domEventHandlers({
         mousedown(event) {
-          if (event.metaKey || event.ctrlKey) return false // modifier → place caret (edit)
+          // Only a plain left-button press follows: a modifier places the caret
+          // (edit), and middle/right buttons fall through so the browser /
+          // context-menu (right-click formatting) still work on a link.
+          if (event.button !== 0 || event.metaKey || event.ctrlKey) return false
           const target = event.target as HTMLElement | null
           const href = target?.closest("[data-href]")?.getAttribute("data-href")
           if (!href) return false
@@ -154,14 +157,13 @@ export function mountEditor(
   })
 
   // Reflect whether Ctrl/Cmd is held on the editor root, so the cursor over a link
-  // can switch from `pointer` (follow) to a text caret (edit) — FEAT-0026. Cleared
-  // on window blur so a modifier released outside the window doesn't stick.
+  // can switch from `pointer` (follow) to a text caret (edit) — FEAT-0026. Synced
+  // from each key event's live modifier state (so a missed keyup self-corrects on
+  // the next key) and cleared on window blur.
   const setModHeld = (held: boolean) => view.dom.classList.toggle("cm-mod-held", held)
-  const onModKey = (held: boolean) => (event: KeyboardEvent) => {
-    if (event.key === "Control" || event.key === "Meta") setModHeld(held)
-  }
-  window.addEventListener("keydown", onModKey(true))
-  window.addEventListener("keyup", onModKey(false))
+  const syncMod = (event: KeyboardEvent) => setModHeld(event.ctrlKey || event.metaKey)
+  window.addEventListener("keydown", syncMod)
+  window.addEventListener("keyup", syncMod)
   window.addEventListener("blur", () => setModHeld(false))
 
   return view

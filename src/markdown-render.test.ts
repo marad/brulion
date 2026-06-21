@@ -317,6 +317,12 @@ describe("markdownSyntaxRanges link interaction (FEAT-0026)", () => {
     expect(autolink("mail a@b.com end")).toEqual({ hidden: [], marks: [] })
   })
 
+  it("does not autolink a URL inside image markup", () => {
+    // The `https://…` is the image's destination (an Image node's URL child),
+    // not a standalone autolink — it must not become a clickable link.
+    expect(autolink("![alt](https://example.com/x.png)").marks).toEqual([])
+  })
+
   it("reveals a link's markup when the caret is within it, hides it otherwise (AC-8)", () => {
     const doc = "see [the note](sub/b.md)" // link span is [4, 24]
     const c = ctx("a.md", ["a.md", "sub/b.md"])
