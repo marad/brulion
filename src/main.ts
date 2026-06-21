@@ -1,5 +1,5 @@
 import "./styles.css"
-import { mountEditor, setEditorEditable, setVimMode } from "./editor"
+import { mountEditor, setEditorEditable, setVimMode, setLinkContext } from "./editor"
 import { createNoteController, type NoteController } from "./note-controller"
 import { mountConflictDiff, type ConflictDiff } from "./conflict-view"
 import {
@@ -17,7 +17,7 @@ import {
   saveCollapsedFolders,
   loadCollapsedFolders,
 } from "./session"
-import { displayName } from "./note-name"
+import { displayName, isExternalLink, resolveNotePath } from "./note-name"
 import { wireFlushOnHide } from "./flush"
 import { createPoller } from "./watch"
 
@@ -62,9 +62,27 @@ if (
 // The editor needs the controller and the controller needs the view; the
 // callbacks only fire on user interaction, after both are assigned.
 let controller: NoteController
+// The open note and the known note paths, tracked from onListChanged so a link
+// follow (FEAT-0025) can resolve relative to the open note and tell an existing
+// target from one to offer to create.
+let currentActive = ""
+let currentNotes: string[] = []
 const view = mountEditor(editorEl, {
   onChange: () => controller.handleChange(),
   onSave: () => controller.flush(),
+  onFollowLink: (href) => {
+    if (isExternalLink(href)) {
+      window.open(href, "_blank", "noopener")
+      return
+    }
+    const target = resolveNotePath(currentActive, href)
+    if (!target) return // unresolvable (escapes the root / not a note) — inert
+    if (currentNotes.includes(target)) {
+      void controller.switchTo(target)
+    } else if (window.confirm(`"${displayName(target)}" doesn't exist yet. Create it?`)) {
+      void controller.addNote(target)
+    }
+  },
 })
 // The diff view shown while a conflict stands (FEAT-0022); null when none does.
 let conflictDiff: ConflictDiff | null = null
@@ -98,6 +116,11 @@ controller = createNoteController(view, {
     sidebarEl.hidden = false
     toggleSidebarEl.hidden = false
     toggleVimEl.hidden = false
+    // Feed the editor the open note + known paths so links render valid-vs-broken
+    // and a follow resolves relative to the right note (FEAT-0025).
+    currentActive = active
+    currentNotes = notes
+    setLinkContext(view, { activeNote: active, notePaths: new Set(notes) })
     renderNoteList(
       listEl,
       notes,

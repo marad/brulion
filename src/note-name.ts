@@ -63,3 +63,37 @@ export function normalizeNoteName(input: string): NormalizeResult {
 export function displayName(filename: string): string {
   return filename.replace(/\.md$/i, "")
 }
+
+/** True when a link `href` points outside the folder — a `scheme:` URL
+ * (`https:`, `mailto:`) or a protocol-relative `//host`. Internal note links are
+ * plain relative paths with no scheme (FEAT-0025). */
+export function isExternalLink(href: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//")
+}
+
+/**
+ * Resolve an internal link `href` (a relative path, no scheme) to a
+ * folder-relative note path, **relative to the linking note `fromNote`'s own
+ * folder** (FEAT-0025). Folds `.`/`..`/empty segments POSIX-style; returns `null`
+ * when the path would escape the picked root (a `..` above it) or does not name a
+ * markdown note (`.md`). Pure — no DOM/FSA — and can never resolve outside the
+ * root (the moat). A surrounding `<>` (CommonMark's wrapper for a url with
+ * spaces) is stripped first.
+ */
+export function resolveNotePath(fromNote: string, href: string): string | null {
+  const cleaned = href.replace(/^<(.*)>$/, "$1")
+  const slash = fromNote.lastIndexOf("/")
+  const segments = slash === -1 ? [] : fromNote.slice(0, slash).split("/")
+  for (const segment of cleaned.split("/")) {
+    if (segment === "" || segment === ".") continue
+    if (segment === "..") {
+      if (segments.length === 0) return null // escapes the granted root
+      segments.pop()
+      continue
+    }
+    segments.push(segment)
+  }
+  if (segments.length === 0) return null
+  const path = segments.join("/")
+  return /\.md$/i.test(path) ? path : null
+}

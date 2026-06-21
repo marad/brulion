@@ -9,12 +9,34 @@ import {
 import {
   type EditorState,
   type Extension,
+  Facet,
   type Range,
   RangeSet,
   StateField,
+  type Text,
 } from "@codemirror/state"
 import { markdown } from "@codemirror/lang-markdown"
 import { syntaxTree } from "@codemirror/language"
+import type { SyntaxNode } from "@lezer/common"
+import { isExternalLink, resolveNotePath } from "./note-name"
+
+/**
+ * What the link decorator needs to tell a valid internal link from a broken one
+ * (FEAT-0025): the note currently open (to resolve a link relative to its folder)
+ * and the set of existing note paths. Supplied by the app via the {@link
+ * linkContext} facet; defaults to "nothing known" (every internal link broken)
+ * when unset.
+ */
+export interface LinkContext {
+  activeNote: string
+  notePaths: ReadonlySet<string>
+}
+
+/** Facet carrying the {@link LinkContext}; the inline renderer reads the first
+ * provided value (the app configures exactly one), else an empty default. */
+export const linkContext = Facet.define<LinkContext, LinkContext>({
+  combine: (values) => values[0] ?? { activeNote: "", notePaths: new Set() },
+})
 
 /** A run of characters to hide entirely (the markdown markup). */
 export interface HiddenRange {
@@ -28,6 +50,8 @@ export interface MarkRange {
   to: number
   /** CSS class(es) applied to the span. */
   cls: string
+  /** Extra DOM attributes for the span (e.g. a link's `data-href`). */
+  attrs?: Record<string, string>
 }
 
 /** A whole line to style as a block (code block, blockquote, list item). */
@@ -100,11 +124,17 @@ export function markdownSyntaxRanges(
   const hidden: HiddenRange[] = []
   const marks: MarkRange[] = []
   const doc = state.doc
+  const links = state.facet(linkContext)
 
   syntaxTree(state).iterate({
     from,
     to,
     enter(node) {
+      if (node.name === "Link") {
+        collectLink(node.node, doc, links, hidden, marks)
+        return
+      }
+
       const cls = CONTAINER_CLASS[node.name]
       if (!cls) return // only container nodes carry styling; marks come via them
 
@@ -140,6 +170,51 @@ export function markdownSyntaxRanges(
   })
 
   return { hidden, marks }
+}
+
+/**
+ * Render an inline markdown link `[text](url)` (FEAT-0025): hide the `[` and the
+ * `](url)` runs and style the text as a link, carrying the raw `url` in
+ * `data-href` so a Ctrl/Cmd+click can act on it. An internal link whose resolved
+ * target is not a known note is styled broken. Shortcut/reference links (no URL
+ * child) and empty-text links are left raw — there'd be nothing to click.
+ */
+function collectLink(
+  node: SyntaxNode,
+  doc: Text,
+  links: LinkContext,
+  hidden: HiddenRange[],
+  marks: MarkRange[],
+): void {
+  const linkMarks: SyntaxNode[] = []
+  let url: SyntaxNode | null = null
+  for (let c = node.firstChild; c; c = c.nextSibling) {
+    if (c.name === "LinkMark") linkMarks.push(c)
+    else if (c.name === "URL") url = c
+  }
+  if (!url || linkMarks.length < 4) return // not an inline [text](url) link
+  const open = linkMarks[0] // "["
+  const closeBracket = linkMarks[1] // "]"
+  const lastMark = linkMarks[linkMarks.length - 1] // ")"
+  if (closeBracket.from <= open.to) return // empty link text — leave it raw
+
+  const href = doc.sliceString(url.from, url.to)
+  hidden.push({ from: open.from, to: open.to }) // "["
+  hidden.push({ from: closeBracket.from, to: lastMark.to }) // "](url)"
+  marks.push({
+    from: open.to,
+    to: closeBracket.from,
+    cls: linkClass(href, links),
+    attrs: { "data-href": href },
+  })
+}
+
+/** `cm-link`, plus `cm-link-broken` for an internal link whose target isn't a
+ * known note. External links are never broken. */
+function linkClass(href: string, links: LinkContext): string {
+  if (isExternalLink(href)) return "cm-link"
+  const target = resolveNotePath(links.activeNote, href)
+  return target && links.notePaths.has(target) ? "cm-link" : "cm-link cm-link-broken"
 }
 
 /**
@@ -286,7 +361,7 @@ function buildDecorations(view: EditorView): {
       const key = `m:${m.from}:${m.to}:${m.cls}`
       if (seen.has(key)) continue
       seen.add(key)
-      all.push(Decoration.mark({ class: m.cls }).range(m.from, m.to))
+      all.push(Decoration.mark({ class: m.cls, attributes: m.attrs }).range(m.from, m.to))
     }
     for (const h of hides) {
       const key = `h:${h.from}:${h.to}`
@@ -321,7 +396,11 @@ const renderPlugin = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate) {
-      if (update.docChanged || update.viewportChanged) {
+      // Also rebuild when the link context changes (active note / known notes),
+      // so a link's broken-vs-valid styling tracks the real folder (FEAT-0025).
+      const linkCtxChanged =
+        update.startState.facet(linkContext) !== update.state.facet(linkContext)
+      if (update.docChanged || update.viewportChanged || linkCtxChanged) {
         this.rebuild(update.view)
       }
     }
@@ -408,6 +487,19 @@ const renderTheme = EditorView.baseTheme({
   ".cm-h6": { fontSize: "0.9em", opacity: "0.8" },
   ".cm-strong": { fontWeight: "700" },
   ".cm-em": { fontStyle: "italic" },
+  // Links (FEAT-0025): styled text, markup hidden. A broken internal link (no
+  // such note) is muted red with a dashed underline so it reads as "go nowhere".
+  ".cm-link": {
+    color: "#2f6f9a",
+    textDecoration: "underline",
+    textDecorationColor: "rgba(47,111,154,0.4)",
+    cursor: "pointer",
+  },
+  ".cm-link-broken": {
+    color: "#9a3b2f",
+    textDecorationStyle: "dashed",
+    textDecorationColor: "rgba(154,59,47,0.5)",
+  },
   ".cm-inline-code": {
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
     fontSize: "0.9em",

@@ -4,7 +4,7 @@ import { history, historyKeymap, defaultKeymap } from "@codemirror/commands"
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete"
 import { deleteMarkupBackward } from "@codemirror/lang-markdown"
 import { vim } from "@replit/codemirror-vim"
-import { markdownRendering } from "./markdown-render"
+import { markdownRendering, linkContext, type LinkContext } from "./markdown-render"
 import {
   markdownCommands,
   continueOrExitMarkup,
@@ -49,11 +49,17 @@ const editable = new Compartment()
 /** Holds the opt-in Vim layer (FEAT-0021): `vim()` when on, nothing when off. */
 const vimMode = new Compartment()
 
+/** Holds the link context (FEAT-0025): the active note + known note paths, so
+ * the renderer can tell a valid internal link from a broken one. */
+const linkCtx = new Compartment()
+
 export interface EditorOptions {
   /** Called on a user edit (the document text is read from the view on save). */
   onChange?: () => void
   /** Called when the user presses Ctrl/Cmd+S. */
   onSave?: () => void
+  /** Called when the user Ctrl/Cmd+clicks a link, with its raw `href` (FEAT-0025). */
+  onFollowLink?: (href: string) => void
 }
 
 /**
@@ -108,6 +114,21 @@ export function mountEditor(
       ]),
       editable.of([]), // writable by default; toggled by setEditorEditable
       EditorView.lineWrapping, // wrap long lines at the column width — prose, not code
+      linkCtx.of([]), // link context (FEAT-0025); set via setLinkContext once a folder opens
+      // Ctrl/Cmd+click a link follows it (FEAT-0025). A mouse modifier, so it
+      // never clashes with the slash/format/Vim keybindings. A plain click falls
+      // through (returns false) and just places the caret.
+      EditorView.domEventHandlers({
+        mousedown(event) {
+          if (!(event.metaKey || event.ctrlKey)) return false
+          const target = event.target as HTMLElement | null
+          const href = target?.closest("[data-href]")?.getAttribute("data-href")
+          if (!href) return false
+          event.preventDefault()
+          opts.onFollowLink?.(href)
+          return true
+        },
+      }),
       markdownRendering, // hide markdown markup; render text as rich content
       markdownCommands, // Ctrl+B/I/E and heading shortcuts reshape the markdown
       slashCommands, // "/" at line start opens a menu to reshape the line
@@ -153,4 +174,10 @@ export function setEditorEditable(view: EditorView, value: boolean): void {
 /** Turn the opt-in Vim keybinding layer on or off in place (FEAT-0021). */
 export function setVimMode(view: EditorView, on: boolean): void {
   view.dispatch({ effects: vimMode.reconfigure(on ? vim() : []) })
+}
+
+/** Tell the editor which note is open and which notes exist, so links render
+ * valid-vs-broken correctly (FEAT-0025). */
+export function setLinkContext(view: EditorView, ctx: LinkContext): void {
+  view.dispatch({ effects: linkCtx.reconfigure(linkContext.of(ctx)) })
 }
