@@ -90,8 +90,9 @@ test("remembers the active note across a reload (AC-6)", async ({ page }) => {
   await expect(editor(page)).toHaveText("beta body")
 
   await page.reload()
-  await page.locator("#open-folder").click()
-
+  // The folder auto-restores on reload (handle still granted); the welcome screen
+  // never reappears, and the last active note (beta) is restored.
+  await expect(page.locator("#welcome")).toBeHidden()
   await expect(editor(page)).toHaveText("beta body")
   await expect(row(page, "beta")).toHaveClass(/active/)
 })

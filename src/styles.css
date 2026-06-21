@@ -43,11 +43,109 @@ header button:hover {
   background: #f2f2f1;
 }
 
-/* Editor and note list sit side by side, filling the space below the header. */
+/* Brand wordmark; `margin-right: auto` groups the controls at the right edge. */
+.wordmark {
+  font-weight: 600;
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
+  color: #9a3b2f;
+  margin-right: auto;
+  padding-left: 0.15rem;
+}
+
+/* First-run welcome screen (FEAT-0031): an overlay over the workspace shown until
+   a folder is open, so the empty editor behind it never greets the user. */
+#welcome {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: #fbfbfa;
+}
+/* `display: flex` above would otherwise override the `hidden` attribute. */
+#welcome[hidden] {
+  display: none;
+}
+
+.welcome-card {
+  max-width: 30rem;
+  text-align: center;
+}
+
+.welcome-title {
+  margin: 0 0 0.25rem;
+  font-size: 2.4rem;
+  font-weight: 700;
+  color: #9a3b2f;
+}
+
+.welcome-pitch {
+  margin: 0 0 1.25rem;
+  font-size: 1.15rem;
+  color: #1a1a1a;
+}
+
+.welcome-fidelity {
+  margin: 0 0 1.75rem;
+  font-size: 0.98rem;
+  line-height: 1.5;
+  color: #4a4a4a;
+}
+
+.welcome-actions {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: center;
+}
+
+/* The primary call to action — an accented variant of the standard button. */
+.welcome-actions .cta {
+  font: inherit;
+  padding: 0.55rem 1.3rem;
+  border: 1px solid #9a3b2f;
+  border-radius: 6px;
+  background: #9a3b2f;
+  color: #fff;
+  cursor: pointer;
+}
+.welcome-actions .cta:hover {
+  background: #863128;
+}
+.welcome-actions button:not(.cta) {
+  font: inherit;
+  padding: 0.55rem 1.1rem;
+  border: 1px solid #d4d4d4;
+  border-radius: 6px;
+  background: #fff;
+  color: #1a1a1a;
+  cursor: pointer;
+}
+.welcome-actions button:not(.cta):hover {
+  background: #f2f2f1;
+}
+
+.welcome-hint {
+  margin: 1.5rem 0 0;
+  font-size: 0.85rem;
+  color: #8a8a8a;
+}
+.welcome-hint code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #f0f0ee;
+  padding: 0 0.25rem;
+  border-radius: 3px;
+}
+
+/* Editor and note list sit side by side, filling the space below the header.
+   `position: relative` makes it the positioning context for the welcome overlay. */
 .workspace {
   flex: 1;
   min-height: 0;
   display: flex;
+  position: relative;
 }
 
 /* The note list: a quiet sidebar with a new-note field and clickable rows. */

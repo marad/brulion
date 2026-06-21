@@ -8,6 +8,7 @@ import {
   renderNoteList,
   wireNewNote,
   wireToggle,
+  showWorkspace,
 } from "./ui"
 import {
   saveSidebarCollapsed,
@@ -28,9 +29,11 @@ const POLL_MS = 2000
 
 const editorEl = document.querySelector<HTMLDivElement>("#editor")
 const workspaceEl = document.querySelector<HTMLElement>(".workspace")
+const welcomeEl = document.querySelector<HTMLElement>("#welcome")
 const sidebarEl = document.querySelector<HTMLElement>("#sidebar")
 const toggleSidebarEl = document.querySelector<HTMLButtonElement>("#toggle-sidebar")
 const toggleVimEl = document.querySelector<HTMLButtonElement>("#toggle-vim")
+const reopenButton = document.querySelector<HTMLButtonElement>("#reopen-folder")
 const listEl = document.querySelector<HTMLElement>("#note-list")
 const newNoteForm = document.querySelector<HTMLFormElement>("#new-note")
 const newNoteInput = document.querySelector<HTMLInputElement>("#new-note-input")
@@ -45,9 +48,11 @@ const diskButton = document.querySelector<HTMLButtonElement>("#conflict-disk")
 if (
   !editorEl ||
   !workspaceEl ||
+  !welcomeEl ||
   !sidebarEl ||
   !toggleSidebarEl ||
   !toggleVimEl ||
+  !reopenButton ||
   !listEl ||
   !newNoteForm ||
   !newNoteInput ||
@@ -126,12 +131,17 @@ controller = createNoteController(view, {
     conflictDiff = null
   },
   onListChanged: (notes, active) => {
-    // A folder is open — reveal the list/new-note control and the collapse
-    // toggle. The collapse preference (a CSS class on .workspace) is orthogonal:
-    // if the user left the sidebar collapsed it stays hidden by CSS regardless.
-    sidebarEl.hidden = false
-    toggleSidebarEl.hidden = false
-    toggleVimEl.hidden = false
+    // A folder is open — swap the welcome hero for the workspace and reveal the
+    // in-note header controls (FEAT-0031). The collapse preference (a CSS class on
+    // .workspace) is orthogonal: if the user left the sidebar collapsed it stays
+    // hidden by CSS regardless.
+    showWorkspace({
+      welcome: welcomeEl,
+      sidebar: sidebarEl,
+      toggleSidebar: toggleSidebarEl,
+      toggleVim: toggleVimEl,
+      reopen: reopenButton,
+    })
     // Feed the editor the open note + known paths so links render valid-vs-broken
     // and a follow resolves relative to the right note (FEAT-0025).
     currentActive = active
@@ -193,6 +203,9 @@ keepButton.addEventListener("click", () => void controller.resolveKeepMine())
 diskButton.addEventListener("click", () => void controller.resolveTakeTheirs())
 
 wireOpenFolder(openButton, resumeButton, openNote)
+// Re-pick a different folder once one is open (FEAT-0031): same open flow, driven
+// from the header (the welcome CTA is hidden behind the workspace by then).
+wireOpenFolder(reopenButton, resumeButton, openNote)
 void restoreFolder(resumeButton, openNote)
 
 // Sidebar collapse (FEAT-0020): restore the saved preference, wire the header

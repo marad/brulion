@@ -86,9 +86,9 @@ test("the collapsed state persists across a reload (AC-4)", async ({ page }) => 
   await expect(sidebar(page)).not.toBeVisible()
 
   await page.reload()
-  await page.locator("#open-folder").click() // OPFS doesn't auto-resume; re-open
-
-  // The folder is open again, but the saved preference keeps the sidebar collapsed.
+  // The folder auto-restores on reload (handle still granted), so the workspace
+  // comes back without a re-pick; the saved preference keeps the sidebar collapsed.
+  await expect(page.locator("#welcome")).toBeHidden()
   await expect(toggle(page)).toBeVisible()
   await expect(sidebar(page)).not.toBeVisible()
 })

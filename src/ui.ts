@@ -228,6 +228,30 @@ export function wireNewNote(
   })
 }
 
+/** The elements that flip between the pre-folder welcome state and the workspace. */
+export interface WorkspaceRefs {
+  welcome: HTMLElement
+  sidebar: HTMLElement
+  toggleSidebar: HTMLElement
+  toggleVim: HTMLElement
+  reopen: HTMLElement
+}
+
+/**
+ * Swap from the first-run welcome hero to the working view (FEAT-0031): hide the
+ * hero and reveal the in-note header controls + the sidebar. The single place the
+ * pre-folder → folder-open visibility flip happens; the inverse is the initial
+ * HTML state. The Install button is governed separately (FEAT-0030), so it is not
+ * touched here.
+ */
+export function showWorkspace(refs: WorkspaceRefs): void {
+  refs.welcome.hidden = true
+  refs.sidebar.hidden = false
+  refs.toggleSidebar.hidden = false
+  refs.toggleVim.hidden = false
+  refs.reopen.hidden = false
+}
+
 /** Wire `button`'s click (the required user gesture) to {@link openFolder}. */
 export function wireOpenFolder(
   button: HTMLButtonElement,

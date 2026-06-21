@@ -716,3 +716,35 @@ address-bar install icon, which users routinely miss. Choices:
   files, no storage, the moat is untouched. iOS (no `beforeinstallprompt`) relies
   on the manifest + apple-touch-icon for manual "Add to Home Screen" — a guided
   iOS flow is out of scope.
+
+## Welcome screen: an overlay over the workspace; the editor needs a folder (M10 → FEAT-0031)
+Before a folder is open the app used to greet the user with a bare, blinking
+editor and a lone header "Open folder" button. M10 replaces that with a first-run
+welcome hero (name, pitch, the file-fidelity promise as a feature, and the
+open-folder CTA). Decisions:
+- **The welcome is an absolutely-positioned opaque overlay over `.workspace`**
+  (`#welcome { position:absolute; inset:0; z-index:1 }`, with `.workspace`
+  made `position:relative`), shown until a folder opens and hidden by a single
+  tested `showWorkspace()` flip. The editor stays mounted behind it (CodeMirror is
+  always instantiated) — the overlay simply covers it. (Rejected: a sibling
+  swap that `display:none`s the whole workspace — more layout churn and it would
+  also hide the always-mounted editor the smoke test checks; the overlay is the
+  leaner pattern and the editor's first-paint cost is negligible.)
+- **`#open-folder`/`#resume-access` moved into the hero; a separate header
+  `Switch folder` button re-picks once a folder is open.** Both run the *same*
+  `wireOpenFolder` flow — no reimplementation. The header is contextual: just the
+  `Brulion` wordmark (+ the FEAT-0030 Install button when offered) before a folder,
+  and the wordmark + `☰` + Vim + `Switch folder` after. The re-pick button is
+  labeled "Switch folder" (not "Open folder") so it doesn't read as "no folder
+  open" while one is.
+- **The pre-folder editor is no longer an interaction surface — by design.** With
+  no folder there is no note to edit, so the welcome gates the editor. This changed
+  an *implicit* test contract: several e2e specs (rendering, bullet-caret,
+  typography's column measure) had been driving the bare pre-folder editor as a
+  harness. They now open a folder first (the real editing context), which is more
+  faithful anyway. The reload-persistence specs (note, note-list, sidebar, vim)
+  dropped their post-reload manual re-open: the folder **auto-restores** on reload
+  (the remembered handle is still granted), so the manual click was stale — they
+  now assert the welcome is gone and the state restored, testing the real
+  auto-restore path. Pure UI throughout — no file behavior changed, the moat is
+  untouched.

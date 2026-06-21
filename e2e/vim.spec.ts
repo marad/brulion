@@ -72,8 +72,8 @@ test("the Vim choice persists across a reload (AC-3)", async ({ page }) => {
   await expect(vimToggle(page)).toHaveAttribute("aria-pressed", "true")
 
   await page.reload()
-  await page.locator("#open-folder").click() // OPFS doesn't auto-resume
-
+  // The folder auto-restores on reload (handle still granted); no re-pick needed.
+  await expect(page.locator("#welcome")).toBeHidden()
   await expect(vimToggle(page)).toHaveAttribute("aria-pressed", "true")
   await editor(page).click()
   await expect(page.locator(".cm-vimMode")).toBeVisible() // still in Vim

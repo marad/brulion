@@ -112,7 +112,8 @@ test("saved content survives a reload (AC-6)", async ({ page }) => {
   await expect.poll(() => readStartMd(page)).toBe("persisted across reloads")
 
   await page.reload()
-  await page.locator("#open-folder").click()
-
+  // The folder auto-restores on reload (the remembered handle is still granted),
+  // so the note reloads with no re-pick — the welcome screen never reappears.
+  await expect(page.locator("#welcome")).toBeHidden()
   await expect(editor(page)).toHaveText("persisted across reloads")
 })

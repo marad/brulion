@@ -9,6 +9,7 @@ import {
   buildNoteTree,
   wireNewNote,
   wireToggle,
+  showWorkspace,
 } from "./ui"
 
 vi.mock("./fs", () => ({ pickFolder: vi.fn() }))
@@ -384,5 +385,30 @@ describe("wireOpenFolder", () => {
     await Promise.resolve()
 
     expect(pickFolder).toHaveBeenCalledOnce()
+  })
+})
+
+describe("showWorkspace (FEAT-0031)", () => {
+  it("hides the welcome hero and reveals the in-note controls (AC-2)", () => {
+    const el = () => document.createElement("div")
+    const welcome = el()
+    const sidebar = el()
+    const toggleSidebar = el()
+    const toggleVim = el()
+    const reopen = el()
+    // Pre-folder state: hero shown, controls hidden.
+    welcome.hidden = false
+    sidebar.hidden = true
+    toggleSidebar.hidden = true
+    toggleVim.hidden = true
+    reopen.hidden = true
+
+    showWorkspace({ welcome, sidebar, toggleSidebar, toggleVim, reopen })
+
+    expect(welcome.hidden).toBe(true)
+    expect(sidebar.hidden).toBe(false)
+    expect(toggleSidebar.hidden).toBe(false)
+    expect(toggleVim.hidden).toBe(false)
+    expect(reopen.hidden).toBe(false)
   })
 })

@@ -42,6 +42,9 @@ async function type(page: Page, text: string) {
 test.beforeEach(async ({ page }) => {
   await stubPicker(page)
   await page.goto("/brulion/")
+  // A folder must be open for the editor to be reachable (the welcome screen,
+  // FEAT-0031, covers it until then).
+  await page.locator("#open-folder").click()
 })
 
 test("a bare marker stays visible, then a space turns it into a bullet (AC-2)", async ({
@@ -64,8 +67,6 @@ test("a bare marker stays visible, then a space turns it into a bullet (AC-2)", 
 test("typing at the item-text start inserts into the text, after the marker (AC-4)", async ({
   page,
 }) => {
-  await page.locator("#open-folder").click()
-
   await type(page, "* item")
   // Move the caret to the start of the item text (offset after the `* ` run):
   // four lefts from the end of "item". Typing there inserts into the item, and the
@@ -78,8 +79,6 @@ test("typing at the item-text start inserts into the text, after the marker (AC-
 })
 
 test("rendering a bullet does not alter the saved bytes (AC-5)", async ({ page }) => {
-  await page.locator("#open-folder").click()
-
   await type(page, "* item")
   await page.keyboard.press("Control+s")
 
@@ -89,8 +88,6 @@ test("rendering a bullet does not alter the saved bytes (AC-5)", async ({ page }
 test("Backspace after a completed bullet removes only the space, leaving the marker (AC-6)", async ({
   page,
 }) => {
-  await page.locator("#open-folder").click()
-
   await type(page, "- ")
   await page.keyboard.press("Backspace") // deletes the trailing space, not the dash
   await page.keyboard.press("Control+s")
@@ -105,8 +102,6 @@ test("Backspace after a completed bullet removes only the space, leaving the mar
 test("Backspace symmetry leaves a bullet marker before its content (AC-6)", async ({
   page,
 }) => {
-  await page.locator("#open-folder").click()
-
   await type(page, "- x")
   await page.keyboard.press("ArrowLeft") // caret between the marker run and "x"
   await page.keyboard.press("Backspace")
@@ -117,8 +112,6 @@ test("Backspace symmetry leaves a bullet marker before its content (AC-6)", asyn
 test("Backspace symmetry applies to heading and blockquote markers (AC-7)", async ({
   page,
 }) => {
-  await page.locator("#open-folder").click()
-
   await type(page, "# ")
   await page.keyboard.press("Backspace")
   await page.keyboard.press("Control+s")

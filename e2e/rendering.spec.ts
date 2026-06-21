@@ -37,6 +37,9 @@ async function type(page: Page, text: string) {
 test.beforeEach(async ({ page }) => {
   await stubPicker(page)
   await page.goto("/brulion/")
+  // A folder must be open for the editor to be reachable (the welcome screen,
+  // FEAT-0031, covers it until then); these tests then edit the seeded start note.
+  await page.locator("#open-folder").click()
 })
 
 test("hides heading markers and styles the heading (AC-1)", async ({ page }) => {
@@ -116,8 +119,6 @@ test("markup stays hidden when the caret is on the line (AC-5)", async ({
 })
 
 test("rendering does not alter the saved markdown (AC-6)", async ({ page }) => {
-  await page.locator("#open-folder").click()
-
   await type(page, "# Title")
   await page.keyboard.press("Enter")
   await page.keyboard.type("a **bold** word")
@@ -131,8 +132,6 @@ test("rendering does not alter the saved markdown (AC-6)", async ({ page }) => {
 test("the caret steps over hidden markers atomically (AC-7)", async ({
   page,
 }) => {
-  await page.locator("#open-folder").click()
-
   await type(page, "**bold**")
   // Home lands on the visible text (after the hidden `**`). Pressing Left must
   // jump the whole `**` run to the line start, never stopping between the two
@@ -204,8 +203,6 @@ test("block markup stays hidden when the caret is on the line (AC-5)", async ({
 test("rendering does not alter a saved code block and quote (AC-6)", async ({
   page,
 }) => {
-  await page.locator("#open-folder").click()
-
   // The fences are collapsed in the view and the `>` is hidden, but the bytes
   // must survive verbatim. (The list marker's byte round-trip is covered by AC-7;
   // mixing a third block here only fights the editor's Enter-continues-markup
@@ -227,8 +224,6 @@ test("rendering does not alter a saved code block and quote (AC-6)", async ({
 test("the caret steps over a hidden list marker atomically (AC-7)", async ({
   page,
 }) => {
-  await page.locator("#open-folder").click()
-
   await type(page, "* item")
   // Home lands on the visible text (after the hidden `* `). Left must jump the
   // whole `* ` run to the line start, so an inserted char lands before it.
