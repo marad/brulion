@@ -14,6 +14,8 @@ import {
   loadSidebarCollapsed,
   saveVimMode,
   loadVimMode,
+  saveCollapsedFolders,
+  loadCollapsedFolders,
 } from "./session"
 import { displayName } from "./note-name"
 import { wireFlushOnHide } from "./flush"
@@ -66,6 +68,13 @@ const view = mountEditor(editorEl, {
 })
 // The diff view shown while a conflict stands (FEAT-0022); null when none does.
 let conflictDiff: ConflictDiff | null = null
+// The folders the user left collapsed (FEAT-0024). Loaded before the first
+// folder open (openNote awaits it), so the tree's first paint matches the saved
+// state instead of flashing fully expanded.
+let collapsedFolders = new Set<string>()
+const collapsedFoldersReady = loadCollapsedFolders().then((set) => {
+  collapsedFolders = set
+})
 controller = createNoteController(view, {
   onConflict: (versions) => {
     // Modal: show the choice and lock the editor; navigation is blocked in the
@@ -89,16 +98,27 @@ controller = createNoteController(view, {
     sidebarEl.hidden = false
     toggleSidebarEl.hidden = false
     toggleVimEl.hidden = false
-    renderNoteList(listEl, notes, active, {
-      onSelect: (name) => void controller.switchTo(name),
-      onDelete: (name) => {
-        if (
-          window.confirm(`Delete "${displayName(name)}"? This removes the file from your folder.`)
-        ) {
-          void controller.removeNote(name)
-        }
+    renderNoteList(
+      listEl,
+      notes,
+      active,
+      {
+        onSelect: (name) => void controller.switchTo(name),
+        onDelete: (name) => {
+          if (
+            window.confirm(`Delete "${displayName(name)}"? This removes the file from your folder.`)
+          ) {
+            void controller.removeNote(name)
+          }
+        },
+        onToggleFolder: (path, collapsed) => {
+          if (collapsed) collapsedFolders.add(path)
+          else collapsedFolders.delete(path)
+          void saveCollapsedFolders(collapsedFolders)
+        },
       },
-    })
+      collapsedFolders,
+    )
   },
 })
 
@@ -124,6 +144,7 @@ wireNewNote(newNoteForm, newNoteInput, (name) => {
 // folder the controller currently holds.
 const poller = createPoller(() => controller.refreshFromDisk(), POLL_MS)
 const openNote = async (dir: FileSystemDirectoryHandle) => {
+  await collapsedFoldersReady // first tree paint should match the saved collapse state
   await controller.open(dir)
   poller.start()
 }

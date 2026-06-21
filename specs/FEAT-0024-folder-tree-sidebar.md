@@ -76,11 +76,12 @@ empty-folder bookkeeping.
 ## Acceptance criteria
 
 **AC-1** — Build a nested tree from a flat path list.
-Given the paths `["a.md", "sub/b.md", "sub/deep/c.md", "sub/d.md"]`,
+Given the sorted paths `["a.md", "sub/b.md", "sub/d.md", "sub/deep/c.md"]` (the
+order `listNotes` produces),
 When `buildNoteTree` is called,
-Then it returns a structure with `a` as a root note and a `sub` folder containing
-note `b`, note `d`, and a `deep` folder containing note `c`, preserving the
-listing order.
+Then it returns a structure with `a` as a root note and a `sub` folder whose
+children, in input order, are note `b`, note `d`, and a `deep` folder containing
+note `c`.
 
 **AC-2** — Render folders as headers with notes nested beneath.
 Given a tree with a root note and a `sub` folder containing a note,

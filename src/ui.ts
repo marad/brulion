@@ -62,51 +62,151 @@ async function resumeAccess(
   }
 }
 
-/** Callbacks for a note row: open it, or delete it. */
+/** A note leaf in the folder tree: its display name (no `.md`) and full path. */
+export interface NoteLeaf {
+  kind: "note"
+  name: string
+  path: string
+}
+
+/** A folder node: its own segment name, full folder path, and ordered children. */
+export interface FolderNode {
+  kind: "folder"
+  name: string
+  path: string
+  children: TreeNode[]
+}
+
+export type TreeNode = FolderNode | NoteLeaf
+
+/**
+ * Turn the sorted flat path list from `listNotes` into a nested tree (FEAT-0024):
+ * a path with no `/` is a root note; folder segments contribute (interned) folder
+ * nodes holding the note. Pure — the only place the listing becomes a tree — and
+ * order-preserving: children appear in the order their paths arrive (already
+ * case-insensitively sorted by full path). The tree is never stored; it is
+ * rebuilt from the listing each render, so the disk stays the source of truth.
+ */
+export function buildNoteTree(paths: string[]): TreeNode[] {
+  const root: TreeNode[] = []
+  const folders = new Map<string, FolderNode>() // full folder path → node (interned)
+
+  for (const path of paths) {
+    const segments = path.split("/")
+    let children = root
+    let prefix = ""
+    for (let i = 0; i < segments.length - 1; i++) {
+      prefix = prefix ? `${prefix}/${segments[i]}` : segments[i]
+      let folder = folders.get(prefix)
+      if (!folder) {
+        folder = { kind: "folder", name: segments[i], path: prefix, children: [] }
+        folders.set(prefix, folder)
+        children.push(folder)
+      }
+      children = folder.children
+    }
+    children.push({ kind: "note", name: displayName(segments[segments.length - 1]), path })
+  }
+  return root
+}
+
+/** Callbacks for the note list: open a note, delete a note, or toggle a folder. */
 export interface NoteListHandlers {
-  onSelect: (name: string) => void
-  onDelete: (name: string) => void
+  onSelect: (path: string) => void
+  onDelete: (path: string) => void
+  /** A folder's disclosure was clicked; `collapsed` is its new state. */
+  onToggleFolder?: (path: string, collapsed: boolean) => void
 }
 
 /**
- * Render the folder's notes into `container`, one row each. A row has a name
- * button (display name drops the `.md` extension; the file keeps it) and a
- * delete button. The active note's row is marked. Clicking the name calls
- * `onSelect`; clicking the delete button calls `onDelete` (with the filename).
- * Rebuilds the container each call (re-render on open / switch / mutate).
+ * Render the folder tree into `container` (FEAT-0024). Notes render as rows (a
+ * name button — display name drops `.md` — plus a delete button); folders render
+ * as a header with a disclosure control over an indented children container.
+ * `onSelect`/`onDelete` receive the note's **full path**. The active note's row
+ * is marked wherever it sits. A folder renders collapsed when its path is in
+ * `collapsed`, except that the active note's ancestors are always expanded so it
+ * stays visible (the set is read, never mutated, here). Clicking a folder header
+ * hides/shows its children in place and reports the new state via
+ * `onToggleFolder`. Rebuilds the container each call.
  */
 export function renderNoteList(
   container: HTMLElement,
   notes: string[],
   active: string,
   handlers: NoteListHandlers,
+  collapsed: ReadonlySet<string> = new Set(),
 ): void {
   container.replaceChildren()
-  for (const name of notes) {
-    const row = document.createElement("div")
-    row.className = "note-row"
-    if (name === active) {
-      row.classList.add("active")
-      row.setAttribute("aria-current", "true")
-    }
-
-    const nameButton = document.createElement("button")
-    nameButton.type = "button"
-    nameButton.className = "note-name"
-    nameButton.textContent = displayName(name)
-    nameButton.addEventListener("click", () => handlers.onSelect(name))
-
-    const deleteButton = document.createElement("button")
-    deleteButton.type = "button"
-    deleteButton.className = "note-delete"
-    deleteButton.textContent = "×"
-    deleteButton.title = `Delete ${nameButton.textContent}`
-    deleteButton.setAttribute("aria-label", `Delete ${nameButton.textContent}`)
-    deleteButton.addEventListener("click", () => handlers.onDelete(name))
-
-    row.append(nameButton, deleteButton)
-    container.append(row)
+  for (const node of buildNoteTree(notes)) {
+    container.append(renderNode(node, active, handlers, collapsed))
   }
+}
+
+/** Render one tree node (note row or folder subtree) to a detached element. */
+function renderNode(
+  node: TreeNode,
+  active: string,
+  handlers: NoteListHandlers,
+  collapsed: ReadonlySet<string>,
+): HTMLElement {
+  if (node.kind === "note") return renderNoteRow(node, active, handlers)
+
+  const folder = document.createElement("div")
+  folder.className = "note-folder"
+
+  // The active note's ancestors stay open so a freshly created/restored nested
+  // note is never hidden; every other folder honors the persisted collapsed set.
+  const isAncestorOfActive = active === node.path || active.startsWith(node.path + "/")
+  const isCollapsed = collapsed.has(node.path) && !isAncestorOfActive
+
+  const header = document.createElement("button")
+  header.type = "button"
+  header.className = "folder-header"
+  header.textContent = node.name
+  header.setAttribute("aria-expanded", String(!isCollapsed))
+
+  const children = document.createElement("div")
+  children.className = "folder-children"
+  children.hidden = isCollapsed
+  for (const child of node.children) {
+    children.append(renderNode(child, active, handlers, collapsed))
+  }
+
+  header.addEventListener("click", () => {
+    children.hidden = !children.hidden
+    header.setAttribute("aria-expanded", String(!children.hidden))
+    handlers.onToggleFolder?.(node.path, children.hidden)
+  })
+
+  folder.append(header, children)
+  return folder
+}
+
+/** Render a single note row (name button + delete button). */
+function renderNoteRow(node: NoteLeaf, active: string, handlers: NoteListHandlers): HTMLElement {
+  const row = document.createElement("div")
+  row.className = "note-row"
+  if (node.path === active) {
+    row.classList.add("active")
+    row.setAttribute("aria-current", "true")
+  }
+
+  const nameButton = document.createElement("button")
+  nameButton.type = "button"
+  nameButton.className = "note-name"
+  nameButton.textContent = node.name
+  nameButton.addEventListener("click", () => handlers.onSelect(node.path))
+
+  const deleteButton = document.createElement("button")
+  deleteButton.type = "button"
+  deleteButton.className = "note-delete"
+  deleteButton.textContent = "×"
+  deleteButton.title = `Delete ${node.name}`
+  deleteButton.setAttribute("aria-label", `Delete ${node.name}`)
+  deleteButton.addEventListener("click", () => handlers.onDelete(node.path))
+
+  row.append(nameButton, deleteButton)
+  return row
 }
 
 /**

@@ -10,6 +10,7 @@ const DIR_KEY = "brulion:dir"
 const ACTIVE_KEY = "brulion:active"
 const SIDEBAR_KEY = "brulion:sidebar-collapsed"
 const VIM_KEY = "brulion:vim"
+const COLLAPSED_FOLDERS_KEY = "brulion:collapsed-folders"
 const MODE = { mode: "readwrite" } as const
 
 /** Persist the directory handle so it survives a reload. */
@@ -50,6 +51,16 @@ export function saveVimMode(on: boolean): Promise<void> {
 /** Whether Vim mode was left on; defaults to `false` (off — opt-in). */
 export async function loadVimMode(): Promise<boolean> {
   return (await get<boolean>(VIM_KEY)) === true
+}
+
+/** Remember which folders are collapsed in the tree (FEAT-0024), as an array. */
+export function saveCollapsedFolders(paths: ReadonlySet<string>): Promise<void> {
+  return set(COLLAPSED_FOLDERS_KEY, [...paths])
+}
+
+/** The set of collapsed folder paths; empty when none was stored. */
+export async function loadCollapsedFolders(): Promise<Set<string>> {
+  return new Set((await get<string[]>(COLLAPSED_FOLDERS_KEY)) ?? [])
 }
 
 /** Whether the handle already has readwrite permission (no prompt — silent). */
