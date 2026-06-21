@@ -51,6 +51,11 @@ export function mountQuickSwitcher(
 ): QuickSwitcher {
   const { backdrop, input, list, error } = els
   let open = false
+  /** Bumped on every open/close so a slow create that resolves after the user has
+   * closed or reopened the switcher can detect it is stale and do nothing. */
+  let generation = 0
+  /** The element focused before the switcher opened, restored on close. */
+  let restoreFocus: HTMLElement | null = null
   /** Each rendered, selectable row paired with the action it triggers. */
   let items: { el: HTMLElement; run: () => void }[] = []
   let highlight = 0
@@ -95,7 +100,9 @@ export function mountQuickSwitcher(
   }
 
   async function create_(name: string): Promise<void> {
+    const issued = generation
     const result = await deps.createNote(name)
+    if (issued !== generation) return // closed/reopened while awaiting — stale
     if (result.ok) close()
     else setError(result.reason ?? "Could not create note.")
   }
@@ -137,7 +144,9 @@ export function mountQuickSwitcher(
       input.focus()
       return
     }
+    generation++
     open = true
+    restoreFocus = document.activeElement as HTMLElement | null
     input.value = ""
     setError(null)
     backdrop.hidden = false
@@ -146,9 +155,15 @@ export function mountQuickSwitcher(
   }
 
   function close(): void {
+    if (!open) return
+    generation++
     open = false
     backdrop.hidden = true
     setError(null)
+    // Return focus to wherever it was (e.g. the editor when opened via Ctrl+K), so
+    // it doesn't get stranded on the now-hidden input.
+    restoreFocus?.focus?.()
+    restoreFocus = null
   }
 
   input.addEventListener("input", onInput)

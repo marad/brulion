@@ -213,7 +213,8 @@ window.addEventListener(
       !event.shiftKey &&
       !event.altKey &&
       event.key.toLowerCase() === "k" &&
-      workspaceShown
+      workspaceShown &&
+      conflictBackdropEl.hidden // the conflict modal must stay the only forward path
     ) {
       event.preventDefault()
       switcher.open()
