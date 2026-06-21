@@ -766,3 +766,51 @@ Two issues surfaced reviewing the deployed app:
   loading → workspace (folder restored) — never welcome → workspace. Tracked by a
   `workspaceShown` flag set in `onListChanged`; the reload e2e specs assert the
   welcome stays hidden, guarding against a regression of the flash.
+
+## Vim caret: snap out of hidden markup with a transaction filter, scoped to the Vim compartment (M11 → FEAT-0032)
+
+**What.** With Vim on, the caret could rest on characters the editor hides (a
+heading's `# `, a blockquote's `> `, a list `* `/`- ` marker). The default caret
+already steps over these because CodeMirror's own motions honor the editor's
+`atomicRanges`; the Vim plugin (`@replit/codemirror-vim`) computes motions by raw
+character offset (`cur.ch ± n`) and never consults them, so `h`/`l`/`0`/`w`/… could
+land inside an invisible run. Fix: a small `EditorState.transactionFilter`
+(`src/vim-caret.ts`) that, on any selection-setting transaction, snaps an endpoint
+that lands **strictly inside** a hidden run to the nearest edge — forward to the
+run end when the motion advanced, back to its start when it retreated. The hidden
+runs are computed from the **same pure functions the renderer uses**
+(`markdownSyntaxRanges` / `blockSyntaxRanges`), scoped to the endpoint's line.
+
+**Why this shape.**
+- *Why a transaction filter, not patching Vim.* The Vim package exposes no
+  per-motion hook and has dozens of motions (`h`/`w`/`b`/`0`/`$`/`f`/…); overriding
+  each would be fragile. A filter post-corrects the *result* of any motion in one
+  place, synchronously (no flicker, no dispatch loop).
+- *Why reuse the renderer's range functions.* "What is hidden" then has a single
+  source of truth. The view-scoped `EditorView.atomicRanges` facet (which the
+  default caret consumes) is unreachable from a state-level transaction filter, so
+  the guard can't read it directly — but by calling the same pure functions the
+  atomic ranges are *built from*, a future change to hiding rules (a new inline
+  mark, say) flows to both the renderer and the guard with no desync.
+- *Why scoped to the Vim compartment, not always-on.* The first cut installed the
+  filter unconditionally as a "shared invariant". The M11 code review flagged it:
+  off-Vim the default caret is never inside a run, so the filter was a guaranteed
+  per-keystroke no-op. It now rides inside the existing `vimMode` compartment
+  (`editor.ts` `setVimMode`), so it exists only while Vim does — no cost on the
+  common (Vim-off) path, and the code matches the feature's intent.
+
+**Consequences.**
+- *UI:* under Vim, horizontal motions land only on visible glyphs or at a run's
+  edge (a heading caret may sit at the line start, which renders at the first
+  visible character). No reveal-on-cursor — the markup stays hidden; the caret just
+  doesn't sit inside it. The default caret, link click-reveal (the filter exempts
+  `select.pointer` selections), slash/format/Enter commands, and visual selection
+  are unchanged.
+- *Scope held deliberately:* the filter skips document-changing transactions, so
+  it governs the caret's **resting position after a motion**, not Vim
+  operator/edit semantics (`d`/`c`/`x` trimming markup precisely) — those are out of
+  scope for FEAT-0032. A known, accepted limit: an edit could in principle leave
+  the caret inside a still-hidden run, but the natural cases self-correct (deleting
+  toward a marker removes its trailing space, which un-hides it).
+- *Moat:* untouched — the filter only corrects the editor selection; nothing is
+  read from or written to the user's folder.
