@@ -46,6 +46,19 @@ editor's own keymaps**, which yields the correct split:
 The toggle control stays reachable regardless of editor state, and a Vim-mode
 indicator (the library's own cursor/mode affordance) shows the active mode.
 
+**Visible selection (drawSelection).** Vim hides the browser's native selection so
+it can paint its own (block cursor, visual-mode highlight). The editor had been
+relying on the native selection — `drawSelection` was dropped in M2 because its
+custom layer drew the selection offset from the text. That offset was since
+root-caused: it was the scroller's `scrollbar-gutter` reservation throwing off
+`drawSelection`'s coordinate math, **not** the hidden-markup `Decoration.replace`
+runs as M2 assumed (`coordsAtPos` is accurate over hidden runs). With the gutter
+removed, `drawSelection` measures correctly, so it is restored editor-wide and the
+native-selection workaround dropped. Consequence: the visual-mode selection is
+visible under Vim, and selection rendering stays correct with Vim off (the small
+reason the gutter existed — keeping the centered column from shifting when a
+scrollbar appears — is given up; the column may shift slightly then).
+
 ## Constraints
 
 - **Opt-in, off by default.** A first-time user never sees Vim behavior until they
@@ -117,3 +130,15 @@ genuinely engaged (not just loaded).
 Given a folder is open,
 When the user toggles Vim mode,
 Then nothing is written to the open folder — only browser-local state changes.
+
+**AC-9** — With Vim on, the visual-mode selection is visible.
+Given Vim mode is on,
+When the user enters visual mode and extends a selection over some text,
+Then the selection is rendered visibly (a highlight tracks the selected text), not
+left invisible while only the underlying selection state changes.
+
+**AC-10** — Selection renders correctly over hidden markup (no offset).
+Given a line containing hidden markup (e.g. a heading's `# ` or a `**bold**` span),
+When text on that line is selected,
+Then the selection highlight aligns with the selected glyphs (it is not drawn
+shifted away from the text) — with or without Vim.
