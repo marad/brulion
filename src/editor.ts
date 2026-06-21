@@ -58,8 +58,12 @@ export interface EditorOptions {
   onChange?: () => void
   /** Called when the user presses Ctrl/Cmd+S. */
   onSave?: () => void
-  /** Called when the user Ctrl/Cmd+clicks a link, with its raw `href` (FEAT-0025). */
+  /** Called when the user follows a link with a raw `href` — a markdown/autolink
+   * (resolved relative to the open note) or an external URL (FEAT-0025/0026). */
   onFollowLink?: (href: string) => void
+  /** Called when the user follows a wikilink, with the already-resolved absolute
+   * note path it points at (or the path to create if missing) (FEAT-0027). */
+  onFollowNote?: (path: string) => void
 }
 
 /**
@@ -125,10 +129,14 @@ export function mountEditor(
           // context-menu (right-click formatting) still work on a link.
           if (event.button !== 0 || event.metaKey || event.ctrlKey) return false
           const target = event.target as HTMLElement | null
-          const href = target?.closest("[data-href]")?.getAttribute("data-href")
-          if (!href) return false
+          const el = target?.closest("[data-href],[data-note]")
+          if (!el) return false
           event.preventDefault()
-          opts.onFollowLink?.(href)
+          // A wikilink carries an already-resolved note path (data-note); a
+          // markdown/autolink/external link carries a raw href (data-href).
+          const note = el.getAttribute("data-note")
+          if (note !== null) opts.onFollowNote?.(note)
+          else opts.onFollowLink?.(el.getAttribute("data-href") as string)
           return true
         },
       }),

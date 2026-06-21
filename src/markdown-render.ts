@@ -19,7 +19,7 @@ import { markdown } from "@codemirror/lang-markdown"
 import { Autolink } from "@lezer/markdown"
 import { syntaxTree } from "@codemirror/language"
 import type { SyntaxNode } from "@lezer/common"
-import { isExternalLink, resolveNotePath } from "./note-name"
+import { isExternalLink, resolveNotePath, resolveWikilink } from "./note-name"
 
 /**
  * What the link decorator needs to tell a valid internal link from a broken one
@@ -181,7 +181,54 @@ export function markdownSyntaxRanges(
     },
   })
 
+  // Wikilinks (FEAT-0027) aren't CommonMark, so the tree above doesn't see them —
+  // scan the text for `[[…]]` separately.
+  collectWikilinks(doc.sliceString(from, to), from, sel, links, hidden, marks)
+
   return { hidden, marks }
+}
+
+/** `[[target]]` / `[[target|alias]]`. The target/alias char classes exclude
+ * `[`, `]`, `|` so a malformed or empty form simply doesn't match. */
+const WIKILINK_RE = /\[\[([^\]\[|]+)(?:\|([^\]\[]+))?\]\]/g
+
+/**
+ * Scan `slice` (the text of `[offset, offset+slice.length)`) for wikilinks and
+ * decorate each (FEAT-0027): hide `[[` (through the `|` when aliased) and the
+ * trailing `]]`, and style the label (`alias` else `target`) as a link, broken
+ * when the target resolves to no known note. The link carries the resolved note
+ * path (or the create path when missing) in `data-note`, so a follow acts on it
+ * directly. A wikilink the selection touches is left raw for editing (FEAT-0026).
+ */
+function collectWikilinks(
+  slice: string,
+  offset: number,
+  sel: { from: number; to: number },
+  links: LinkContext,
+  hidden: HiddenRange[],
+  marks: MarkRange[],
+): void {
+  WIKILINK_RE.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = WIKILINK_RE.exec(slice)) !== null) {
+    const start = offset + m.index
+    const end = start + m[0].length
+    if (sel.from < end && sel.to > start) continue // selection touches it — reveal for editing
+    const [, rawTarget, rawAlias] = m
+    // The label starts after `[[` (no alias) or after `[[target|` (aliased).
+    const labelStart = rawAlias === undefined ? start + 2 : start + 2 + rawTarget.length + 1
+    const labelEnd = end - 2 // before `]]`
+    const { resolved, createPath } = resolveWikilink(rawTarget.trim(), links.notePaths)
+    const note = resolved ?? createPath
+    hidden.push({ from: start, to: labelStart })
+    hidden.push({ from: labelEnd, to: end })
+    marks.push({
+      from: labelStart,
+      to: labelEnd,
+      cls: resolved ? "cm-link" : "cm-link cm-link-broken",
+      attrs: { "data-note": note, title: note },
+    })
+  }
 }
 
 /**

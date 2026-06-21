@@ -106,3 +106,36 @@ export function resolveNotePath(fromNote: string, href: string): string | null {
   const path = segments.join("/")
   return /\.md$/i.test(path) ? path : null
 }
+
+/**
+ * Resolve a wikilink `target` against the set of known note paths (FEAT-0027).
+ * A `target` with no `/` is a **bare name**, matched by basename (the filename,
+ * ignoring folders) case-insensitively anywhere in the tree — the low-friction
+ * point of a wikilink; ties resolve to the first by the set's order (the listing's
+ * sorted order). A `target` with a `/` is a **root-relative path**, matched
+ * case-insensitively against the full paths. Returns the matched existing note
+ * (`resolved`, or `null` when none) and the `createPath` to use if the user
+ * follows a missing link: `name.md` at the root for a bare name, the given path
+ * for a slashed one. Pure — no DOM/FSA.
+ */
+export function resolveWikilink(
+  target: string,
+  notePaths: ReadonlySet<string>,
+): { resolved: string | null; createPath: string } {
+  const trimmed = target.trim()
+  const createPath = /\.md$/i.test(trimmed) ? trimmed : `${trimmed}.md`
+  const wanted = createPath.toLowerCase()
+  const matches = trimmed.includes("/")
+    ? (path: string) => path.toLowerCase() === wanted // root-relative full path
+    : (path: string) => basename(path).toLowerCase() === wanted // bare name → basename
+  for (const path of notePaths) {
+    if (matches(path)) return { resolved: path, createPath }
+  }
+  return { resolved: null, createPath }
+}
+
+/** The filename of a `/`-separated path (the part after the last `/`). */
+function basename(path: string): string {
+  const slash = path.lastIndexOf("/")
+  return slash === -1 ? path : path.slice(slash + 1)
+}

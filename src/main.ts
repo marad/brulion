@@ -67,6 +67,15 @@ let controller: NoteController
 // target from one to offer to create.
 let currentActive = ""
 let currentNotes: string[] = []
+// Follow a resolved internal note path: switch to it if it exists, else offer to
+// create it (shared by markdown links and wikilinks — FEAT-0026/0027).
+const openNotePath = (path: string) => {
+  if (currentNotes.includes(path)) {
+    void controller.switchTo(path)
+  } else if (window.confirm(`"${displayName(path)}" doesn't exist yet. Create it?`)) {
+    void controller.addNote(path)
+  }
+}
 const view = mountEditor(editorEl, {
   onChange: () => controller.handleChange(),
   onSave: () => controller.flush(),
@@ -82,13 +91,10 @@ const view = mountEditor(editorEl, {
       return
     }
     const target = resolveNotePath(currentActive, href)
-    if (!target) return // unresolvable (escapes the root / not a note) — inert
-    if (currentNotes.includes(target)) {
-      void controller.switchTo(target)
-    } else if (window.confirm(`"${displayName(target)}" doesn't exist yet. Create it?`)) {
-      void controller.addNote(target)
-    }
+    if (target) openNotePath(target) // null = escapes the root / not a note — inert
   },
+  // A wikilink (FEAT-0027) already carries its resolved absolute note path.
+  onFollowNote: (path) => openNotePath(path),
 })
 // The diff view shown while a conflict stands (FEAT-0022); null when none does.
 let conflictDiff: ConflictDiff | null = null
