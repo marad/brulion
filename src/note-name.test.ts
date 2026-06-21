@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { normalizeNoteName, isExternalLink, resolveNotePath } from "./note-name"
+import { normalizeNoteName, isExternalLink, resolveNotePath, resolveWikilink } from "./note-name"
 
 describe("normalizeNoteName bare name (AC-9)", () => {
   it("trims and appends a .md extension when absent", () => {
@@ -120,5 +120,34 @@ describe("resolveNotePath (FEAT-0025 AC-1, AC-2)", () => {
   it("returns null for a non-markdown target", () => {
     expect(resolveNotePath("a.md", "b.txt")).toBeNull()
     expect(resolveNotePath("a.md", "b")).toBeNull()
+  })
+})
+
+describe("resolveWikilink (FEAT-0027 AC-1, AC-2, AC-3)", () => {
+  const notes = (paths: string[]) => new Set(paths)
+
+  it("resolves a bare name by basename, case-insensitively (AC-1)", () => {
+    expect(resolveWikilink("DiaBlo", notes(["a.md", "projects/diablo.md"]))).toEqual({
+      resolved: "projects/diablo.md",
+      createPath: "DiaBlo.md",
+    })
+  })
+
+  it("resolves a slashed name as a root-relative path (AC-2)", () => {
+    expect(resolveWikilink("sub/note", notes(["sub/note.md"]))).toEqual({
+      resolved: "sub/note.md",
+      createPath: "sub/note.md",
+    })
+  })
+
+  it("returns null resolved with a create path when missing (AC-3)", () => {
+    expect(resolveWikilink("missing", notes(["a.md"]))).toEqual({
+      resolved: null,
+      createPath: "missing.md",
+    })
+  })
+
+  it("picks the first by sorted order for an ambiguous bare name", () => {
+    expect(resolveWikilink("note", notes(["a/note.md", "b/note.md"])).resolved).toBe("a/note.md")
   })
 })

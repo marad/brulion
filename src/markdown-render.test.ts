@@ -344,3 +344,58 @@ describe("markdownSyntaxRanges link interaction (FEAT-0026)", () => {
     expect(r.marks[0].attrs?.title).toBe("sub/b.md")
   })
 })
+
+describe("markdownSyntaxRanges wikilinks (FEAT-0027)", () => {
+  const ctx = (paths: string[]): LinkContext => ({ activeNote: "a.md", notePaths: new Set(paths) })
+  const wl = (doc: string, c: LinkContext, head?: number) =>
+    markdownSyntaxRanges(
+      EditorState.create({
+        doc,
+        ...(head === undefined ? {} : { selection: { anchor: head } }),
+        extensions: [markdown(), linkContext.of(c)],
+      }),
+    )
+  const sliceHidden = (doc: string, r: { hidden: { from: number; to: number }[] }) =>
+    r.hidden.map((h) => doc.slice(h.from, h.to))
+
+  it("hides [[ ]] and styles the label with the resolved note path (AC-4)", () => {
+    const doc = "see [[note]]"
+    const r = wl(doc, ctx(["note.md"]))
+    expect(sliceHidden(doc, r)).toEqual(["[[", "]]"])
+    expect(r.marks).toEqual([
+      { from: 6, to: 10, cls: "cm-link", attrs: { "data-note": "note.md", title: "note.md" } },
+    ])
+  })
+
+  it("hides [[target| and ]] and shows the alias as the label (AC-5)", () => {
+    const doc = "see [[note|the note]]"
+    const r = wl(doc, ctx(["note.md"]))
+    expect(sliceHidden(doc, r)).toEqual(["[[note|", "]]"])
+    expect(r.marks).toEqual([
+      { from: 11, to: 19, cls: "cm-link", attrs: { "data-note": "note.md", title: "note.md" } },
+    ])
+    expect(doc.slice(11, 19)).toBe("the note")
+  })
+
+  it("marks a wikilink to a missing note as broken (AC-6)", () => {
+    const doc = "see [[ghost]]"
+    const r = wl(doc, ctx(["a.md"]))
+    expect(r.marks).toEqual([
+      {
+        from: 6,
+        to: 11,
+        cls: "cm-link cm-link-broken",
+        attrs: { "data-note": "ghost.md", title: "ghost.md" },
+      },
+    ])
+  })
+
+  it("leaves an empty wikilink [[]] untouched", () => {
+    expect(wl("a [[]] b", ctx([]))).toEqual({ hidden: [], marks: [] })
+  })
+
+  it("reveals a wikilink's markup when the caret is within it", () => {
+    const doc = "see [[note]]" // span [4, 12]
+    expect(wl(doc, ctx(["note.md"]), 7)).toEqual({ hidden: [], marks: [] })
+  })
+})
