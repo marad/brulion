@@ -6,6 +6,7 @@ import {
   restoreFolder,
   wireOpenFolder,
   renderNoteList,
+  buildNoteTree,
   wireNewNote,
   wireToggle,
 } from "./ui"
@@ -190,6 +191,112 @@ describe("renderNoteList", () => {
     renderNoteList(container, ["c.md"], "c.md", handlers())
 
     expect([...container.querySelectorAll(".note-name")].map((r) => r.textContent)).toEqual(["c"])
+  })
+})
+
+describe("buildNoteTree (AC-1)", () => {
+  it("groups a sorted flat path list into a nested tree, preserving order", () => {
+    expect(buildNoteTree(["a.md", "sub/b.md", "sub/d.md", "sub/deep/c.md"])).toEqual([
+      { kind: "note", name: "a", path: "a.md" },
+      {
+        kind: "folder",
+        name: "sub",
+        path: "sub",
+        children: [
+          { kind: "note", name: "b", path: "sub/b.md" },
+          { kind: "note", name: "d", path: "sub/d.md" },
+          {
+            kind: "folder",
+            name: "deep",
+            path: "sub/deep",
+            children: [{ kind: "note", name: "c", path: "sub/deep/c.md" }],
+          },
+        ],
+      },
+    ])
+  })
+
+  it("returns a flat list of notes when there are no folders", () => {
+    expect(buildNoteTree(["apple.md", "banana.md"])).toEqual([
+      { kind: "note", name: "apple", path: "apple.md" },
+      { kind: "note", name: "banana", path: "banana.md" },
+    ])
+  })
+})
+
+describe("renderNoteList tree (FEAT-0024)", () => {
+  const handlers = () => ({ onSelect: vi.fn(), onDelete: vi.fn(), onToggleFolder: vi.fn() })
+
+  const folderHeader = (container: HTMLElement, name: string) =>
+    [...container.querySelectorAll<HTMLElement>(".folder-header")].find(
+      (h) => h.textContent?.trim() === name,
+    )
+  const rowFor = (container: HTMLElement, name: string) =>
+    [...container.querySelectorAll<HTMLElement>(".note-row")].find(
+      (r) => r.querySelector(".note-name")?.textContent === name,
+    )
+
+  it("renders a folder header with its note nested, root notes at top level (AC-2)", () => {
+    const container = document.createElement("div")
+    renderNoteList(container, ["root.md", "sub/b.md"], "root.md", handlers())
+
+    expect(folderHeader(container, "sub")).toBeTruthy()
+    // the root note is a direct child of the container, not inside a folder
+    const root = rowFor(container, "root")!
+    expect(root.parentElement).toBe(container)
+    expect(root.closest(".folder-children")).toBeNull()
+    // the nested note lives inside the sub folder's children
+    expect(rowFor(container, "b")!.closest(".folder-children")).not.toBeNull()
+  })
+
+  it("selects and deletes a nested note by its full path (AC-3)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["sub/b.md"], "sub/b.md", h)
+
+    rowFor(container, "b")!.querySelector<HTMLElement>(".note-name")!.click()
+    expect(h.onSelect).toHaveBeenCalledWith("sub/b.md")
+    rowFor(container, "b")!.querySelector<HTMLElement>(".note-delete")!.click()
+    expect(h.onDelete).toHaveBeenCalledWith("sub/b.md")
+  })
+
+  it("toggling a folder hides its children and reports the new collapsed state (AC-4)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["root.md", "sub/b.md"], "root.md", h)
+    const header = folderHeader(container, "sub")!
+    const children = container.querySelector<HTMLElement>(".folder-children")!
+    expect(children.hidden).toBe(false)
+
+    header.click()
+    expect(children.hidden).toBe(true)
+    expect(h.onToggleFolder).toHaveBeenCalledWith("sub", true)
+  })
+
+  it("renders a folder collapsed when its path is in the persisted set (AC-4)", () => {
+    const container = document.createElement("div")
+    renderNoteList(container, ["root.md", "sub/b.md"], "root.md", handlers(), new Set(["sub"]))
+
+    expect(container.querySelector<HTMLElement>(".folder-children")!.hidden).toBe(true)
+  })
+
+  it("force-expands ancestors of the active note despite the collapsed set, without mutating it (AC-5)", () => {
+    const container = document.createElement("div")
+    const collapsed = new Set(["sub"])
+    renderNoteList(container, ["sub/b.md"], "sub/b.md", handlers(), collapsed)
+
+    expect(container.querySelector<HTMLElement>(".folder-children")!.hidden).toBe(false)
+    expect([...collapsed]).toEqual(["sub"]) // render reads, never writes, the set
+  })
+
+  it("marks exactly the active note's row wherever it sits (AC-6)", () => {
+    const container = document.createElement("div")
+    renderNoteList(container, ["root.md", "sub/b.md"], "sub/b.md", handlers())
+
+    const active = container.querySelectorAll(".note-row.active")
+    expect(active).toHaveLength(1)
+    expect(active[0].querySelector(".note-name")?.textContent).toBe("b")
+    expect(active[0].getAttribute("aria-current")).toBe("true")
   })
 })
 
