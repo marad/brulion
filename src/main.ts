@@ -72,7 +72,13 @@ const view = mountEditor(editorEl, {
   onSave: () => controller.flush(),
   onFollowLink: (href) => {
     if (isExternalLink(href)) {
-      window.open(href, "_blank", "noopener")
+      // Open in a new tab via a real anchor click — `window.open(_, _, "noopener")`
+      // opens a popup window (not a tab) in some browsers (FEAT-0026).
+      const anchor = document.createElement("a")
+      anchor.href = href
+      anchor.target = "_blank"
+      anchor.rel = "noopener noreferrer"
+      anchor.click()
       return
     }
     const target = resolveNotePath(currentActive, href)

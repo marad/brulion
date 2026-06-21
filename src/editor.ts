@@ -70,7 +70,7 @@ export function mountEditor(
   parent: HTMLElement,
   opts: EditorOptions = {},
 ): EditorView {
-  return new EditorView({
+  const view = new EditorView({
     doc: "",
     extensions: [
       // Vim layer (FEAT-0021), off by default. First in the array → highest
@@ -115,12 +115,12 @@ export function mountEditor(
       editable.of([]), // writable by default; toggled by setEditorEditable
       EditorView.lineWrapping, // wrap long lines at the column width — prose, not code
       linkCtx.of([]), // link context (FEAT-0025); set via setLinkContext once a folder opens
-      // Ctrl/Cmd+click a link follows it (FEAT-0025). A mouse modifier, so it
-      // never clashes with the slash/format/Vim keybindings. A plain click falls
-      // through (returns false) and just places the caret.
+      // Click model (FEAT-0026): a plain click on a link follows it; Ctrl/Cmd+click
+      // falls through (returns false) so CodeMirror places the caret instead — the
+      // edit escape hatch, which also reveals the link's markup (markdown-render).
       EditorView.domEventHandlers({
         mousedown(event) {
-          if (!(event.metaKey || event.ctrlKey)) return false
+          if (event.metaKey || event.ctrlKey) return false // modifier → place caret (edit)
           const target = event.target as HTMLElement | null
           const href = target?.closest("[data-href]")?.getAttribute("data-href")
           if (!href) return false
@@ -152,6 +152,19 @@ export function mountEditor(
     ],
     parent,
   })
+
+  // Reflect whether Ctrl/Cmd is held on the editor root, so the cursor over a link
+  // can switch from `pointer` (follow) to a text caret (edit) — FEAT-0026. Cleared
+  // on window blur so a modifier released outside the window doesn't stick.
+  const setModHeld = (held: boolean) => view.dom.classList.toggle("cm-mod-held", held)
+  const onModKey = (held: boolean) => (event: KeyboardEvent) => {
+    if (event.key === "Control" || event.key === "Meta") setModHeld(held)
+  }
+  window.addEventListener("keydown", onModKey(true))
+  window.addEventListener("keyup", onModKey(false))
+  window.addEventListener("blur", () => setModHeld(false))
+
+  return view
 }
 
 /** Replace the whole document with `text` without it counting as a user edit. */

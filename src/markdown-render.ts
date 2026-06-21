@@ -16,6 +16,7 @@ import {
   type Text,
 } from "@codemirror/state"
 import { markdown } from "@codemirror/lang-markdown"
+import { Autolink } from "@lezer/markdown"
 import { syntaxTree } from "@codemirror/language"
 import type { SyntaxNode } from "@lezer/common"
 import { isExternalLink, resolveNotePath } from "./note-name"
@@ -125,13 +126,22 @@ export function markdownSyntaxRanges(
   const marks: MarkRange[] = []
   const doc = state.doc
   const links = state.facet(linkContext)
+  const caret = state.selection.main.head
 
   syntaxTree(state).iterate({
     from,
     to,
     enter(node) {
       if (node.name === "Link") {
-        collectLink(node.node, doc, links, hidden, marks)
+        collectLink(node.node, doc, links, caret, hidden, marks)
+        return
+      }
+
+      // A bare autolink (FEAT-0026): a `URL` node not inside a `Link` (a Link's
+      // own `(url)` is handled by collectLink). Only web URLs are linkified;
+      // emails the parser also matches are left as plain text.
+      if (node.name === "URL" && node.node.parent?.name !== "Link") {
+        collectAutolink(node.node, doc, marks)
         return
       }
 
@@ -183,6 +193,7 @@ function collectLink(
   node: SyntaxNode,
   doc: Text,
   links: LinkContext,
+  caret: number,
   hidden: HiddenRange[],
   marks: MarkRange[],
 ): void {
@@ -197,6 +208,11 @@ function collectLink(
   const closeBracket = linkMarks[1] // "]"
   const lastMark = linkMarks[linkMarks.length - 1] // ")"
   if (closeBracket.from <= open.to) return // empty link text — leave it raw
+  // Reveal for editing (FEAT-0026): while the caret is *inside* the link's span,
+  // emit nothing so the raw `[text](url)` shows and the URL can be edited. The
+  // bounds are strict — a caret exactly at `open.from` (before `[`) or
+  // `lastMark.to` (after `)`) is adjacent, not inside, so the link stays rendered.
+  if (caret > open.from && caret < lastMark.to) return
 
   const href = doc.sliceString(url.from, url.to)
   hidden.push({ from: open.from, to: open.to }) // "["
@@ -205,7 +221,26 @@ function collectLink(
     from: open.to,
     to: closeBracket.from,
     cls: linkClass(href, links),
-    attrs: { "data-href": href },
+    attrs: { "data-href": href, title: linkTarget(href, links) },
+  })
+}
+
+/**
+ * Render a bare autolink (FEAT-0026): a `URL` node sitting directly in text. Only
+ * web URLs (`http(s)://`, `www.`) are linkified — emails the parser also matches
+ * are left plain. A `www.` url is normalized to `https://www.…` in the stored
+ * href so the follow path treats it as external. No markup is hidden: the URL
+ * text is the visible link.
+ */
+function collectAutolink(node: SyntaxNode, doc: Text, marks: MarkRange[]): void {
+  const text = doc.sliceString(node.from, node.to)
+  if (!/^(https?:\/\/|www\.)/i.test(text)) return // email or other — leave plain
+  const href = /^www\./i.test(text) ? "https://" + text : text
+  marks.push({
+    from: node.from,
+    to: node.to,
+    cls: "cm-link",
+    attrs: { "data-href": href, title: href },
   })
 }
 
@@ -215,6 +250,13 @@ function linkClass(href: string, links: LinkContext): string {
   if (isExternalLink(href)) return "cm-link"
   const target = resolveNotePath(links.activeNote, href)
   return target && links.notePaths.has(target) ? "cm-link" : "cm-link cm-link-broken"
+}
+
+/** The hover-tooltip target (FEAT-0026): the url for an external link, the
+ * resolved note path for an internal one (falling back to the raw href). */
+function linkTarget(href: string, links: LinkContext): string {
+  if (isExternalLink(href)) return href
+  return resolveNotePath(links.activeNote, href) ?? href
 }
 
 /**
@@ -397,10 +439,14 @@ const renderPlugin = ViewPlugin.fromClass(
 
     update(update: ViewUpdate) {
       // Also rebuild when the link context changes (active note / known notes),
-      // so a link's broken-vs-valid styling tracks the real folder (FEAT-0025).
+      // so a link's broken-vs-valid styling tracks the real folder (FEAT-0025);
+      // and on selection change, so a link reveals its markup when the caret
+      // enters it and re-hides when it leaves (FEAT-0026). The reveal is
+      // links-only — heading/emphasis hiding ignores the caret — so the M2
+      // "no reveal on the cursor line" rule still holds for everything else.
       const linkCtxChanged =
         update.startState.facet(linkContext) !== update.state.facet(linkContext)
-      if (update.docChanged || update.viewportChanged || linkCtxChanged) {
+      if (update.docChanged || update.viewportChanged || update.selectionSet || linkCtxChanged) {
         this.rebuild(update.view)
       }
     }
@@ -495,6 +541,9 @@ const renderTheme = EditorView.baseTheme({
     textDecorationColor: "rgba(47,111,154,0.4)",
     cursor: "pointer",
   },
+  // While Ctrl/Cmd is held the click places the caret (edit), not follows, so the
+  // cursor over a link reverts to the text caret to signal that (FEAT-0026).
+  ".cm-mod-held .cm-link": { cursor: "text" },
   ".cm-link-broken": {
     color: "#9a3b2f",
     textDecorationStyle: "dashed",
@@ -546,7 +595,9 @@ export const markdownRendering: Extension = [
   // `addKeymap: false`: don't let the language install its own Prec.high Enter/
   // Backspace bindings — Enter is owned by our markdown-aware command (FEAT-0018,
   // wired in editor.ts), and a Prec.high library binding would shadow it.
-  markdown({ addKeymap: false }),
+  // `Autolink`: the one GFM extension we want — bare web URLs become `URL` nodes
+  // the renderer linkifies (FEAT-0026). Not the rest of GFM (tables, etc.).
+  markdown({ addKeymap: false, extensions: [Autolink] }),
   renderPlugin,
   blockRenderingField,
   renderTheme,
