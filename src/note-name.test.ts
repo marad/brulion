@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { normalizeNoteName } from "./note-name"
+import { normalizeNoteName, isExternalLink, resolveNotePath } from "./note-name"
 
 describe("normalizeNoteName bare name (AC-9)", () => {
   it("trims and appends a .md extension when absent", () => {
@@ -70,5 +70,47 @@ describe("normalizeNoteName rejection (AC-10)", () => {
       expect(normalizeNoteName(bad).ok).toBe(false)
       expect(normalizeNoteName("sub/" + bad).ok).toBe(false)
     }
+  })
+})
+
+describe("isExternalLink (FEAT-0025 AC-3)", () => {
+  it("treats scheme and protocol-relative urls as external", () => {
+    for (const ext of ["https://example.com", "http://x", "mailto:a@b.z", "//cdn/x"]) {
+      expect(isExternalLink(ext)).toBe(true)
+    }
+  })
+
+  it("treats relative note paths as internal", () => {
+    for (const rel of ["sub/b.md", "b.md", "../c.md", "./b.md"]) {
+      expect(isExternalLink(rel)).toBe(false)
+    }
+  })
+})
+
+describe("resolveNotePath (FEAT-0025 AC-1, AC-2)", () => {
+  it("resolves relative to the linking note's folder", () => {
+    expect(resolveNotePath("sub/a.md", "b.md")).toBe("sub/b.md")
+    expect(resolveNotePath("sub/a.md", "deep/d.md")).toBe("sub/deep/d.md")
+    expect(resolveNotePath("a.md", "sub/b.md")).toBe("sub/b.md")
+  })
+
+  it("folds . and .. segments", () => {
+    expect(resolveNotePath("sub/a.md", "./b.md")).toBe("sub/b.md")
+    expect(resolveNotePath("sub/a.md", "../c.md")).toBe("c.md")
+    expect(resolveNotePath("a/b/c.md", "../../x.md")).toBe("x.md")
+  })
+
+  it("strips surrounding angle brackets (CommonMark url with spaces)", () => {
+    expect(resolveNotePath("sub/a.md", "<b c.md>")).toBe("sub/b c.md")
+  })
+
+  it("returns null when the link escapes the root", () => {
+    expect(resolveNotePath("sub/a.md", "../../x.md")).toBeNull()
+    expect(resolveNotePath("a.md", "../x.md")).toBeNull()
+  })
+
+  it("returns null for a non-markdown target", () => {
+    expect(resolveNotePath("a.md", "b.txt")).toBeNull()
+    expect(resolveNotePath("a.md", "b")).toBeNull()
   })
 })

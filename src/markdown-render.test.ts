@@ -1,7 +1,12 @@
 import { describe, it, expect } from "vitest"
 import { EditorState } from "@codemirror/state"
 import { markdown } from "@codemirror/lang-markdown"
-import { markdownSyntaxRanges, blockSyntaxRanges } from "./markdown-render"
+import {
+  markdownSyntaxRanges,
+  blockSyntaxRanges,
+  linkContext,
+  type LinkContext,
+} from "./markdown-render"
 
 const state = (doc: string) => EditorState.create({ doc, extensions: [markdown()] })
 const ranges = (doc: string) => markdownSyntaxRanges(state(doc))
@@ -219,5 +224,48 @@ describe("blockSyntaxRanges", () => {
     expect(lineMarks(doc)).toEqual([["> a **b** c", "cm-blockquote"]])
     expect(hiddenText(doc)).toEqual(["**", "**"])
     expect(markText(doc)).toEqual([["b", "cm-strong"]])
+  })
+})
+
+describe("markdownSyntaxRanges links (FEAT-0025)", () => {
+  const linkState = (doc: string, ctx: LinkContext) =>
+    EditorState.create({ doc, extensions: [markdown(), linkContext.of(ctx)] })
+  const linkRanges = (doc: string, ctx: LinkContext) => markdownSyntaxRanges(linkState(doc, ctx))
+  const linkMarks = (doc: string, ctx: LinkContext) =>
+    linkRanges(doc, ctx).marks.map(
+      (m) => [doc.slice(m.from, m.to), m.cls, m.attrs?.["data-href"]] as const,
+    )
+  const linkHidden = (doc: string, ctx: LinkContext) =>
+    linkRanges(doc, ctx).hidden.map((h) => doc.slice(h.from, h.to))
+
+  const ctx = (active: string, paths: string[]): LinkContext => ({
+    activeNote: active,
+    notePaths: new Set(paths),
+  })
+
+  it("hides the link markup and styles the text, carrying the href (AC-4)", () => {
+    const doc = "see [the note](sub/b.md)"
+    const c = ctx("a.md", ["a.md", "sub/b.md"])
+    expect(linkHidden(doc, c)).toEqual(["[", "](sub/b.md)"])
+    expect(linkMarks(doc, c)).toEqual([["the note", "cm-link", "sub/b.md"]])
+  })
+
+  it("marks an internal link to a missing note as broken (AC-5)", () => {
+    const doc = "see [gone](missing.md)"
+    expect(linkMarks(doc, ctx("a.md", ["a.md"]))).toEqual([
+      ["gone", "cm-link cm-link-broken", "missing.md"],
+    ])
+  })
+
+  it("never marks an external link broken", () => {
+    const doc = "[site](https://example.com)"
+    expect(linkMarks(doc, ctx("a.md", []))).toEqual([
+      ["site", "cm-link", "https://example.com"],
+    ])
+  })
+
+  it("leaves a shortcut link [x] (no url) untouched", () => {
+    const doc = "a [x] b"
+    expect(linkRanges(doc, ctx("a.md", []))).toEqual({ hidden: [], marks: [] })
   })
 })
