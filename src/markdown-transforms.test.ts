@@ -17,6 +17,7 @@ import {
   setHeadingLines,
   clearFormatting,
   isEmptyMarkerLine,
+  markerSpaceDeletion,
 } from "./markdown-transforms"
 
 /** Build a state with a selection, marked `|` for caret or `[`…`]` for a range. */
@@ -292,5 +293,51 @@ describe("isEmptyMarkerLine", () => {
     for (const t of ["* a", "> a", "1. x", "plain", "   ", "", "a > b"]) {
       expect(isEmptyMarkerLine(t)).toBe(false)
     }
+  })
+})
+
+describe("markerSpaceDeletion", () => {
+  const del = (marked: string) => {
+    const s = stateOf(marked)
+    return applied(s, markerSpaceDeletion(s))
+  }
+  const spec = (marked: string) => {
+    const s = stateOf(marked)
+    return markerSpaceDeletion(s)
+  }
+
+  it("deletes only the trailing space after a completed bullet, leaving the marker (AC-6)", () => {
+    expect(del("- |").doc).toBe("-")
+    expect(del("* |").doc).toBe("*")
+  })
+
+  it("leaves the marker on a bullet line that has content (AC-6)", () => {
+    // Caret right after the marker run, before the text: only the space goes.
+    expect(del("- |text").doc).toBe("-text")
+  })
+
+  it("puts the caret right after the bare marker (so a second Backspace removes it)", () => {
+    const s = stateOf("- |")
+    const next = s.update(markerSpaceDeletion(s)!).state
+    expect(next.selection.main.head).toBe(1) // after the "-"
+  })
+
+  it("applies to heading and blockquote markers too (AC-7)", () => {
+    expect(del("# |").doc).toBe("#")
+    expect(del("### |").doc).toBe("###")
+    expect(del("> |").doc).toBe(">")
+    expect(del("  - |").doc).toBe("  -") // indented marker
+  })
+
+  it("does not fire without a completed marker before the caret", () => {
+    expect(spec("-|")).toBeNull() // bare marker, no trailing space
+    expect(spec("|- ")).toBeNull() // caret at line start
+    expect(spec("hello |")).toBeNull() // a space, but not after a marker
+    expect(spec("- text|")).toBeNull() // caret after content, not the marker
+    expect(spec("####### |")).toBeNull() // 7 hashes is not a heading marker → no special delete
+  })
+
+  it("does not fire on a non-empty selection", () => {
+    expect(spec("[- ]")).toBeNull()
   })
 })

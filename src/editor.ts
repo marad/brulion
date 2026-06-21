@@ -5,7 +5,11 @@ import { autocompletion, completionKeymap } from "@codemirror/autocomplete"
 import { deleteMarkupBackward } from "@codemirror/lang-markdown"
 import { vim } from "@replit/codemirror-vim"
 import { markdownRendering } from "./markdown-render"
-import { markdownCommands, continueOrExitMarkup } from "./markdown-commands"
+import {
+  markdownCommands,
+  continueOrExitMarkup,
+  deleteMarkerSpaceBackward,
+} from "./markdown-commands"
 import { slashCommands } from "./slash-commands"
 import { contextMenu } from "./context-menu"
 
@@ -82,6 +86,11 @@ export function mountEditor(
         // slash menu still accepts on Enter; before defaultKeymap, to which it
         // falls through on a plain line (the command returns false there).
         { key: "Enter", run: continueOrExitMarkup },
+        // Backspace right after a completed marker (`* `/`- `, `# `, `> `) removes
+        // only the trailing space, leaving the bare marker — the inverse of typing
+        // the space that completed it (FEAT-0019). Falls through when it doesn't
+        // apply.
+        { key: "Backspace", run: deleteMarkerSpaceBackward },
         // Backspace at the start of a list/quote marker removes the marker — the
         // counterpart the language keymap used to provide (now off, see
         // markdownRendering). Falls through to the default delete otherwise.

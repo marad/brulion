@@ -11,6 +11,7 @@ import {
   demoteHeading,
   setHeading,
   isEmptyMarkerLine,
+  markerSpaceDeletion,
 } from "./markdown-transforms"
 
 /**
@@ -57,6 +58,19 @@ export const continueOrExitMarkup: Command = (view) => {
     }
   }
   return insertNewlineContinueMarkup(view)
+}
+
+/**
+ * Backspace symmetry (FEAT-0019 AC-6/AC-7): right after a completed marker run,
+ * delete only the trailing space, leaving the bare literal marker — the inverse of
+ * typing the space that completed it. Returns `false` when it doesn't apply, so the
+ * key falls through to `deleteMarkupBackward` and the default delete.
+ */
+export const deleteMarkerSpaceBackward: Command = (view) => {
+  const spec = markerSpaceDeletion(view.state)
+  if (!spec) return false
+  view.dispatch(spec)
+  return true
 }
 
 /**

@@ -300,3 +300,33 @@ export function clearFormatting(state: EditorState): TransactionSpec | null {
 export function isEmptyMarkerLine(lineText: string): boolean {
   return /\S/.test(lineText) && /^[\s>]*(?:[-*+]|\d+[.)])?\s*$/.test(lineText)
 }
+
+/** A bare block marker that a single trailing space turns into a rendered
+ * construct: an ATX heading (`#`…`######`), an unordered-list bullet (`*`/`-`), or
+ * a blockquote (`>`), optionally indented. */
+const BARE_MARKER = /^\s*(?:#{1,6}|[*-]|>)$/
+
+/**
+ * Backspace symmetry (FEAT-0019 AC-6/AC-7): when the caret sits immediately after
+ * a completed marker run — the marker plus the single space that completes it —
+ * delete *only* that trailing space, leaving the bare literal marker. Because the
+ * marker run is rendered as an atomic range, the default Backspace would delete the
+ * whole marker at once; this makes Backspace the exact inverse of typing the space
+ * that completed the marker. Returns `null` (so the command falls through to the
+ * default delete) unless the caret is empty, the char before it is a space, and the
+ * text before that space is exactly a bare marker.
+ */
+export function markerSpaceDeletion(state: EditorState): TransactionSpec | null {
+  const range = state.selection.main
+  if (!range.empty) return null
+  const pos = range.head
+  const line = state.doc.lineAt(pos)
+  const col = pos - line.from
+  if (col < 1 || line.text[col - 1] !== " ") return null
+  if (!BARE_MARKER.test(line.text.slice(0, col - 1))) return null
+  return {
+    changes: { from: pos - 1, to: pos },
+    selection: { anchor: pos - 1 },
+    userEvent: "delete",
+  }
+}

@@ -85,3 +85,49 @@ test("rendering a bullet does not alter the saved bytes (AC-5)", async ({ page }
 
   await expect.poll(() => readStartMd(page)).toBe("* item")
 })
+
+test("Backspace after a completed bullet removes only the space, leaving the marker (AC-6)", async ({
+  page,
+}) => {
+  await page.locator("#open-folder").click()
+
+  await type(page, "- ")
+  await page.keyboard.press("Backspace") // deletes the trailing space, not the dash
+  await page.keyboard.press("Control+s")
+  await expect.poll(() => readStartMd(page)).toBe("-")
+
+  // A second Backspace then removes the bare marker itself.
+  await page.keyboard.press("Backspace")
+  await page.keyboard.press("Control+s")
+  await expect.poll(() => readStartMd(page)).toBe("")
+})
+
+test("Backspace symmetry leaves a bullet marker before its content (AC-6)", async ({
+  page,
+}) => {
+  await page.locator("#open-folder").click()
+
+  await type(page, "- x")
+  await page.keyboard.press("ArrowLeft") // caret between the marker run and "x"
+  await page.keyboard.press("Backspace")
+  await page.keyboard.press("Control+s")
+  await expect.poll(() => readStartMd(page)).toBe("-x")
+})
+
+test("Backspace symmetry applies to heading and blockquote markers (AC-7)", async ({
+  page,
+}) => {
+  await page.locator("#open-folder").click()
+
+  await type(page, "# ")
+  await page.keyboard.press("Backspace")
+  await page.keyboard.press("Control+s")
+  await expect.poll(() => readStartMd(page)).toBe("#")
+
+  // Clear the line, then a blockquote marker.
+  await page.keyboard.press("Backspace") // remove the "#"
+  await type(page, "> ")
+  await page.keyboard.press("Backspace")
+  await page.keyboard.press("Control+s")
+  await expect.poll(() => readStartMd(page)).toBe(">")
+})
