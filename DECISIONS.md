@@ -502,3 +502,47 @@ Key decisions:
 - **The MergeView is built fresh per conflict and destroyed on resolve**, mounted
   into a container inside the existing `#conflict-backdrop`. Conflicts are rare
   and each carries different content, so a persistent instance buys nothing.
+
+## A note's identity is its folder-relative POSIX path, not a bare filename (M8 → FEAT-0023)
+M3 settled "a note is a `.md` file in the folder **root**; the filename is the
+name". M8 lifts the root-only restriction: a note is now any `.md` file anywhere
+in the picked folder tree, and its identity is its **folder-relative POSIX path**
+(`projects/diablo.md`). This stays true to the moat for the same reason the flat
+case did — the folder *tree* is the single source of truth, no index file, no
+sidecar, no app-private state; the on-disk directory structure *is* the data
+model. Consequences: `listNotes` recurses the tree and returns sorted relative
+paths (forward-slash separated, regardless of OS); `readNote`/`saveNote`/
+`statNote`/`createNote`/`deleteNote` resolve a path by walking
+`getDirectoryHandle` per segment (with `{ create: true }` on the write paths so a
+note materializes its folders); the controller carries the active note as that
+path string (it was already opaque to it), and the active-note persistence,
+poller, and conflict guard all key off the path unchanged. `normalizeNoteName`
+becomes path-aware: it splits on `/`, validates each segment with the existing
+unsafe-character/empty rules, **rejects `.` and `..` segments** (no escaping or
+re-anchoring the root — the moat must not let a note write outside the folder the
+user granted), and re-joins to `folder/name.md`. The user-facing display still
+drops `.md`; the tree (FEAT-0024) shows each segment. (Rejected: keep a flat list
+and fake folders via a separator in the filename — lies about the on-disk shape
+and breaks the "files are the interface" moat; a path index/manifest — a second
+source of truth that drifts from the tree.)
+
+## Links are standard CommonMark inline links to local `.md` files, not wikilinks (M8 → FEAT-0025)
+The moat is plain markdown the user owns, portable to any other tool. Wikilinks
+(`[[note]]`) are an Obsidian-family extension, **not** CommonMark — another tool
+reading the file would render the literal `[[note]]`, not a link. So M8 uses
+**standard markdown inline links** — `[text](relative/path.md)` — which every
+markdown tool resolves identically. This is the same reasoning that rejected
+`<u>` underline in M2: never write a non-portable construct into the user's
+files. The link target is a folder-relative path to a local `.md` note, resolved
+relative to the **linking note's own folder** (POSIX join, `..` allowed in a link
+only insofar as it stays within the picked root). Rendering follows the
+hidden-syntax model: the `[`, `](path)` markup is hidden and `text` is styled as
+a link; **Ctrl/Cmd+click follows it** (a mouse modifier, so it never fights the
+slash/format/Vim keybindings), switching the editor to the resolved note. A
+missing target renders as broken (distinct style) and following it offers to
+create the note at that path. `http(s)://` targets open in a new browser tab and
+are never treated as in-app note navigation. Display-only: the file keeps the
+literal, portable markdown-link bytes. (Rejected: wikilinks — non-portable, dirties
+the moat; plain left-click to navigate — hijacks normal caret placement in an
+editor; a custom link autocomplete / backlink graph — separable, PMF-gated, and
+links were nearly cut from the MVP entirely.)
