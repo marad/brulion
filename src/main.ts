@@ -21,6 +21,7 @@ import { displayName, isExternalLink, resolveNotePath } from "./note-name"
 import { wireFlushOnHide } from "./flush"
 import { createPoller } from "./watch"
 import { registerServiceWorker } from "./pwa"
+import { createInstallPrompt, type DeferredInstallPrompt } from "./install-prompt"
 
 /** How often to poll the folder for changes made by other tools (FEAT-0014). */
 const POLL_MS = 2000
@@ -35,6 +36,7 @@ const newNoteForm = document.querySelector<HTMLFormElement>("#new-note")
 const newNoteInput = document.querySelector<HTMLInputElement>("#new-note-input")
 const openButton = document.querySelector<HTMLButtonElement>("#open-folder")
 const resumeButton = document.querySelector<HTMLButtonElement>("#resume-access")
+const installButton = document.querySelector<HTMLButtonElement>("#install-app")
 const statusEl = document.querySelector<HTMLParagraphElement>("#status")
 const conflictBackdropEl = document.querySelector<HTMLDivElement>("#conflict-backdrop")
 const conflictDiffEl = document.querySelector<HTMLDivElement>("#conflict-diff")
@@ -51,6 +53,7 @@ if (
   !newNoteInput ||
   !openButton ||
   !resumeButton ||
+  !installButton ||
   !statusEl ||
   !conflictBackdropEl ||
   !conflictDiffEl ||
@@ -226,3 +229,18 @@ wireFlushOnHide(() => controller.flush())
 // Register the offline service worker (FEAT-0029) — production builds only; the
 // dev server serves unbundled modules + an HMR client the worker shouldn't cache.
 registerServiceWorker(navigator, import.meta.env.BASE_URL, import.meta.env.PROD)
+
+// Custom install affordance (FEAT-0030): capture beforeinstallprompt, reveal a
+// header Install button, and fire the native prompt on click. Hidden while
+// already installed (display-mode: standalone) or before the event arrives.
+const isStandalone =
+  window.matchMedia("(display-mode: standalone)").matches ||
+  (navigator as { standalone?: boolean }).standalone === true
+const install = createInstallPrompt(isStandalone, (visible) => {
+  installButton.hidden = !visible
+})
+window.addEventListener("beforeinstallprompt", (event) => {
+  install.onBeforeInstallPrompt(event as unknown as DeferredInstallPrompt)
+})
+window.addEventListener("appinstalled", () => install.onInstalled())
+installButton.addEventListener("click", () => install.onInstallClick())
