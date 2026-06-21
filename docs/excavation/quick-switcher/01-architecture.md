@@ -61,31 +61,51 @@ flowchart TD
 ## Types crossing the boundary
 
 ```
-Match        = { path: string; score: number }   // path includes ".md"
-CreateOption = { filename: string }              // normalized create target; label = displayName(filename), create arg = filename
-SearchResult = { matches: Match[]; create: CreateOption | null }
+// note-search → Switcher
+SearchResult = { matches: string[]; create: string | null }
+//   matches: existing note paths (with ".md"), best match first
+//   create:  the trimmed query to offer for creation, or null
+
+// Switcher → host (deps)
+getNotes()         : readonly string[]
+openNote(path)     : void                       // fire-and-forget
+createNote(name)   : Promise<{ ok: boolean; reason?: string }>   // structurally accepts AddNoteResult
 ```
+
+The boundary objects are deliberately flat (bare strings, not `{path,score}` /
+`{filename}` wrappers): the Switcher needs the *order* of matches, not their
+scores, and the create row is one string it shows and forwards. `fuzzyScore` is
+still exported for unit tests, but its number never crosses into the Switcher.
 
 ## The match / create rule (owned by note-search)
 
 - `matches`: each path's **display form** (strip `.md`) fuzzy-scored against the
   query; non-matches dropped; sorted by score desc, then path asc (stable, total).
-  Empty/whitespace query ⇒ all paths, name order, every score equal.
-- `create`: present **iff** the trimmed query is non-empty **and**
-  `normalizeNoteName(query).ok` **and** the normalized `filename` is **not**
-  already in `paths`. So:
+  Empty/whitespace query ⇒ all paths, name order.
+- `create`: the **trimmed query** when it is non-empty and does not name an
+  existing note, else `null`:
   - query normalizes to an existing note ⇒ `create = null` (that note is already in
-    `matches`; we never offer to "create" what exists). This also covers the
-    *normalized-collision* case the raw fuzzy text would miss.
-  - query is an invalid name (e.g. `..`, illegal chars) ⇒ `create = null` (nothing
-    to offer). The Switcher only surfaces a validation message if the user forces a
-    create on an empty result — and that message comes from `createNote`'s `reason`.
-  - query is a valid, new name ⇒ `create = { filename }`. The Switcher renders the
-    label as `displayName(filename)` and passes `filename` to `createNote`.
+    `matches`; never offer to "create" what exists — this also covers the
+    *normalized-collision* the raw fuzzy text would miss).
+  - query is invalid (`normalizeNoteName` rejects) ⇒ it names no existing note, so
+    `create = <query>` is still offered. Activating it calls `createNote`, which
+    re-validates and returns `{ ok:false, reason }` → the Switcher shows the
+    message inline (this is how AC-7 is reachable).
+  - query is a valid, new name ⇒ `create = <query>`; activating it creates + opens.
 
 `normalizeNoteName` is the **same** pure validator note creation already uses
-(note-name.ts), so the display decision and the actual `addNote` create can never
-disagree.
+(note-name.ts), used here only to test existence; the actual validation+create
+happens once, in `createNote`/`addNote`, so the two never disagree and the reason
+is computed only at the point of creation.
+
+## Selection (owned by the Switcher)
+
+note-search owns *what* the matches and create candidate are; the Switcher owns
+how they're presented and chosen. It renders one ordered list of rows —
+`[...matches, create?]` — with a single highlight index (clamped, default = first
+row). Enter activates the highlighted row: a match row → `openNote`; the create
+row → `createNote`. So with both present, Enter defaults to the top match, and the
+user arrows down to reach Create. This is presentation, not matching logic.
 
 ## State ownership
 
