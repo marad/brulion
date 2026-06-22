@@ -163,6 +163,7 @@ function renderNode(
   header.type = "button"
   header.className = "folder-header"
   header.textContent = node.name
+  header.title = node.path // full folder path on hover (the row may be truncated)
   header.setAttribute("aria-expanded", String(!isCollapsed))
 
   const children = document.createElement("div")
@@ -195,6 +196,7 @@ function renderNoteRow(node: NoteLeaf, active: string, handlers: NoteListHandler
   nameButton.type = "button"
   nameButton.className = "note-name"
   nameButton.textContent = node.name
+  nameButton.title = displayName(node.path) // full note path on hover (rows ellipsize)
   nameButton.addEventListener("click", () => handlers.onSelect(node.path))
 
   const deleteButton = document.createElement("button")

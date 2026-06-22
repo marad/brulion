@@ -214,6 +214,9 @@ header button:hover {
    reads as "type to find or create", replacing the old new-note textbox. */
 #sidebar-search {
   font: inherit;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   margin: 0.5rem;
   padding: 0.35rem 0.6rem;
   text-align: left;
@@ -222,6 +225,11 @@ header button:hover {
   background: #fff;
   color: #8a8a8a;
   cursor: pointer;
+}
+
+#sidebar-search > span {
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -230,6 +238,18 @@ header button:hover {
 #sidebar-search:hover {
   border-color: #b9b9b9;
   color: #5a5a5a;
+}
+
+/* The keyboard-shortcut hint, styled like a key cap. */
+#search-shortcut {
+  flex: 0 0 auto;
+  font-size: 0.72em;
+  font-family: inherit;
+  color: #9a9a9a;
+  background: #f3f3f1;
+  border: 1px solid #e2e2df;
+  border-radius: 4px;
+  padding: 0.05em 0.4em;
 }
 
 #note-list {

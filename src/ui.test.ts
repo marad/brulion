@@ -156,6 +156,14 @@ describe("renderNoteList", () => {
     expect([...rows].map((r) => r.textContent)).toEqual(["apple", "Banana"])
   })
 
+  it("gives each row a full-path tooltip (titles, since rows ellipsize)", () => {
+    const container = document.createElement("div")
+    renderNoteList(container, ["sub/diablo.md", "ideas.md"], "ideas.md", handlers())
+
+    const titles = [...container.querySelectorAll<HTMLElement>(".note-name")].map((r) => r.title)
+    expect(titles).toEqual(["sub/diablo", "ideas"])
+  })
+
   it("marks exactly the active note's row (AC-2)", () => {
     const container = document.createElement("div")
     renderNoteList(container, ["apple.md", "banana.md"], "banana.md", handlers())

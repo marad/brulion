@@ -205,6 +205,14 @@ const switcher = mountQuickSwitcher(
 // textbox), and the Ctrl/Cmd+K shortcut. The shortcut is a capture-phase listener
 // so neither CodeMirror nor the Vim layer can swallow it first (AC-9).
 sidebarSearchEl.addEventListener("click", () => switcher.open())
+// Show the platform-correct chord in the hint (the app is meant to run on any
+// foreign machine), and match the button's tooltip to it.
+{
+  const isMac = /mac/i.test(navigator.platform)
+  const shortcutEl = document.querySelector<HTMLElement>("#search-shortcut")
+  if (shortcutEl) shortcutEl.textContent = isMac ? "⌘K" : "Ctrl K"
+  sidebarSearchEl.title = `Find or create a note (${isMac ? "⌘K" : "Ctrl+K"})`
+}
 window.addEventListener(
   "keydown",
   (event) => {
