@@ -14,6 +14,17 @@ Every technical decision defers to that.
 
 ## Milestones
 
+> **Execution order (next up), agreed with the user.** M-numbers are **stable
+> identities, not the running order**. M1–M12 are done. Next, in priority:
+>
+> **M14 → M19 → M20 → M21 → M23 → M22**
+>
+> then the rest as capacity allows: **M13, M15, M16, M17, M18, M24**.
+>
+> (The user's own pain-ranking: rename + note-URLs + link-autocomplete first, then
+> the search-ranking and frontmatter/copy irritants; settings, sidebar comfort,
+> highlighting, theme, the scroll-jump fix and mobile come later.)
+
 ### M1 — Full pipeline on a single note
 **Goal:** prove the whole plumbing works end-to-end on one note, before adding
 anything pretty or multi-note. Phases: [`milestones/M1.md`](milestones/M1.md).
@@ -184,10 +195,27 @@ Editor-only (CodeMirror language data / highlight); the on-disk markdown is
 unchanged — purely how the block is painted.
 
 ### M16 — Settings modal
-**Goal:** a single place for preferences instead of scattered header toggles.
-**Scope is open — to be agreed with the user before building** (candidates: default
-Vim on/off, default folder-collapse, theme, sidebar width, editor width). Likely
-collects the existing `brulion:` preferences behind one dialog.
+**Goal:** a single home for preferences — real new appearance settings plus the
+relocated Vim toggle. Stored in **a file in the open folder** (`.brulion.json` at
+root) so settings travel with the vault across machines/OSes; no idb cache, no
+"defaults vs current" concept. The note list and the M4 poller must ignore this
+non-note file. Scope agreed with the user (see the milestone-review notes).
+
+In:
+- **Font** — pick from installed fonts (`queryLocalFonts()`, one-time permission,
+  Chromium-only — consistent with our FSA-only stance) and build an **ordered font
+  stack** with CSS-style fallback; a generic family is auto-appended so there is
+  always a floor across OSes. When font-access is unavailable/denied, fall back to
+  a small curated preset list — never free-typing font names.
+- **Text size** — px stepper (~12–24); H1/H2/H3 are relative multipliers baked into
+  the theme (one base knob, hierarchy scales proportionally).
+- **Editor width** — three presets: Narrow (current default) / Wider / Full.
+- **Vim toggle** — moved here from the header; the visible header button is removed.
+  The `Ctrl/Cmd+;` toggle shortcut (FEAT-0021) stays unchanged.
+- **Entry point** — a gear icon in the header + `Ctrl/Cmd+,`.
+
+Out (deliberately): theme (split to **M18**), sidebar width (M13, set by drag),
+default folder-collapse (a sidebar behavior, not appearance).
 
 ### M17 — Mobile UX
 **Goal:** make Brulion usable on a phone/tablet, where there is no Ctrl, no
@@ -196,11 +224,106 @@ currently bound to shortcuts (find/create, sidebar, formatting), a responsive
 layout for the narrow viewport, and graceful absence of the keyboard-only features.
 Larger and cross-cutting — likely its own cluster of phases.
 
+### M18 — Light/dark theme
+**Goal:** a real light/dark (and possibly system-follow) theme, surfaced as a
+preference in the M16 settings modal. Net-new feature, not just a relocated
+toggle: today there is a single editor theme in `editor.ts`. Editor-only — the
+on-disk markdown is unchanged. Split out of M16 deliberately so the settings
+modal can ship on typography + Vim first; the theme picker slots into the same
+modal when this lands.
+
+> The milestones below (M19–M24) come from a review of real daily-use
+> annoyances. For the agreed running order across all of M13–M24, see the
+> **Execution order** note at the top of this section.
+
+### M19 — Note URLs / history
+**Goal:** give every open note its own URL so browser Back/Forward becomes
+prev/next navigation over visit history, and the URL is a self-bookmark of state.
+One mechanism covers both "go back to the note I came from" and "bookmark this
+note". URL-only, moat-neutral — no change to file behavior.
+- Each note open pushes a **hash route** `#/path/to/note` (no `.md`,
+  URL-encoded segments) via the History API; path-addressed, consistent with the
+  existing storage.
+- Browser Back/Forward (and the mouse back button) navigate visit history for
+  free — no custom shortcut, no custom history stack.
+- On load/bookmark, resolve the note from the hash once the folder is granted;
+  fall back to the normal first-run flow when no folder/permission yet.
+- Note: in an installed PWA (M9) browser Back/Forward chrome may be hidden — in-app
+  buttons are a *maybe*, deferred to M9, not here.
+
+### M20 — Link autocomplete
+**Goal:** suggest note links while typing, reusing the existing search ranking.
+Follow-up to M8 (links); editor-only, no change to file behavior.
+- Trigger on `[[`; a fuzzy-filtered list of existing notes, ranked by the **same
+  `note-search.ts` scoring** as the Ctrl+K switcher (one source of truth).
+- Built on `@codemirror/autocomplete`; Enter/Tab inserts `[[path]]` and closes `]]`.
+- **Existing notes only** — no create-on-miss; typing a new name is allowed and
+  becomes a dangling link (M8 already handles missing targets).
+
+### M21 — Search ranking & recency
+**Goal:** fix the switcher ranking (real reported failure) and add recency, both in
+`note-search.ts`. Pure logic; no change to file behavior.
+- **Ranking fix.** Two compounding flaws today: (1) the first-match gap penalty
+  equals the leading distance, so deep paths (`Allegro/Journal/Week/2026-06-22`)
+  are punished for folder depth; (2) greedy left-to-right matching grabs the first
+  occurrence of each query char, so a clean contiguous run (`06-22`) is never found
+  as contiguous. Fix: a literal contiguous substring **wins** (ranked by where the
+  run sits — segment-start > mid-token), stop being greedy (best alignment, not
+  first), and score against name/segments rather than the flat path so depth costs
+  nothing.
+- **Recency = most-recently-*visited*** (reuses the M19 visit history — free; not
+  disk mtime). On an **empty query** the list is ordered most-recent-first (often
+  no typing needed to switch to a nearby note). On a **non-empty query** match
+  quality rules and recency is only a **tiebreaker** for equal scores — never a
+  term added to the score (so a freshly-touched poor match can't jump a great one).
+
+### M22 — Copy fidelity
+**Goal:** copying a selection must yield well-formed markdown that reproduces the
+formatting *visible in the selection* — fixing loss at selection boundaries.
+Editor/clipboard layer; the on-disk file is untouched.
+- Today copy returns only the source that falls *inside* the selection, so hidden
+  boundary markup is dropped: selecting from a heading's visible text omits the
+  leading `# ` (paste is no longer a heading); a selection starting/ending inside
+  a bold span drops one/both `**` (lost formatting or malformed markdown).
+- Fix: a custom copy/cut handler re-serializes the **selection** (never more than
+  selected) to valid markdown — **line markers** (`#`, `>`, list) pulled in for a
+  partially-selected line; **inline markers synthesized around the fragment** at a
+  boundary (select half a bold word → `**half**`). Copy the selection, not the
+  "snagged construct".
+
+### M23 — Frontmatter (visual)
+**Goal:** stop a leading `---…---` frontmatter block from rendering as ugly raw
+code at the top of the note. **Visual only** — moat-critical that we do NOT touch
+the bytes.
+- Detect a leading frontmatter block and render it as a discreet, collapsed
+  "metadata" region (expand to view/edit the raw text); it stays plain text in the
+  document.
+- **Opaque** — no field interpretation (`title`/`tags`/`aliases` deferred; `title`
+  especially collides with the filename-as-identity model and M14) and **no
+  parse-and-reserialize** (that would churn quoting/order/indentation and other
+  tools would notice). Decorate rendering only; bytes unchanged.
+
+### M24 — Scroll/caret preservation on external refresh
+**Goal:** when the M4 poller reloads a note changed on disk, stop the view from
+jumping to the top (and stop losing the caret). Editor/refresh layer.
+- Reload by applying a **minimal diff** (longest common prefix + suffix; replace
+  only the middle — no library) as targeted CodeMirror `changes`, instead of a
+  wholesale document replace.
+- CodeMirror then maps the **selection/caret** through the change automatically;
+  the viewport anchor (top visible position) is mapped via `tr.changes.mapPos` and
+  scrolled back — so the view holds the *same text* even when edits landed above it.
+- Shares the diff infrastructure with **M7** (conflict diff/preview); coordinate.
+
 ## Later / backlog (out of MVP, on purpose)
 
 Everything concrete is now scheduled in M5–M10 above. What remains here is
 deliberately unscheduled — needs product-market-fit or a real demand signal first.
 
+- **Rich-text copy + paste** — a `text/html` clipboard flavor so copy keeps
+  formatting into rich targets (Docs/Word) and paste converts HTML → markdown. The
+  two directions are **one coupled problem** (copy-RT without paste-RT is half a
+  bridge); parked until there's real demand. Distinct from M22, which only fixes
+  plain-markdown copy fidelity.
 - **Workspaces** — `?ws=diablo`, multiple folder handles per origin in IndexedDB.
 - **Sync (paid)** — BYO-cloud (Dropbox/Drive/OneDrive) via OAuth PKCE,
   client-side, no data hosted by us. License validation via merchant-of-record
