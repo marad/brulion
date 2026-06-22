@@ -212,7 +212,7 @@ sidebarSearchEl.addEventListener("click", () => switcher.open())
   const shortcutEl = document.querySelector<HTMLElement>("#search-shortcut")
   if (shortcutEl) shortcutEl.textContent = isMac ? "⌘K" : "Ctrl K"
   sidebarSearchEl.title = `Find or create a note (${isMac ? "⌘K" : "Ctrl+K"})`
-  toggleVimEl.title = `Toggle Vim mode (${isMac ? "⌘⌥V" : "Ctrl+Alt+V"})`
+  toggleVimEl.title = `Toggle Vim mode (${isMac ? "⌘;" : "Ctrl+;"})`
 }
 window.addEventListener(
   "keydown",
@@ -285,18 +285,18 @@ void loadVimMode().then((on) => {
     apply: (value) => setVimMode(view, value),
     onChange: (value) => void saveVimMode(value),
   })
-  // Ctrl/Cmd+Alt+V toggles Vim from the keyboard (the header button is the visible
+  // Ctrl/Cmd+; toggles Vim from the keyboard (the header button is the visible
   // control). Capture phase + preventDefault so the chord is owned here regardless
-  // of Vim/CodeMirror key handling; `event.code` keeps it layout-proof (Alt mangles
-  // `event.key` on some layouts).
+  // of Vim/CodeMirror key handling; `event.code` keeps it layout-proof. `;` (no Alt,
+  // no Shift) avoids the browser-menu / macOS-compose collisions an Alt chord has.
   window.addEventListener(
     "keydown",
     (event) => {
       if (
         (event.ctrlKey || event.metaKey) &&
-        event.altKey &&
+        !event.altKey &&
         !event.shiftKey &&
-        event.code === "KeyV" &&
+        event.code === "Semicolon" &&
         workspaceShown
       ) {
         event.preventDefault()

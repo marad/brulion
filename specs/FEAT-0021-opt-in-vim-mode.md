@@ -45,7 +45,7 @@ editor's own keymaps**, which yields the correct split:
 
 The toggle control stays reachable regardless of editor state, and a Vim-mode
 indicator (the library's own cursor/mode affordance) shows the active mode. The
-same toggle is also bound to a keyboard chord (Ctrl/Cmd+Alt+V) so Vim can be
+same toggle is also bound to a keyboard chord (Ctrl/Cmd+;) so Vim can be
 switched on or off without leaving the keyboard; the chord flips the same state and
 persistence as the button.
 
@@ -148,7 +148,7 @@ shifted away from the text) — with or without Vim.
 
 **AC-11** — A keyboard chord toggles Vim mode.
 Given a folder is open,
-When the user presses Ctrl/Cmd+Alt+V,
+When the user presses Ctrl/Cmd+;,
 Then Vim mode toggles on or off exactly as the header button would — the indicator
 and the persisted choice track the change — without the chord being swallowed by
 the editor or the Vim layer.

@@ -67,13 +67,13 @@ test("the toggle turns Vim on and off (AC-2)", async ({ page }) => {
   await expect(editor(page)).toHaveText("j")
 })
 
-test("Ctrl+Alt+V toggles Vim from the keyboard (AC-2)", async ({ page }) => {
+test("Ctrl+; toggles Vim from the keyboard (AC-2)", async ({ page }) => {
   await editor(page).click()
-  await page.keyboard.press("Control+Alt+V")
+  await page.keyboard.press("Control+;")
   await expect(vimToggle(page)).toHaveAttribute("aria-pressed", "true")
   await expect(page.locator(".cm-vimMode")).toBeVisible() // engaged
 
-  await page.keyboard.press("Control+Alt+V")
+  await page.keyboard.press("Control+;")
   await expect(vimToggle(page)).toHaveAttribute("aria-pressed", "false")
   await expect(page.locator(".cm-vimMode")).toHaveCount(0)
 })
