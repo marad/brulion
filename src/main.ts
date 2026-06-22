@@ -212,6 +212,7 @@ sidebarSearchEl.addEventListener("click", () => switcher.open())
   const shortcutEl = document.querySelector<HTMLElement>("#search-shortcut")
   if (shortcutEl) shortcutEl.textContent = isMac ? "⌘K" : "Ctrl K"
   sidebarSearchEl.title = `Find or create a note (${isMac ? "⌘K" : "Ctrl+K"})`
+  toggleVimEl.title = `Toggle Vim mode (${isMac ? "⌘⌥V" : "Ctrl+Alt+V"})`
 }
 window.addEventListener(
   "keydown",
@@ -279,11 +280,31 @@ void loadSidebarCollapsed().then((collapsed) => {
 // toggle. Off by default; turning it on reconfigures the editor's Vim compartment
 // in place (no remount).
 void loadVimMode().then((on) => {
-  wireToggle(toggleVimEl, {
+  const vimToggle = wireToggle(toggleVimEl, {
     initialOn: on,
     apply: (value) => setVimMode(view, value),
     onChange: (value) => void saveVimMode(value),
   })
+  // Ctrl/Cmd+Alt+V toggles Vim from the keyboard (the header button is the visible
+  // control). Capture phase + preventDefault so the chord is owned here regardless
+  // of Vim/CodeMirror key handling; `event.code` keeps it layout-proof (Alt mangles
+  // `event.key` on some layouts).
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.altKey &&
+        !event.shiftKey &&
+        event.code === "KeyV" &&
+        workspaceShown
+      ) {
+        event.preventDefault()
+        vimToggle.toggle()
+      }
+    },
+    true,
+  )
 })
 
 // Flush pending edits before the page can go away.

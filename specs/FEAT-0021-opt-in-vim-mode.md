@@ -44,7 +44,10 @@ editor's own keymaps**, which yields the correct split:
   format shortcuts reshape the markdown — exactly as with Vim off.
 
 The toggle control stays reachable regardless of editor state, and a Vim-mode
-indicator (the library's own cursor/mode affordance) shows the active mode.
+indicator (the library's own cursor/mode affordance) shows the active mode. The
+same toggle is also bound to a keyboard chord (Ctrl/Cmd+Alt+V) so Vim can be
+switched on or off without leaving the keyboard; the chord flips the same state and
+persistence as the button.
 
 **Visible selection (drawSelection).** Vim hides the browser's native selection so
 it can paint its own (block cursor, visual-mode highlight). The editor had been
@@ -142,3 +145,10 @@ Given a line containing hidden markup (e.g. a heading's `# ` or a `**bold**` spa
 When text on that line is selected,
 Then the selection highlight aligns with the selected glyphs (it is not drawn
 shifted away from the text) — with or without Vim.
+
+**AC-11** — A keyboard chord toggles Vim mode.
+Given a folder is open,
+When the user presses Ctrl/Cmd+Alt+V,
+Then Vim mode toggles on or off exactly as the header button would — the indicator
+and the persisted choice track the change — without the chord being swallowed by
+the editor or the Vim layer.
