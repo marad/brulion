@@ -21,6 +21,30 @@ export function snapOutOfSpans(pos: number, prev: number, spans: Span[]): number
   return pos
 }
 
+/**
+ * The end of the run of hidden markup that begins a line — the first position with
+ * any *visible* content before it. A caret may not rest anywhere in
+ * `[lineFrom, leadingHiddenEnd)`: those positions are all visually collapsed with
+ * the first visible glyph (the markup is zero-width), so a line-start motion (`0`,
+ * `^`, `I`) must land here, not before the hidden marker (else typing inserts ahead
+ * of it — `foo# test` instead of `# foo test`). Walks the hidden `spans` from
+ * `lineFrom`, chaining through adjacent runs (e.g. nested `> > `). Pure.
+ */
+export function leadingHiddenEnd(lineFrom: number, spans: Span[]): number {
+  let end = lineFrom
+  let grew = true
+  while (grew) {
+    grew = false
+    for (const s of spans) {
+      if (s.from <= end && s.to > end) {
+        end = s.to
+        grew = true
+      }
+    }
+  }
+  return end
+}
+
 /** The hidden markup runs on the line containing `pos` — exactly the runs the
  * renderer hides and makes atomic (inline/heading marks, block marks, and the
  * list-marker runs). Scoped to one line so the lookup stays cheap. */
@@ -36,13 +60,17 @@ function hiddenSpansOnLine(state: EditorState, pos: number): Span[] {
 }
 
 /**
- * Stop the caret resting inside hidden markup (FEAT-0032). The default caret is
- * already kept out of atomic ranges by CodeMirror's own motions, but the Vim layer
- * moves by raw character offset and ignores them — so this filter post-corrects
- * any selection-setting transaction whose endpoints land strictly inside a hidden
- * run, snapping them to the nearest edge. It lives in the Vim compartment (wired in
- * editor.ts) and so is only installed while Vim is on; off-Vim it would be a pure
- * per-keystroke no-op.
+ * Stop the caret resting inside — or before — hidden markup (FEAT-0032). The
+ * default caret is already kept out of atomic ranges by CodeMirror's own motions,
+ * but the Vim layer moves by raw character offset and ignores them — so this filter
+ * post-corrects any selection-setting transaction whose endpoints land where the
+ * caret shouldn't be:
+ *   - strictly inside a hidden run → snap to the nearer edge (by motion direction);
+ *   - anywhere within a line's leading hidden run (incl. the line-start edge) →
+ *     snap forward to the first visible character, so `0`/`^`/`I` land past the
+ *     marker rather than before it.
+ * It lives in the Vim compartment (wired in editor.ts) and so is only installed
+ * while Vim is on; off-Vim it would be a pure per-keystroke no-op.
  *
  * Skips transactions that change the document (Vim motions don't; staying off the
  * edit path avoids re-mapping the appended selection) and pointer selections (a
@@ -51,15 +79,21 @@ function hiddenSpansOnLine(state: EditorState, pos: number): Span[] {
 export const vimCaretGuard: Extension = EditorState.transactionFilter.of((tr) => {
   if (!tr.selection || tr.docChanged || tr.isUserEvent("select.pointer")) return tr
 
+  const snap = (pos: number, prev: number): number => {
+    const lineFrom = tr.state.doc.lineAt(pos).from
+    const spans = hiddenSpansOnLine(tr.state, pos)
+    const lead = leadingHiddenEnd(lineFrom, spans)
+    if (pos < lead) return lead // before/within the line's hidden prefix
+    return snapOutOfSpans(pos, prev, spans)
+  }
+
   const prev = tr.startState.selection
   let changed = false
   const ranges = tr.newSelection.ranges.map((r, i) => {
     const p = prev.ranges[i] ?? prev.main
-    const headSpans = hiddenSpansOnLine(tr.state, r.head)
-    // A collapsed caret (the common per-keystroke case) shares one line scan.
-    const anchorSpans = r.anchor === r.head ? headSpans : hiddenSpansOnLine(tr.state, r.anchor)
-    const anchor = snapOutOfSpans(r.anchor, p.anchor, anchorSpans)
-    const head = snapOutOfSpans(r.head, p.head, headSpans)
+    const head = snap(r.head, p.head)
+    // A collapsed caret (the common per-keystroke case) reuses the head result.
+    const anchor = r.anchor === r.head ? head : snap(r.anchor, p.anchor)
     if (anchor !== r.anchor || head !== r.head) changed = true
     return EditorSelection.range(anchor, head)
   })

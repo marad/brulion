@@ -141,11 +141,11 @@ test("toggling Vim does not write to the user's folder (AC-8)", async ({ page })
   expect(await readStartMd(page)).toBe("untouched")
 })
 
-// FEAT-0032: the Vim caret must not rest inside a hidden markup run. We prove
-// *where* the block cursor landed by deleting the char under it (`x`) and reading
-// the saved bytes — a deterministic proxy for the caret's resting position. With
-// the caret correctly past a hidden `# `/`> `/`* ` run, `x` deletes the first
-// visible glyph; the old bug would put it inside the run and delete markup instead.
+// FEAT-0032: the Vim caret must never rest inside — or before — a hidden markup
+// run. We prove *where* the block cursor landed by deleting the char under it
+// (`x`) and reading the saved bytes — a deterministic proxy for the resting
+// position. A line-start motion (`0`) must land on the first visible glyph (past
+// the hidden `# `/`> `/`* ` run), so `x` deletes that glyph, not the markup.
 
 /** In normal mode, type `text` (entering insert with `i`) and return to normal. */
 async function seedLine(page: Page, text: string) {
@@ -154,16 +154,14 @@ async function seedLine(page: Page, text: string) {
   await page.keyboard.press("Escape")
 }
 
-test("Vim: a forward motion skips a hidden heading marker (FEAT-0032 AC-1)", async ({
+test("Vim: a line-start motion skips a hidden heading marker (FEAT-0032 AC-1)", async ({
   page,
 }) => {
   await enableVimAndFocus(page)
   await seedLine(page, "# Heading")
-  await page.keyboard.press("0") // line start (edge of the hidden `# ` run)
-  await page.keyboard.press("l") // forward one char — must clear the whole `# ` run
+  await page.keyboard.press("0") // line start → must land on `H`, not the hidden `# `
   await page.keyboard.press("x") // delete the char under the cursor
   await page.keyboard.press("Control+s")
-  // Landed on `H` (offset 2), not inside `# ` — so `H` is gone, the marker intact.
   await expect.poll(() => readStartMd(page)).toBe("# eading")
 })
 
@@ -171,7 +169,6 @@ test("Vim: a blockquote marker is skipped (FEAT-0032 AC-3)", async ({ page }) =>
   await enableVimAndFocus(page)
   await seedLine(page, "> quote")
   await page.keyboard.press("0")
-  await page.keyboard.press("l")
   await page.keyboard.press("x")
   await page.keyboard.press("Control+s")
   await expect.poll(() => readStartMd(page)).toBe("> uote")
@@ -181,23 +178,23 @@ test("Vim: a list marker is skipped (FEAT-0032 AC-4)", async ({ page }) => {
   await enableVimAndFocus(page)
   await seedLine(page, "* item")
   await page.keyboard.press("0")
-  await page.keyboard.press("l")
   await page.keyboard.press("x")
   await page.keyboard.press("Control+s")
   await expect.poll(() => readStartMd(page)).toBe("* tem")
 })
 
-test("Vim: a backward motion snaps to the run's start (FEAT-0032 AC-5)", async ({
+test("Vim: insert-at-line-start (Shift+I) inserts after the hidden marker (FEAT-0032 AC-2)", async ({
   page,
 }) => {
+  // The reported bug: on `# test`, Esc → Shift+I → typing landed *before* the
+  // hidden `# ` (`foo# test`). It must insert at the first visible char.
   await enableVimAndFocus(page)
-  await seedLine(page, "# Heading")
-  await page.keyboard.press("0")
-  await page.keyboard.press("l") // onto `H` (offset 2)
-  await page.keyboard.press("h") // back across the `# ` run — must rest at offset 0
-  await page.keyboard.press("x") // deletes `#`, not the hidden space
+  await seedLine(page, "# test")
+  await page.keyboard.press("Shift+I") // Vim `I`: insert at the first non-blank
+  await page.keyboard.type("foo ")
+  await page.keyboard.press("Escape")
   await page.keyboard.press("Control+s")
-  await expect.poll(() => readStartMd(page)).toBe(" Heading")
+  await expect.poll(() => readStartMd(page)).toBe("# foo test")
 })
 
 test("with Vim on, the visual-mode selection is visible (AC-9)", async ({ page }) => {
