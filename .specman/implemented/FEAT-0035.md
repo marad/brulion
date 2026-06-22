@@ -29,8 +29,13 @@ no identity is shown (consistent with the other header controls, FEAT-0031).
 activation) turns it into an inline text editor pre-filled with the open note's
 **full folder-relative path without `.md`** — so the edit can rename the note and
 also move it between folders, the same surface the create flow uses. Committing
-(Enter) renames the note via `NoteController.renameActive` (FEAT-0034); cancelling
-(Esc, or the field losing focus) reverts to the display with no change.
+(Enter, **or the field losing focus**) renames the note via
+`NoteController.renameActive` (FEAT-0034); Esc cancels and reverts to the display
+with no change. Losing focus commits rather than cancels — matching Finder / VS
+Code's rename, and because on touch tapping away is the natural "done" gesture
+(the soft keyboard's Go button blurs rather than sending a clean Enter). A
+blur-commit of an unchanged value is a no-op (FEAT-0034 reports the
+rename-to-current-path as success without moving anything).
 
 On a **successful** rename the editor returns to the display mode and the header,
 sidebar, and editor all reflect the new path (driven by the controller's existing
@@ -53,7 +58,8 @@ own.
   divergent path logic.
 - A rejected rename never loses the user's typed text and never moves the file;
   the reason is surfaced inline.
-- Cancelling (Esc or blur) reverts to the display with no file operation.
+- Esc cancels and reverts to the display with no file operation; losing focus
+  commits (a blur-commit of an unchanged value is a no-op).
 - The identity is hidden before a folder is open, like the other in-note header
   controls (FEAT-0031).
 
@@ -108,7 +114,14 @@ When the user presses Enter,
 Then `a.md` is not moved, the inline editor stays open showing a reason that the
 name is taken, and the typed text is preserved.
 
-**AC-8** — Cancelling reverts without renaming.
+**AC-8** — Esc cancels without renaming.
 Given the inline editor is open on `a.md` with the value changed,
-When the user presses Esc (or the field loses focus),
-Then no rename happens and the header returns to showing `a`.
+When the user presses Esc,
+Then no rename happens, the header returns to showing `a`, and the focus-away
+that follows closing the editor does not trigger a rename.
+
+**AC-9** — Losing focus commits the rename.
+Given the inline editor is open on `a.md` with the value changed to `changed`,
+When the field loses focus (the user taps/clicks away),
+Then the rename is committed via `renameActive` (not cancelled), so `changed`
+takes effect the same as pressing Enter would.
