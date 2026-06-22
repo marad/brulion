@@ -858,3 +858,18 @@ note…" button that opens the same switcher.
   existing create on explicit user action; nothing else is read or written.
 - *Deferred:* full-text/body search, a general command palette (rename/delete), and
   recency ordering are out of scope (see `milestones/M12.md`).
+
+### FEAT-0032 follow-up: caret also kept out of a line's *leading* hidden marker (M11/M12 review)
+
+The first cut only snapped a caret that was **strictly inside** a hidden run,
+treating the line-start edge (offset 0) as valid. But a line-leading run (`# `,
+`> `, `* `) is zero-width, so offset 0 renders on top of the first visible glyph —
+and Vim's `0`/`^`/`I` land there. Reported from real use: on `# test`, `Esc` then
+`I` then typing produced `foo# test` instead of `# foo test` (the insert went
+*before* the hidden marker). Fix: `leadingHiddenEnd` — any caret within a line's
+leading hidden prefix (including its start edge, chaining adjacent runs like nested
+`> > `) snaps **forward** to the first visible character. So line-start motions and
+insert-at-line-start now land after the marker. Consequence: under Vim you can no
+longer park the caret before a line-leading marker (it's invisible anyway; Backspace
+from the first visible char still removes the marker). AC-2/AC-5 of FEAT-0032 were
+rewritten accordingly.
