@@ -70,6 +70,41 @@ test("Ctrl+K opens the switcher focused, listing the notes (AC-1)", async ({ pag
   await expect(rows(page)).toHaveCount(3)
 })
 
+test("with many notes the rows keep full height and the list scrolls (layout regression)", async ({
+  page,
+}) => {
+  // Seed enough notes to overflow the switcher's max-height. Regression guard: the
+  // rows used to shrink with the item count (flex-shrink) instead of the list
+  // scrolling, leaving an unusable squished list.
+  for (let i = 0; i < 30; i++) await writeNote(page, `bulk-note-${i}.md`, "x")
+  await page.reload()
+  await page.locator(".note-row").first().waitFor()
+
+  await page.locator("#sidebar-search").click()
+  const rowHeight = await rows(page)
+    .first()
+    .evaluate((el) => el.getBoundingClientRect().height)
+  expect(rowHeight).toBeGreaterThan(24) // not squished
+  const listScrolls = await page
+    .locator("#switcher-list")
+    .evaluate((el) => el.scrollHeight > el.clientHeight + 1)
+  expect(listScrolls).toBe(true) // overflow scrolls rather than shrinking rows
+})
+
+test("a wide note tree keeps the sidebar at its fixed width (layout regression)", async ({
+  page,
+}) => {
+  // A long unbroken name used to balloon the sidebar (min-width: auto floors it at
+  // the content's min-content) and squeeze the editor. It must stay pinned (~14rem)
+  // and ellipsize instead.
+  await writeNote(page, "an-extremely-long-note-name-that-would-otherwise-stretch-the-sidebar.md", "x")
+  await page.reload()
+  await page.locator(".note-row").first().waitFor()
+
+  const width = await page.locator("#sidebar").evaluate((el) => el.getBoundingClientRect().width)
+  expect(width).toBeLessThan(260) // 14rem (~224px) + border, not ballooned
+})
+
 test("typing fuzzily filters, and Enter opens the highlighted note (AC-2, AC-3)", async ({
   page,
 }) => {
