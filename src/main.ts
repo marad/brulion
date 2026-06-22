@@ -9,6 +9,7 @@ import {
   wireToggle,
   showWorkspace,
   mountNoteIdentity,
+  type NoteIdentityHandle,
 } from "./ui"
 import { mountQuickSwitcher } from "./quick-switcher"
 import {
@@ -88,7 +89,7 @@ let currentNotes: string[] = []
 // The header open-note identity + inline rename (FEAT-0035); assigned right after
 // the controller (it renames via controller.renameActive) and repointed from
 // onListChanged so the header always names the open note.
-let identity: import("./ui").NoteIdentityHandle
+let identity: NoteIdentityHandle
 // Whether a folder has been opened (workspace shown). Drives the initial
 // loading → welcome-vs-workspace resolution so the welcome never flashes before
 // an auto-restored folder loads (FEAT-0031).

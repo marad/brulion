@@ -471,6 +471,22 @@ describe("mountNoteIdentity (FEAT-0035)", () => {
     expect(error(c).textContent).toMatch(/exist/i)
   })
 
+  it("ignores a second Enter while a rename is in flight (AC-6)", async () => {
+    const c = document.createElement("div")
+    let resolve: (r: { ok: true }) => void = () => {}
+    const onRename = vi.fn().mockReturnValue(new Promise((r) => (resolve = r)))
+    const id = mountNoteIdentity(c, onRename)
+    id.update("a.md")
+    display(c).click()
+    input(c).value = "renamed"
+    press(input(c), "Enter") // first commit, awaiting onRename
+    press(input(c), "Enter") // second Enter must not fire a duplicate rename
+    resolve({ ok: true })
+    await flush()
+
+    expect(onRename).toHaveBeenCalledTimes(1)
+  })
+
   it("reverts on Escape without renaming (AC-8)", () => {
     const c = document.createElement("div")
     const onRename = vi.fn()

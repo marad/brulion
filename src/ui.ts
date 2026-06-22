@@ -234,7 +234,10 @@ export function mountNoteIdentity(
 ): NoteIdentityHandle {
   let path = ""
   let editing = false
-  let committing = false // suppress the blur-cancel fired by a successful commit
+  // True for the whole span of an in-flight commit: blocks a second Enter from
+  // firing a duplicate rename, and suppresses the blur-cancel that the
+  // programmatic focus move (on a successful commit) would otherwise trigger.
+  let committing = false
 
   const display = document.createElement("button")
   display.type = "button"
@@ -291,15 +294,19 @@ export function mountNoteIdentity(
   }
 
   const commit = async () => {
-    const result = await onRename(input.value)
-    if (result.ok) {
-      committing = true // the focus move out of the field must not re-cancel
-      showDisplay() // the controller's announce will repoint via update()
+    if (committing) return // a rename is already in flight — ignore a second Enter
+    committing = true
+    try {
+      const result = await onRename(input.value)
+      if (result.ok) {
+        showDisplay() // the controller's announce will repoint via update()
+      } else {
+        error.textContent = result.reason
+        error.hidden = false
+        input.focus() // keep editing with the typed text intact
+      }
+    } finally {
       committing = false
-    } else {
-      error.textContent = result.reason
-      error.hidden = false
-      input.focus() // keep editing with the typed text intact
     }
   }
 
