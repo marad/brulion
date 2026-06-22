@@ -873,3 +873,46 @@ insert-at-line-start now land after the marker. Consequence: under Vim you can n
 longer park the caret before a line-leading marker (it's invisible anyway; Backspace
 from the first visible char still removes the marker). AC-2/AC-5 of FEAT-0032 were
 rewritten accordingly.
+
+### FEAT-0034 — Renaming a note moves the file natively, and does not touch other notes' links (M14)
+
+A note's identity is its folder-relative path, and M14 makes that path renamable.
+Two decisions shaped the file-fidelity core underneath the rename.
+
+**A rename uses the native `FileSystemFileHandle.move()`, not read-write-delete.**
+Chromium ships an atomic move primitive; we use it so a rename relocates the file's
+bytes as-is — no read, no rewrite, no copy, and no window where the content lives in
+neither location. The alternative (read the old file, write a new one, delete the
+old) churns the bytes, risks a half-completed move losing content, and would touch
+the file's mtime/encoding in ways other tools notice. `move()` is Chromium-only,
+which is consistent with our existing FSA-only stance (the whole app already requires
+`showDirectoryPicker`). `moveNote` guards the destination first (never clobber an
+existing note — the moat) and mirrors `createNote`'s handling of a folder segment
+blocked by a like-named file (reports the path as taken rather than throwing).
+
+**A rename does NOT rewrite link references in other notes.** Moving `a.md` to
+`b.md` updates only the moved file's own identity and the in-app active/list state.
+Links *to* the renamed note that live in other files are left exactly as the user
+(or another tool) wrote them — they become dangling, which the existing
+missing-target handling (FEAT-0025/0027) already covers gracefully. Rewriting
+references across the vault would be a multi-file *byte* mutation of files the user
+did not ask us to touch, which the moat forbids us from doing silently; it is also
+expensive (read every note, parse, rebase relative paths) and easy to get subtly
+wrong. The folder is the API; a rename moves one file.
+
+**Consequences.**
+- *Storage:* new `moveNote(dir, from, to)` in `note.ts` returning
+  `moved | exists | missing`; reuses the private `getExisting`/`splitPath`/
+  `resolveParent` helpers, so no path logic is duplicated.
+- *Controller:* new `renameActive(name)` flushes pending edits, moves the file, then
+  re-points the editor at the new path (new active note, refreshed list, announced),
+  all inside the serialize queue so a concurrent poll can't misread the move as an
+  external delete-plus-create.
+- *Moat:* bytes preserved exactly on the moved file; no other file is read or
+  written by a rename.
+- *Known limitations (to confirm at the M14 review):* renaming a brand-new note that
+  was never saved to disk (a never-materialized lazy seed) reports failure rather
+  than materializing it at the new name — type something first; and a case-only
+  rename on a case-insensitive filesystem is refused by the no-clobber guard.
+- *Deferred:* the header identity display and click-to-rename UI (FEAT-0035);
+  rewriting inbound links; rename undo.

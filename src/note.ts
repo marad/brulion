@@ -177,7 +177,13 @@ export async function moveNote(
   if (await getExisting(dir, to)) return { status: "exists" }
 
   const { folders, file } = splitPath(to)
-  const parent = await resolveParent(dir, folders, true)
+  let parent: FileSystemDirectoryHandle
+  try {
+    parent = await resolveParent(dir, folders, true)
+  } catch (err) {
+    if (isAbsent(err)) return { status: "exists" } // a file blocks a folder segment — like createNote
+    throw err
+  }
   await (source as MovableFileHandle).move(parent, file)
   return { status: "moved" }
 }

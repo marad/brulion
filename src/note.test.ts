@@ -346,6 +346,16 @@ describe("moveNote (AC-1..AC-5)", () => {
     expect(folder.content("a.md")).toBe("body")
   })
 
+  it("reports exists when a file blocks a destination folder segment (AC-3)", async () => {
+    // `notes` is a file, so `notes/x.md` can't be created — the path is taken.
+    const folder = fakeFolder({
+      "a.md": { kind: "file", content: "aaa", lastModified: 1 },
+      notes: { kind: "file", content: "blocker", lastModified: 2 },
+    })
+    expect(await moveNote(folder.dir, "a.md", "notes/x.md")).toEqual({ status: "exists" })
+    expect(folder.content("a.md")).toBe("aaa") // source untouched, no raw throw
+  })
+
   it("leaves no destination folder behind when the move is refused (AC-3)", async () => {
     const folder = fakeFolder({
       "a.md": { kind: "file", content: "aaa", lastModified: 1 },
