@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { readNote, saveNote, listNotes, createNote, deleteNote, statNote } from "./note"
+import { readNote, saveNote, listNotes, createNote, deleteNote, statNote, moveNote } from "./note"
 
 type FileNode = { kind: "file"; content: string; lastModified: number }
 type DirNode = { kind: "directory"; entries: Map<string, Node> }
@@ -58,11 +58,22 @@ function makeDirHandle(entries: Map<string, Node>, name = ""): FileSystemDirecto
         },
       }
     },
+    // Native FSA move: relocate this file into another dir handle under a new
+    // name, preserving its bytes (no read/rewrite). Reaches the destination's
+    // backing entries via the `__entries` backdoor that makeDirHandle exposes.
+    move: async (destDir: FileSystemDirectoryHandle, destName: string) => {
+      const e = entries.get(fname) as FileNode
+      const destEntries = (destDir as unknown as { __entries: Map<string, Node> }).__entries
+      destEntries.set(destName, { kind: "file", content: e.content, lastModified: e.lastModified })
+      entries.delete(fname)
+    },
   })
 
   const handle = {
     kind: "directory" as const,
     name,
+    // Backdoor for the mock's file `move` to reach this dir's backing entries.
+    __entries: entries,
     getFileHandle: async (fname: string, options?: { create?: boolean }) => {
       const e = entries.get(fname)
       if (e?.kind === "directory") typeMismatch() // a folder where a file was asked for
@@ -294,5 +305,54 @@ describe("statNote", () => {
   it("returns null when the file does not exist", async () => {
     const folder = fakeFolder()
     expect(await statNote(folder.dir, "missing.md")).toBeNull()
+  })
+})
+
+describe("moveNote (AC-1..AC-5)", () => {
+  it("renames a note within the same folder, preserving content (AC-1)", async () => {
+    const folder = fakeFolder({ "a.md": { kind: "file", content: "body", lastModified: 5 } })
+    expect(await moveNote(folder.dir, "a.md", "b.md")).toEqual({ status: "moved" })
+    expect(folder.has("a.md")).toBe(false)
+    expect(folder.content("b.md")).toBe("body")
+  })
+
+  it("moves a note into another folder, materializing it (AC-2)", async () => {
+    const folder = fakeFolder({ "a.md": { kind: "file", content: "body", lastModified: 5 } })
+    expect(await moveNote(folder.dir, "a.md", "projects/a.md")).toEqual({ status: "moved" })
+    expect(folder.has("a.md")).toBe(false)
+    expect(folder.content("projects/a.md")).toBe("body")
+  })
+
+  it("never clobbers an existing destination (AC-3)", async () => {
+    const folder = fakeFolder({
+      "a.md": { kind: "file", content: "aaa", lastModified: 1 },
+      "b.md": { kind: "file", content: "bbb", lastModified: 2 },
+    })
+    expect(await moveNote(folder.dir, "a.md", "b.md")).toEqual({ status: "exists" })
+    expect(folder.content("a.md")).toBe("aaa")
+    expect(folder.content("b.md")).toBe("bbb")
+  })
+
+  it("reports missing when the source does not exist (AC-4)", async () => {
+    const folder = fakeFolder()
+    expect(await moveNote(folder.dir, "ghost.md", "x.md")).toEqual({ status: "missing" })
+    expect(folder.has("x.md")).toBe(false)
+    expect(folder.has("ghost.md")).toBe(false)
+  })
+
+  it("is a no-op when moving a note onto itself (AC-5)", async () => {
+    const folder = fakeFolder({ "a.md": { kind: "file", content: "body", lastModified: 5 } })
+    expect(await moveNote(folder.dir, "a.md", "a.md")).toEqual({ status: "moved" })
+    expect(folder.content("a.md")).toBe("body")
+  })
+
+  it("leaves no destination folder behind when the move is refused (AC-3)", async () => {
+    const folder = fakeFolder({
+      "a.md": { kind: "file", content: "aaa", lastModified: 1 },
+      sub: { kind: "directory", children: { "b.md": { kind: "file", content: "bbb", lastModified: 2 } } },
+    })
+    expect(await moveNote(folder.dir, "a.md", "sub/b.md")).toEqual({ status: "exists" })
+    expect(folder.content("sub/b.md")).toBe("bbb")
+    expect(folder.content("a.md")).toBe("aaa")
   })
 })

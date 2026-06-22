@@ -11,6 +11,7 @@ vi.mock("./note", () => ({
   createNote: vi.fn(),
   deleteNote: vi.fn(),
   statNote: vi.fn(),
+  moveNote: vi.fn(),
 }))
 vi.mock("./session", () => ({ saveActiveNote: vi.fn(), loadActiveNote: vi.fn() }))
 const readNote = vi.mocked(note.readNote)
@@ -19,6 +20,7 @@ const listNotes = vi.mocked(note.listNotes)
 const createNote = vi.mocked(note.createNote)
 const deleteNote = vi.mocked(note.deleteNote)
 const statNote = vi.mocked(note.statNote)
+const moveNote = vi.mocked(note.moveNote)
 const loadActiveNote = vi.mocked(session.loadActiveNote)
 const saveActiveNote = vi.mocked(session.saveActiveNote)
 
@@ -40,6 +42,7 @@ beforeEach(() => {
   createNote.mockResolvedValue({ status: "created" })
   deleteNote.mockResolvedValue(undefined)
   statNote.mockResolvedValue(null)
+  moveNote.mockResolvedValue({ status: "moved" })
   loadActiveNote.mockResolvedValue(undefined)
 })
 
@@ -434,6 +437,113 @@ describe("removeNote (FEAT-0012)", () => {
     await removed
     // The in-flight write of a.md completes BEFORE the delete, so the file ends deleted.
     expect(order.indexOf("save-end:a.md")).toBeLessThan(order.indexOf("delete:a.md"))
+  })
+})
+
+describe("renameActive (FEAT-0034)", () => {
+  async function open(active: string, names: string[]) {
+    const view = mountView()
+    listNotes.mockResolvedValue(names)
+    loadActiveNote.mockResolvedValue(active)
+    readNote.mockImplementation(async (_dir, name) => ({ content: `${name} body`, lastModified: 1 }))
+    const onListChanged = vi.fn()
+    const controller = createNoteController(view, { onListChanged, debounceMs: 10_000 })
+    await controller.open(DIR)
+    return { view, controller, onListChanged }
+  }
+
+  it("moves the file and makes the new path active (AC-6)", async () => {
+    const { controller, onListChanged } = await open("a.md", ["a.md"])
+    listNotes.mockResolvedValue(["b.md"]) // listing after the move
+
+    const result = await controller.renameActive("b")
+
+    expect(result).toEqual({ ok: true })
+    expect(moveNote).toHaveBeenCalledWith(DIR, "a.md", "b.md")
+    expect(onListChanged.mock.calls.at(-1)).toEqual([["b.md"], "b.md"])
+    expect(saveActiveNote).toHaveBeenLastCalledWith("b.md")
+  })
+
+  it("flushes pending edits before moving, so the moved file has them (AC-7)", async () => {
+    const order: string[] = []
+    saveNote.mockImplementation(async (_dir, name) => {
+      order.push(`save:${name}`)
+      return { status: "saved", lastModified: 2 }
+    })
+    moveNote.mockImplementation(async (_dir, from, to) => {
+      order.push(`move:${from}->${to}`)
+      return { status: "moved" }
+    })
+    const { view, controller } = await open("a.md", ["a.md"])
+    listNotes.mockResolvedValue(["b.md"])
+
+    type(view, " edited")
+    controller.handleChange()
+    await controller.renameActive("b")
+
+    // The pending edit is written to a.md before the file is moved to b.md.
+    expect(saveNote).toHaveBeenCalledWith(DIR, "a.md", "a.md body edited", 1)
+    expect(order.indexOf("save:a.md")).toBeLessThan(order.indexOf("move:a.md->b.md"))
+  })
+
+  it("refuses to rename onto an existing note's path (AC-8)", async () => {
+    const { view, controller } = await open("a.md", ["a.md", "b.md"])
+    moveNote.mockResolvedValue({ status: "exists" })
+
+    const result = await controller.renameActive("b")
+
+    expect(result.ok).toBe(false)
+    expect(result.ok === false && result.reason).toMatch(/exist/i)
+    expect(view.state.doc.toString()).toBe("a.md body") // still on a
+  })
+
+  it("rejects an invalid name without moving (AC-9)", async () => {
+    const { controller } = await open("a.md", ["a.md"])
+
+    const result = await controller.renameActive("../escape")
+
+    expect(result.ok).toBe(false)
+    expect(moveNote).not.toHaveBeenCalled()
+  })
+
+  it("refuses to rename while a conflict stands (AC-10)", async () => {
+    const onConflict = vi.fn()
+    const view = mountView()
+    listNotes.mockResolvedValue(["a.md"])
+    loadActiveNote.mockResolvedValue("a.md")
+    readNote.mockResolvedValue({ content: "a.md body", lastModified: 1 })
+    const controller = createNoteController(view, { onConflict, debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    // Force a standing conflict: an edit, then a refused save (mtime moved on disk).
+    saveNote.mockResolvedValue({ status: "conflict" })
+    type(view, " edit")
+    controller.handleChange()
+    controller.flush()
+    await vi.waitFor(() => expect(onConflict).toHaveBeenCalled())
+
+    const result = await controller.renameActive("b")
+
+    expect(result.ok).toBe(false)
+    expect(moveNote).not.toHaveBeenCalled()
+  })
+
+  it("is a no-op success when renaming to the current path (AC-11)", async () => {
+    const { controller } = await open("a.md", ["a.md"])
+
+    const result = await controller.renameActive("a")
+
+    expect(result).toEqual({ ok: true })
+    expect(moveNote).not.toHaveBeenCalled()
+  })
+
+  it("reports missing when the source file is gone (AC-6 edge)", async () => {
+    const { controller } = await open("a.md", ["a.md"])
+    moveNote.mockResolvedValue({ status: "missing" })
+
+    const result = await controller.renameActive("b")
+
+    expect(result.ok).toBe(false)
   })
 })
 
