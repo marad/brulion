@@ -1,6 +1,6 @@
 import type { EditorView } from "codemirror"
 import { setEditorText } from "./editor"
-import { readNote, saveNote, listNotes, createNote, deleteNote, statNote } from "./note"
+import { readNote, saveNote, listNotes, createNote, deleteNote, statNote, moveNote } from "./note"
 import { normalizeNoteName } from "./note-name"
 import { saveActiveNote, loadActiveNote } from "./session"
 import { debounce } from "./debounce"
@@ -98,6 +98,14 @@ export interface NoteController {
   addNote(name: string): Promise<AddNoteResult>
   /** Delete `name`'s file; if it was active, switch to another note. */
   removeNote(name: string): Promise<void>
+  /**
+   * Rename the active note to a user-typed `name` (FEAT-0034): flush pending
+   * edits, move its file via {@link moveNote}, then follow the file to its new
+   * path (new active note, refreshed list, announced). Reports `{ ok }` /
+   * `{ ok: false, reason }`; refuses without moving anything on no folder, a
+   * standing conflict, an invalid name, or an occupied destination.
+   */
+  renameActive(name: string): Promise<AddNoteResult>
   /** Note a user edit — schedules a debounced autosave. */
   handleChange(): void
   /** Save any pending changes immediately (focus loss / Ctrl+S). */
@@ -339,6 +347,34 @@ export function createNoteController(
         } else {
           opts.onListChanged?.(notes, activeName)
         }
+      })
+    },
+    renameActive(name) {
+      return serialize<AddNoteResult>(async () => {
+        if (!dir) return { ok: false, reason: "Open a folder first." }
+        if (conflict) return { ok: false, reason: "Resolve the conflict first." }
+        const normalized = normalizeNoteName(name)
+        if (!normalized.ok) return { ok: false, reason: normalized.reason }
+        if (normalized.filename === activeName) return { ok: true } // no-op rename
+
+        // Flush the open note before moving so its file carries the latest edits.
+        // A flush can surface a conflict (the stale-write guard); if so, refuse.
+        await flushAndWait()
+        if (conflict) return { ok: false, reason: "Resolve the conflict first." }
+
+        const result = await moveNote(dir, activeName, normalized.filename)
+        if (result.status === "missing") {
+          return { ok: false, reason: "The note no longer exists." }
+        }
+        if (result.status === "exists") {
+          return { ok: false, reason: "A note with that name already exists." }
+        }
+        // Follow the file: refresh the list, then re-point the editor at the new
+        // path. `activate` → `load` re-reads it (adopting the new lastModified),
+        // persists it as active, and announces so the UI tracks the new identity.
+        notes = await listNotes(dir)
+        await activate(dir, normalized.filename)
+        return { ok: true }
       })
     },
     handleChange() {

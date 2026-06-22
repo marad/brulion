@@ -21,6 +21,17 @@ export type SaveResult =
 
 export type CreateResult = { status: "created" } | { status: "exists" }
 
+export type MoveResult =
+  | { status: "moved" }
+  | { status: "exists" }
+  | { status: "missing" }
+
+/** `FileSystemFileHandle.move` is shipping in Chromium but not yet in the DOM
+ * lib types; narrow to the two-arg form we use (new parent + new name). */
+interface MovableFileHandle extends FileSystemFileHandle {
+  move(destination: FileSystemDirectoryHandle, name: string): Promise<void>
+}
+
 /** Read `name`; an absent file reads as empty content with `null` mtime. */
 export async function readNote(
   dir: FileSystemDirectoryHandle,
@@ -142,6 +153,33 @@ export async function deleteNote(
   } catch (err) {
     if (!isNotFound(err)) throw err
   }
+}
+
+/**
+ * Move the note at `from` to `to` within the tree. Uses the native
+ * `FileSystemFileHandle.move()` — the file's bytes are relocated as-is, with no
+ * read, rewrite, or intermediate copy, so a rename can never lose or churn
+ * content (the file-fidelity moat). Destination folders are materialized like
+ * `saveNote`/`createNote`. Refuses to overwrite an existing destination
+ * (`exists`) — the source is left untouched — and reports a missing source
+ * (`missing`). A `from` equal to `to` is a `moved` no-op. The destination is
+ * only resolved (and its folders created) once both guards pass, so a refused
+ * move leaves no empty folder behind.
+ */
+export async function moveNote(
+  dir: FileSystemDirectoryHandle,
+  from: string,
+  to: string,
+): Promise<MoveResult> {
+  if (from === to) return { status: "moved" }
+  const source = await getExisting(dir, from)
+  if (!source) return { status: "missing" }
+  if (await getExisting(dir, to)) return { status: "exists" }
+
+  const { folders, file } = splitPath(to)
+  const parent = await resolveParent(dir, folders, true)
+  await (source as MovableFileHandle).move(parent, file)
+  return { status: "moved" }
 }
 
 /** The file handle for the note at `path` if it exists, else `null` — including
