@@ -158,6 +158,44 @@ In:
 - Remove the left-sidebar inline-create textbox — the switcher is now the single
   way to create a note.
 
+### M13 — Sidebar comfort: collapsed-by-default tree + resizable width
+**Goal:** make the note tree pleasant in a large vault. Two independent tweaks in
+the sidebar layer; no change to file behavior.
+- **Folders collapsed by default** — the tree opens collapsed (only top level
+  shown), the user expands what they need; keep honoring the persisted
+  expand/collapse set and the "reveal the active note's ancestors" rule.
+- **Drag-to-resize width** — grab the sidebar/editor border and drag to set the
+  sidebar width; persist it (alongside the other `brulion:` UI state). Replaces the
+  fixed `14rem`.
+
+### M14 — Open-note identity in the header + rename
+**Goal:** always show *which* note is open, and let it be renamed in place. The two
+pair up — the header name is the rename affordance.
+- **Show the open note's name and path** in the top panel.
+- **Rename the current note** — edit the name (e.g. click the header name), moving
+  the file on disk via the existing path-addressed storage; update links/active
+  state. Reuses the `normalizeNoteName` validator. Moat-relevant: a rename is a
+  real file move, so it must be atomic-ish and never lose content.
+
+### M15 — Code-block syntax highlighting
+**Goal:** fenced code blocks (FEAT-0016 renders them as a box) get syntax colors
+for the most popular languages, driven by the fence's info string (```` ```ts ````).
+Editor-only (CodeMirror language data / highlight); the on-disk markdown is
+unchanged — purely how the block is painted.
+
+### M16 — Settings modal
+**Goal:** a single place for preferences instead of scattered header toggles.
+**Scope is open — to be agreed with the user before building** (candidates: default
+Vim on/off, default folder-collapse, theme, sidebar width, editor width). Likely
+collects the existing `brulion:` preferences behind one dialog.
+
+### M17 — Mobile UX
+**Goal:** make Brulion usable on a phone/tablet, where there is no Ctrl, no
+keyboard chords, and Vim is impractical. Touch-first affordances for the actions
+currently bound to shortcuts (find/create, sidebar, formatting), a responsive
+layout for the narrow viewport, and graceful absence of the keyboard-only features.
+Larger and cross-cutting — likely its own cluster of phases.
+
 ## Later / backlog (out of MVP, on purpose)
 
 Everything concrete is now scheduled in M5–M10 above. What remains here is
