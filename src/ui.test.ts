@@ -9,6 +9,7 @@ import {
   buildNoteTree,
   wireToggle,
   showWorkspace,
+  mountNoteIdentity,
 } from "./ui"
 
 vi.mock("./fs", () => ({ pickFolder: vi.fn() }))
@@ -374,19 +375,126 @@ describe("showWorkspace (FEAT-0031)", () => {
     const toggleSidebar = el()
     const toggleVim = el()
     const reopen = el()
+    const identity = el()
     // Pre-folder state: hero shown, controls hidden.
     welcome.hidden = false
     sidebar.hidden = true
     toggleSidebar.hidden = true
     toggleVim.hidden = true
     reopen.hidden = true
+    identity.hidden = true
 
-    showWorkspace({ welcome, sidebar, toggleSidebar, toggleVim, reopen })
+    showWorkspace({ welcome, sidebar, toggleSidebar, toggleVim, reopen, identity })
 
     expect(welcome.hidden).toBe(true)
     expect(sidebar.hidden).toBe(false)
     expect(toggleSidebar.hidden).toBe(false)
     expect(toggleVim.hidden).toBe(false)
     expect(reopen.hidden).toBe(false)
+    expect(identity.hidden).toBe(false)
+  })
+})
+
+describe("mountNoteIdentity (FEAT-0035)", () => {
+  const display = (c: HTMLElement) => c.querySelector<HTMLElement>(".note-identity-display")!
+  const input = (c: HTMLElement) => c.querySelector<HTMLInputElement>(".note-identity-edit")!
+  const error = (c: HTMLElement) => c.querySelector<HTMLElement>(".note-identity-error")!
+  const press = (el: HTMLElement, key: string) =>
+    el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }))
+  const flush = () => new Promise((r) => setTimeout(r, 0))
+
+  it("shows the active note's name without .md (AC-1)", () => {
+    const c = document.createElement("div")
+    const id = mountNoteIdentity(c, vi.fn())
+    id.update("diablo.md")
+    expect(display(c).textContent).toContain("diablo")
+    expect(display(c).textContent).not.toContain(".md")
+  })
+
+  it("shows a nested note's path and name (AC-2)", () => {
+    const c = document.createElement("div")
+    mountNoteIdentity(c, vi.fn()).update("projects/diablo.md")
+    const text = display(c).textContent ?? ""
+    expect(text).toContain("projects")
+    expect(text).toContain("diablo")
+  })
+
+  it("tracks the active note as it changes (AC-4)", () => {
+    const c = document.createElement("div")
+    const id = mountNoteIdentity(c, vi.fn())
+    id.update("a.md")
+    id.update("b.md")
+    expect(display(c).textContent).toContain("b")
+    expect(display(c).textContent).not.toContain("a.md")
+  })
+
+  it("opens an inline editor prefilled with the full path, no .md (AC-5)", () => {
+    const c = document.createElement("div")
+    mountNoteIdentity(c, vi.fn()).update("projects/diablo.md")
+    display(c).click()
+    expect(input(c).hidden).toBe(false)
+    expect(display(c).hidden).toBe(true)
+    expect(input(c).value).toBe("projects/diablo")
+  })
+
+  it("commits a valid rename and returns to the display (AC-6)", async () => {
+    const c = document.createElement("div")
+    const onRename = vi.fn().mockResolvedValue({ ok: true })
+    const id = mountNoteIdentity(c, onRename)
+    id.update("a.md")
+    display(c).click()
+    input(c).value = "renamed"
+    press(input(c), "Enter")
+    await flush()
+
+    expect(onRename).toHaveBeenCalledWith("renamed")
+    expect(input(c).hidden).toBe(true) // back to display
+    id.update("renamed.md") // the controller's announce drives the new display
+    expect(display(c).textContent).toContain("renamed")
+  })
+
+  it("keeps the editor open and shows the reason on a rejected rename (AC-7)", async () => {
+    const c = document.createElement("div")
+    const onRename = vi.fn().mockResolvedValue({
+      ok: false,
+      reason: "A note with that name already exists.",
+    })
+    const id = mountNoteIdentity(c, onRename)
+    id.update("a.md")
+    display(c).click()
+    input(c).value = "b"
+    press(input(c), "Enter")
+    await flush()
+
+    expect(input(c).hidden).toBe(false) // still editing
+    expect(input(c).value).toBe("b") // typed text preserved
+    expect(error(c).textContent).toMatch(/exist/i)
+  })
+
+  it("reverts on Escape without renaming (AC-8)", () => {
+    const c = document.createElement("div")
+    const onRename = vi.fn()
+    const id = mountNoteIdentity(c, onRename)
+    id.update("a.md")
+    display(c).click()
+    input(c).value = "changed"
+    press(input(c), "Escape")
+
+    expect(onRename).not.toHaveBeenCalled()
+    expect(input(c).hidden).toBe(true)
+    expect(display(c).textContent).toContain("a")
+  })
+
+  it("reverts on blur without renaming (AC-8)", () => {
+    const c = document.createElement("div")
+    const onRename = vi.fn()
+    const id = mountNoteIdentity(c, onRename)
+    id.update("a.md")
+    display(c).click()
+    input(c).value = "changed"
+    input(c).dispatchEvent(new FocusEvent("blur"))
+
+    expect(onRename).not.toHaveBeenCalled()
+    expect(input(c).hidden).toBe(true)
   })
 })
