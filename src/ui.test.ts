@@ -501,16 +501,31 @@ describe("mountNoteIdentity (FEAT-0035)", () => {
     expect(display(c).textContent).toContain("a")
   })
 
-  it("reverts on blur without renaming (AC-8)", () => {
+  it("commits on blur — tapping away is 'done', not 'cancel' (AC-9)", async () => {
+    const c = document.createElement("div")
+    const onRename = vi.fn().mockResolvedValue({ ok: true })
+    const id = mountNoteIdentity(c, onRename)
+    id.update("a.md")
+    display(c).click()
+    input(c).value = "changed"
+    input(c).dispatchEvent(new FocusEvent("blur"))
+    await flush()
+
+    expect(onRename).toHaveBeenCalledWith("changed")
+    expect(input(c).hidden).toBe(true) // back to display after the commit
+  })
+
+  it("does not re-commit when Esc closes the editor and then blurs (AC-8)", () => {
     const c = document.createElement("div")
     const onRename = vi.fn()
     const id = mountNoteIdentity(c, onRename)
     id.update("a.md")
     display(c).click()
     input(c).value = "changed"
-    input(c).dispatchEvent(new FocusEvent("blur"))
+    press(input(c), "Escape") // cancels: showDisplay() clears `editing`
+    input(c).dispatchEvent(new FocusEvent("blur")) // the focus-away that follows must be inert
 
     expect(onRename).not.toHaveBeenCalled()
-    expect(input(c).hidden).toBe(true)
+    expect(display(c).textContent).toContain("a")
   })
 })

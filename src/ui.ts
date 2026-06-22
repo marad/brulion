@@ -320,10 +320,14 @@ export function mountNoteIdentity(
       showDisplay()
     }
   })
-  // Blur cancels (no accidental commit), except the programmatic blur a
-  // successful Enter triggers while it switches back to the display.
+  // Losing focus commits, like Finder / VS Code's rename and unlike a desktop-only
+  // cancel: on touch, tapping away is the natural "done" gesture (and the soft
+  // keyboard's Go button blurs rather than sending a clean Enter). Esc and a
+  // successful commit both close via showDisplay(), which clears `editing` first,
+  // so this only fires on a genuine focus-away — not on our own programmatic
+  // hide. `committing` keeps a concurrent commit from re-entering.
   input.addEventListener("blur", () => {
-    if (!committing) showDisplay()
+    if (editing && !committing) void commit()
   })
 
   container.append(display, input, error)
