@@ -1,6 +1,7 @@
 import { pickFolder } from "./fs"
 import { saveFolder, loadFolder, hasPermission, requestAccess } from "./session"
 import { displayName } from "./note-name"
+import type { AddNoteResult } from "./note-controller"
 
 /** Called once folder access is in hand (fresh pick or restored). */
 export type OpenHandler = (dir: FileSystemDirectoryHandle) => Promise<void>
@@ -211,6 +212,126 @@ function renderNoteRow(node: NoteLeaf, active: string, handlers: NoteListHandler
   return row
 }
 
+/** A handle on the header note-identity widget so the app can keep it pointed
+ * at the open note as the active note changes (FEAT-0035). */
+export interface NoteIdentityHandle {
+  /** Point the display at `activePath` (a folder-relative `.md` path). */
+  update(activePath: string): void
+}
+
+/**
+ * Mount the header's open-note identity into `container` (FEAT-0035): a display
+ * showing the open note's folder path (muted) and name (no `.md`), which on click
+ * becomes an inline editor to rename the note in place. Enter commits via
+ * `onRename` (the controller's `renameActive`); Esc or blur cancels. A rejected
+ * rename keeps the editor open, preserves the typed text, and surfaces the
+ * reason; a successful one returns to the display, which the app then repoints
+ * via {@link NoteIdentityHandle.update} from the controller's announce.
+ */
+export function mountNoteIdentity(
+  container: HTMLElement,
+  onRename: (name: string) => Promise<AddNoteResult>,
+): NoteIdentityHandle {
+  let path = ""
+  let editing = false
+  let committing = false // suppress the blur-cancel fired by a successful commit
+
+  const display = document.createElement("button")
+  display.type = "button"
+  display.className = "note-identity-display"
+
+  const input = document.createElement("input")
+  input.type = "text"
+  input.className = "note-identity-edit"
+  input.setAttribute("aria-label", "Rename note")
+  input.autocomplete = "off"
+  input.hidden = true
+
+  const error = document.createElement("span")
+  error.className = "note-identity-error"
+  error.hidden = true
+
+  // Render the display as a muted folder prefix + the emphasized name. A
+  // root-level note has no prefix; a nested one shows `folder/.../` then the name.
+  const renderDisplay = () => {
+    const full = displayName(path) // strip `.md`
+    const slash = full.lastIndexOf("/")
+    const prefix = slash === -1 ? "" : full.slice(0, slash + 1)
+    const name = slash === -1 ? full : full.slice(slash + 1)
+    display.replaceChildren()
+    if (prefix) {
+      const folder = document.createElement("span")
+      folder.className = "note-identity-path"
+      folder.textContent = prefix
+      display.append(folder)
+    }
+    const leaf = document.createElement("span")
+    leaf.className = "note-identity-name"
+    leaf.textContent = name
+    display.append(leaf)
+    display.title = `${full} — click to rename`
+  }
+
+  const showDisplay = () => {
+    editing = false
+    input.hidden = true
+    error.hidden = true
+    display.hidden = false
+  }
+
+  const startEditing = () => {
+    if (!path) return
+    editing = true
+    error.hidden = true
+    display.hidden = true
+    input.hidden = false
+    input.value = displayName(path) // full path without `.md`
+    input.focus()
+    input.select()
+  }
+
+  const commit = async () => {
+    const result = await onRename(input.value)
+    if (result.ok) {
+      committing = true // the focus move out of the field must not re-cancel
+      showDisplay() // the controller's announce will repoint via update()
+      committing = false
+    } else {
+      error.textContent = result.reason
+      error.hidden = false
+      input.focus() // keep editing with the typed text intact
+    }
+  }
+
+  display.addEventListener("click", startEditing)
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault()
+      void commit()
+    } else if (event.key === "Escape") {
+      event.preventDefault()
+      showDisplay()
+    }
+  })
+  // Blur cancels (no accidental commit), except the programmatic blur a
+  // successful Enter triggers while it switches back to the display.
+  input.addEventListener("blur", () => {
+    if (!committing) showDisplay()
+  })
+
+  container.append(display, input, error)
+
+  return {
+    update(activePath) {
+      path = activePath
+      renderDisplay()
+      // Don't yank the field out from under the user mid-edit; the display will
+      // be correct the next time it is shown.
+      if (!editing) showDisplay()
+    },
+  }
+}
+
 /** The elements that flip between the pre-folder welcome state and the workspace. */
 export interface WorkspaceRefs {
   welcome: HTMLElement
@@ -218,6 +339,7 @@ export interface WorkspaceRefs {
   toggleSidebar: HTMLElement
   toggleVim: HTMLElement
   reopen: HTMLElement
+  identity: HTMLElement
 }
 
 /**
@@ -233,6 +355,7 @@ export function showWorkspace(refs: WorkspaceRefs): void {
   refs.toggleSidebar.hidden = false
   refs.toggleVim.hidden = false
   refs.reopen.hidden = false
+  refs.identity.hidden = false
 }
 
 /** Wire `button`'s click (the required user gesture) to {@link openFolder}. */

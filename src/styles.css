@@ -43,14 +43,67 @@ header button:hover {
   background: #f2f2f1;
 }
 
-/* Brand wordmark; `margin-right: auto` groups the controls at the right edge. */
+/* Brand wordmark. The open-note identity (when shown) carries the
+   `margin-right: auto` that pushes the header controls to the right edge; before
+   a folder opens the identity is hidden and the lone wordmark sits left. */
 .wordmark {
   font-weight: 600;
   font-size: 1.05rem;
   letter-spacing: 0.01em;
   color: #9a3b2f;
-  margin-right: auto;
   padding-left: 0.15rem;
+}
+
+/* Open-note identity (FEAT-0035): the display + the inline rename editor. Sits
+   between the wordmark and the controls; `margin-right: auto` pushes the
+   controls right. `min-width: 0` lets a long path ellipsize instead of shoving
+   the controls off-screen. */
+.note-identity {
+  margin-right: auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.note-identity[hidden] {
+  display: none;
+}
+.note-identity-display {
+  font: inherit;
+  max-width: 100%;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: #1a1a1a;
+  cursor: text;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.note-identity-display:hover {
+  background: #f2f2f1;
+  border-color: #e0e0e0;
+}
+.note-identity-path {
+  color: #9a9a96; /* muted folder prefix */
+}
+.note-identity-name {
+  font-weight: 600;
+}
+.note-identity-edit {
+  font: inherit;
+  min-width: 12rem;
+  max-width: 28rem;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid #9a3b2f;
+  border-radius: 6px;
+  background: #fff;
+  color: #1a1a1a;
+}
+.note-identity-error {
+  font-size: 0.85rem;
+  color: #9a3b2f;
 }
 
 /* Loading overlay (FEAT-0031): shown from first paint over the workspace until we

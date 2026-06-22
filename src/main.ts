@@ -8,6 +8,7 @@ import {
   renderNoteList,
   wireToggle,
   showWorkspace,
+  mountNoteIdentity,
 } from "./ui"
 import { mountQuickSwitcher } from "./quick-switcher"
 import {
@@ -34,6 +35,7 @@ const welcomeEl = document.querySelector<HTMLElement>("#welcome")
 const sidebarEl = document.querySelector<HTMLElement>("#sidebar")
 const toggleSidebarEl = document.querySelector<HTMLButtonElement>("#toggle-sidebar")
 const toggleVimEl = document.querySelector<HTMLButtonElement>("#toggle-vim")
+const noteIdentityEl = document.querySelector<HTMLElement>("#note-identity")
 const reopenButton = document.querySelector<HTMLButtonElement>("#reopen-folder")
 const listEl = document.querySelector<HTMLElement>("#note-list")
 const sidebarSearchEl = document.querySelector<HTMLButtonElement>("#sidebar-search")
@@ -56,6 +58,7 @@ if (
   !sidebarEl ||
   !toggleSidebarEl ||
   !toggleVimEl ||
+  !noteIdentityEl ||
   !reopenButton ||
   !listEl ||
   !sidebarSearchEl ||
@@ -82,6 +85,10 @@ let controller: NoteController
 // target from one to offer to create.
 let currentActive = ""
 let currentNotes: string[] = []
+// The header open-note identity + inline rename (FEAT-0035); assigned right after
+// the controller (it renames via controller.renameActive) and repointed from
+// onListChanged so the header always names the open note.
+let identity: import("./ui").NoteIdentityHandle
 // Whether a folder has been opened (workspace shown). Drives the initial
 // loading → welcome-vs-workspace resolution so the welcome never flashes before
 // an auto-restored folder loads (FEAT-0031).
@@ -153,11 +160,13 @@ controller = createNoteController(view, {
       toggleSidebar: toggleSidebarEl,
       toggleVim: toggleVimEl,
       reopen: reopenButton,
+      identity: noteIdentityEl,
     })
     // Feed the editor the open note + known paths so links render valid-vs-broken
     // and a follow resolves relative to the right note (FEAT-0025).
     currentActive = active
     currentNotes = notes
+    identity.update(active) // keep the header naming the open note (FEAT-0035)
     setLinkContext(view, { activeNote: active, notePaths: new Set(notes) })
     renderNoteList(
       listEl,
@@ -182,6 +191,11 @@ controller = createNoteController(view, {
     )
   },
 })
+
+// Header open-note identity + click-to-rename (FEAT-0035). Renaming goes through
+// the controller's renameActive (flush → native move → follow the file); the
+// onListChanged above repoints the display whenever the active note changes.
+identity = mountNoteIdentity(noteIdentityEl, (name) => controller.renameActive(name))
 
 // Quick switcher (FEAT-0033): the single find-or-create surface, replacing the old
 // sidebar new-note textbox. It reads the in-memory note list and routes to the
