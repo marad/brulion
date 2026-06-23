@@ -205,10 +205,9 @@ test("the most-recently-visited order survives a reload (FEAT-0039)", async ({ p
 })
 
 test("the shortcut opens the switcher with Vim on (AC-9)", async ({ page }) => {
-  await page.locator("#toggle-vim").click()
-  await expect(page.locator("#toggle-vim")).toHaveAttribute("aria-pressed", "true")
-  await editor(page).click() // Vim normal mode, focus in the editor
+  await page.keyboard.press("Control+;") // enable Vim (header button removed in M16 P2)
   await expect(page.locator(".cm-vimMode")).toBeVisible()
+  await editor(page).click() // Vim normal mode, focus in the editor
 
   await page.keyboard.press("Control+k")
 

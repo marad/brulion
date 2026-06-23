@@ -23,14 +23,13 @@
         ☰
       </button>
       <button
-        id="toggle-vim"
+        id="open-settings"
         type="button"
-        aria-label="Toggle Vim mode"
-        aria-pressed="false"
-        title="Toggle Vim mode"
+        aria-label="Settings"
+        title="Settings"
         hidden
       >
-        Vim
+        ⚙
       </button>
       <button id="reopen-folder" type="button" hidden>Switch folder</button>
       <button id="install-app" type="button" hidden>Install</button>
@@ -58,6 +57,7 @@
         </div>
       </div>
     </div>
+    <div id="settings-backdrop" hidden></div>
     <div id="missing-note"></div>
     <main class="workspace">
       <div id="loading" aria-hidden="true"><div class="spinner"></div></div>

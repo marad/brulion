@@ -31,13 +31,13 @@ async function readStartMd(page: Page): Promise<string | null> {
 }
 
 const editor = (page: Page) => page.locator(".cm-content")
-const vimToggle = (page: Page) => page.locator("#toggle-vim")
 
+// The header Vim button was removed in M16 P2 (FEAT-0048); Vim is toggled via the
+// settings modal or the `Ctrl/Cmd+;` chord. Drive the chord here.
 async function enableVimAndFocus(page: Page) {
-  await vimToggle(page).click()
-  await expect(vimToggle(page)).toHaveAttribute("aria-pressed", "true")
-  await editor(page).click()
+  await page.keyboard.press("Control+;")
   await expect(page.locator(".cm-vimMode")).toBeVisible()
+  await editor(page).click()
 }
 
 /** In normal mode, type `text` (entering insert with `i`) and return to normal. */
@@ -52,6 +52,8 @@ test.beforeEach(async ({ page, context }) => {
   await stubPicker(page)
   await page.goto("/brulion/")
   await page.locator("#open-folder").click()
+  // The `Ctrl/Cmd+;` chord is gated on the workspace being shown — wait for it.
+  await expect(page.locator("#open-settings")).toBeVisible()
 })
 
 test("visual yank of a heading's visible text pastes a heading (AC-1)", async ({ page }) => {

@@ -395,7 +395,7 @@ describe("showWorkspace (FEAT-0031)", () => {
     const welcome = el()
     const sidebar = el()
     const toggleSidebar = el()
-    const toggleVim = el()
+    const settings = el()
     const reopen = el()
     const identity = el()
     const resizer = el()
@@ -403,17 +403,17 @@ describe("showWorkspace (FEAT-0031)", () => {
     welcome.hidden = false
     sidebar.hidden = true
     toggleSidebar.hidden = true
-    toggleVim.hidden = true
+    settings.hidden = true
     reopen.hidden = true
     identity.hidden = true
     resizer.hidden = true
 
-    showWorkspace({ welcome, sidebar, toggleSidebar, toggleVim, reopen, identity, resizer })
+    showWorkspace({ welcome, sidebar, toggleSidebar, settings, reopen, identity, resizer })
 
     expect(welcome.hidden).toBe(true)
     expect(sidebar.hidden).toBe(false)
     expect(toggleSidebar.hidden).toBe(false)
-    expect(toggleVim.hidden).toBe(false)
+    expect(settings.hidden).toBe(false)
     expect(reopen.hidden).toBe(false)
     expect(identity.hidden).toBe(false)
     expect(resizer.hidden).toBe(false)

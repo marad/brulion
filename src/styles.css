@@ -552,7 +552,9 @@ header button:hover {
 /* Conflict resolution is modal: the open note changed on disk under unsaved
    edits, so the user must choose before doing anything else. A full-screen
    backdrop covers the app (list, editor, header) and intercepts all clicks. */
-#conflict-backdrop {
+/* The conflict and settings (FEAT-0048) modals share the same centered backdrop. */
+#conflict-backdrop,
+#settings-backdrop {
   position: fixed;
   inset: 0;
   z-index: 100;
@@ -563,7 +565,8 @@ header button:hover {
   background: rgb(0 0 0 / 28%);
 }
 
-#conflict-backdrop[hidden] {
+#conflict-backdrop[hidden],
+#settings-backdrop[hidden] {
   display: none;
 }
 
@@ -655,6 +658,121 @@ header button:hover {
 
 #conflict button:hover {
   background: #fbf3df;
+}
+
+/* Settings modal (FEAT-0048): the home for font / text size / editor width / Vim.
+   Shares the centered backdrop above; the dialog mirrors the conflict modal's look. */
+.settings-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: min(26rem, 100%);
+  max-height: min(85vh, 100%);
+  overflow: auto;
+  padding: 1.25rem 1.5rem;
+  background: #fffdf6;
+  border: 1px solid #efe4c4;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 22%);
+  color: #5a3f13;
+}
+
+.settings-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.settings-close {
+  font: inherit;
+  font-size: 1.2rem;
+  line-height: 1;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: #7a5a1e;
+  cursor: pointer;
+}
+
+.settings-close:hover {
+  background: #f2e9d2;
+}
+
+/* One control per row: a label on the left, the control on the right. */
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.settings-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.settings-font {
+  font: inherit;
+  max-width: 14rem;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid #d8c79a;
+  border-radius: 6px;
+  background: #fff;
+  color: #1a1a1a;
+}
+
+/* Text-size stepper: −/readout/+. */
+.settings-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.settings-step {
+  font: inherit;
+  width: 1.9rem;
+  height: 1.9rem;
+  border: 1px solid #d8c79a;
+  border-radius: 6px;
+  background: #fff;
+  color: #1a1a1a;
+  cursor: pointer;
+}
+
+.settings-step:hover:not(:disabled) {
+  background: #fbf3df;
+}
+
+.settings-step:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.settings-size-readout {
+  min-width: 2.5rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Width preset radio group. */
+.settings-width {
+  display: flex;
+  gap: 0.9rem;
+}
+
+.settings-width-option {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+  cursor: pointer;
 }
 
 #editor {

@@ -31,6 +31,8 @@ import {
   DEFAULT_SETTINGS,
   type Settings,
 } from "./settings"
+import { mountSettingsModal, type SettingsModalHandle } from "./settings-modal"
+import { resolveFontChoices } from "./font-access"
 import { touchRecency } from "./note-search"
 import { displayName, isExternalLink, resolveNotePath } from "./note-name"
 import { pathToHash, hashToPath } from "./note-route"
@@ -49,7 +51,8 @@ const welcomeEl = document.querySelector<HTMLElement>("#welcome")
 const sidebarEl = document.querySelector<HTMLElement>("#sidebar")
 const toggleSidebarEl = document.querySelector<HTMLButtonElement>("#toggle-sidebar")
 const sidebarResizerEl = document.querySelector<HTMLElement>("#sidebar-resizer")
-const toggleVimEl = document.querySelector<HTMLButtonElement>("#toggle-vim")
+const openSettingsEl = document.querySelector<HTMLButtonElement>("#open-settings")
+const settingsBackdropEl = document.querySelector<HTMLElement>("#settings-backdrop")
 const noteIdentityEl = document.querySelector<HTMLElement>("#note-identity")
 const missingNoteEl = document.querySelector<HTMLElement>("#missing-note")
 const reopenButton = document.querySelector<HTMLButtonElement>("#reopen-folder")
@@ -74,7 +77,8 @@ if (
   !sidebarEl ||
   !toggleSidebarEl ||
   !sidebarResizerEl ||
-  !toggleVimEl ||
+  !openSettingsEl ||
+  !settingsBackdropEl ||
   !noteIdentityEl ||
   !missingNoteEl ||
   !reopenButton ||
@@ -230,21 +234,20 @@ let currentSettings: Settings = DEFAULT_SETTINGS
 let settingsDir: FileSystemDirectoryHandle | null = null
 const persistSettings = (): Promise<void> =>
   settingsDir ? saveSettings(settingsDir, currentSettings) : Promise.resolve()
-// Apply the current settings to the editor and reflect Vim on the header button's
-// pressed state (the button is the visible control in P1; the modal takes over in
-// P2). Kept as one step so no apply site can drift the button out of sync.
-const applyCurrentSettings = () => {
-  applySettings(view, currentSettings)
-  toggleVimEl.setAttribute("aria-pressed", String(currentSettings.vim))
-}
+// The settings modal (FEAT-0048); forward-declared so updateSettings can re-sync it
+// after a change (e.g. a `Ctrl/Cmd+;` Vim toggle reflects in the open modal) — the
+// modal is mounted further down, which breaks the onChange↔sync cycle.
+let settingsModal: SettingsModalHandle | null = null
 // True only while openNote is reading a folder's settings — blocks a concurrent
 // `Ctrl/Cmd+;` from mutating/persisting against the outgoing folder (and being
 // clobbered by the load that's about to assign `currentSettings`).
 let loadingSettings = false
-// The single settings mutator: merge a patch, apply it live, persist.
+// The single settings mutator: merge a patch, apply it live, re-sync the modal,
+// persist.
 const updateSettings = (patch: Partial<Settings>) => {
   currentSettings = { ...currentSettings, ...patch }
-  applyCurrentSettings()
+  applySettings(view, currentSettings)
+  settingsModal?.sync()
   void persistSettings()
 }
 const toggleVim = () => {
@@ -299,7 +302,7 @@ controller = createNoteController(view, {
       welcome: welcomeEl,
       sidebar: sidebarEl,
       toggleSidebar: toggleSidebarEl,
-      toggleVim: toggleVimEl,
+      settings: openSettingsEl,
       reopen: reopenButton,
       identity: noteIdentityEl,
       resizer: sidebarResizerEl,
@@ -380,7 +383,7 @@ sidebarSearchEl.addEventListener("click", () => switcher.open())
   const shortcutEl = document.querySelector<HTMLElement>("#search-shortcut")
   if (shortcutEl) shortcutEl.textContent = isMac ? "⌘K" : "Ctrl K"
   sidebarSearchEl.title = `Find or create a note (${isMac ? "⌘K" : "Ctrl+K"})`
-  toggleVimEl.title = `Toggle Vim mode (${isMac ? "⌘;" : "Ctrl+;"})`
+  openSettingsEl.title = `Settings (${isMac ? "⌘," : "Ctrl+,"})`
 }
 window.addEventListener(
   "keydown",
@@ -391,7 +394,8 @@ window.addEventListener(
       !event.altKey &&
       event.key.toLowerCase() === "k" &&
       workspaceShown &&
-      conflictBackdropEl.hidden // the conflict modal must stay the only forward path
+      conflictBackdropEl.hidden && // the conflict modal must stay the only forward path
+      settingsBackdropEl.hidden // don't stack the switcher over an open settings modal
     ) {
       event.preventDefault()
       switcher.open()
@@ -419,7 +423,8 @@ const openNote = async (dir: FileSystemDirectoryHandle) => {
   } finally {
     loadingSettings = false
   }
-  applyCurrentSettings()
+  applySettings(view, currentSettings)
+  settingsModal?.sync() // reflect this folder's settings if the modal is open
   if (!initialRouteConsumed) {
     // First folder open: the URL hash (a bookmark/reload) beats the persisted
     // last-active note (FEAT-0036). Read it before opening, mirror nothing while
@@ -502,27 +507,39 @@ void loadSidebarCollapsed().then((collapsed) => {
   })
 })
 
+// Settings modal (FEAT-0048): the visible home for font/size/width/Vim, reading the
+// current settings and reporting changes through updateSettings (apply + persist).
+settingsModal = mountSettingsModal(settingsBackdropEl, {
+  getSettings: () => currentSettings,
+  onChange: updateSettings,
+  resolveFontChoices,
+})
+// Two entry points open it: the header gear and `Ctrl/Cmd+,`. The gear replaces the
+// old header Vim button (Vim now lives inside the modal).
+openSettingsEl.addEventListener("click", () => settingsModal?.open())
+
 // Opt-in Vim mode (FEAT-0021), now backed by the per-vault settings file
-// (M16/FEAT-0047) instead of idb. The header button and the `Ctrl/Cmd+;` chord both
-// flip `settings.vim` through updateSettings, which re-applies the editor's Vim
-// compartment in place (no remount) and persists `.brulion.json`. The on/off state
-// is restored per folder open (applyCurrentSettings in openNote).
-toggleVimEl.addEventListener("click", toggleVim)
-// Capture phase + preventDefault so the chord is owned here regardless of
-// Vim/CodeMirror key handling; `event.code` keeps it layout-proof. `;` (no Alt, no
-// Shift) avoids the browser-menu / macOS-compose collisions an Alt chord has.
+// (M16/FEAT-0047) instead of idb, and toggled from inside the settings modal or via
+// the `Ctrl/Cmd+;` chord — both flip `settings.vim` through updateSettings, which
+// re-applies the editor's Vim compartment in place (no remount) and persists
+// `.brulion.json`. The state is restored per folder open (in openNote).
+//
+// Capture phase + preventDefault so each chord is owned here regardless of
+// Vim/CodeMirror key handling; both use `event.code` (layout-proof). `Ctrl/Cmd+;`
+// toggles Vim; `Ctrl/Cmd+,` opens settings (unless the switcher is up — don't stack
+// modals). Both require a folder open and the conflict modal closed (it must stay
+// the only forward path).
 window.addEventListener(
   "keydown",
   (event) => {
-    if (
-      (event.ctrlKey || event.metaKey) &&
-      !event.altKey &&
-      !event.shiftKey &&
-      event.code === "Semicolon" &&
-      workspaceShown
-    ) {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
+    if (!workspaceShown || !conflictBackdropEl.hidden) return
+    if (event.code === "Semicolon") {
       event.preventDefault()
       toggleVim()
+    } else if (event.code === "Comma" && switcherBackdropEl.hidden) {
+      event.preventDefault()
+      settingsModal?.open()
     }
   },
   true,

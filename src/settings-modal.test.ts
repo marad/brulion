@@ -274,4 +274,19 @@ describe("mountSettingsModal dismiss (FEAT-0048 AC-1)", () => {
 
     expect(backdrop.hidden).toBe(true)
   })
+
+  it("restores focus to the previously-focused element on close", async () => {
+    const { backdrop, handle } = mount(DEFAULT_SETTINGS)
+    const opener = document.createElement("button")
+    document.body.append(opener)
+    opener.focus()
+    expect(document.activeElement).toBe(opener)
+
+    handle.open()
+    await flush()
+    expect(document.activeElement).not.toBe(opener) // focus moved into the modal
+
+    backdrop.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+    expect(document.activeElement).toBe(opener) // and is handed back on close
+  })
 })

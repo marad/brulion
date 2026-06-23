@@ -63,7 +63,7 @@ test("settings from .brulion.json apply on open (AC-1)", async ({ page }) => {
 
   expect(await contentFontSize(page)).toBe("22px") // base size reflects the file
   expect(await cssVar(page, "--editor-measure")).toBe("90ch") // Wider preset
-  await expect(page.locator("#toggle-vim")).toHaveAttribute("aria-pressed", "true")
+  await expect(page.locator(".cm-vimMode")).toBeVisible() // vim:true from the file
 })
 
 test("an absent settings file falls back to defaults (AC-2)", async ({ page }) => {
@@ -77,7 +77,7 @@ test("an absent settings file falls back to defaults (AC-2)", async ({ page }) =
 
   expect(await contentFontSize(page)).toBe("16px") // default base size
   expect(await cssVar(page, "--editor-measure")).toBe("68ch") // Narrow default
-  await expect(page.locator("#toggle-vim")).toHaveAttribute("aria-pressed", "false")
+  await expect(page.locator(".cm-vimMode")).toHaveCount(0) // vim off by default
   const fontFamily = await page
     .locator(".cm-content")
     .evaluate((el) => getComputedStyle(el).fontFamily)
@@ -91,10 +91,10 @@ test("Ctrl/Cmd+; toggles Vim and persists to .brulion.json (AC-6)", async ({ pag
 
   await page.locator("#open-folder").click()
   await expect(page.locator("#note-identity")).toBeVisible()
-  await expect(page.locator("#toggle-vim")).toHaveAttribute("aria-pressed", "false")
+  await expect(page.locator(".cm-vimMode")).toHaveCount(0) // off
 
   await page.keyboard.press("Control+Semicolon")
-  await expect(page.locator("#toggle-vim")).toHaveAttribute("aria-pressed", "true")
+  await expect(page.locator(".cm-vimMode")).toBeVisible() // on
 
   // The file Brulion wrote records vim:true (Playwright retries past the async write).
   await expect

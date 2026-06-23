@@ -29,23 +29,29 @@ async function readStartMd(page: Page): Promise<string | null> {
 }
 
 const editor = (page: Page) => page.locator(".cm-content")
-const vimToggle = (page: Page) => page.locator("#toggle-vim")
 const menu = (page: Page) => page.locator(".cm-tooltip-autocomplete")
 const option = (page: Page, label: string) =>
   page.locator(".cm-tooltip-autocomplete li").filter({ hasText: label })
 
+// The header Vim button was removed in M16 P2 (FEAT-0048): Vim is now toggled from
+// the settings modal or the unchanged `Ctrl/Cmd+;` chord. These tests drive the
+// chord (the keyboard path FEAT-0021 always owned) and read state from `.cm-vimMode`.
+const toggleVimChord = (page: Page) => page.keyboard.press("Control+;")
+
 /** Enable Vim and focus the editor (which lands in Vim normal mode). */
 async function enableVimAndFocus(page: Page) {
-  await vimToggle(page).click()
-  await expect(vimToggle(page)).toHaveAttribute("aria-pressed", "true")
-  await editor(page).click()
+  await toggleVimChord(page)
   await expect(page.locator(".cm-vimMode")).toBeVisible() // normal mode engaged
+  await editor(page).click()
 }
 
 test.beforeEach(async ({ page }) => {
   await stubPicker(page)
   await page.goto("/brulion/")
   await page.locator("#open-folder").click()
+  // Wait for the workspace to be shown before any `Ctrl/Cmd+;` chord — the chord
+  // handler is gated on `workspaceShown`, so firing it too early is a no-op.
+  await expect(page.locator("#open-settings")).toBeVisible()
 })
 
 test("Vim mode is off by default (AC-1)", async ({ page }) => {
@@ -56,38 +62,28 @@ test("Vim mode is off by default (AC-1)", async ({ page }) => {
   await expect(page.locator(".cm-vimMode")).toHaveCount(0)
 })
 
-test("the toggle turns Vim on and off (AC-2)", async ({ page }) => {
+test("the Ctrl/Cmd+; chord turns Vim on and off (AC-2)", async ({ page }) => {
   await enableVimAndFocus(page) // on: normal mode indicator present
 
-  await vimToggle(page).click() // off
-  await expect(vimToggle(page)).toHaveAttribute("aria-pressed", "false")
+  await toggleVimChord(page) // off
   await expect(page.locator(".cm-vimMode")).toHaveCount(0)
   await editor(page).click()
   await page.keyboard.type("j") // back to the default model — a literal char
   await expect(editor(page)).toHaveText("j")
-})
 
-test("Ctrl+; toggles Vim from the keyboard (AC-2)", async ({ page }) => {
-  await editor(page).click()
-  await page.keyboard.press("Control+;")
-  await expect(vimToggle(page)).toHaveAttribute("aria-pressed", "true")
-  await expect(page.locator(".cm-vimMode")).toBeVisible() // engaged
-
-  await page.keyboard.press("Control+;")
-  await expect(vimToggle(page)).toHaveAttribute("aria-pressed", "false")
-  await expect(page.locator(".cm-vimMode")).toHaveCount(0)
+  await toggleVimChord(page) // on again
+  await expect(page.locator(".cm-vimMode")).toBeVisible()
 })
 
 test("the Vim choice persists across a reload (AC-3)", async ({ page }) => {
-  await vimToggle(page).click()
-  await expect(vimToggle(page)).toHaveAttribute("aria-pressed", "true")
+  await toggleVimChord(page)
+  await expect(page.locator(".cm-vimMode")).toBeVisible()
 
   await page.reload()
   // The folder auto-restores on reload (handle still granted); no re-pick needed.
   await expect(page.locator("#welcome")).toBeHidden()
-  await expect(vimToggle(page)).toHaveAttribute("aria-pressed", "true")
   await editor(page).click()
-  await expect(page.locator(".cm-vimMode")).toBeVisible() // still in Vim
+  await expect(page.locator(".cm-vimMode")).toBeVisible() // still in Vim (from .brulion.json)
 })
 
 test("with Vim on, the slash menu still works (AC-4)", async ({ page }) => {
@@ -149,8 +145,8 @@ test("toggling Vim never writes a note file (AC-8)", async ({ page }) => {
 
   // Toggling Vim reconfigures the editor and persists the flag to the per-vault
   // settings file (`.brulion.json`, M16/FEAT-0047) — never a note's `.md` bytes.
-  await vimToggle(page).click()
-  await expect(vimToggle(page)).toHaveAttribute("aria-pressed", "true")
+  await toggleVimChord(page)
+  await expect(page.locator(".cm-vimMode")).toBeVisible()
   expect(await readStartMd(page)).toBe("untouched") // the note is untouched (the moat)
 })
 
