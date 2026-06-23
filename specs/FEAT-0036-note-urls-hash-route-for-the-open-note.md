@@ -43,21 +43,33 @@ no entry.
 **URL → open note.** A `hashchange` — the browser Back/Forward buttons, the
 mouse back/forward buttons, or an edited/pasted/typed URL — switches the editor
 to the note named by the hash, reusing the existing note-switch path
-(`switchTo`). A hash that names a note that does **not** exist in the open folder
-is inert: the open note does not change (no create-on-miss; a bookmark to a
-since-deleted note simply leaves you where you are). The app must not loop:
-mirroring the active note into the hash must not be read back as a fresh
-navigation.
+(`switchTo`). The app must not loop: mirroring the active note into the hash must
+not be read back as a fresh navigation (a hash equal to the open note is a no-op),
+and a **malformed** hash is ignored silently.
+
+**Missing-note hash.** A hash that is well-formed but names a note that does
+**not** exist in the open folder must not silently desync the address bar from
+the open note. Instead a **non-blocking banner** announces the missing note (by
+its display name) and offers to **create** it. The open note does not change while
+the banner stands (at runtime: the note you were on; on load: the resolved
+fallback note), and the address bar keeps the missing-note hash — it names the
+target the banner offers to create. Creating (the banner's action) makes that note
+via the existing create path (the same name validation) and switches to it, at
+which point the hash names a real note and the banner clears. Dismissing the
+banner clears it and re-syncs the address bar back to the open note, so the URL
+never stays lying about what is open. This is the one deliberate place the route
+can cause a file write — and only on the explicit banner action, never
+automatically.
 
 **Load / bookmark.** On load, after the folder is granted (silently re-attached
 or re-picked), the initial hash takes precedence over the persisted active note:
-if the hash names an existing note, that note opens. With no hash, an empty/
-malformed hash, or a hash naming a note absent from the folder, the normal flow
-stands (the persisted last-active note, else the seed). The settled initial URL
-leaves exactly **one** history entry for the resolved note — landing on a note
-must not bury a phantom "previous" entry that Back would step onto. Before any
-folder is granted, the hash is not acted on (the first-run screen shows); it is
-honored once a folder is opened.
+if the hash names an existing note, that note opens. With no hash or a malformed
+hash, the normal flow stands (the persisted last-active note, else the seed); a
+hash naming an absent note opens the fallback note and raises the missing-note
+banner (above). The settled initial URL leaves exactly **one** history entry for
+the resolved note — landing on a note must not bury a phantom "previous" entry
+that Back would step onto. Before any folder is granted, the hash is not acted on
+(the first-run screen shows); it is honored once a folder is opened.
 
 ## Constraints
 
@@ -70,8 +82,10 @@ honored once a folder is opened.
 - **One source of truth for path resolution.** The route is path-addressed,
   consistent with FEAT-0023 storage and the in-memory note list; a hash resolves
   to a note by exact path membership in that list. No second name validator.
-- **Moat-neutral.** No file read/write changes because of routing. The hash is
-  navigation state only.
+- **Moat-neutral, with one explicit exception.** Routing reads no file and writes
+  none on its own; the hash is navigation state. The sole write a route can cause
+  is creating a note via the **missing-note banner's** explicit action — a
+  user-initiated create, through the existing create path, never automatic.
 - The path↔hash codec is pure (no DOM/History/FSA dependency) so it is unit-
   tested directly.
 
@@ -82,8 +96,9 @@ honored once a folder is opened.
   not added here.
 - **Recency / most-recently-visited ordering** (M21) — this phase only records
   the visit history (by pushing hash entries); consuming it for ranking is M21.
-- **Create-on-miss from a URL.** A hash naming a missing note is inert; it does
-  not offer to create the note.
+- **Auto-create from a URL.** The missing-note banner offers creation, but a
+  note is created only on the explicit banner action — never silently on
+  navigating to a missing hash.
 - **Deep-linking to a position within a note** (a heading anchor, a line). The
   route addresses the note, not a location inside it.
 
@@ -127,10 +142,11 @@ Given the user pressed Back from `b.md` to `a.md`,
 When the browser Forward button is pressed,
 Then the hash returns to `#/b` and the editor shows `b.md`.
 
-**AC-8** — A hash naming a missing note is inert.
+**AC-8** — A hash naming a missing note does not switch and does not create.
 Given a folder is open with `a.md` active and no note `ghost.md`,
 When the hash is changed to `#/ghost`,
-Then the open note stays `a.md` (no switch, no note created).
+Then the open note stays `a.md` and no note is created (the missing-note banner
+appears — see AC-13).
 
 **AC-9** — A bookmarked hash opens that note on load.
 Given the URL hash is `#/projects/diablo` and the folder (containing
@@ -146,7 +162,7 @@ When the app restores the folder,
 Then `b.md` opens, not `a.md`.
 
 **AC-11** — No hash falls back to the normal active-note flow.
-Given the load URL has no hash (or a hash naming a note absent from the folder),
+Given the load URL has no hash (or a malformed hash),
 When the app restores the folder,
 Then the persisted last-active note opens (else the seed), exactly as before this
 feature.
@@ -156,3 +172,27 @@ Given a note becomes active and its path is mirrored into the hash,
 When the resulting hash state is observed,
 Then it does not cause a second switch back to the same note (no feedback loop),
 and no spurious extra history entry is created for landing on it on load.
+
+**AC-13** — A well-formed missing-note hash raises a banner offering to create it.
+Given a folder is open with `a.md` active and no note `ghost.md`,
+When the hash changes to `#/ghost` (Back/Forward, or an edited URL),
+Then a non-blocking banner appears naming `ghost` and offering to create it, the
+open note stays `a.md`, and the address bar keeps `#/ghost`.
+
+**AC-14** — The banner's create action creates the note and opens it.
+Given the missing-note banner for `ghost` is showing,
+When the user activates its create action,
+Then `ghost.md` is created in the folder, becomes the active note, and the banner
+clears (the hash `#/ghost` now names the open note).
+
+**AC-15** — Dismissing the banner re-syncs the URL to the open note.
+Given the missing-note banner for `ghost` is showing while `a.md` is open
+(hash `#/ghost`),
+When the user dismisses the banner,
+Then the banner clears, no note is created, and the address bar returns to `#/a`
+(the open note), so the URL no longer names a note that is not open.
+
+**AC-16** — A malformed hash raises no banner.
+Given a folder is open,
+When the hash changes to a malformed value (e.g. `#/` or `#/a//b`),
+Then no banner appears and the open note does not change.

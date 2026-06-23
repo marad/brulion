@@ -958,9 +958,20 @@ with no custom history stack. Decisions:
   Mirroring the active note into the hash fires `hashchange` too, but the handler
   no-ops when the target already equals the open note — so reflecting never reads
   back as a fresh navigation.
-- **A hash naming a missing note is inert.** No create-on-miss from a URL: a
-  bookmark to a since-deleted note leaves you on the current note (the existing
-  missing-link handling already covers dangling references elsewhere).
+- **A well-formed hash naming a missing note raises a non-blocking banner (M19
+  review correction).** The first cut left such a hash *inert* (stay on the current
+  note, no feedback). The review rejected that: at runtime it left the address bar
+  naming a note that wasn't open, with no signal to the user. Instead a dismissible
+  banner names the missing note and offers to **create** it (reusing the existing
+  `addNote` create path + name validation); creating switches to the new note,
+  dismissing re-syncs the URL back to the open note so it never lies. The open note
+  is unchanged while the banner stands, and the hash stays on the missing target
+  (what the banner offers to create). A *malformed* hash is still ignored silently.
+  This is the one deliberate file write a route can cause — only on the explicit
+  banner action, never automatically — so the moat still holds (a note appears only
+  on a user gesture). (Supersedes the original "inert" decision; consistent with the
+  dead-link `confirm("Create it?")` flow, but non-blocking rather than modal so a
+  stale bookmark on load doesn't ambush the user with a dialog at startup.)
 - **On load the hash beats the persisted last-active note.** Once the folder is
   granted, an initial hash naming an existing note opens it; with no hash / a
   malformed hash / a hash naming an absent note, the normal persisted-active (else
@@ -978,10 +989,12 @@ with no custom history stack. Decisions:
 - *Foundation for M21:* the browser now records visit history for free, which M21
   reuses for most-recently-visited recency.
 - *Deferred:* in-app Back/Forward buttons (M9/PWA), recency ranking (M21),
-  create-on-miss from a URL, and deep-linking to a position inside a note.
-- *Known cosmetic edges (accepted):* navigating Back/Forward onto a note that has
-  since vanished (externally deleted, or the standing-conflict modal blocking the
-  switch) leaves the address bar momentarily naming a note that isn't open — the
-  switch is correctly inert, and the URL self-heals on the next navigation. No data
+  auto-create from a URL (the banner creates only on its explicit action), and
+  deep-linking to a position inside a note.
+- *Known cosmetic edge (accepted):* pressing Back/Forward **while the
+  standing-conflict modal is open** changes the hash but the switch is correctly
+  blocked, so the address bar momentarily names a note that isn't open until the
+  conflict is resolved. Very rare (Back exactly during an open conflict); no data
   loss; restoring the hash would mean fighting the browser's own history, not worth
-  it at this scale.
+  it at this scale. (The other earlier edge — Back onto an externally-deleted note —
+  is now resolved by the missing-note banner above.)
