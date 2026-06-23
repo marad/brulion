@@ -1119,3 +1119,56 @@ Two reported daily-use failures in the quick switcher, fixed as two phases on
   (substring-wins is enough); recency staying a pure tiebreaker on typed queries
   (match quality rules); and the own MRU list (IndexedDB, cap 50, local per-browser)
   in place of M19's unreadable browser history.
+
+## Rename rewrites inbound links: a pure core, reusing the resolvers, gated by a confirm (M25 / FEAT-0040)
+
+M14 (FEAT-0034) deliberately moved only the renamed file and left links to it in
+*other* notes dangling — the moat forbids silently mutating files the user didn't
+ask us to touch. M25 closes that loop: on a rename, links that pointed at the old
+path are rewritten to the new one. This is **not** a moat violation — it's plain
+markdown the user owns, changed only on an explicit, user-initiated rename, and
+only after the user confirms which files change. Decisions:
+
+- **A pure rewrite core (`link-rewrite.ts`), separate from the I/O.** All
+  byte-mutating logic lives in one DOM/FSA-free module
+  (`relativeLink` + `rewriteLinksForRename`), unit-tested directly — the part where
+  a bug corrupts the user's files. The controller only does the I/O orchestration
+  (read each note → rewrite → guarded write). Tests were written cold (a
+  fresh-context subagent against the contract) before the bodies, per the
+  tests-first rule.
+- **Detection reuses the existing resolvers — one source of truth.** "Does this
+  link point at the renamed note" is answered by `resolveNotePath` (markdown links,
+  relative to the linking note's folder) and `resolveWikilink` (wikilinks), the
+  *same* functions the renderer uses. The bare-vs-full wikilink choice reuses
+  `shortestLinkText` (FEAT-0037). No second notion of where a link goes. Markdown
+  link *spans* are found with the `@lezer/markdown` grammar (so images and
+  reference links are correctly excluded); wikilink spans via the shared
+  `findWikilinks` (extracted from `findWikilinkAt` so the `[[…]]` offset math lives
+  in one place).
+- **Three link forms, each rebased correctly.** Markdown links → the POSIX relative
+  path from the linking note's folder to the new path (`relativeLink`, round-trip
+  with `resolveNotePath`; a destination needing it is wrapped in CommonMark's `<…>`
+  form). Slashed wikilinks (`[[sub/note]]`) → the new full path. Bare wikilinks
+  (`[[note]]`) → kept **bare** when the basename is still unique post-rename (so a
+  pure folder move needs *no* rewrite — the basename follows the note across
+  folders), promoted to a full path only when the move would otherwise make the
+  bare name resolve to a *different* note.
+- **The user confirms which files change; every write is guarded.** The multi-file
+  write is never silent: the controller asks an injected `confirmLinkUpdate` gate
+  (wired in `main.ts` as a `window.confirm` naming the affected notes) and writes
+  only on confirmation. A rename of a note nobody links to writes nothing extra and
+  shows no dialog. Each inbound write goes through `saveNote`'s stale-write guard
+  with the mtime read moments earlier, so a note edited from outside between the
+  scan and the write is **skipped, never clobbered** — a rename touching N files
+  can't lose an edit in any. The pass runs inside the controller's serialize queue
+  (after the move + active-note follow), and is **best-effort**: a failure in it
+  (a rejected confirm, an I/O error part-way) leaves the links as-is rather than
+  reporting the already-succeeded rename as failed.
+- **Consequence / accepted cost.** The pass reads every *other* note on a rename
+  (sequential, no index) — the right altitude at quick-capture scale (the folder
+  tree stays the single source of truth, nothing to bookkeep), with an O(N) I/O
+  ceiling if a vault grows to hundreds of notes. The renamed note's own bytes are
+  untouched (it's excluded from its own scan). Out of scope: reference-style
+  markdown links (`[ref]: path`, which the app doesn't render), the moved note's
+  *own* outbound relative links (a folder move can break those — a separate
+  concern), a global rename-any-note surface, and undo of a multi-file rename.
