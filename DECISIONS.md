@@ -1102,3 +1102,20 @@ Two reported daily-use failures in the quick switcher, fixed as two phases on
   without producing a `NaN` comparator. Recency applies to the quick switcher only;
   the wikilink autocomplete keeps its pure match-quality order (it calls
   `searchNotes` 2-arg, so `recency` defaults to empty).
+
+### M21 review fixes (live app)
+
+- **The open note is excluded from the switcher entirely (variant B).** The
+  original FEAT-0039 had the most-recently-visited note — which is the note you
+  *currently have open* — sitting at the top of an empty switcher, a dead first row
+  ("you are here"). The review chose to **omit the open note from the results for
+  any query**: you can't switch to where you already are (`switchTo` is a no-op on
+  the active note). *Consequence:* on an empty query the first row is the
+  **previously**-visited note, so Enter performs an Alt-Tab-style toggle back to
+  where you came from. The exclusion lives in the quick switcher (a `getActiveNote`
+  dep + a one-line filter), **not** in `searchNotes` — so the wikilink autocomplete,
+  which may legitimately list the open note, is unaffected. (FEAT-0039 AC-8.)
+- Confirmed unchanged in the review: the two-tier ranking with no name-segment bonus
+  (substring-wins is enough); recency staying a pure tiebreaker on typed queries
+  (match quality rules); and the own MRU list (IndexedDB, cap 50, local per-browser)
+  in place of M19's unreadable browser history.
