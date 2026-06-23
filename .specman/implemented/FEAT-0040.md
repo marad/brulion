@@ -16,11 +16,13 @@ vault stays internally consistent across the move.
 
 Rewriting a link is still plain markdown the user owns (no lock-in, no
 app-private state), and it happens only on an explicit, user-initiated rename —
-so it does not break the moat. But it is a real multi-file *byte* mutation of
-files the user did not directly open, so two guardrails apply: the user
-**confirms which files will change** before any are touched, and every write goes
-through the existing per-note stale-write guard so a file edited from outside is
-**skipped, never clobbered**.
+so it does not break the moat. The rewrite is **silent and unconditional**: a
+rename's links should just follow it, the way a refactor-rename does in an
+editor, and prompting would only invite the user to decline and thereby keep the
+very dangling links this feature exists to prevent (decided in the M25 review).
+The one guardrail that remains is data-safety: every write goes through the
+existing per-note stale-write guard, so a file edited from outside is **skipped,
+never clobbered**.
 
 The detection of "what does this link point at" reuses the existing resolvers
 (`resolveNotePath` for markdown links, `resolveWikilink` for wikilinks) so there
@@ -73,28 +75,19 @@ cannot interleave with a switch, save, or poll:
 1. Capture the pre-rename listing and derive the post-rename one (the same set
    with `oldPath` replaced by `newPath`).
 2. Read every *other* note (skip the renamed note itself) and run the rewrite
-   core. Collect each note whose text changed, with the `lastModified` from that
-   fresh read.
-3. If at least one note would change, ask the UI to confirm via an injected
-   `confirmLinkUpdate(affectedPaths)` callback. If it resolves false (or the user
-   cancels), nothing else is written — the rename stands and the inbound links are
-   left dangling (the FEAT-0034 status quo). When the callback is not provided the
-   pass proceeds (the gate is a UI concern; the controller's contract is the data
-   operation).
-4. On confirmation, write each changed note with `saveNote(dir, path, newText,
-   knownLastModified)`. A `conflict` result (the file changed on disk between the
-   read and the write) **skips that file** — it is never overwritten — and the
-   rename still completes for the others.
+   core. For each note whose text changed, write it back immediately with
+   `saveNote(dir, path, newText, knownLastModified)` (the `lastModified` from that
+   fresh read). A `conflict` result (the file changed on disk between the read and
+   the write) **skips that file** — it is never overwritten — and the rename still
+   completes for the others.
+3. The pass is **best-effort**: a failure in it (an I/O error part-way) is
+   swallowed and never reports the already-succeeded rename as failed — the
+   affected links simply stay as they were.
 
 The renamed note's own move is unchanged (FEAT-0034): native `move()` preferred,
 copy-then-delete fallback, no-clobber guard, content preserved. A rename with no
-inbound links anywhere behaves exactly as before — no confirmation, no extra
-writes.
-
-**The confirmation UI.** `main.ts` provides `confirmLinkUpdate` as a blocking
-confirm that names the affected notes (their display names) and the count, so the
-user sees exactly which files will change before any are written. Declining
-leaves the links dangling.
+inbound links anywhere behaves exactly as before — no extra writes, nothing
+surfaced.
 
 ## Constraints
 
@@ -115,8 +108,9 @@ leaves the links dangling.
   clobbered (the moat). A rename touching N files never loses an edit in any.
 - The inbound-link pass runs inside the controller's serialize queue, after the
   move and the active-note follow, so a concurrent poll cannot misread it.
-- Other files are only written **after** an explicit confirmation; a rename of a
-  note nobody links to writes nothing extra and shows no dialog.
+- The rewrite is silent and unconditional (no confirmation prompt); a rename of a
+  note nobody links to writes nothing extra. The pass is best-effort — a failure
+  never reports the rename itself as failed.
 - Markdown links use the markdown grammar to locate `[label](dest)` spans (so
   images and non-inline links are correctly excluded); wikilinks are located with
   the existing `WIKILINK_RE` scan — matching how the renderer detects each.
@@ -189,24 +183,25 @@ Then none of those three change (`other.md` points elsewhere; the external link
 and the image are excluded), and if they are the only links the function returns
 `null`.
 
-**AC-9** — Rename rewrites inbound links across the vault under confirmation.
+**AC-9** — Rename silently rewrites inbound links across the vault.
 Given an open folder with `diablo.md` active and `n.md` containing
-`[[diablo]]` and `[d](diablo.md)`, with a `confirmLinkUpdate` that resolves true,
+`[[diablo]]` and `[d](diablo.md)`,
 When `renameActive("diablo-2")` is called,
 Then `diablo.md` is moved to `diablo-2.md`, `n.md` on disk now contains
-`[[diablo-2]]` and `[d](diablo-2.md)`, the confirm was asked with `["n.md"]`, and
-the result is `{ ok: true }`.
+`[[diablo-2]]` and `[d](diablo-2.md)` (no prompt), and the result is
+`{ ok: true }`.
 
-**AC-10** — Declining the confirmation leaves inbound links unchanged.
-Given the same setup as AC-9 but `confirmLinkUpdate` resolves false,
+**AC-10** — A failure in the inbound pass does not fail the rename.
+Given the AC-9 setup but a guarded inbound write throws or rejects part-way,
 When `renameActive("diablo-2")` is called,
-Then `diablo.md` is still moved to `diablo-2.md` (the rename stands) but `n.md` is
-unchanged on disk, and the result is `{ ok: true }`.
+Then the move still stands, the active note is `diablo-2.md`, and the result is
+`{ ok: true }` (the inbound rewrite is best-effort, not load-bearing on the
+rename).
 
-**AC-11** — A rename with no inbound links writes nothing extra and asks nothing.
+**AC-11** — A rename with no inbound links writes nothing extra.
 Given an open folder with `diablo.md` active and `n.md` containing no link to it,
 When `renameActive("diablo-2")` is called,
-Then `n.md` is byte-identical on disk and `confirmLinkUpdate` is never called.
+Then `n.md` is byte-identical on disk.
 
 **AC-12** — An inbound write that would clobber an externally-changed file is
 skipped.
