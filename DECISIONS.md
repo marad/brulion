@@ -1419,3 +1419,48 @@ event, so visual-mode yank still dropped the hidden boundary markup (a heading's
   idempotently at editor module load, and is only ever reached while Vim mode is on.
 - **Out of scope:** delete/change register fidelity (raw text as before) and any
   paste-time transformation — deferred unless a real need shows up.
+
+## Settings live in a per-vault file, `.brulion.json` (M16 P1 / FEAT-0047)
+
+M16 needs a home for preferences (font, text size, editor width, Vim). The decisions
+for the engine under the modal (the modal UI itself is P2):
+
+- **Stored in `.brulion.json` at the open folder's root — the single source of
+  truth, no idb cache.** Settings are plain, readable, pretty-printed JSON in the
+  user's own folder, so they travel with the vault across machines/OSes. *Why:*
+  consistent with the file-fidelity moat (the prefs are the user's, in the user's
+  folder) and with M16's explicit "no idb cache, no defaults-vs-current" framing.
+  Read fresh on each folder open; before any folder is open the built-in defaults
+  apply. *Consequence:* opening a folder is read-only for settings; only an explicit
+  user change (toggle/modal) writes the file.
+- **The settings file is invisible to the note layer for free.** `listNotes`
+  already collects only `.md` files, so `.brulion.json` never appears in the note
+  list and never trips the M4 poller. *Why:* no new exclusion code — relied on (and
+  verified by an e2e) the existing filter. *Consequence:* the "ignore this non-note
+  file" requirement cost nothing.
+- **Vim moves from idb to the settings file (per-vault, was per-browser).** The
+  `brulion:vim` idb key and `saveVimMode`/`loadVimMode` are deleted; Vim is now a
+  field in `.brulion.json`. *Why:* M16 puts the Vim toggle in the same "single home"
+  as the appearance settings, and one storage mechanism is leaner than two.
+  *Consequence (flag for the milestone review):* the Vim choice now **travels with
+  the vault** rather than staying on the machine, and toggling Vim now **writes
+  `.brulion.json`** — so FEAT-0021's old AC-8 ("nothing is written to the folder")
+  was reworded to "never writes a *note* file" (the moat guarantee — note `.md`
+  bytes are still never touched). This is the one debatable M16 call: a case exists
+  for Vim being a personal per-device habit that should stay in idb. Revisit live.
+- **Applied via three CSS custom properties, headings scale for free.**
+  `applySettings` sets `--editor-font-size`, `--editor-measure`, and (when a font is
+  chosen) `--font-stack` on `:root`, and toggles Vim via the existing `setVimMode`.
+  The editor theme reads the first two with the historical 16px/68ch as `var(...)`
+  fallbacks (so the pre-folder look is unchanged). *Why:* headings already use `em`,
+  so one base-size knob scales the whole H1/H2/H3 hierarchy with no extra code; an
+  empty font removes the inline `--font-stack` so the stylesheet default is the one
+  source of truth for the default stack.
+- **Width presets:** Narrow→`68ch` (today's default), Wider→`90ch`, Full→`none`.
+  **Text size:** clamped to 12–24px. *Why:* a small, legible range; the presets keep
+  the centered-measure feel rather than exposing a raw width.
+- **Font names are sanitized against CSS injection.** `normalizeSettings` drops font
+  entries containing quote/semicolon/brace/backslash/newline. *Why:* the file is
+  hand-editable; a malicious or fat-fingered name must not break or inject into the
+  `--font-stack` inline style. The P2 picker only ever supplies real installed-font
+  names, so this only guards a tampered file.
