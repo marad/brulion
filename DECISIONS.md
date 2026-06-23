@@ -1021,13 +1021,32 @@ null off its own trigger, so they coexist). Decisions:
   narrowing the first snapshot with its own (different) fuzzy filter. Cheap at
   tens-to-hundreds of notes. (Rejected: CM's default filtering — a *third* ranking,
   inconsistent with the switcher.)
-- **Insert the full display path, not the bare basename.** Accepting replaces the
-  partial target with the note's `displayName` (folder-relative, `.md` stripped —
-  `projects/diablo`, not `diablo`). A bare wikilink resolves by basename and an
-  ambiguous basename picks the first sorted match (FEAT-0027); inserting the full
-  path makes the link resolve unambiguously to the note the user actually chose. It
-  also closes `]]` (reusing an existing `]]` right after the caret rather than
-  doubling it) and leaves the caret after the link.
+- **Insert the shortest *unambiguous* form (Obsidian-style), not always the full
+  path.** *(Reversed during the M20 review — see below.)* Accepting replaces the
+  partial target with the note's **bare name** (`.md` stripped, no folder) when that
+  basename is **unique** in the vault — so a nested `projects/diablo.md` inserts as
+  `[[diablo]]` — and only the **full path** (`[[projects/diablo]]`) when the basename
+  is **ambiguous** (a bare name would resolve to the first sorted match, FEAT-0027).
+  The bare form reads cleaner and survives the note moving folders; the full form is
+  the collision fallback that keeps the link resolving to the chosen note. One shared
+  helper, `shortestLinkText` (in the new pure `wikilink.ts`), is the single
+  definition of this form, used by both the autocomplete insert and the right-click
+  toggle so they never disagree. Accepting also closes `]]` (reusing an existing `]]`
+  right after the caret rather than doubling it) and leaves the caret after the link.
+  The completion *label* still shows the full display path so same-named notes are
+  distinguishable in the list. (Originally we inserted the full path always, for
+  unambiguous resolution; the user asked for Obsidian's name-default — shortest
+  unambiguous gives both the clean name *and* correct resolution.)
+- **A right-click toggle switches a link between its full-path and name-only forms.**
+  *(Added in the M20 review.)* Right-clicking a rendered wikilink that resolves to a
+  nested note with a unique basename adds one context-menu item — "Use full path" or
+  "Use name only" — above the formatting items; `computeWikilinkToggle` rewrites only
+  the link's target (any `|alias` is preserved) so it still resolves to the same
+  note. The item is hidden when the switch would be a no-op or unsafe: a root-level
+  note (both forms equal), an ambiguous basename (the name-only form would retarget),
+  or a dangling link (no note to canonicalize against). It reads the same
+  `linkContext` facet for the note set, so "which notes exist" stays one source of
+  truth across rendering, autocomplete, and this toggle.
 - **Existing notes only; no create-on-miss.** Unlike the switcher, autocomplete only
   *suggests* — it never creates. Typing a name that matches nothing is left alone
   (a dangling wikilink, which FEAT-0027's missing-target handling already renders
