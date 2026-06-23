@@ -1392,3 +1392,30 @@ malformed. The decisions:
 - **Out of scope:** a `text/html` rich-text clipboard flavor (the backlog's coupled
   "rich-text copy + paste" item), paste (unchanged), and fenced-code-block fences
   (only *inline* code is repaired).
+
+## Vim yank routed through the same serializer (M22 P2 / FEAT-0046)
+
+The M22 review caught that P1 (FEAT-0045) fixed only the system-clipboard copy/cut
+path — a DOM event. Vim's `y` is a *separate* mechanism: `@replit/codemirror-vim`
+stores the raw `getSelection()` in its own register and never fires a DOM `copy`
+event, so visual-mode yank still dropped the hidden boundary markup (a heading's
+`# `, a bold span's `**`). The decisions:
+
+- **Override the package's `yank` operator, reuse the one serializer.** Via the
+  public `Vim.defineOperator("yank", …)` the yanked text becomes
+  `serializeCopy(view.state, view.state.selection.ranges)` — the *same* FEAT-0045
+  boundary-repair serializer the clipboard uses. *Why:* one source of truth for
+  "what does copying this selection mean", whether it's Ctrl/Cmd+C or `y`. The
+  package documents that the live editor selection matches the operator's input
+  range, so serializing it yanks neither more nor less than the stock operator.
+- **Mirror the stock operator exactly otherwise.** Same register routing (unnamed,
+  `0`, named, the `+` clipboard register), same post-yank cursor (a local
+  `cursorMin` replicating the package's). Only the stored *text* changes.
+  *Consequence:* `"+y` now puts the repaired markdown on the system clipboard too,
+  consistent with the clipboard path; a linewise `yy` is byte-identical (its `from`
+  is the line start, so no marker is doubled).
+- **Only `yank`, installed once.** Delete/change (`d`/`c`/`x`) and the `:yank`
+  ex-command are untouched; paste is unchanged. The override installs globally and
+  idempotently at editor module load, and is only ever reached while Vim mode is on.
+- **Out of scope:** delete/change register fidelity (raw text as before) and any
+  paste-time transformation — deferred unless a real need shows up.
