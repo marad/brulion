@@ -14,6 +14,10 @@ export interface QuickSwitcherDeps {
   /** The most-recently-visited note paths (most-recent first); read per render so
    * the empty-query order and equal-score tiebreak reflect the latest visits. */
   getRecency: () => readonly string[]
+  /** The currently-open note path (or `""` when none); excluded from the results —
+   * you can't switch to where you already are, so on an empty query the first row
+   * is the previously-visited note (Enter toggles back). */
+  getActiveNote: () => string
   /** Open an existing note by path (fire-and-forget, like the sidebar click). */
   openNote: (path: string) => void
   /** Create + open a note by name; resolves to whether it succeeded (and why not). */
@@ -87,7 +91,9 @@ export function mountQuickSwitcher(
     const { matches, create } = searchNotes(input.value, deps.getNotes(), deps.getRecency())
     list.replaceChildren()
     items = []
+    const active = deps.getActiveNote()
     for (const path of matches) {
+      if (path === active) continue // can't switch to the open note — omit it
       row("switch-row", displayName(path), () => {
         deps.openNote(path)
         close()

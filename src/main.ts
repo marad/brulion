@@ -308,6 +308,7 @@ const switcher = mountQuickSwitcher(
   {
     getNotes: () => currentNotes,
     getRecency: () => recency,
+    getActiveNote: () => currentActive,
     openNote: (path) => void controller.switchTo(path),
     createNote: (name) => controller.addNote(name),
   },

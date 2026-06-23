@@ -67,7 +67,8 @@ test("Ctrl+K opens the switcher focused, listing the notes (AC-1)", async ({ pag
 
   await expect(backdrop(page)).toBeVisible()
   await expect(input(page)).toBeFocused()
-  await expect(rows(page)).toHaveCount(3)
+  // 3 notes seeded; alpha is the open note and is excluded (FEAT-0039), so 2 rows.
+  await expect(rows(page)).toHaveCount(2)
 })
 
 test("with many notes the rows keep full height and the list scrolls (layout regression)", async ({
