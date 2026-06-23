@@ -32,6 +32,9 @@ describe("hashToPath", () => {
     ["empty interior segment", "#/a//b"],
     ["trailing slash", "#/a/"],
     ["malformed percent-escape", "#/a%2"],
+    ["smuggled separator (%2F)", "#/a%2Fb"],
+    ["dot-dot traversal", "#/..%2F..%2Fsecret"],
+    ["lone dot segment", "#/."],
   ])("decodes %s to null (AC-4)", (_label, hash) => {
     expect(hashToPath(hash)).toBeNull()
   })

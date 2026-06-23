@@ -29,6 +29,7 @@ async function writeNote(page: Page, name: string, text: string) {
 }
 
 const display = (page: Page) => page.locator("#note-identity .note-identity-display")
+const renameInput = (page: Page) => page.locator("#note-identity .note-identity-edit")
 const row = (page: Page, name: string) => page.locator(".note-row", { hasText: name })
 const hash = (page: Page) => page.evaluate(() => location.hash)
 
@@ -89,6 +90,28 @@ test("a bookmarked hash opens that note on load, beating the persisted active (A
   await page.goto("/brulion/#/beta")
   await expect(display(page)).toContainText("beta")
   await expect.poll(() => hash(page)).toBe("#/beta")
+})
+
+test("renaming the open note replaces the dead URL entry, so Back stays consistent (AC-12)", async ({
+  page,
+}) => {
+  await openWithTwoNotes(page)
+  await row(page, "beta").click() // push #/beta over #/alpha
+  await expect.poll(() => hash(page)).toBe("#/beta")
+
+  // Rename beta → gamma from the header. The old #/beta entry now names a vanished
+  // note, so the mirror must REPLACE it (not push) — else Back lands on a dead note.
+  await display(page).click()
+  await renameInput(page).fill("gamma")
+  await renameInput(page).press("Enter")
+  await expect(display(page)).toContainText("gamma")
+  await expect.poll(() => hash(page)).toBe("#/gamma")
+
+  // Back goes to alpha (the genuine prior note), URL and open note agreeing — not
+  // a phantom #/beta with gamma still open.
+  await page.goBack()
+  await expect(display(page)).toContainText("alpha")
+  await expect.poll(() => hash(page)).toBe("#/alpha")
 })
 
 test("no hash falls back to the persisted/seed note (AC-11)", async ({ page }) => {

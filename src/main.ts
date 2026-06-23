@@ -106,10 +106,32 @@ let initialRouteConsumed = false
 // which both avoids a duplicate history entry and is the loop guard against the
 // hashchange listener reading our own write back as a fresh navigation. Comparing
 // decoded paths (not raw hash strings) stays robust to browser hash re-encoding.
+//
+// Push vs replace: a genuine navigation (the user opened a different, still-existing
+// note) pushes, so Back returns to the prior note. But when the note the URL points
+// at is gone from the list, the active note changed because the old one was
+// renamed/deleted out from under us — not navigation. Replacing the now-dead entry
+// keeps the URL in sync with the open note (else Back would land on a vanished note
+// and the address bar would disagree with what's open).
 const syncRouteToActive = (active: string) => {
   if (suppressRouteSync) return
-  if (hashToPath(location.hash) === active) return
-  location.hash = pathToHash(active) // pushes a history entry
+  const current = hashToPath(location.hash)
+  if (current === active) return
+  const hash = pathToHash(active)
+  if (current !== null && !currentNotes.includes(current)) {
+    history.replaceState(null, "", hash) // old note vanished (rename/delete) — replace, don't push
+  } else {
+    location.hash = hash // genuine navigation — push a history entry
+  }
+}
+// The note the current URL hash names and we should switch to, or null: nothing
+// when the hash is malformed, names the already-open note (the loop guard against
+// our own mirror writes), or names a note absent from the folder (inert — no
+// create-on-miss). Used by both the load-time resolution and the hashchange path,
+// so the two apply one identical policy.
+const hashTargetToOpen = (): string | null => {
+  const target = hashToPath(location.hash)
+  return target && target !== currentActive && currentNotes.includes(target) ? target : null
 }
 // Follow a resolved internal note path: switch to it if it exists, else offer to
 // create it (shared by markdown links and wikilinks — FEAT-0026/0027).
@@ -277,13 +299,13 @@ const openNote = async (dir: FileSystemDirectoryHandle) => {
     // we resolve, then settle the URL with replaceState so landing leaves exactly
     // one history entry (no phantom previous for Back to step onto).
     initialRouteConsumed = true
-    const target = hashToPath(location.hash)
     suppressRouteSync = true
     try {
       await controller.open(dir)
-      if (target && target !== currentActive && currentNotes.includes(target)) {
-        await controller.switchTo(target)
-      }
+      // The hash held steady across open() (mirroring is suppressed), so it still
+      // names the bookmark; honor it over the persisted active note.
+      const target = hashTargetToOpen()
+      if (target) await controller.switchTo(target)
     } finally {
       suppressRouteSync = false
     }
@@ -301,10 +323,8 @@ const openNote = async (dir: FileSystemDirectoryHandle) => {
 // note absent from the folder is inert (no create-on-miss).
 window.addEventListener("hashchange", () => {
   if (!workspaceShown) return
-  const target = hashToPath(location.hash)
-  if (target && target !== currentActive && currentNotes.includes(target)) {
-    void controller.switchTo(target)
-  }
+  const target = hashTargetToOpen()
+  if (target) void controller.switchTo(target)
 })
 
 // The two ways out of a conflict; the controller clears it via onConflictResolved.

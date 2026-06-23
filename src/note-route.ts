@@ -10,15 +10,16 @@
  * encode-then-decode returns the original path unchanged.
  */
 
+import { displayName } from "./note-name"
+
 /**
- * Encode a folder-relative note path to its hash route. Strips a trailing `.md`
- * (case-insensitive), percent-encodes each `/`-separated segment, and prefixes
- * `#/`. `start.md` → `#/start`; `Allegro/Journal/Week 22.md` →
- * `#/Allegro/Journal/Week%2022`.
+ * Encode a folder-relative note path to its hash route. Drops the `.md`
+ * extension (via {@link displayName}, the one definition of that), percent-encodes
+ * each `/`-separated segment, and prefixes `#/`. `start.md` → `#/start`;
+ * `Allegro/Journal/Week 22.md` → `#/Allegro/Journal/Week%2022`.
  */
 export function pathToHash(path: string): string {
-  const display = path.replace(/\.md$/i, "")
-  return "#/" + display.split("/").map(encodeURIComponent).join("/")
+  return "#/" + displayName(path).split("/").map(encodeURIComponent).join("/")
 }
 
 /**
@@ -27,6 +28,11 @@ export function pathToHash(path: string): string {
  * start with `#/`, an empty route (`#/`), any empty segment (`#/a//b`, a trailing
  * slash), and a segment with a malformed `%`-escape. A decoded route gains the
  * `.md` extension back.
+ *
+ * A decoded segment that itself contains a `/` (a smuggled `%2F`) or is `.`/`..`
+ * is rejected: the app never produces such a hash (path segments never contain a
+ * separator), and accepting it would let a hand-crafted URL decode to a traversal
+ * path like `../../secret.md` — which the moat forbids leaving the granted folder.
  */
 export function hashToPath(hash: string): string | null {
   if (!hash.startsWith("#/")) return null
@@ -41,7 +47,9 @@ export function hashToPath(hash: string): string | null {
     } catch {
       return null // malformed %-escape
     }
-    if (decoded === "") return null
+    if (decoded === "" || decoded === "." || decoded === ".." || decoded.includes("/")) {
+      return null // empty, a traversal segment, or a smuggled separator — never a real note
+    }
     segments.push(decoded)
   }
   return segments.join("/") + ".md"
