@@ -259,7 +259,7 @@ header button:hover {
 }
 
 /* Drag-to-resize handle on the sidebar/editor border (FEAT-0044): a thin grab
-   strip with a resize cursor and a hairline that surfaces on hover. `hidden`
+   strip with a resize cursor and a subtle fill that surfaces on hover. `hidden`
    (UA `display: none`) covers the no-folder state; the collapse rule below
    removes it when the sidebar is hidden — there's nothing to resize then.
    `touch-action: none` keeps a pointer drag from being stolen as a scroll. */

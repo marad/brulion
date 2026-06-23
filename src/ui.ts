@@ -456,7 +456,9 @@ export function clampSidebarWidth(px: number): number {
  * The drag is delta-based (final = start width + pointer delta), so it's
  * independent of the sidebar's left offset; pointer capture keeps it tracking if
  * the pointer leaves the thin handle, and text selection is suppressed while
- * dragging.
+ * dragging. The drag ends on `lostpointercapture` — fired by both a normal
+ * release and an interruption (pointercancel, an OS gesture) — so cleanup always
+ * runs and the *last applied* width (what the user sees) is what gets persisted.
  */
 export function wireSidebarResize(
   handle: HTMLElement,
@@ -470,19 +472,22 @@ export function wireSidebarResize(
     event.preventDefault() // don't start a text selection / focus shift
     const startX = event.clientX
     const startWidth = sidebar.getBoundingClientRect().width
-    const widthAt = (ev: PointerEvent) => clampSidebarWidth(startWidth + ev.clientX - startX)
+    let width = startWidth
     handle.setPointerCapture(event.pointerId)
     document.body.style.userSelect = "none" // no text selection mid-drag
 
-    const onMove = (ev: PointerEvent) => setWidth(widthAt(ev))
-    const onUp = (ev: PointerEvent) => {
+    const onMove = (ev: PointerEvent) => {
+      width = clampSidebarWidth(startWidth + ev.clientX - startX)
+      setWidth(width)
+    }
+    const onEnd = () => {
       handle.removeEventListener("pointermove", onMove)
-      handle.removeEventListener("pointerup", onUp)
+      handle.removeEventListener("lostpointercapture", onEnd)
       document.body.style.userSelect = ""
-      opts.onChange(widthAt(ev))
+      opts.onChange(width)
     }
     handle.addEventListener("pointermove", onMove)
-    handle.addEventListener("pointerup", onUp)
+    handle.addEventListener("lostpointercapture", onEnd)
   })
 }
 
