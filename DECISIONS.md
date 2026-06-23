@@ -1522,3 +1522,22 @@ The visible surface over the P1 engine. Decisions:
   M18 theming. The render plugin rebuilds on a `syntaxTree` change so colors appear
   when a lazily-loaded language finishes parsing.
 - **One light palette (GitHub-light-ish).** A dark variant waits for M18's theme.
+
+## Frontmatter highlighted as YAML, reusing the code palette (M15 P2 / FEAT-0050)
+
+The M23-review follow-up: the expanded frontmatter region (FEAT-0042) is painted as
+YAML.
+
+- **Same grammar + palette as a fenced `yaml` block.** `frontmatterYamlMarks` parses
+  the region's inner text with `@codemirror/lang-yaml`'s parser and emits `tok-*` mark
+  decorations colored by M15 P1's `codeTokenTheme`. *Why:* one source of truth for
+  token colors — frontmatter and code look identical and pick up a future (M18) theme
+  together. *Consequence:* the YAML grammar tags keys, quoted strings, and comments
+  (plain scalars/numbers stay plain — the grammar doesn't tag them); this is exactly
+  how a ```` ```yaml ```` block renders, so it's consistent, and the spec/Done were
+  worded to match reality rather than promising number coloring.
+- **Expanded-only, decoration-only, opaque.** Marks are emitted solely in the field's
+  expanded branch (collapsed is the chip, nothing to color); nothing is hidden or made
+  atomic; no field is interpreted; the bytes are never read-for-rewrite nor modified
+  (the FEAT-0042/M23 moat stance). Parsing is synchronous (frontmatter is small) and
+  error-tolerant (malformed YAML still renders).
