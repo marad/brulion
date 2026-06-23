@@ -1211,3 +1211,50 @@ Two changes from the milestone review, walked through on the deployed app.
   nothing to index), but acknowledged as a broader future topic (it interacts with
   the poller and anything else that scans the vault) to revisit if a vault grows
   large; reference-style markdown links (the app renders only inline links).
+
+## Frontmatter rendered collapsed, opaque, bytes untouched (M23 / FEAT-0042)
+
+A leading `---…---` YAML frontmatter block rendered as raw fences at the top of a
+note — ugly, and a broken "markup is never visible" promise for the one construct
+people paste at the top of a note. M23 hides it behind a discreet, expandable
+chip. The decisions, all bending to the file-fidelity moat:
+
+- **Structural detection, not the parser.** Lezer markdown ships no frontmatter
+  node, and a leading `---` is otherwise ambiguous (thematic break / setext
+  underline). We detect it the way Obsidian/Jekyll/pandoc do: **line 1 is exactly
+  `---`**, closed by a later line that is exactly `---` or `...`; the block is
+  bytes `[0, closingLine.to]`. A pure `frontmatterRange(state)` returns it (or
+  `null`). *Why:* fully under our control, no extra parser extension, and the
+  leading-fence-plus-close convention disambiguates from a body `---`.
+- **Only a *closed* block renders.** A leading `---` with no closing delimiter yet
+  (being typed) stays raw — same rule as an unclosed fence and a bare `#` heading,
+  so the marker never vanishes mid-typing.
+- **Opaque — no field interpretation, no reserialize.** We never parse the YAML
+  or read `title`/`tags`/`aliases` (deferred; `title` collides with the
+  filename-as-identity model and M14). Decoration only; the bytes are never
+  rewritten — a parse-and-reserialize would churn quoting/order/indentation and
+  other tools would notice. *Consequence:* saving a note round-trips the exact
+  original frontmatter, verbatim.
+- **Collapsed by default; explicit click to expand.** Collapsed = a `block`-level
+  `Decoration.replace` over the whole block, drawing a clickable `▸ metadata`
+  chip (atomic, so the caret skips it). Expanded = no replace; the raw lines get a
+  subtle box (line decorations) plus a `▾ metadata` block header to collapse
+  again — the user edits the raw text directly. *Why a click, not a
+  selection-reveal like links (FEAT-0026):* the collapsed block is atomic, so the
+  caret can't get inside to trigger a reveal — the chip *is* the only way in.
+- **A `StateField`, not the viewport `ViewPlugin`.** Block-level / line-break-
+  replacing decorations are layout-changing, which CodeMirror only accepts from a
+  field — the same reason FEAT-0016's block constructs live in
+  `blockRenderingField`. Frontmatter is at most one block at the doc head, so a
+  whole-doc scan on doc-change is cheap.
+- **Collapse state resets to collapsed on every programmatic note load.** Because
+  `setEditorText` replaces the doc *within the same `EditorState`*, the field's
+  collapsed flag would otherwise leak across note switches (open A expanded →
+  switch to B → B opens expanded). The field watches the programmatic-load
+  annotation and resets to collapsed. *Consequence:* the load annotation, until
+  now private to `editor.ts` (`External`), moves to a tiny shared module
+  (`editor-load.ts`) so both the editor and the frontmatter field can read it
+  without an import cycle.
+- **New module `frontmatter.ts`,** wired into the editor's extension list beside
+  `markdownRendering`, rather than bloating `markdown-render.ts`. The detector is
+  pure and unit-tested; the field/widgets are the only stateful glue.
