@@ -11,6 +11,7 @@ import {
   deleteMarkerSpaceBackward,
 } from "./markdown-commands"
 import { slashCommands } from "./slash-commands"
+import { wikilinkCompletions } from "./link-complete"
 import { contextMenu } from "./context-menu"
 import { vimCaretGuard } from "./vim-caret"
 
@@ -148,6 +149,7 @@ export function mountEditor(
       markdownRendering, // hide markdown markup; render text as rich content
       markdownCommands, // Ctrl+B/I/E and heading shortcuts reshape the markdown
       slashCommands, // "/" at line start opens a menu to reshape the line
+      wikilinkCompletions, // "[[" opens a list of existing notes, ranked like Ctrl+K
       contextMenu, // right-click opens a formatting popup over the selection
       typography,
       keymap.of([
