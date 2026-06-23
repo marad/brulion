@@ -16,6 +16,7 @@ import { slashCommands } from "./slash-commands"
 import { wikilinkCompletions } from "./link-complete"
 import { contextMenu } from "./context-menu"
 import { vimCaretGuard } from "./vim-caret"
+import { copyMarkdown } from "./copy-markdown"
 
 /** Clean, prose-friendly typography: proportional font, readable measure,
  * comfortable spacing, no code-like gutter. No syntax hiding — that is M2.
@@ -150,6 +151,7 @@ export function mountEditor(
       slashCommands, // "/" at line start opens a menu to reshape the line
       wikilinkCompletions, // "[[" opens a list of existing notes, ranked like Ctrl+K
       contextMenu, // right-click opens a formatting popup over the selection
+      copyMarkdown, // copy/cut re-serialize the selection to valid markdown (FEAT-0045)
       typography,
       keymap.of([
         {
