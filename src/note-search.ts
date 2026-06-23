@@ -139,7 +139,10 @@ export function searchNotes(
 ): SearchResult {
   const trimmed = query.trim()
   const rank = new Map(recency.map((path, i) => [path, i]))
-  const rankOf = (path: string): number => rank.get(path) ?? Infinity
+  // Never-visited paths all share one finite rank past the last real index, so two
+  // of them compare equal (0) and fall through to the path tiebreak — using
+  // Infinity here would make `rankOf(a) - rankOf(b)` NaN for two such paths.
+  const rankOf = (path: string): number => rank.get(path) ?? recency.length
   const matches = paths
     .map((path) => ({ path, score: fuzzyScore(trimmed, displayName(path)) }))
     .filter((m): m is { path: string; score: number } => m.score !== null)
