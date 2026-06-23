@@ -12,6 +12,8 @@ import {
   StateEffect,
   StateField,
 } from "@codemirror/state"
+import { classHighlighter, highlightTree } from "@lezer/highlight"
+import { yamlLanguage } from "@codemirror/lang-yaml"
 import { ProgrammaticLoad } from "./editor-load"
 
 /** The byte range of a leading frontmatter block: the document start through the
@@ -41,6 +43,37 @@ export function frontmatterRange(state: EditorState): FrontmatterRange | null {
     if (t === "---" || t === "...") return { from: 0, to: doc.line(n).to }
   }
   return null // no closing delimiter yet — stays raw, like an unclosed fence
+}
+
+/** A YAML highlight mark over `[from, to)` carrying space-separated `tok-*` classes
+ * (the same palette code blocks use — FEAT-0049). */
+export interface YamlMark {
+  from: number
+  to: number
+  cls: string
+}
+
+/**
+ * Highlight the inner YAML of a frontmatter `range` as `tok-*` token marks (FEAT-0050).
+ * Parses only the lines *between* the opening `---` and the closing delimiter with the
+ * YAML grammar — the same one a fenced ```` ```yaml ```` block uses — and offsets the
+ * token ranges back to absolute document positions. Returns `[]` for an empty body
+ * (e.g. `---\n---`). Pure, synchronous, and error-tolerant (the lezer parser never
+ * throws); it reads the document but never mutates it.
+ */
+export function frontmatterYamlMarks(state: EditorState, range: FrontmatterRange): YamlMark[] {
+  const doc = state.doc
+  const openLine = doc.lineAt(range.from).number
+  const closeLine = doc.lineAt(range.to).number
+  if (closeLine - openLine < 2) return [] // no inner lines to colour
+  const innerFrom = doc.line(openLine + 1).from
+  const innerTo = doc.line(closeLine - 1).to
+  const tree = yamlLanguage.parser.parse(doc.sliceString(innerFrom, innerTo))
+  const marks: YamlMark[] = []
+  highlightTree(tree, classHighlighter, (f, t, cls) => {
+    marks.push({ from: innerFrom + f, to: innerFrom + t, cls })
+  })
+  return marks
 }
 
 /** Effect that toggles the frontmatter region between collapsed and expanded. */
@@ -109,6 +142,11 @@ function buildFrontmatter(state: EditorState, collapsed: boolean): FrontmatterSt
   const last = state.doc.lineAt(r.to).number
   for (let n = state.doc.lineAt(r.from).number; n <= last; n++) {
     deco.push(Decoration.line({ class: "cm-frontmatter-line" }).range(state.doc.line(n).from))
+  }
+  // Colour the inner YAML as tokens (FEAT-0050), reusing the code-block palette. Marks
+  // only — nothing hidden or made atomic; the bytes are untouched.
+  for (const m of frontmatterYamlMarks(state, r)) {
+    deco.push(Decoration.mark({ class: m.cls }).range(m.from, m.to))
   }
   return { collapsed, deco: Decoration.set(deco, true), atomic: RangeSet.empty }
 }

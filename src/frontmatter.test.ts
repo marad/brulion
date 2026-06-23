@@ -3,6 +3,7 @@ import { EditorState } from "@codemirror/state"
 import { EditorView } from "@codemirror/view"
 import {
   frontmatterRange,
+  frontmatterYamlMarks,
   toggleFrontmatter,
   frontmatterRendering,
 } from "./frontmatter"
@@ -181,5 +182,38 @@ describe("frontmatterRendering — reset on load (AC-9)", () => {
     } finally {
       view.destroy()
     }
+  })
+})
+
+describe("frontmatterYamlMarks (FEAT-0050)", () => {
+  const marks = (doc: string) => {
+    const s = state(doc)
+    const r = frontmatterRange(s)
+    return r ? frontmatterYamlMarks(s, r) : []
+  }
+
+  it("AC-1: marks the inner YAML (a key and a comment) within the block", () => {
+    const doc = '---\ntitle: "Hello"\n# a note\n---\n\nbody\n'
+    const ms = marks(doc)
+    expect(ms.length).toBeGreaterThan(0)
+    // A key carries a propertyName token; the `#` line a comment token.
+    expect(ms.some((m) => m.cls.includes("tok-propertyName"))).toBe(true)
+    expect(ms.some((m) => m.cls.includes("tok-comment"))).toBe(true)
+    // Every mark lands strictly inside the block (after the opening `---` line,
+    // before the closing `---` line) — never over a delimiter.
+    const innerFrom = doc.indexOf("\n") + 1
+    const innerTo = doc.indexOf("\n---\n") // start of the closing delimiter line
+    for (const m of ms) {
+      expect(m.from).toBeGreaterThanOrEqual(innerFrom)
+      expect(m.to).toBeLessThanOrEqual(innerTo)
+    }
+  })
+
+  it("yields no marks for an empty-body block", () => {
+    expect(marks("---\n---\n")).toEqual([])
+  })
+
+  it("AC-5: malformed YAML does not throw", () => {
+    expect(() => marks("---\n: : :\n\t- broken\n---\n")).not.toThrow()
   })
 })

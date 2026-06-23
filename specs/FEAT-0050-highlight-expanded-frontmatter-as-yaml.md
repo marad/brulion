@@ -30,9 +30,11 @@ ranges, nothing hidden.
 
 **Expanded frontmatter shows YAML token colors.** When the metadata region is
 expanded, its inner lines (between the opening `---` and the closing `---`/`...`) are
-parsed as YAML and their tokens are colored consistently with code blocks: keys, string
-and number values, booleans, and `#` comments each get their token color from the
-shared `tok-*` palette (FEAT-0049).
+parsed as YAML and their tokens are colored from the shared `tok-*` palette
+(FEAT-0049) — **exactly as a fenced ```` ```yaml ```` block would color them**, using
+the same grammar. In practice the YAML grammar tags keys, quoted-string values, and
+`#` comments (plain scalars stay uncolored, as in any `yaml` code block); the salient
+win is that keys stand out from values.
 
 **Collapsed shows nothing to color.** While collapsed, the region is the chip
 (FEAT-0042); no YAML marks are emitted. Expanding paints them; collapsing removes them.
@@ -77,11 +79,11 @@ shows plain — never an error, never a broken region.
 ## Acceptance criteria
 
 **AC-1** — An expanded frontmatter block shows YAML token colors.
-Given a note with a leading `---…---` block containing keys with string and number
-values,
+Given a note with a leading `---…---` block containing keys with values and a comment,
 When the metadata region is expanded,
-Then its tokens are colored as YAML (keys, strings, and numbers get distinct token
-colors from the shared palette), consistent with a fenced `yaml` code block.
+Then its YAML tokens are colored from the shared palette (keys and quoted strings and
+comments get distinct token colors), consistent with how a fenced `yaml` code block
+colors the same text.
 
 **AC-2** — A collapsed region is not colored.
 Given the same note with the region collapsed (the default),
