@@ -29,9 +29,9 @@ function isBoundary(t: string, i: number): boolean {
 }
 
 // Scoring weights. The two tiers live in disjoint bands: any literal substring
-// match (tier 1) outscores any gapped subsequence match (tier 2). SUBSTRING_BASE
-// sits far above tier 2's ceiling (≈ (CHAR+BOUNDARY+CONTIG)·|query| for realistic,
-// short note names), so the band never overlaps.
+// match (tier 1) scores at least SUBSTRING_BASE, while tier 2 is clamped to stay
+// strictly below it (see below) — so a substring match always outranks a gapped
+// one, for any input length.
 const CHAR = 10 // per matched character
 const BOUNDARY = 10 // matched char sits at a segment start
 const CONTIG = 5 // matched char is adjacent to the previous match
@@ -77,21 +77,27 @@ export function fuzzyScore(query: string, target: string): number | null {
   }
   for (let i = 1; i < q.length; i++) {
     const next = new Array<number>(t.length).fill(NEG)
-    // Running max of `row[j'] + GAP·j'` over predecessors j' < j. A gapped
-    // placement at j costs GAP·(j − j' − 1) = GAP·(j−1) − GAP·j', so the best
-    // gapped predecessor is `prefixMax − GAP·(j−1)`.
+    // A predecessor at j' contributes `row[j'] − GAP·(j − j' − 1)` — i.e. its own
+    // score minus a penalty for the chars skipped between it and j. Rearranged,
+    // `row[j'] − GAP·(j−1) + GAP·j'`, so the best gapped predecessor over all
+    // j' < j is `max(row[j'] + GAP·j') − GAP·(j−1)`; `prefixMax` carries that
+    // running max so each j stays O(1).
     let prefixMax = NEG
     for (let j = 0; j < t.length; j++) {
       if (j > 0 && row[j - 1] > NEG) prefixMax = Math.max(prefixMax, row[j - 1] + GAP * (j - 1))
       if (t[j] !== q[i]) continue
-      let pred = prefixMax > NEG ? prefixMax - GAP * (j - 1) : NEG // gapped
-      if (j > 0 && row[j - 1] > NEG) pred = Math.max(pred, row[j - 1] + CONTIG) // contiguous: no gap
+      let pred = prefixMax > NEG ? prefixMax - GAP * (j - 1) : NEG // gapped (penalized)
+      if (j > 0 && row[j - 1] > NEG) pred = Math.max(pred, row[j - 1] + CONTIG) // contiguous: no gap, rewarded
       if (pred > NEG) next[j] = CHAR + (isBoundary(t, j) ? BOUNDARY : 0) + pred
     }
     row = next
   }
   const best = Math.max(...row)
-  return best > NEG ? best : null
+  if (best === NEG) return null
+  // Keep tier 2 strictly below the substring band, so a literal substring match
+  // always wins regardless of how long the inputs are (the clamp only ever bites
+  // on absurdly long queries — real note names never approach it).
+  return Math.min(best, SUBSTRING_BASE - 1)
 }
 
 /**
