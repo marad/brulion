@@ -27,7 +27,10 @@ installVimMarkdownYank()
  * comfortable spacing, no code-like gutter. No syntax hiding — that is M2.
  * `--font-stack` is defined in styles.css (loaded by main.ts). */
 const typography = EditorView.theme({
-  "&": { height: "100%", fontSize: "16px", color: "#1a1a1a" },
+  // Base size is settings-driven via `--editor-font-size` (M16/FEAT-0047); the
+  // fallback is the historical 16px, used before a folder (hence settings) loads.
+  // Headings are `em`-relative, so this one knob scales the whole hierarchy.
+  "&": { height: "100%", fontSize: "var(--editor-font-size, 16px)", color: "#1a1a1a" },
   ".cm-scroller": {
     fontFamily: "var(--font-stack)",
     lineHeight: "1.6",
@@ -39,7 +42,9 @@ const typography = EditorView.theme({
     // vertical scrollbar appears; that's the accepted trade.
   },
   ".cm-content": {
-    maxWidth: "68ch",
+    // Column width is settings-driven via `--editor-measure` (M16/FEAT-0047):
+    // Narrow→68ch, Wider→90ch, Full→none. Fallback is the historical 68ch.
+    maxWidth: "var(--editor-measure, 68ch)",
     margin: "0 auto",
     padding: "2.5rem 1.25rem",
   },

@@ -1,5 +1,5 @@
 import "./styles.css"
-import { mountEditor, setEditorEditable, setVimMode, setLinkContext } from "./editor"
+import { mountEditor, setEditorEditable, setLinkContext } from "./editor"
 import { createNoteController, type NoteController } from "./note-controller"
 import { mountConflictDiff, type ConflictDiff } from "./conflict-view"
 import {
@@ -17,8 +17,6 @@ import { mountQuickSwitcher } from "./quick-switcher"
 import {
   saveSidebarCollapsed,
   loadSidebarCollapsed,
-  saveVimMode,
-  loadVimMode,
   saveExpandedFolders,
   loadExpandedFolders,
   saveSidebarWidth,
@@ -26,6 +24,13 @@ import {
   saveRecency,
   loadRecency,
 } from "./session"
+import {
+  loadSettings,
+  saveSettings,
+  applySettings,
+  DEFAULT_SETTINGS,
+  type Settings,
+} from "./settings"
 import { touchRecency } from "./note-search"
 import { displayName, isExternalLink, resolveNotePath } from "./note-name"
 import { pathToHash, hashToPath } from "./note-route"
@@ -216,6 +221,37 @@ const view = mountEditor(editorEl, {
   // A wikilink (FEAT-0027) already carries its resolved absolute note path.
   onFollowNote: (path) => openNotePath(path),
 })
+// User settings (M16/FEAT-0047): font, text size, editor width, Vim. The single
+// source of truth is `.brulion.json` in the open folder — no idb cache. Before a
+// folder opens the built-in defaults apply (the editor theme's var fallbacks cover
+// the no-folder look). `settingsDir` is the folder we persist back into; null until
+// one is open. Loaded and applied per folder open (in openNote).
+let currentSettings: Settings = DEFAULT_SETTINGS
+let settingsDir: FileSystemDirectoryHandle | null = null
+const persistSettings = (): Promise<void> =>
+  settingsDir ? saveSettings(settingsDir, currentSettings) : Promise.resolve()
+// Apply the current settings to the editor and reflect Vim on the header button's
+// pressed state (the button is the visible control in P1; the modal takes over in
+// P2). Kept as one step so no apply site can drift the button out of sync.
+const applyCurrentSettings = () => {
+  applySettings(view, currentSettings)
+  toggleVimEl.setAttribute("aria-pressed", String(currentSettings.vim))
+}
+// True only while openNote is reading a folder's settings — blocks a concurrent
+// `Ctrl/Cmd+;` from mutating/persisting against the outgoing folder (and being
+// clobbered by the load that's about to assign `currentSettings`).
+let loadingSettings = false
+// The single settings mutator: merge a patch, apply it live, persist.
+const updateSettings = (patch: Partial<Settings>) => {
+  currentSettings = { ...currentSettings, ...patch }
+  applyCurrentSettings()
+  void persistSettings()
+}
+const toggleVim = () => {
+  if (loadingSettings) return // mid folder-open: ignore, the loaded value wins
+  updateSettings({ vim: !currentSettings.vim })
+}
+
 // The diff view shown while a conflict stands (FEAT-0022); null when none does.
 let conflictDiff: ConflictDiff | null = null
 // The folders the user expanded (FEAT-0043); every other folder renders collapsed
@@ -372,6 +408,18 @@ const openNote = async (dir: FileSystemDirectoryHandle) => {
   await expandedFoldersReady // first tree paint should match the saved expand state
   await sidebarWidthReady // apply the saved sidebar width before first paint (no flash)
   await recencyReady // load the MRU list before the first visit is recorded (no race)
+  // Settings travel with the vault (M16/FEAT-0047): read this folder's
+  // `.brulion.json` and apply font/size/width/Vim before its content paints. The
+  // `loadingSettings` guard makes a `Ctrl/Cmd+;` during this window a no-op, so the
+  // freshly loaded value isn't clobbered and nothing is written to the old folder.
+  loadingSettings = true
+  settingsDir = dir
+  try {
+    currentSettings = await loadSettings(dir)
+  } finally {
+    loadingSettings = false
+  }
+  applyCurrentSettings()
   if (!initialRouteConsumed) {
     // First folder open: the URL hash (a bookmark/reload) beats the persisted
     // last-active note (FEAT-0036). Read it before opening, mirror nothing while
@@ -454,36 +502,31 @@ void loadSidebarCollapsed().then((collapsed) => {
   })
 })
 
-// Opt-in Vim mode (FEAT-0021): restore the saved choice and wire the header
-// toggle. Off by default; turning it on reconfigures the editor's Vim compartment
-// in place (no remount).
-void loadVimMode().then((on) => {
-  const vimToggle = wireToggle(toggleVimEl, {
-    initialOn: on,
-    apply: (value) => setVimMode(view, value),
-    onChange: (value) => void saveVimMode(value),
-  })
-  // Ctrl/Cmd+; toggles Vim from the keyboard (the header button is the visible
-  // control). Capture phase + preventDefault so the chord is owned here regardless
-  // of Vim/CodeMirror key handling; `event.code` keeps it layout-proof. `;` (no Alt,
-  // no Shift) avoids the browser-menu / macOS-compose collisions an Alt chord has.
-  window.addEventListener(
-    "keydown",
-    (event) => {
-      if (
-        (event.ctrlKey || event.metaKey) &&
-        !event.altKey &&
-        !event.shiftKey &&
-        event.code === "Semicolon" &&
-        workspaceShown
-      ) {
-        event.preventDefault()
-        vimToggle.toggle()
-      }
-    },
-    true,
-  )
-})
+// Opt-in Vim mode (FEAT-0021), now backed by the per-vault settings file
+// (M16/FEAT-0047) instead of idb. The header button and the `Ctrl/Cmd+;` chord both
+// flip `settings.vim` through updateSettings, which re-applies the editor's Vim
+// compartment in place (no remount) and persists `.brulion.json`. The on/off state
+// is restored per folder open (applyCurrentSettings in openNote).
+toggleVimEl.addEventListener("click", toggleVim)
+// Capture phase + preventDefault so the chord is owned here regardless of
+// Vim/CodeMirror key handling; `event.code` keeps it layout-proof. `;` (no Alt, no
+// Shift) avoids the browser-menu / macOS-compose collisions an Alt chord has.
+window.addEventListener(
+  "keydown",
+  (event) => {
+    if (
+      (event.ctrlKey || event.metaKey) &&
+      !event.altKey &&
+      !event.shiftKey &&
+      event.code === "Semicolon" &&
+      workspaceShown
+    ) {
+      event.preventDefault()
+      toggleVim()
+    }
+  },
+  true,
+)
 
 // Flush pending edits before the page can go away.
 wireFlushOnHide(() => controller.flush())

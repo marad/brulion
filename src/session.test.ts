@@ -9,8 +9,6 @@ import {
   loadActiveNote,
   saveSidebarCollapsed,
   loadSidebarCollapsed,
-  saveVimMode,
-  loadVimMode,
   saveExpandedFolders,
   loadExpandedFolders,
   saveSidebarWidth,
@@ -96,24 +94,6 @@ describe("saveSidebarCollapsed / loadSidebarCollapsed", () => {
   it("defaults to false (expanded) when nothing is stored", async () => {
     get.mockResolvedValue(undefined)
     expect(await loadSidebarCollapsed()).toBe(false)
-  })
-})
-
-describe("saveVimMode / loadVimMode", () => {
-  it("saves the flag under a stable key (FEAT-0021 AC-3)", async () => {
-    await saveVimMode(true)
-    expect(set).toHaveBeenCalledWith("brulion:vim", true)
-  })
-
-  it("loads the stored flag", async () => {
-    get.mockResolvedValue(true)
-    expect(await loadVimMode()).toBe(true)
-    expect(get).toHaveBeenCalledWith("brulion:vim")
-  })
-
-  it("defaults to false (off — Vim is opt-in) when nothing is stored", async () => {
-    get.mockResolvedValue(undefined)
-    expect(await loadVimMode()).toBe(false)
   })
 })
 

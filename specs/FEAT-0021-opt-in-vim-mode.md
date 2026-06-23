@@ -24,8 +24,10 @@ user's folder (the file-fidelity moat is untouched).
 ## Behavior
 
 A toggle control turns Vim mode on and off; it is off by default. The choice is
-persisted browser-side (the existing `idb-keyval` layer, alongside the folder
-handle, active note, and sidebar state) and re-applied on the next load.
+persisted and re-applied on the next load. (Originally stored browser-side in
+`idb-keyval`; **as of M16/FEAT-0047 it lives in the per-vault settings file
+`.brulion.json`** alongside the appearance settings, so the Vim choice travels with
+the folder. The `.md` note bytes are never touched either way.)
 
 Vim is wired through a CodeMirror compartment (like the existing read-only
 compartment), so toggling reconfigures the editor in place without remounting.
@@ -69,12 +71,13 @@ scrollbar appears — is given up; the column may shift slightly then).
 - **No command regressions.** Slash menu, format shortcuts, and markdown-aware
   Enter keep working with Vim on (insert mode); with Vim off the editor is
   unchanged.
-- **Reuse the existing persistence layer** (`idb-keyval`, `brulion:` keys) — one
-  mechanism, no second store.
+- **Persist the choice** so it survives a reload. (Originally `idb-keyval`; M16/
+  FEAT-0047 moved it into the per-vault `.brulion.json` settings file.)
 - **Reuse the compartment pattern** already used for the read-only toggle, rather
   than remounting the editor.
-- **No writes to the user's folder.** Toggling Vim changes only browser-local
-  interaction state.
+- **Never write a note file.** Toggling Vim writes only the settings file
+  (`.brulion.json`, M16/FEAT-0047) — never a note's `.md` bytes; the file-fidelity
+  moat is untouched.
 
 ## Out of scope
 
@@ -129,10 +132,12 @@ When the user presses Esc and then a motion (e.g. `0`/`$` or `j`/`k`),
 Then the cursor moves per Vim without inserting text, confirming the Vim layer is
 genuinely engaged (not just loaded).
 
-**AC-8** — Toggling Vim does not write to the user's folder.
+**AC-8** — Toggling Vim never writes a note file.
 Given a folder is open,
 When the user toggles Vim mode,
-Then nothing is written to the open folder — only browser-local state changes.
+Then no note (`.md`) file is written; the only persisted change is the Vim flag in
+the per-vault settings file (`.brulion.json`, M16/FEAT-0047) — the moat-relevant
+guarantee that a UI toggle never touches note content holds.
 
 **AC-9** — With Vim on, the visual-mode selection is visible.
 Given Vim mode is on,

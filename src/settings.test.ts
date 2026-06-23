@@ -107,6 +107,14 @@ describe("normalizeSettings (AC-3)", () => {
     ).toEqual(["Menlo", "Courier New"])
   })
 
+  it("drops font names with CSS-injection chars (quote/semicolon/brace/backslash)", () => {
+    expect(
+      normalizeSettings({
+        font: ['Menlo', 'evil"; color: red', "a{b}", "back\\slash", "Courier New"],
+      }).font,
+    ).toEqual(["Menlo", "Courier New"])
+  })
+
   it("AC-3: coerces vim to a boolean", () => {
     expect(normalizeSettings({ vim: 1 }).vim).toBe(true)
     expect(normalizeSettings({ vim: 0 }).vim).toBe(false)

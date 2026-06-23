@@ -141,15 +141,17 @@ test("with Vim on, normal-mode motions/edits are active (AC-7)", async ({ page }
   await expect(editor(page)).toHaveText("ello")
 })
 
-test("toggling Vim does not write to the user's folder (AC-8)", async ({ page }) => {
+test("toggling Vim never writes a note file (AC-8)", async ({ page }) => {
   await editor(page).click()
   await page.keyboard.type("untouched")
   await page.keyboard.press("Control+s")
   await expect.poll(() => readStartMd(page)).toBe("untouched")
 
-  await vimToggle(page).click() // reconfigures the editor only — no folder write
+  // Toggling Vim reconfigures the editor and persists the flag to the per-vault
+  // settings file (`.brulion.json`, M16/FEAT-0047) — never a note's `.md` bytes.
+  await vimToggle(page).click()
   await expect(vimToggle(page)).toHaveAttribute("aria-pressed", "true")
-  expect(await readStartMd(page)).toBe("untouched")
+  expect(await readStartMd(page)).toBe("untouched") // the note is untouched (the moat)
 })
 
 // FEAT-0032: the Vim caret must never rest inside — or before — a hidden markup
