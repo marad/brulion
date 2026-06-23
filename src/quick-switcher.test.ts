@@ -29,6 +29,7 @@ const NOTES = ["start.md", "projects/diablo.md", "ideas.md"]
 function deps(over: Partial<QuickSwitcherDeps> = {}): QuickSwitcherDeps {
   return {
     getNotes: () => NOTES,
+    getRecency: () => [],
     openNote: vi.fn(),
     createNote: vi.fn().mockResolvedValue({ ok: true }),
     ...over,
@@ -74,6 +75,16 @@ describe("mountQuickSwitcher open/render (FEAT-0033 AC-2)", () => {
 
     const all = rows(els)
     expect(activeRow(els)).toBe(all[0])
+  })
+
+  it("orders the empty-query list by recency, most-recent first (FEAT-0039)", () => {
+    const els = elements()
+    // start.md most-recently visited, then ideas.md; projects/diablo.md never.
+    const sw = mountQuickSwitcher(els, deps({ getRecency: () => ["start.md", "ideas.md"] }))
+    sw.open()
+
+    const labels = rows(els).map((r) => r.textContent)
+    expect(labels).toEqual(["start", "ideas", "projects/diablo"])
   })
 
   it("typing filters the rendered rows", () => {

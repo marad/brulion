@@ -11,6 +11,8 @@ import {
   loadSidebarCollapsed,
   saveVimMode,
   loadVimMode,
+  saveRecency,
+  loadRecency,
 } from "./session"
 
 vi.mock("idb-keyval", () => ({
@@ -108,6 +110,24 @@ describe("saveVimMode / loadVimMode", () => {
   it("defaults to false (off — Vim is opt-in) when nothing is stored", async () => {
     get.mockResolvedValue(undefined)
     expect(await loadVimMode()).toBe(false)
+  })
+})
+
+describe("saveRecency / loadRecency (FEAT-0039)", () => {
+  it("saves the MRU list under a stable key", async () => {
+    await saveRecency(["b.md", "a.md"])
+    expect(set).toHaveBeenCalledWith("brulion:recency", ["b.md", "a.md"])
+  })
+
+  it("loads the stored list from the same key", async () => {
+    get.mockResolvedValue(["b.md", "a.md"])
+    expect(await loadRecency()).toEqual(["b.md", "a.md"])
+    expect(get).toHaveBeenCalledWith("brulion:recency")
+  })
+
+  it("defaults to an empty list when nothing is stored", async () => {
+    get.mockResolvedValue(undefined)
+    expect(await loadRecency()).toEqual([])
   })
 })
 

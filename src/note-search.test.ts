@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { fuzzyScore, searchNotes } from "./note-search"
+import { fuzzyScore, searchNotes, touchRecency } from "./note-search"
 
 describe("fuzzyScore (FEAT-0033 AC-2)", () => {
   it("returns a number when the query is a subsequence of the target", () => {
@@ -137,5 +137,58 @@ describe("ranking (FEAT-0038)", () => {
   it("AC-5: stays total — null for a non-subsequence, 0 for empty", () => {
     expect(fuzzyScore("xyz", "abc")).toBeNull()
     expect(fuzzyScore("", "anything")).toBe(0)
+  })
+})
+
+describe("recency (FEAT-0039)", () => {
+  describe("touchRecency", () => {
+    it("AC-1: moves a visited path to the front, deduped", () => {
+      expect(touchRecency(["a", "b", "c"], "b")).toEqual(["b", "a", "c"])
+    })
+
+    it("AC-1: prepends a never-seen path", () => {
+      expect(touchRecency(["a", "b"], "x")).toEqual(["x", "a", "b"])
+    })
+
+    it("AC-1: caps the list, dropping the oldest entries", () => {
+      expect(touchRecency(["a", "b"], "x", 2)).toEqual(["x", "a"])
+    })
+
+    it("AC-1: does not mutate its input", () => {
+      const input = ["a", "b"]
+      touchRecency(input, "x")
+      expect(input).toEqual(["a", "b"])
+    })
+  })
+
+  describe("searchNotes with recency", () => {
+    it("AC-2: empty query lists visited notes MRU-first, then name order", () => {
+      const result = searchNotes("", ["a.md", "b.md", "c.md"], ["c.md", "a.md"])
+      expect(result.matches).toEqual(["c.md", "a.md", "b.md"])
+      expect(result.create).toBeNull()
+    })
+
+    it("AC-3: recency breaks ties between equally-scored matches", () => {
+      // "note" is a segment-start substring in both → equal score; recency decides.
+      const result = searchNotes("note", ["note-1.md", "note-2.md"], ["note-2.md"])
+      expect(result.matches).toEqual(["note-2.md", "note-1.md"])
+    })
+
+    it("AC-4: recency never lifts a worse match above a better one", () => {
+      // "abc" is a substring of abc.md (tier 1) but only scattered in axbxc.md;
+      // even though axbxc.md was just visited, the better match still wins.
+      const result = searchNotes("abc", ["abc.md", "axbxc.md"], ["axbxc.md"])
+      expect(result.matches[0]).toBe("abc.md")
+    })
+
+    it("AC-7: a stale recency entry is ignored, not shown", () => {
+      const result = searchNotes("", ["a.md", "b.md"], ["ghost.md", "b.md"])
+      expect(result.matches).toEqual(["b.md", "a.md"])
+    })
+
+    it("back-compat: omitting recency keeps name order on an empty query", () => {
+      const result = searchNotes("", ["b.md", "a.md"])
+      expect(result.matches).toEqual(["a.md", "b.md"])
+    })
   })
 })
