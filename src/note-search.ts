@@ -16,39 +16,82 @@ export interface SearchResult {
   create: string | null
 }
 
-/**
- * Case-insensitive subsequence score of `query` within `target`. Returns `null`
- * when `query` is not a subsequence of `target`; otherwise a number where higher
- * is a better match (contiguous runs and segment-start hits score higher). An
- * empty query scores `0` (matches everything). Pure & total.
- */
 /** Characters that begin a new "segment" of a name — a match right after one (or
  * at the very start) reads as a word/path-segment start and is rewarded. */
 function isSeparator(ch: string): boolean {
   return ch === " " || ch === "/" || ch === "-" || ch === "_"
 }
 
+/** Whether position `i` in `t` begins a segment (string start, or after a
+ * separator) — the spot a word/path segment starts and a match is most wanted. */
+function isBoundary(t: string, i: number): boolean {
+  return i === 0 || isSeparator(t[i - 1])
+}
+
+// Scoring weights. The two tiers live in disjoint bands: any literal substring
+// match (tier 1) outscores any gapped subsequence match (tier 2). SUBSTRING_BASE
+// sits far above tier 2's ceiling (≈ (CHAR+BOUNDARY+CONTIG)·|query| for realistic,
+// short note names), so the band never overlaps.
+const CHAR = 10 // per matched character
+const BOUNDARY = 10 // matched char sits at a segment start
+const CONTIG = 5 // matched char is adjacent to the previous match
+const GAP = 1 // per character skipped *between* two matches (interior gaps only)
+const SUBSTRING_BASE = 100_000
+
+/**
+ * Case-insensitive fuzzy score of `query` within `target`. Returns `null` when
+ * `query` is not even a subsequence of `target`; otherwise a number where higher
+ * is a better match. An empty query scores `0` (matches everything). Pure & total.
+ *
+ * Two tiers (FEAT-0038):
+ * - **Literal contiguous substring wins.** If `query` occurs contiguously, it
+ *   scores in a band strictly above any gapped match, ranked by where the run
+ *   begins — a segment-start occurrence beats a mid-token one.
+ * - **Best-alignment subsequence** otherwise — the maximum over *all* alignments
+ *   (a small DP, not greedy), rewarding contiguity and segment-start hits.
+ *
+ * Folder depth costs nothing: there is no leading-distance penalty, only interior
+ * gaps (characters skipped *between* two matched characters) are penalized — so a
+ * note ranks by its name whether it sits at the root or deep in a folder tree.
+ */
 export function fuzzyScore(query: string, target: string): number | null {
   const q = query.toLowerCase()
   const t = target.toLowerCase()
   if (q.length === 0) return 0
 
-  let score = 0
-  let qi = 0
-  let prevMatch = -1
-  for (let ti = 0; ti < t.length && qi < q.length; ti++) {
-    if (t[ti] !== q[qi]) continue
-    // Skipped chars since the previous match (or the leading distance for the
-    // first match). Gaps are penalized so contiguous, earlier runs win.
-    const gap = prevMatch >= 0 ? ti - prevMatch - 1 : ti
-    let bonus = 0
-    if (ti === 0 || isSeparator(t[ti - 1])) bonus += 10 // segment start
-    if (prevMatch === ti - 1) bonus += 5 // contiguous with the previous match
-    score += 10 + bonus - 3 * gap
-    prevMatch = ti
-    qi++
+  // Tier 1 — literal contiguous substring. Take the best occurrence, preferring
+  // one that begins at a segment boundary.
+  let substring: number | null = null
+  for (let p = t.indexOf(q); p !== -1; p = t.indexOf(q, p + 1)) {
+    const s = SUBSTRING_BASE + (isBoundary(t, p) ? BOUNDARY : 0)
+    if (substring === null || s > substring) substring = s
   }
-  return qi === q.length ? score : null
+  if (substring !== null) return substring
+
+  // Tier 2 — best-alignment subsequence. `row[j]` = the best score for matching
+  // the query prefix so far with its last char placed at `t[j]` (−∞ = impossible).
+  const NEG = -Infinity
+  let row = new Array<number>(t.length).fill(NEG)
+  for (let j = 0; j < t.length; j++) {
+    if (t[j] === q[0]) row[j] = CHAR + (isBoundary(t, j) ? BOUNDARY : 0)
+  }
+  for (let i = 1; i < q.length; i++) {
+    const next = new Array<number>(t.length).fill(NEG)
+    // Running max of `row[j'] + GAP·j'` over predecessors j' < j. A gapped
+    // placement at j costs GAP·(j − j' − 1) = GAP·(j−1) − GAP·j', so the best
+    // gapped predecessor is `prefixMax − GAP·(j−1)`.
+    let prefixMax = NEG
+    for (let j = 0; j < t.length; j++) {
+      if (j > 0 && row[j - 1] > NEG) prefixMax = Math.max(prefixMax, row[j - 1] + GAP * (j - 1))
+      if (t[j] !== q[i]) continue
+      let pred = prefixMax > NEG ? prefixMax - GAP * (j - 1) : NEG // gapped
+      if (j > 0 && row[j - 1] > NEG) pred = Math.max(pred, row[j - 1] + CONTIG) // contiguous: no gap
+      if (pred > NEG) next[j] = CHAR + (isBoundary(t, j) ? BOUNDARY : 0) + pred
+    }
+    row = next
+  }
+  const best = Math.max(...row)
+  return best > NEG ? best : null
 }
 
 /**

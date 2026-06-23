@@ -115,9 +115,10 @@ describe("ranking (FEAT-0038)", () => {
 
   it("AC-3: the contiguous run is found, not the first greedy alignment", () => {
     // The query's chars appear early-scattered (a-b-c) and later-contiguous (abc).
-    // The score must reflect the contiguous run — i.e. equal the substring score.
+    // The score must reflect the contiguous run — equal to the plain substring
+    // score (both runs begin at a segment boundary: string start vs after "-").
     const score = fuzzyScore("abc", "a-b-c-abc")
-    expect(score).toBe(fuzzyScore("abc", "abc")! + 10) // +boundary: "abc" sits after a "-"
+    expect(score).toBe(fuzzyScore("abc", "abc"))
   })
 
   it("AC-3: best alignment, not greedy, within the subsequence tier", () => {
