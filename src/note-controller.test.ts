@@ -575,14 +575,13 @@ describe("renameActive — inbound link rewriting (FEAT-0040)", () => {
       content: links[name] ?? `${name} body`,
       lastModified: 7,
     }))
-    const confirmLinkUpdate = vi.fn().mockResolvedValue(true)
-    const controller = createNoteController(view, { confirmLinkUpdate, debounceMs: 10_000 })
+    const controller = createNoteController(view, { debounceMs: 10_000 })
     await controller.open(DIR)
-    return { view, controller, confirmLinkUpdate }
+    return { view, controller }
   }
 
-  it("rewrites a wikilink and a markdown link in another note under confirmation (AC-9)", async () => {
-    const { controller, confirmLinkUpdate } = await open("diablo.md", ["diablo.md", "n.md"], {
+  it("silently rewrites a wikilink and a markdown link in another note (AC-9)", async () => {
+    const { controller } = await open("diablo.md", ["diablo.md", "n.md"], {
       "n.md": "wiki [[diablo]] and md [d](diablo.md)",
     })
     listNotes.mockResolvedValue(["diablo-2.md", "n.md"]) // listing after the move
@@ -591,7 +590,6 @@ describe("renameActive — inbound link rewriting (FEAT-0040)", () => {
 
     expect(result).toEqual({ ok: true })
     expect(moveNote).toHaveBeenCalledWith(DIR, "diablo.md", "diablo-2.md")
-    expect(confirmLinkUpdate).toHaveBeenCalledWith(["n.md"])
     expect(saveNote).toHaveBeenCalledWith(
       DIR,
       "n.md",
@@ -600,29 +598,8 @@ describe("renameActive — inbound link rewriting (FEAT-0040)", () => {
     )
   })
 
-  it("leaves inbound links untouched when the confirmation is declined (AC-10)", async () => {
-    const view = mountView()
-    listNotes.mockResolvedValue(["diablo.md", "n.md"])
-    loadActiveNote.mockResolvedValue("diablo.md")
-    readNote.mockImplementation(async (_dir, name) => ({
-      content: name === "n.md" ? "[[diablo]]" : `${name} body`,
-      lastModified: 7,
-    }))
-    const confirmLinkUpdate = vi.fn().mockResolvedValue(false)
-    const controller = createNoteController(view, { confirmLinkUpdate, debounceMs: 10_000 })
-    await controller.open(DIR)
-    listNotes.mockResolvedValue(["diablo-2.md", "n.md"])
-
-    const result = await controller.renameActive("diablo-2")
-
-    expect(result).toEqual({ ok: true }) // the rename itself still stands
-    expect(moveNote).toHaveBeenCalledWith(DIR, "diablo.md", "diablo-2.md")
-    expect(confirmLinkUpdate).toHaveBeenCalledWith(["n.md"])
-    expect(saveNote).not.toHaveBeenCalledWith(DIR, "n.md", expect.anything(), expect.anything())
-  })
-
-  it("asks nothing and writes nothing extra when no note links to the renamed one (AC-11)", async () => {
-    const { controller, confirmLinkUpdate } = await open("diablo.md", ["diablo.md", "n.md"], {
+  it("writes nothing extra when no note links to the renamed one (AC-11)", async () => {
+    const { controller } = await open("diablo.md", ["diablo.md", "n.md"], {
       "n.md": "no links here, just prose",
     })
     listNotes.mockResolvedValue(["diablo-2.md", "n.md"])
@@ -630,8 +607,24 @@ describe("renameActive — inbound link rewriting (FEAT-0040)", () => {
     const result = await controller.renameActive("diablo-2")
 
     expect(result).toEqual({ ok: true })
-    expect(confirmLinkUpdate).not.toHaveBeenCalled()
     expect(saveNote).not.toHaveBeenCalledWith(DIR, "n.md", expect.anything(), expect.anything())
+  })
+
+  it("does not fail the rename when the inbound pass throws (AC-10, best-effort)", async () => {
+    const { controller } = await open("diablo.md", ["diablo.md", "n.md"], {
+      "n.md": "[[diablo]]",
+    })
+    listNotes.mockResolvedValue(["diablo-2.md", "n.md"])
+    // A guarded inbound write blows up part-way (e.g. an I/O error).
+    saveNote.mockImplementation(async (_dir, name) => {
+      if (name === "n.md") throw new Error("disk gone")
+      return { status: "saved", lastModified: 2 }
+    })
+
+    const result = await controller.renameActive("diablo-2")
+
+    expect(result).toEqual({ ok: true }) // the move stands; the rewrite is best-effort
+    expect(moveNote).toHaveBeenCalledWith(DIR, "diablo.md", "diablo-2.md")
   })
 
   it("skips an inbound write that would clobber an externally-changed file (AC-12)", async () => {
@@ -649,6 +642,37 @@ describe("renameActive — inbound link rewriting (FEAT-0040)", () => {
 
     expect(result).toEqual({ ok: true }) // the move + other files still complete
     expect(saveNote).toHaveBeenCalledWith(DIR, "n.md", "[d](diablo-2.md)", 7) // attempted, then skipped on conflict
+  })
+
+  it("rebases the moved note's own outbound links across a folder move (FEAT-0041 AC-5)", async () => {
+    const { controller } = await open("proj/diablo.md", ["proj/diablo.md", "proj/other.md"], {
+      "proj/diablo.md": "[x](other.md)", // resolves to proj/other.md from proj/
+    })
+    // After the move the file's bytes live at the new path (move preserves them).
+    readNote.mockImplementation(async (_dir, name) => ({
+      content: name === "archive/diablo.md" ? "[x](other.md)" : `${name} body`,
+      lastModified: 7,
+    }))
+    listNotes.mockResolvedValue(["archive/diablo.md", "proj/other.md"])
+
+    const result = await controller.renameActive("archive/diablo")
+
+    expect(result).toEqual({ ok: true })
+    // The moved note's own relative link is rebased from the new folder, written back.
+    expect(saveNote).toHaveBeenCalledWith(DIR, "archive/diablo.md", "[x](../proj/other.md)", 7)
+  })
+
+  it("does not rewrite the moved note's body on a same-folder rename (FEAT-0041 AC-6)", async () => {
+    const { controller } = await open("diablo.md", ["diablo.md", "other.md"], {
+      "diablo.md": "[x](other.md)",
+    })
+    listNotes.mockResolvedValue(["diablo-2.md", "other.md"])
+
+    const result = await controller.renameActive("diablo-2")
+
+    expect(result).toEqual({ ok: true })
+    // No rebasing write of the moved note (same folder → its relative links still resolve).
+    expect(saveNote).not.toHaveBeenCalledWith(DIR, "diablo-2.md", expect.anything(), expect.anything())
   })
 
   it("never rewrites the renamed note's own bytes (it is excluded from the scan)", async () => {

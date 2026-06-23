@@ -2,7 +2,7 @@ import type { EditorView } from "codemirror"
 import { setEditorText } from "./editor"
 import { readNote, saveNote, listNotes, createNote, deleteNote, statNote, moveNote } from "./note"
 import { normalizeNoteName } from "./note-name"
-import { rewriteLinksForRename } from "./link-rewrite"
+import { rewriteLinksForRename, rebaseOutboundLinks } from "./link-rewrite"
 import { saveActiveNote, loadActiveNote } from "./session"
 import { debounce } from "./debounce"
 
@@ -63,6 +63,13 @@ export function classifyDiskCheck(args: {
   return { listChanged, active }
 }
 
+/** The folder portion of a note path (`""` for a root-level note) — used to tell a
+ * pure rename (same folder) from a move that crosses folders. */
+function folderOf(path: string): string {
+  const slash = path.lastIndexOf("/")
+  return slash === -1 ? "" : path.slice(0, slash)
+}
+
 /** Element-wise equality of two pre-sorted listings (see {@link listNotes}). */
 function sameNotes(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false
@@ -86,14 +93,6 @@ export interface NoteControllerOptions {
   onConflictResolved?: () => void
   /** Called whenever the note list or the active note changes. */
   onListChanged?: (notes: string[], active: string) => void
-  /**
-   * Confirm rewriting inbound links during a rename (FEAT-0040): given the notes
-   * whose links would change, resolve `true` to write them, `false` to leave them
-   * dangling. Called only when at least one note would change. When omitted, the
-   * rewrite proceeds (the confirmation is a UI concern; the controller's contract
-   * is the data operation).
-   */
-  confirmLinkUpdate?: (affected: string[]) => Promise<boolean> | boolean
   /** Autosave debounce in ms (default 600). */
   debounceMs?: number
 }
@@ -113,9 +112,8 @@ export interface NoteController {
    * path (new active note, refreshed list, announced). Reports `{ ok }` /
    * `{ ok: false, reason }`; refuses without moving anything on no folder, a
    * standing conflict, an invalid name, or an occupied destination. After the
-   * move, rewrites inbound links in *other* notes so they follow it (FEAT-0040),
-   * gated on {@link NoteControllerOptions.confirmLinkUpdate} and written through
-   * the per-note stale-write guard.
+   * move, silently rewrites inbound links in *other* notes so they follow it
+   * (FEAT-0040), each written through the per-note stale-write guard.
    */
   renameActive(name: string): Promise<AddNoteResult>
   /** Note a user edit — schedules a debounced autosave. */
@@ -297,10 +295,12 @@ export function createNoteController(
 
   // Rewrite links in *other* notes that pointed at the just-renamed note so they
   // follow it (FEAT-0040). Runs after the move + active-note follow, inside the
-  // same serialize slot. Reads each other note, rewrites via the pure core, and —
-  // once the UI confirms which files change — writes each through saveNote's
-  // stale-write guard (the known mtime read moments earlier), so a note edited from
-  // outside between the scan and the write is skipped, never clobbered. The renamed
+  // same serialize slot. Reads each other note, rewrites via the pure core, and
+  // writes each through saveNote's stale-write guard (the known mtime read moments
+  // earlier), so a note edited from outside between the scan and the write is
+  // skipped, never clobbered. The rewrite is silent and unconditional — a rename's
+  // links should just follow it, the way a refactor-rename does; declining would
+  // only leave the very dangling links this feature exists to prevent. The renamed
   // note (now `to`) is excluded, so a rename never mutates its own bytes here.
   const updateInboundLinks = async (
     folder: FileSystemDirectoryHandle,
@@ -309,7 +309,6 @@ export function createNoteController(
     pathsBefore: ReadonlySet<string>,
   ): Promise<void> => {
     const pathsAfter = new Set(notes) // the post-move listing (set by the caller)
-    const edits: Array<{ path: string; text: string; lastModified: number | null }> = []
     for (const path of notes) {
       if (path === to) continue
       const { content, lastModified } = await readNote(folder, path)
@@ -321,16 +320,29 @@ export function createNoteController(
         pathsBefore,
         pathsAfter,
       })
-      if (rewritten !== null) edits.push({ path, text: rewritten, lastModified })
-    }
-    if (edits.length === 0) return
-    const proceed = opts.confirmLinkUpdate ? await opts.confirmLinkUpdate(edits.map((e) => e.path)) : true
-    if (!proceed) return // user declined — the rename stands, inbound links left dangling
-    for (const e of edits) {
       // A conflict (the file changed on disk since we read it) is skipped — the
       // rewrite is dropped for that file, never overwriting an external edit.
-      await saveNote(folder, e.path, e.text, e.lastModified)
+      if (rewritten !== null) await saveNote(folder, path, rewritten, lastModified)
     }
+  }
+
+  // Rebase the moved note's *own* outbound relative markdown links (FEAT-0041): a
+  // move to a different folder would otherwise leave its relative links pointing at
+  // the wrong place. Reads the moved file (its bytes are the pre-move content, just
+  // relocated), recomputes each in-tree relative destination from the new folder,
+  // and writes it back through the stale-write guard. A same-folder rename leaves
+  // every destination resolving identically, so the pure core returns null and
+  // nothing is written. Runs before `activate`, so the editor loads the rebased
+  // content. The folder check skips the file read entirely on a pure rename.
+  const rebaseMovedNote = async (
+    folder: FileSystemDirectoryHandle,
+    from: string,
+    to: string,
+  ): Promise<void> => {
+    if (folderOf(from) === folderOf(to)) return // same folder — outbound links unaffected
+    const { content, lastModified } = await readNote(folder, to)
+    const rebased = rebaseOutboundLinks(content, from, to)
+    if (rebased !== null) await saveNote(folder, to, rebased, lastModified)
   }
 
   // Serialize folder/active-note changes so two fast clicks (open, or switching
@@ -435,15 +447,20 @@ export function createNoteController(
         // persists it as active, and announces so the UI tracks the new identity.
         const pathsBefore = new Set(notes) // pre-move listing — still names `from`
         notes = await listNotes(dir)
+        // Follow-on link maintenance (FEAT-0040/0041). Both passes are best-effort:
+        // the move already succeeded, so a failure here (an I/O error part-way) must
+        // not report the rename as failed — the affected links simply stay as they
+        // were (dangling), which the existing missing-target handling covers.
+        try {
+          await rebaseMovedNote(dir, from, normalized.filename) // before activate: editor loads the rebased content
+        } catch {
+          // leave the moved note's own outbound links as-is rather than failing
+        }
         await activate(dir, normalized.filename)
-        // Re-point inbound links in other notes at the new path (FEAT-0040). The
-        // move already succeeded, so a failure in this follow-on pass (a rejected
-        // confirm, an I/O error part-way) must not report the rename as failed —
-        // the inbound links simply stay as they were (dangling), like a decline.
         try {
           await updateInboundLinks(dir, from, normalized.filename, pathsBefore)
         } catch {
-          // best-effort: leave inbound links as-is rather than failing the rename
+          // leave inbound links as-is rather than failing the rename
         }
         return { ok: true }
       })

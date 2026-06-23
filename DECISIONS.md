@@ -1172,3 +1172,42 @@ only after the user confirms which files change. Decisions:
   markdown links (`[ref]: path`, which the app doesn't render), the moved note's
   *own* outbound relative links (a folder move can break those — a separate
   concern), a global rename-any-note surface, and undo of a multi-file rename.
+
+### M25 review fixes (live app)
+
+Two changes from the milestone review, walked through on the deployed app.
+
+- **The confirmation gate is removed — rename rewrites inbound links silently and
+  unconditionally (supersedes the FEAT-0040 "confirms which files change" bullet
+  above).** The original cut put a `window.confirm` (listing the affected notes)
+  in front of the multi-file write. The user rejected it: if you *decline*, you're
+  left with the dangling links M25 exists to fix — so the gate is a footgun, not a
+  guardrail. A rename's links should just follow it, like a refactor-rename in an
+  IDE; the user *asking* for the rename is the consent. The moat concern (don't
+  touch files silently) is about *background* mutation, not the natural consequence
+  of an explicit user action. So: no prompt, no toast — fully silent, like the
+  rename itself. *What stays:* the `saveNote` stale-write guard (a file changed
+  from outside between scan and write is skipped, never clobbered — the only
+  data-loss risk that actually matters), and the conflict-skip is left silent too
+  (a milliseconds-wide race; the result is one broken link, a single manual fix).
+  *Consequence:* `confirmLinkUpdate` is gone from the controller options and
+  `main.ts`; `renameActive`'s inbound pass writes every changed note directly, and
+  is best-effort (a failure in it never reports the already-succeeded rename as
+  failed). FEAT-0040 AC-9/AC-10/AC-11 were rewritten accordingly.
+- **A folder-crossing rename now rebases the moved note's *own* outbound links
+  (M25 Phase 2 / FEAT-0041).** The first cut fixed only *inbound* links; the review
+  found the mirror gap unacceptable ("tak nie może zostać"): moving a note to
+  another folder left its own relative markdown links (resolved relative to the old
+  folder) pointing at the wrong place. New pure `rebaseOutboundLinks(text, old,
+  new)` recomputes each in-tree relative markdown destination from the new folder
+  (reusing `resolveNotePath`/`relativeLink`, round-trip-correct), leaving wikilinks
+  (basename/root-relative — unaffected by a move), external, and non-note links
+  alone; a same-folder rename changes nothing (returns `null`). A **self-link**
+  follows the note (its target maps old→new), so it never dangles. The controller
+  runs it after the move and before re-pointing the editor, skipping the file read
+  entirely on a same-folder rename, and writes through the same stale-write guard.
+  *Out of scope, deliberately:* the O(N) full-vault read on every rename — the
+  right altitude at quick-capture scale (folder tree is the single source of truth,
+  nothing to index), but acknowledged as a broader future topic (it interacts with
+  the poller and anything else that scans the vault) to revisit if a vault grows
+  large; reference-style markdown links (the app renders only inline links).

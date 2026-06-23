@@ -78,27 +78,67 @@ function markdownDest(rel: string): string {
  * them). Aliases and brackets are preserved; only the matched destinations/targets
  * change.
  */
-export function rewriteLinksForRename(args: RenameRewrite): string | null {
-  const { text, notePath, oldPath, newPath, pathsBefore, pathsAfter } = args
-  const edits: Array<{ from: number; to: number; insert: string }> = []
+/** A markdown inline link's destination found in the text: the `URL` node's
+ * `[from, to)` span and the raw destination string (possibly `<…>`-wrapped or
+ * percent-encoded). */
+interface MarkdownLinkDest {
+  from: number
+  to: number
+  dest: string
+}
 
-  // Markdown inline links, via the CommonMark grammar (the same grammar the
-  // renderer uses, so detection matches what the user sees). Only `Link` nodes —
-  // never `Image` — and only those with an inline `URL` child (reference/shortcut
-  // links have none). A link whose destination resolves, relative to this note's
-  // folder, to the renamed note is re-pointed at its new path.
+/**
+ * Every markdown **inline** link's destination in `text`, via the CommonMark
+ * grammar (the same grammar the renderer uses, so detection matches what the user
+ * sees). Only `Link` nodes — never `Image` — and only those with an inline `URL`
+ * child; reference/shortcut links have none and are skipped. The single place the
+ * two rename rewrites locate markdown destinations.
+ */
+function markdownLinkDests(text: string): MarkdownLinkDest[] {
+  const found: MarkdownLinkDest[] = []
   parser.parse(text).iterate({
     enter(node) {
       if (node.name !== "Link") return
       const url = node.node.getChild("URL")
       if (!url) return
-      const dest = text.slice(url.from, url.to)
-      const bare = dest.replace(/^<(.*)>$/, "$1") // unwrap CommonMark's <…> for the scheme check
-      if (isExternalLink(bare)) return
-      if (resolveNotePath(notePath, dest) !== oldPath) return
-      edits.push({ from: url.from, to: url.to, insert: markdownDest(relativeLink(notePath, newPath)) })
+      found.push({ from: url.from, to: url.to, dest: text.slice(url.from, url.to) })
     },
   })
+  return found
+}
+
+/** Whether a markdown destination is an external link (a `scheme:` URL or
+ * protocol-relative), accounting for a CommonMark `<…>` wrapper that would
+ * otherwise hide the leading scheme from {@link isExternalLink}. */
+function isExternalDest(dest: string): boolean {
+  return isExternalLink(dest.replace(/^<(.*)>$/, "$1"))
+}
+
+/** Apply `edits` (each replacing `[from, to)` with `insert`) to `text`, or return
+ * `null` when there are none. Applied right-to-left so earlier edits don't shift
+ * later offsets; callers never produce overlapping ranges. */
+function applyEdits(
+  text: string,
+  edits: Array<{ from: number; to: number; insert: string }>,
+): string | null {
+  if (edits.length === 0) return null
+  edits.sort((a, b) => b.from - a.from)
+  let out = text
+  for (const e of edits) out = out.slice(0, e.from) + e.insert + out.slice(e.to)
+  return out
+}
+
+export function rewriteLinksForRename(args: RenameRewrite): string | null {
+  const { text, notePath, oldPath, newPath, pathsBefore, pathsAfter } = args
+  const edits: Array<{ from: number; to: number; insert: string }> = []
+
+  // Markdown inline links: a link whose destination resolves, relative to this
+  // note's folder, to the renamed note is re-pointed at its new path.
+  for (const { from, to, dest } of markdownLinkDests(text)) {
+    if (isExternalDest(dest)) continue
+    if (resolveNotePath(notePath, dest) !== oldPath) continue
+    edits.push({ from, to, insert: markdownDest(relativeLink(notePath, newPath)) })
+  }
 
   // Wikilinks, via the renderer's `[[…]]` scan (not the CommonMark tree). A link
   // that pointed at the renamed note is re-pointed; bare links keep the shortest
@@ -119,10 +159,36 @@ export function rewriteLinksForRename(args: RenameRewrite): string | null {
     edits.push({ from: w.targetFrom, to: w.targetTo, insert })
   }
 
-  if (edits.length === 0) return null
-  // Apply right-to-left so earlier edits don't shift later offsets.
-  edits.sort((a, b) => b.from - a.from)
-  let out = text
-  for (const e of edits) out = out.slice(0, e.from) + e.insert + out.slice(e.to)
-  return out
+  return applyEdits(text, edits)
+}
+
+/**
+ * Rebase a moved note's **own** outbound markdown links so they still point at the
+ * same targets from its new location (FEAT-0041), returning the new text or `null`
+ * when nothing changed. When a note moves to a different folder, its relative
+ * markdown destinations (resolved relative to the *old* folder) would otherwise
+ * point at the wrong place; each is recomputed as the relative path from the new
+ * folder to the same target. A pure rename within the same folder changes nothing
+ * (every destination still resolves identically), so this returns `null`.
+ * Wikilinks are untouched — they resolve by basename / from the root, independent
+ * of where the linking note lives. External and non-note links are left as-is.
+ */
+export function rebaseOutboundLinks(
+  text: string,
+  oldPath: string,
+  newPath: string,
+): string | null {
+  const edits: Array<{ from: number; to: number; insert: string }> = []
+  for (const { from, to, dest } of markdownLinkDests(text)) {
+    if (isExternalDest(dest)) continue
+    const resolved = resolveNotePath(oldPath, dest) // where it pointed from the old location
+    if (resolved === null) continue // not an in-tree note link (escapes root / not .md)
+    // A self-link (the moved note links to itself) follows the note: its target is
+    // the new path, not the stale old one — otherwise it would be rebased to the
+    // old location and dangle.
+    const target = resolved === oldPath ? newPath : resolved
+    if (resolveNotePath(newPath, dest) === target) continue // still resolves from the new location
+    edits.push({ from, to, insert: markdownDest(relativeLink(newPath, target)) })
+  }
+  return applyEdits(text, edits)
 }

@@ -27,31 +27,39 @@ async function writeNote(page: Page, name: string, text: string) {
   )
 }
 
-async function readNoteContent(page: Page, name: string): Promise<string> {
+// Resolve a possibly-nested `/`-separated path under the test folder, returning
+// its file handle — `getFileHandle` itself doesn't traverse folders.
+async function readNoteContent(page: Page, path: string): Promise<string> {
   return await page.evaluate(
-    async ([folder, file]) => {
+    async ([folder, rel]) => {
       const root = await navigator.storage.getDirectory()
-      const dir = await root.getDirectoryHandle(folder, { create: true })
+      let dir = await root.getDirectoryHandle(folder, { create: true })
+      const segments = rel.split("/")
+      const file = segments.pop() as string
+      for (const seg of segments) dir = await dir.getDirectoryHandle(seg)
       const handle = await dir.getFileHandle(file)
       return await (await handle.getFile()).text()
     },
-    [FOLDER, name] as const,
+    [FOLDER, path] as const,
   )
 }
 
-async function noteExists(page: Page, name: string): Promise<boolean> {
+async function noteExists(page: Page, path: string): Promise<boolean> {
   return await page.evaluate(
-    async ([folder, file]) => {
+    async ([folder, rel]) => {
       const root = await navigator.storage.getDirectory()
-      const dir = await root.getDirectoryHandle(folder, { create: true })
+      let dir = await root.getDirectoryHandle(folder, { create: true })
+      const segments = rel.split("/")
+      const file = segments.pop() as string
       try {
+        for (const seg of segments) dir = await dir.getDirectoryHandle(seg)
         await dir.getFileHandle(file)
         return true
       } catch {
         return false
       }
     },
-    [FOLDER, name] as const,
+    [FOLDER, path] as const,
   )
 }
 
@@ -138,12 +146,10 @@ test("a rename onto an existing name is refused and keeps the editor open (AC-7)
   expect(await noteExists(page, "beta.md")).toBe(true)
 })
 
-test("rewrites inbound links in another note when the rename is confirmed (FEAT-0040 AC-9)", async ({
+test("silently rewrites inbound links in another note on rename (FEAT-0040 AC-9)", async ({
   page,
 }) => {
   await stubPicker(page)
-  // Accept the "update links" confirmation when it appears.
-  page.on("dialog", (dialog) => dialog.accept())
   await page.goto("/brulion/")
   // `linked.md` sorts first → it is the active note; `n.md` links to it both ways.
   await writeNote(page, "linked.md", "linked body")
@@ -156,30 +162,30 @@ test("rewrites inbound links in another note when the rename is confirmed (FEAT-
   await input(page).press("Enter")
 
   await expect.poll(() => noteExists(page, "renamed.md")).toBe(true)
-  // The inbound links in n.md followed the rename on disk.
+  // The inbound links in n.md followed the rename on disk — no prompt, no dialog.
   await expect
     .poll(() => readNoteContent(page, "n.md"))
     .toBe("see [[renamed]] and [md](renamed.md)")
 })
 
-test("leaves inbound links dangling when the update is declined (FEAT-0040 AC-10)", async ({
+test("rebases the moved note's own outbound links when it changes folder (FEAT-0041 AC-5)", async ({
   page,
 }) => {
   await stubPicker(page)
-  page.on("dialog", (dialog) => dialog.dismiss()) // decline the link-update confirmation
   await page.goto("/brulion/")
-  await writeNote(page, "linked.md", "linked body")
-  await writeNote(page, "n.md", "see [[linked]]")
+  // `note.md` sorts first → active; it links to a sibling at the root.
+  await writeNote(page, "note.md", "[x](other.md)")
+  await writeNote(page, "other.md", "other body")
   await page.locator("#open-folder").click()
 
-  await expect(display(page)).toContainText("linked")
+  await expect(display(page)).toContainText("note")
   await display(page).click()
-  await input(page).fill("renamed")
+  await input(page).fill("archive/note") // move it into a subfolder
   await input(page).press("Enter")
 
-  // The rename itself still happened, but n.md was left untouched.
-  await expect.poll(() => noteExists(page, "renamed.md")).toBe(true)
-  expect(await readNoteContent(page, "n.md")).toBe("see [[linked]]")
+  await expect.poll(() => noteExists(page, "archive/note.md")).toBe(true)
+  // The moved note's own relative link was rebased to still reach other.md.
+  await expect.poll(() => readNoteContent(page, "archive/note.md")).toBe("[x](../other.md)")
 })
 
 test("Escape cancels the rename without moving the file (AC-8)", async ({ page }) => {

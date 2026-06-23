@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { relativeLink, rewriteLinksForRename } from "./link-rewrite"
+import { relativeLink, rewriteLinksForRename, rebaseOutboundLinks } from "./link-rewrite"
 import { resolveNotePath } from "./note-name"
 
 /** Build a path set the way the contract expects (ReadonlySet<string>). */
@@ -262,5 +262,56 @@ describe("rewriteLinksForRename — wikilink whitespace, aliases, case", () => {
     // The link resolved to diablo.md and must be retargeted to the new note.
     expect(out).not.toBeNull()
     expect(out).toContain("diablo-2")
+  })
+})
+
+describe("rebaseOutboundLinks — the moved note's own links (FEAT-0041)", () => {
+  it("AC-1: a same-folder rename rebases nothing", () => {
+    expect(rebaseOutboundLinks("[x](other.md)", "a/n.md", "a/n2.md")).toBeNull()
+  })
+
+  it("AC-2: rebases a relative markdown link across a folder move, round-tripping", () => {
+    const out = rebaseOutboundLinks("see [x](other.md)", "a/n.md", "b/n.md")
+    expect(out).toBe("see [x](../a/other.md)")
+    expect(resolveNotePath("b/n.md", "../a/other.md")).toBe("a/other.md")
+  })
+
+  it("AC-3: rebases a ../-relative link when moving toward the root", () => {
+    const out = rebaseOutboundLinks("see [x](../top.md)", "sub/n.md", "n.md")
+    expect(out).toBe("see [x](top.md)")
+    expect(resolveNotePath("n.md", "top.md")).toBe("top.md")
+  })
+
+  it("AC-4: leaves wikilinks, external links, and non-note links untouched", () => {
+    const text = "[[other]] and [e](https://x.test) and [t](file.txt)"
+    expect(rebaseOutboundLinks(text, "a/n.md", "b/n.md")).toBeNull()
+  })
+
+  it("rebases every relative markdown link, leaving an external one alone", () => {
+    const out = rebaseOutboundLinks(
+      "[a](one.md) [b](https://x.test) [c](two.md)",
+      "proj/n.md",
+      "n.md",
+    )
+    expect(out).toBe("[a](proj/one.md) [b](https://x.test) [c](proj/two.md)")
+  })
+
+  it("keeps a self-link valid across a folder move (does not dangle it to the old path)", () => {
+    // `[me](n.md)` from a/n.md points at itself; moving to b/n.md, it must still
+    // point at the note's own (new) location — i.e. stay `n.md`, not become ../a/n.md.
+    const out = rebaseOutboundLinks("[me](n.md)", "a/n.md", "b/n.md")
+    expect(out).toBeNull() // `n.md` already resolves to b/n.md from b/n.md — no churn
+  })
+
+  it("re-points a path-form self-link to the new location", () => {
+    const out = rebaseOutboundLinks("[me](../a/n.md)", "a/n.md", "b/n.md")
+    expect(out).toBe("[me](n.md)")
+    expect(resolveNotePath("b/n.md", "n.md")).toBe("b/n.md")
+  })
+
+  it("wraps a rebased destination containing a space in <…>", () => {
+    const out = rebaseOutboundLinks("[x](other.md)", "my dir/n.md", "n.md")
+    expect(out).toBe("[x](<my dir/other.md>)")
+    expect(resolveNotePath("n.md", "<my dir/other.md>")).toBe("my dir/other.md")
   })
 })
