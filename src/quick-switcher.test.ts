@@ -30,6 +30,7 @@ function deps(over: Partial<QuickSwitcherDeps> = {}): QuickSwitcherDeps {
   return {
     getNotes: () => NOTES,
     getRecency: () => [],
+    getActiveNote: () => "",
     openNote: vi.fn(),
     createNote: vi.fn().mockResolvedValue({ ok: true }),
     ...over,
@@ -85,6 +86,20 @@ describe("mountQuickSwitcher open/render (FEAT-0033 AC-2)", () => {
 
     const labels = rows(els).map((r) => r.textContent)
     expect(labels).toEqual(["start", "ideas", "projects/diablo"])
+  })
+
+  it("excludes the currently-open note from the list (FEAT-0039 AC-8)", () => {
+    const els = elements()
+    // ideas.md is open; the empty switcher must omit it and start at the next note.
+    const sw = mountQuickSwitcher(
+      els,
+      deps({ getActiveNote: () => "ideas.md", getRecency: () => ["ideas.md", "start.md"] }),
+    )
+    sw.open()
+
+    const labels = rows(els).map((r) => r.textContent)
+    expect(labels).not.toContain("ideas")
+    expect(labels).toEqual(["start", "projects/diablo"]) // ideas excluded; start is most-recent
   })
 
   it("typing filters the rendered rows", () => {
