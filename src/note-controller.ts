@@ -364,7 +364,17 @@ export function createNoteController(
 
         const result = await moveNote(dir, activeName, normalized.filename)
         if (result.status === "missing") {
-          return { ok: false, reason: "The note no longer exists." }
+          // `lastModified === null` means this note was never written to disk (a
+          // lazy seed nobody has typed into yet) — so there is no file to move.
+          // Say that, rather than the misleading "no longer exists" that fits the
+          // other case (a file we did have, now gone from disk).
+          return {
+            ok: false,
+            reason:
+              lastModified === null
+                ? "Type something into this note before renaming it — it hasn't been saved yet."
+                : "The note no longer exists.",
+          }
         }
         if (result.status === "exists") {
           return { ok: false, reason: "A note with that name already exists." }

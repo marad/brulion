@@ -537,13 +537,30 @@ describe("renameActive (FEAT-0034)", () => {
     expect(moveNote).not.toHaveBeenCalled()
   })
 
-  it("reports missing when the source file is gone (AC-6 edge)", async () => {
-    const { controller } = await open("a.md", ["a.md"])
+  it("reports a vanished file plainly when it had been saved (AC-6 edge)", async () => {
+    const { controller } = await open("a.md", ["a.md"]) // open() reads lastModified: 1
     moveNote.mockResolvedValue({ status: "missing" })
 
     const result = await controller.renameActive("b")
 
     expect(result.ok).toBe(false)
+    expect(result.ok === false && result.reason).toMatch(/no longer exists/i)
+  })
+
+  it("explains a never-saved note instead of 'no longer exists' (AC-6 edge)", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "", lastModified: null }) // never materialized
+    const controller = createNoteController(view, { debounceMs: 10_000 })
+    await controller.open(DIR)
+    moveNote.mockResolvedValue({ status: "missing" })
+
+    const result = await controller.renameActive("journal")
+
+    expect(result.ok).toBe(false)
+    expect(result.ok === false && result.reason).toMatch(/saved|type something/i)
+    expect(result.ok === false && result.reason).not.toMatch(/no longer exists/i)
   })
 })
 
