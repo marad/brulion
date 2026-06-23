@@ -102,11 +102,29 @@ export function fuzzyScore(query: string, target: string): number | null {
 }
 
 /**
+ * Update a most-recently-visited (MRU) list of note paths (FEAT-0039): return a
+ * new list with `path` moved to the front, deduplicated, and capped to `cap`
+ * entries (the oldest beyond the cap drop off). Pure — the input is not mutated.
+ */
+export function touchRecency(
+  list: readonly string[],
+  path: string,
+  cap = 50,
+): string[] {
+  return [path, ...list.filter((p) => p !== path)].slice(0, cap)
+}
+
+/**
  * Rank the known note `paths` against `query` and decide whether `query` is a
  * valid *new* note name to offer for creation. Pure & total (never throws):
  *
  * - `matches`: paths whose display form (no `.md`) fuzzily matches `query`, sorted
- *   by score desc then path asc; an empty query yields all paths in name order.
+ *   by score desc, then by recency (most-recently-visited first), then path asc.
+ *   `recency` (FEAT-0039) is a most-recently-visited list of paths; it only breaks
+ *   ties between equally-scored matches — never added into the score, so a recent
+ *   weak match cannot outrank a better one. On an empty query every score is `0`,
+ *   so the order collapses to recency-first then name order. Stale recency entries
+ *   (paths not in `paths`) never appear and do not perturb the order.
  * - `create`: the trimmed query when it is non-empty and does not name an existing
  *   note, else `null`. Existence is checked by normalizing the query
  *   (`normalizeNoteName`) and testing membership in `paths`, so a note the raw
@@ -114,12 +132,23 @@ export function fuzzyScore(query: string, target: string): number | null {
  *   An *invalid* name (normalize fails) names no existing note, so it is offered —
  *   the create attempt then surfaces the validation error.
  */
-export function searchNotes(query: string, paths: readonly string[]): SearchResult {
+export function searchNotes(
+  query: string,
+  paths: readonly string[],
+  recency: readonly string[] = [],
+): SearchResult {
   const trimmed = query.trim()
+  const rank = new Map(recency.map((path, i) => [path, i]))
+  const rankOf = (path: string): number => rank.get(path) ?? Infinity
   const matches = paths
     .map((path) => ({ path, score: fuzzyScore(trimmed, displayName(path)) }))
     .filter((m): m is { path: string; score: number } => m.score !== null)
-    .sort((a, b) => b.score - a.score || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        rankOf(a.path) - rankOf(b.path) ||
+        (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
+    )
     .map((m) => m.path)
 
   let create: string | null = null

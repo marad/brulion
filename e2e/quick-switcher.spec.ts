@@ -172,6 +172,33 @@ test("the sidebar has no inline new-note textbox (AC-8)", async ({ page }) => {
   await expect(page.locator("#sidebar-search")).toBeVisible()
 })
 
+test("an empty switcher lists most-recently-visited notes first (FEAT-0039)", async ({
+  page,
+}) => {
+  // alpha is active on open. Visit beta then gamma via the sidebar, so the MRU
+  // order becomes gamma, beta, alpha.
+  await page.locator(".note-row", { hasText: "beta" }).click()
+  await expect(editor(page)).toHaveText("beta body")
+  await page.locator(".note-row", { hasText: "gamma" }).click()
+  await expect(editor(page)).toHaveText("gamma body")
+
+  await page.locator("#sidebar-search").click()
+  await expect(rows(page)).toHaveCount(3)
+  await expect(rows(page).nth(0)).toContainText("gamma")
+  await expect(rows(page).nth(1)).toContainText("beta")
+  await expect(rows(page).nth(2)).toContainText("alpha")
+})
+
+test("the most-recently-visited order survives a reload (FEAT-0039)", async ({ page }) => {
+  await page.locator(".note-row", { hasText: "gamma" }).click()
+  await expect(editor(page)).toHaveText("gamma body")
+  await page.reload()
+  await expect(page.locator(".note-row")).toHaveCount(3)
+
+  await page.locator("#sidebar-search").click()
+  await expect(rows(page).first()).toContainText("gamma") // still most-recent after reload
+})
+
 test("the shortcut opens the switcher with Vim on (AC-9)", async ({ page }) => {
   await page.locator("#toggle-vim").click()
   await expect(page.locator("#toggle-vim")).toHaveAttribute("aria-pressed", "true")

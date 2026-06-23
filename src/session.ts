@@ -11,6 +11,7 @@ const ACTIVE_KEY = "brulion:active"
 const SIDEBAR_KEY = "brulion:sidebar-collapsed"
 const VIM_KEY = "brulion:vim"
 const COLLAPSED_FOLDERS_KEY = "brulion:collapsed-folders"
+const RECENCY_KEY = "brulion:recency"
 const MODE = { mode: "readwrite" } as const
 
 /** Persist the directory handle so it survives a reload. */
@@ -61,6 +62,16 @@ export function saveCollapsedFolders(paths: ReadonlySet<string>): Promise<void> 
 /** The set of collapsed folder paths; empty when none was stored. */
 export async function loadCollapsedFolders(): Promise<Set<string>> {
   return new Set((await get<string[]>(COLLAPSED_FOLDERS_KEY)) ?? [])
+}
+
+/** Persist the most-recently-visited note list, most-recent first (FEAT-0039). */
+export function saveRecency(paths: readonly string[]): Promise<void> {
+  return set(RECENCY_KEY, [...paths])
+}
+
+/** The persisted MRU note list; an empty array when none was stored. */
+export async function loadRecency(): Promise<string[]> {
+  return (await get<string[]>(RECENCY_KEY)) ?? []
 }
 
 /** Whether the handle already has readwrite permission (no prompt — silent). */

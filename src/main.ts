@@ -20,7 +20,10 @@ import {
   loadVimMode,
   saveCollapsedFolders,
   loadCollapsedFolders,
+  saveRecency,
+  loadRecency,
 } from "./session"
+import { touchRecency } from "./note-search"
 import { displayName, isExternalLink, resolveNotePath } from "./note-name"
 import { pathToHash, hashToPath } from "./note-route"
 import { wireFlushOnHide } from "./flush"
@@ -90,6 +93,15 @@ let controller: NoteController
 // target from one to offer to create.
 let currentActive = ""
 let currentNotes: string[] = []
+// The most-recently-visited note list (FEAT-0039), most-recent first. Fed into the
+// quick switcher's ranking (empty-query order + equal-score tiebreak). Loaded once
+// before the first folder open (openNote awaits `recencyReady`) so the first
+// recorded visit appends to the persisted list instead of racing past it; touched
+// on every genuine active-note change and persisted.
+let recency: string[] = []
+const recencyReady = loadRecency().then((r) => {
+  recency = r
+})
 // The header open-note identity + inline rename (FEAT-0035); assigned right after
 // the controller (it renames via controller.renameActive) and repointed from
 // onListChanged so the header always names the open note.
@@ -243,6 +255,12 @@ controller = createNoteController(view, {
     // and a follow resolves relative to the right note (FEAT-0025).
     currentActive = active
     currentNotes = notes
+    // Record the visit (FEAT-0039) on a genuine active-note change only — skip the
+    // redundant re-touch when an external list change fires with the same active.
+    if (active && recency[0] !== active) {
+      recency = touchRecency(recency, active)
+      void saveRecency(recency)
+    }
     clearMissingBanner() // the active note changed — drop any stale missing-note notice
     syncRouteToActive(active) // mirror the open note into the URL hash (FEAT-0036)
     identity.update(active) // keep the header naming the open note (FEAT-0035)
@@ -289,6 +307,7 @@ const switcher = mountQuickSwitcher(
   },
   {
     getNotes: () => currentNotes,
+    getRecency: () => recency,
     openNote: (path) => void controller.switchTo(path),
     createNote: (name) => controller.addNote(name),
   },
@@ -331,6 +350,7 @@ window.addEventListener(
 const poller = createPoller(() => controller.refreshFromDisk(), POLL_MS)
 const openNote = async (dir: FileSystemDirectoryHandle) => {
   await collapsedFoldersReady // first tree paint should match the saved collapse state
+  await recencyReady // load the MRU list before the first visit is recorded (no race)
   if (!initialRouteConsumed) {
     // First folder open: the URL hash (a bookmark/reload) beats the persisted
     // last-active note (FEAT-0036). Read it before opening, mirror nothing while

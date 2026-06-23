@@ -11,6 +11,9 @@ export interface CreateResult {
 export interface QuickSwitcherDeps {
   /** A snapshot of the current note paths (with `.md`); read at open and per keystroke. */
   getNotes: () => readonly string[]
+  /** The most-recently-visited note paths (most-recent first); read per render so
+   * the empty-query order and equal-score tiebreak reflect the latest visits. */
+  getRecency: () => readonly string[]
   /** Open an existing note by path (fire-and-forget, like the sidebar click). */
   openNote: (path: string) => void
   /** Create + open a note by name; resolves to whether it succeeded (and why not). */
@@ -81,7 +84,7 @@ export function mountQuickSwitcher(
   }
 
   function render(): void {
-    const { matches, create } = searchNotes(input.value, deps.getNotes())
+    const { matches, create } = searchNotes(input.value, deps.getNotes(), deps.getRecency())
     list.replaceChildren()
     items = []
     for (const path of matches) {
