@@ -890,6 +890,19 @@ which is consistent with our existing FSA-only stance (the whole app already req
 existing note — the moat) and mirrors `createNote`'s handling of a folder segment
 blocked by a like-named file (reports the path as taken rather than throwing).
 
+**M14-review addendum (commit-on-blur + a copy-then-delete fallback).** The live
+review surfaced two things on **Android Chrome** (which exposes `showDirectoryPicker`
+but refuses `move()` with "state changed since it was read from disk"): the inline
+rename editor cancelled on blur — wrong on touch, where tapping away is "done" — and
+native `move()` simply did not work. So: (1) **blur now commits** the rename (like
+Finder / VS Code; Esc still cancels), and a thrown rename error is shown inline rather
+than leaving the editor silently stuck (a mobile PWA has no console). (2) `moveNote`
+keeps native `move()` as the preferred path but **falls back to copy-then-delete**
+(read fresh → write the new path → delete the old) when `move()` is absent or refused.
+The fallback writes before deleting, so the moat still holds: a mid-way failure leaves
+a duplicate at worst, never content lost. This is the user's own "read before write"
+intuition, and it makes the rename work across non-Chromium-desktop engines.
+
 **A rename does NOT rewrite link references in other notes.** Moving `a.md` to
 `b.md` updates only the moved file's own identity and the in-app active/list state.
 Links *to* the renamed note that live in other files are left exactly as the user

@@ -315,7 +315,7 @@ export function mountNoteIdentity(
         showError(result.reason)
       }
     } catch (err) {
-      showError(err instanceof Error ? err.message : String(err))
+      showError(err instanceof Error ? `${err.name}: ${err.message}` : String(err))
     } finally {
       committing = false
     }

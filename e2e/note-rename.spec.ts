@@ -43,6 +43,20 @@ async function noteExists(page: Page, name: string): Promise<boolean> {
   )
 }
 
+// Make the native FileSystemFileHandle.move reject, the way Android Chrome
+// refuses it ("state changed since it was read from disk"), to force moveNote's
+// copy-then-delete fallback over the real OPFS file system.
+async function breakNativeMove(page: Page) {
+  await page.addInitScript(() => {
+    const proto = (
+      globalThis as unknown as { FileSystemFileHandle?: { prototype: Record<string, unknown> } }
+    ).FileSystemFileHandle?.prototype
+    if (proto) {
+      proto.move = () => Promise.reject(new DOMException("state had changed", "InvalidStateError"))
+    }
+  })
+}
+
 const display = (page: Page) => page.locator("#note-identity .note-identity-display")
 const input = (page: Page) => page.locator("#note-identity .note-identity-edit")
 const errorMsg = (page: Page) => page.locator("#note-identity .note-identity-error")
@@ -68,6 +82,25 @@ test("renames the open note from the header; the file moves and the UI follows (
   expect(await noteExists(page, "alpha.md")).toBe(false)
   await expect(display(page)).toContainText("renamed")
   await expect(row(page, "renamed")).toHaveClass(/active/)
+})
+
+test("renames via the copy+delete fallback when native move is refused (AC-12)", async ({
+  page,
+}) => {
+  await stubPicker(page)
+  await breakNativeMove(page)
+  await page.goto("/brulion/")
+  await writeNote(page, "alpha.md", "alpha body")
+  await page.locator("#open-folder").click()
+
+  await display(page).click()
+  await input(page).fill("renamed")
+  await input(page).press("Enter")
+
+  // The native move rejected, but the fallback moved the file all the same.
+  await expect.poll(() => noteExists(page, "renamed.md")).toBe(true)
+  expect(await noteExists(page, "alpha.md")).toBe(false)
+  await expect(display(page)).toContainText("renamed")
 })
 
 test("a rename onto an existing name is refused and keeps the editor open (AC-7)", async ({

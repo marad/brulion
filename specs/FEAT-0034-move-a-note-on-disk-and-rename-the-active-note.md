@@ -31,7 +31,13 @@ the destination's parent folder, materializing intermediate folders the same way
 `saveNote`/`createNote` do (so `a.md` → `projects/a.md` creates `projects/`), and
 moves the existing file handle into it with the native
 `FileSystemFileHandle.move()` — preserving the file's bytes exactly, with no
-read, rewrite, or intermediate copy. It reports:
+read, rewrite, or intermediate copy. Where the engine does not implement `move()`
+or **refuses** it (e.g. Android Chrome rejects moving a handle it considers stale
+with "state changed since it was read from disk"), it falls back to
+copy-then-delete: read the source fresh, write the destination as a brand-new
+file (so no stale-state guard applies), then delete the source — **write before
+delete**, so a failure mid-way leaves a duplicate at worst, never lost content.
+It reports:
 
 - `moved` when the file is relocated (including a pure rename in the same folder,
   and a move that also changes folders);
@@ -72,11 +78,12 @@ external delete-plus-create.
 
 ## Constraints
 
-- The move uses `FileSystemFileHandle.move()` and preserves the file's bytes
-  exactly — no read-modify-write, no copy-then-delete, no window with the content
-  in neither location (the file-fidelity moat).
-- A move never overwrites an existing destination file; the source is left intact
-  when the destination is occupied.
+- The move prefers `FileSystemFileHandle.move()` (atomic, bytes preserved exactly,
+  no rewrite). Where the engine lacks or refuses it, the copy-then-delete fallback
+  writes the new file before deleting the old, so the worst case is a duplicate,
+  never content lost in neither location (the file-fidelity moat holds either way).
+- A move never overwrites an existing destination file — on the native or the
+  fallback path; the source is left intact when the destination is occupied.
 - Destination folders are materialized like `saveNote`/`createNote`; the path is
   the folder-relative POSIX path used everywhere else (FEAT-0023).
 - Renaming reuses `normalizeNoteName` — no second, divergent validator.
@@ -165,3 +172,11 @@ Given an open folder with `a.md` active,
 When `renameActive("a")` is called,
 Then no move is attempted, `a.md` stays active and unchanged, and the result is
 `{ ok: true }`.
+
+**AC-12** — Falls back to copy-then-delete when native move is unavailable or refused.
+Given a folder with `a.md` on an engine whose `FileSystemFileHandle.move()` is
+absent or rejects (e.g. Android Chrome's "state changed since read" refusal),
+When `moveNote(dir, "a.md", "b.md")` is called,
+Then `b.md` exists with `a.md`'s content, `a.md` is gone, the result is `moved`,
+and the no-clobber guard still holds (an occupied `b.md` yields `exists` without
+touching either file).

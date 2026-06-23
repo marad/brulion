@@ -156,15 +156,20 @@ export async function deleteNote(
 }
 
 /**
- * Move the note at `from` to `to` within the tree. Uses the native
+ * Move the note at `from` to `to` within the tree. Prefers the native
  * `FileSystemFileHandle.move()` — the file's bytes are relocated as-is, with no
- * read, rewrite, or intermediate copy, so a rename can never lose or churn
- * content (the file-fidelity moat). Destination folders are materialized like
+ * read, rewrite, or intermediate copy, so a rename neither loses nor churns
+ * content (the file-fidelity moat). Where the engine doesn't implement `move()`,
+ * or refuses it (e.g. Android Chrome's "state changed since it was read from
+ * disk" check rejects moving a handle whose backing file it considers stale), it
+ * falls back to copy-then-delete: read the source fresh, write the destination (a
+ * brand-new file, so no stale-state guard applies), then delete the source —
+ * **write before delete**, so a mid-way failure leaves a duplicate at worst,
+ * never lost content. Destination folders are materialized like
  * `saveNote`/`createNote`. Refuses to overwrite an existing destination
  * (`exists`) — the source is left untouched — and reports a missing source
  * (`missing`). A `from` equal to `to` is a `moved` no-op. The destination is
- * only resolved (and its folders created) once both guards pass, so a refused
- * move leaves no empty folder behind.
+ * only touched once both guards pass, so a refused move leaves nothing behind.
  */
 export async function moveNote(
   dir: FileSystemDirectoryHandle,
@@ -176,15 +181,29 @@ export async function moveNote(
   if (!source) return { status: "missing" }
   if (await getExisting(dir, to)) return { status: "exists" }
 
-  const { folders, file } = splitPath(to)
-  let parent: FileSystemDirectoryHandle
-  try {
-    parent = await resolveParent(dir, folders, true)
-  } catch (err) {
-    if (isAbsent(err)) return { status: "exists" } // a file blocks a folder segment — like createNote
-    throw err
+  const movable = source as Partial<MovableFileHandle>
+  if (typeof movable.move === "function") {
+    const { folders, file } = splitPath(to)
+    let parent: FileSystemDirectoryHandle
+    try {
+      parent = await resolveParent(dir, folders, true)
+      await movable.move(parent, file)
+      return { status: "moved" }
+    } catch (err) {
+      if (isAbsent(err)) return { status: "exists" } // a file blocks a folder segment — like createNote
+      // Native move refused (a strict engine's stale-state check, an unexpected
+      // I/O error): fall through to the copy-then-delete path below.
+    }
   }
-  await (source as MovableFileHandle).move(parent, file)
+
+  // Fallback "read before write": copy the source's current bytes to the new
+  // path, then remove the old file. `to` is known-free (guarded above), so the
+  // null `knownMtime` create path applies; a `conflict` means a file raced into
+  // `to`, which we report as `exists` rather than clobbering it.
+  const content = await (await source.getFile()).text()
+  const written = await saveNote(dir, to, content, null)
+  if (written.status !== "saved") return { status: "exists" }
+  await deleteNote(dir, from)
   return { status: "moved" }
 }
 

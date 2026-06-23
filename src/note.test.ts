@@ -38,36 +38,55 @@ function typeMismatch(): never {
  * recursive listing (`values()` yields real file/dir handles), and removal.
  * Writes bump `lastModified`.
  */
-function makeDirHandle(entries: Map<string, Node>, name = ""): FileSystemDirectoryHandle {
-  const fileHandleFor = (fname: string) => ({
-    kind: "file" as const,
-    name: fname,
-    getFile: async () => {
-      const e = entries.get(fname) as FileNode
-      return { lastModified: e.lastModified, text: async () => e.content }
-    },
-    createWritable: async () => {
-      let buf = ""
-      return {
-        write: async (data: unknown) => {
-          buf += String(data)
-        },
-        close: async () => {
-          const prev = (entries.get(fname) as FileNode | undefined)?.lastModified ?? 0
-          entries.set(fname, { kind: "file", content: buf, lastModified: prev + 1 })
-        },
+/** How the fake file handle exposes the native `move()`: implemented ("native"),
+ * not present at all ("absent" — an engine without the API), or present but
+ * rejecting ("throws" — a strict engine refusing a "stale" handle, like Android
+ * Chrome). The two non-native modes exercise moveNote's copy-then-delete fallback. */
+type MoveBehavior = "native" | "absent" | "throws"
+
+function makeDirHandle(
+  entries: Map<string, Node>,
+  name = "",
+  moveBehavior: MoveBehavior = "native",
+): FileSystemDirectoryHandle {
+  const fileHandleFor = (fname: string) => {
+    const handle: Record<string, unknown> = {
+      kind: "file" as const,
+      name: fname,
+      getFile: async () => {
+        const e = entries.get(fname) as FileNode
+        return { lastModified: e.lastModified, text: async () => e.content }
+      },
+      createWritable: async () => {
+        let buf = ""
+        return {
+          write: async (data: unknown) => {
+            buf += String(data)
+          },
+          close: async () => {
+            const prev = (entries.get(fname) as FileNode | undefined)?.lastModified ?? 0
+            entries.set(fname, { kind: "file", content: buf, lastModified: prev + 1 })
+          },
+        }
+      },
+    }
+    if (moveBehavior === "throws") {
+      handle.move = async () => {
+        throw new DOMException("state had changed since it was read from disk", "InvalidStateError")
       }
-    },
-    // Native FSA move: relocate this file into another dir handle under a new
-    // name, preserving its bytes (no read/rewrite). Reaches the destination's
-    // backing entries via the `__entries` backdoor that makeDirHandle exposes.
-    move: async (destDir: FileSystemDirectoryHandle, destName: string) => {
-      const e = entries.get(fname) as FileNode
-      const destEntries = (destDir as unknown as { __entries: Map<string, Node> }).__entries
-      destEntries.set(destName, { kind: "file", content: e.content, lastModified: e.lastModified })
-      entries.delete(fname)
-    },
-  })
+    } else if (moveBehavior === "native") {
+      // Native FSA move: relocate this file into another dir handle under a new
+      // name, preserving its bytes (no read/rewrite). Reaches the destination's
+      // backing entries via the `__entries` backdoor that makeDirHandle exposes.
+      handle.move = async (destDir: FileSystemDirectoryHandle, destName: string) => {
+        const e = entries.get(fname) as FileNode
+        const destEntries = (destDir as unknown as { __entries: Map<string, Node> }).__entries
+        destEntries.set(destName, { kind: "file", content: e.content, lastModified: e.lastModified })
+        entries.delete(fname)
+      }
+    } // "absent": no move property at all
+    return handle
+  }
 
   const handle = {
     kind: "directory" as const,
@@ -89,7 +108,7 @@ function makeDirHandle(entries: Map<string, Node>, name = ""): FileSystemDirecto
         e = { kind: "directory", entries: new Map<string, Node>() }
         entries.set(dname, e)
       }
-      return makeDirHandle(e.entries, dname)
+      return makeDirHandle(e.entries, dname, moveBehavior)
     },
     removeEntry: async (ename: string) => {
       if (!entries.has(ename)) notFound()
@@ -97,14 +116,14 @@ function makeDirHandle(entries: Map<string, Node>, name = ""): FileSystemDirecto
     },
     async *values() {
       for (const [n, e] of entries) {
-        yield e.kind === "file" ? fileHandleFor(n) : makeDirHandle(e.entries, n)
+        yield e.kind === "file" ? fileHandleFor(n) : makeDirHandle(e.entries, n, moveBehavior)
       }
     },
   }
   return handle as unknown as FileSystemDirectoryHandle
 }
 
-function fakeFolder(initial: Record<string, Spec> = {}) {
+function fakeFolder(initial: Record<string, Spec> = {}, moveBehavior: MoveBehavior = "native") {
   const root = toEntries(initial)
 
   // Resolve a path to its node by walking the tree, or undefined if any segment
@@ -121,7 +140,7 @@ function fakeFolder(initial: Record<string, Spec> = {}) {
   }
 
   return {
-    dir: makeDirHandle(root),
+    dir: makeDirHandle(root, "", moveBehavior),
     content: (path: string) => {
       const n = nodeAt(path)
       return n?.kind === "file" ? n.content : null
@@ -354,6 +373,34 @@ describe("moveNote (AC-1..AC-5)", () => {
     })
     expect(await moveNote(folder.dir, "a.md", "notes/x.md")).toEqual({ status: "exists" })
     expect(folder.content("a.md")).toBe("aaa") // source untouched, no raw throw
+  })
+
+  it("falls back to copy+delete when the engine has no native move (AC-12)", async () => {
+    const folder = fakeFolder({ "a.md": { kind: "file", content: "body", lastModified: 5 } }, "absent")
+    expect(await moveNote(folder.dir, "a.md", "b.md")).toEqual({ status: "moved" })
+    expect(folder.has("a.md")).toBe(false)
+    expect(folder.content("b.md")).toBe("body")
+  })
+
+  it("falls back to copy+delete when native move is refused mid-flight (AC-12)", async () => {
+    // Mirrors Android Chrome rejecting move() with "state changed since read".
+    const folder = fakeFolder({ "a.md": { kind: "file", content: "body", lastModified: 5 } }, "throws")
+    expect(await moveNote(folder.dir, "a.md", "projects/a.md")).toEqual({ status: "moved" })
+    expect(folder.has("a.md")).toBe(false)
+    expect(folder.content("projects/a.md")).toBe("body") // folders still materialized, content intact
+  })
+
+  it("still refuses to clobber on the fallback path (AC-3, AC-12)", async () => {
+    const folder = fakeFolder(
+      {
+        "a.md": { kind: "file", content: "aaa", lastModified: 1 },
+        "b.md": { kind: "file", content: "bbb", lastModified: 2 },
+      },
+      "throws",
+    )
+    expect(await moveNote(folder.dir, "a.md", "b.md")).toEqual({ status: "exists" })
+    expect(folder.content("a.md")).toBe("aaa")
+    expect(folder.content("b.md")).toBe("bbb")
   })
 
   it("leaves no destination folder behind when the move is refused (AC-3)", async () => {
