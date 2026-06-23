@@ -471,6 +471,20 @@ describe("mountNoteIdentity (FEAT-0035)", () => {
     expect(error(c).textContent).toMatch(/exist/i)
   })
 
+  it("surfaces a thrown error inline instead of leaving the editor stuck (AC-7)", async () => {
+    const c = document.createElement("div")
+    const onRename = vi.fn().mockRejectedValue(new TypeError("handle.move is not a function"))
+    const id = mountNoteIdentity(c, onRename)
+    id.update("a.md")
+    display(c).click()
+    input(c).value = "renamed"
+    press(input(c), "Enter")
+    await flush()
+
+    expect(input(c).hidden).toBe(false) // still editing — not silently stuck/closed
+    expect(error(c).textContent).toMatch(/move is not a function/)
+  })
+
   it("ignores a second Enter while a rename is in flight (AC-6)", async () => {
     const c = document.createElement("div")
     let resolve: (r: { ok: true }) => void = () => {}

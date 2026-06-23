@@ -293,6 +293,17 @@ export function mountNoteIdentity(
     input.select()
   }
 
+  // Keep editing with the typed text intact and surface why the rename did not
+  // happen. Used for both a refusal (`renameActive` returned a reason) and an
+  // unexpected throw — the latter so a platform that lacks an API the rename
+  // relies on (e.g. `FileSystemFileHandle.move`) shows the message inline instead
+  // of leaving the editor silently stuck (no console on a mobile PWA).
+  const showError = (message: string) => {
+    error.textContent = message
+    error.hidden = false
+    input.focus()
+  }
+
   const commit = async () => {
     if (committing) return // a rename is already in flight — ignore a second Enter
     committing = true
@@ -301,10 +312,10 @@ export function mountNoteIdentity(
       if (result.ok) {
         showDisplay() // the controller's announce will repoint via update()
       } else {
-        error.textContent = result.reason
-        error.hidden = false
-        input.focus() // keep editing with the typed text intact
+        showError(result.reason)
       }
+    } catch (err) {
+      showError(err instanceof Error ? err.message : String(err))
     } finally {
       committing = false
     }
