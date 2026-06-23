@@ -16,9 +16,15 @@ rewritten — purely how the block is painted (the file-fidelity moat is untouch
 The mechanism is CodeMirror's built-in nested-language support for markdown. The
 `markdown()` language is given a `codeLanguages` resolver (`@codemirror/language-data`)
 so a fenced block whose info string names a known language is parsed by that
-language's grammar, producing a sub-tree of language tokens. A `HighlightStyle`
-mapped onto those tokens (via `syntaxHighlighting`) paints them in colors tuned for
-the editor's light theme.
+language's grammar, producing a sub-tree of language tokens.
+
+Those tokens are painted by **range-scoped highlight decorations**, not a global
+`syntaxHighlighting`: markdown prose and nested code share one highlight-tag
+namespace (both use `string`/`comment`/`escape`/…), so a global highlighter would
+recolor prose escapes (`\*`), HTML comments, and link titles. Instead the renderer
+runs the tree highlighter **only over each fenced block's range** and emits `tok-*`
+class mark decorations, colored by a small CSS palette tuned for the light theme — so
+prose is provably never touched.
 
 Language parsers **load lazily**: the dynamic import for a language fires only when a
 block of that language first appears, so a note with no code blocks pays nothing, and

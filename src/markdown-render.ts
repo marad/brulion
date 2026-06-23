@@ -16,7 +16,9 @@ import {
   type Text,
 } from "@codemirror/state"
 import { markdown } from "@codemirror/lang-markdown"
+import { languages } from "@codemirror/language-data"
 import { Autolink } from "@lezer/markdown"
+import { collectCodeMarks, codeTokenTheme } from "./code-highlight"
 import { syntaxTree } from "@codemirror/language"
 import type { SyntaxNode } from "@lezer/common"
 import { isExternalLink, normalizeNoteName, resolveNotePath, resolveWikilink } from "./note-name"
@@ -465,6 +467,16 @@ function buildDecorations(view: EditorView): {
       seen.add(key)
       all.push(Decoration.mark({ class: m.cls, attributes: m.attrs }).range(m.from, m.to))
     }
+    // Code-block syntax colours (FEAT-0049): mark decorations over the nested code
+    // tokens, scoped to each fenced block's range so prose is never recoloured.
+    for (const c of collectCodeMarks(view.state, from, to)) {
+      if (inFrontmatter(fm, c.from, c.to)) continue
+      if (c.from >= c.to) continue
+      const key = `c:${c.from}:${c.to}:${c.cls}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      all.push(Decoration.mark({ class: c.cls }).range(c.from, c.to))
+    }
     for (const h of hides) {
       if (inFrontmatter(fm, h.from, h.to)) continue
       const key = `h:${h.from}:${h.to}`
@@ -509,7 +521,18 @@ const renderPlugin = ViewPlugin.fromClass(
       // "no reveal on the cursor line" rule still holds for everything else.
       const linkCtxChanged =
         update.startState.facet(linkContext) !== update.state.facet(linkContext)
-      if (update.docChanged || update.viewportChanged || update.selectionSet || linkCtxChanged) {
+      // A fenced block's language loads lazily (FEAT-0049): when it resolves the
+      // parser re-parses and `syntaxTree` changes without a doc/viewport edit, so
+      // rebuild on a tree change too — else the code colours wouldn't appear until
+      // the next keystroke or scroll.
+      const treeChanged = syntaxTree(update.startState) !== syntaxTree(update.state)
+      if (
+        update.docChanged ||
+        update.viewportChanged ||
+        update.selectionSet ||
+        linkCtxChanged ||
+        treeChanged
+      ) {
         this.rebuild(update.view)
       }
     }
@@ -668,8 +691,11 @@ export const markdownRendering: Extension = [
   // wired in editor.ts), and a Prec.high library binding would shadow it.
   // `Autolink`: the one GFM extension we want — bare web URLs become `URL` nodes
   // the renderer linkifies (FEAT-0026). Not the rest of GFM (tables, etc.).
-  markdown({ addKeymap: false, extensions: [Autolink] }),
+  // `codeLanguages`: a fenced block whose info string names a known language
+  // (FEAT-0049) is parsed by that language; parsers load lazily on first use.
+  markdown({ addKeymap: false, extensions: [Autolink], codeLanguages: languages }),
   renderPlugin,
   blockRenderingField,
   renderTheme,
+  codeTokenTheme, // colours for the code-token marks emitted in buildDecorations (FEAT-0049)
 ]
