@@ -281,6 +281,50 @@ header button:hover {
   display: none;
 }
 
+/* The drawer backdrop (FEAT-0051): only ever shown in the narrow layout, when a
+   folder is open and the drawer is open (see the media query below). */
+#sidebar-backdrop {
+  display: none;
+}
+
+/* Narrow viewport (FEAT-0051): the sidebar becomes a slide-over drawer over a
+   full-width editor. One state — the FEAT-0020 collapse — rendered as an overlay
+   here instead of an inline column. Desktop (≥ 40rem) is untouched. */
+@media (max-width: 40rem) {
+  /* Drawer: overlay the editor's left edge rather than taking layout width. This
+     sets only position/size, never `display`, so the collapsed (`display:none`) and
+     no-folder (`[hidden]`) rules above keep a closed/absent drawer hidden; an open
+     one floats above the editor and the backdrop. */
+  #sidebar {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: min(80vw, 16rem);
+    z-index: 50;
+    box-shadow: 2px 0 12px rgb(0 0 0 / 18%);
+  }
+
+  /* Drag-to-resize is a pointer-precise desktop affordance — gone on touch. */
+  #sidebar-resizer {
+    display: none;
+  }
+
+  /* Reclaim header space on a phone; the open-note identity already names the note. */
+  .wordmark {
+    display: none;
+  }
+
+  /* Backdrop visible only when narrow AND a folder is open (#sidebar not [hidden])
+     AND the drawer is open (workspace not collapsed). A tap on it closes the drawer
+     (wired in main.ts). */
+  .workspace:not(.sidebar-collapsed) #sidebar:not([hidden]) ~ #sidebar-backdrop {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    background: rgb(0 0 0 / 32%);
+  }
+}
+
 /* Header toggles read as pressed (sidebar hidden / Vim on) so state is legible. */
 #toggle-sidebar[aria-pressed="true"],
 #toggle-vim[aria-pressed="true"] {

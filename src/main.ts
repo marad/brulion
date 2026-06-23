@@ -44,6 +44,13 @@ import { createInstallPrompt, type DeferredInstallPrompt } from "./install-promp
 /** How often to poll the folder for changes made by other tools (FEAT-0014). */
 const POLL_MS = 2000
 
+/** Below this viewport width the sidebar renders as a slide-over drawer (FEAT-0051). */
+const MOBILE = window.matchMedia("(max-width: 40rem)")
+/** Close the sidebar drawer when in the narrow layout — assigned once the sidebar
+ * toggle is wired. A no-op on desktop (and before wiring). Used after a note-select
+ * so the drawer dismisses to reveal the note. */
+let dismissDrawerIfMobile = (): void => {}
+
 const editorEl = document.querySelector<HTMLDivElement>("#editor")
 const workspaceEl = document.querySelector<HTMLElement>(".workspace")
 const loadingEl = document.querySelector<HTMLElement>("#loading")
@@ -51,6 +58,7 @@ const welcomeEl = document.querySelector<HTMLElement>("#welcome")
 const sidebarEl = document.querySelector<HTMLElement>("#sidebar")
 const toggleSidebarEl = document.querySelector<HTMLButtonElement>("#toggle-sidebar")
 const sidebarResizerEl = document.querySelector<HTMLElement>("#sidebar-resizer")
+const sidebarBackdropEl = document.querySelector<HTMLElement>("#sidebar-backdrop")
 const openSettingsEl = document.querySelector<HTMLButtonElement>("#open-settings")
 const settingsBackdropEl = document.querySelector<HTMLElement>("#settings-backdrop")
 const noteIdentityEl = document.querySelector<HTMLElement>("#note-identity")
@@ -77,6 +85,7 @@ if (
   !sidebarEl ||
   !toggleSidebarEl ||
   !sidebarResizerEl ||
+  !sidebarBackdropEl ||
   !openSettingsEl ||
   !settingsBackdropEl ||
   !noteIdentityEl ||
@@ -326,7 +335,10 @@ controller = createNoteController(view, {
       notes,
       active,
       {
-        onSelect: (name) => void controller.switchTo(name),
+        onSelect: (name) => {
+          void controller.switchTo(name)
+          dismissDrawerIfMobile() // narrow layout: close the drawer to reveal the note (FEAT-0051)
+        },
         onDelete: (name) => {
           if (
             window.confirm(`Delete "${displayName(name)}"? This removes the file from your folder.`)
@@ -494,11 +506,25 @@ void restoreFolder(resumeButton, openNote).finally(() => {
 // toggle, and bind Ctrl+\ to the same flip. CodeMirror has no binding for that
 // chord, so the event bubbles to window and never disturbs the editor shortcuts.
 void loadSidebarCollapsed().then((collapsed) => {
+  let isCollapsed = collapsed
   const sidebar = wireToggle(toggleSidebarEl, {
     initialOn: collapsed,
-    apply: (on) => workspaceEl.classList.toggle("sidebar-collapsed", on),
+    apply: (on) => {
+      isCollapsed = on
+      workspaceEl.classList.toggle("sidebar-collapsed", on)
+    },
     onChange: (on) => void saveSidebarCollapsed(on),
   })
+  // Drawer dismiss (FEAT-0051): collapse only when currently open, so a tap when
+  // already closed is inert. Wired to the backdrop and (via dismissDrawerIfMobile)
+  // to note-select; both are no-ops on desktop where there is no backdrop.
+  const closeDrawer = () => {
+    if (!isCollapsed) sidebar.toggle()
+  }
+  sidebarBackdropEl.addEventListener("click", closeDrawer)
+  dismissDrawerIfMobile = () => {
+    if (MOBILE.matches) closeDrawer()
+  }
   window.addEventListener("keydown", (event) => {
     if (event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && event.key === "\\") {
       event.preventDefault()
