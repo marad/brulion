@@ -11,6 +11,10 @@ import {
   showWorkspace,
   mountNoteIdentity,
   mountMissingNoteBanner,
+  clampSidebarWidth,
+  wireSidebarResize,
+  SIDEBAR_MIN_PX,
+  SIDEBAR_MAX_PX,
 } from "./ui"
 
 vi.mock("./fs", () => ({ pickFolder: vi.fn() }))
@@ -395,6 +399,7 @@ describe("showWorkspace (FEAT-0031)", () => {
     const toggleVim = el()
     const reopen = el()
     const identity = el()
+    const resizer = el()
     // Pre-folder state: hero shown, controls hidden.
     welcome.hidden = false
     sidebar.hidden = true
@@ -402,8 +407,9 @@ describe("showWorkspace (FEAT-0031)", () => {
     toggleVim.hidden = true
     reopen.hidden = true
     identity.hidden = true
+    resizer.hidden = true
 
-    showWorkspace({ welcome, sidebar, toggleSidebar, toggleVim, reopen, identity })
+    showWorkspace({ welcome, sidebar, toggleSidebar, toggleVim, reopen, identity, resizer })
 
     expect(welcome.hidden).toBe(true)
     expect(sidebar.hidden).toBe(false)
@@ -411,6 +417,56 @@ describe("showWorkspace (FEAT-0031)", () => {
     expect(toggleVim.hidden).toBe(false)
     expect(reopen.hidden).toBe(false)
     expect(identity.hidden).toBe(false)
+    expect(resizer.hidden).toBe(false)
+  })
+})
+
+describe("clampSidebarWidth (FEAT-0044)", () => {
+  it("returns a width within range unchanged (AC-1)", () => {
+    expect(clampSidebarWidth(300)).toBe(300)
+    expect(clampSidebarWidth(SIDEBAR_MIN_PX)).toBe(SIDEBAR_MIN_PX)
+    expect(clampSidebarWidth(SIDEBAR_MAX_PX)).toBe(SIDEBAR_MAX_PX)
+  })
+
+  it("clamps a too-small width up to the minimum (AC-2)", () => {
+    expect(clampSidebarWidth(SIDEBAR_MIN_PX - 1)).toBe(SIDEBAR_MIN_PX)
+    expect(clampSidebarWidth(0)).toBe(SIDEBAR_MIN_PX)
+    expect(clampSidebarWidth(-50)).toBe(SIDEBAR_MIN_PX)
+  })
+
+  it("clamps a too-large width down to the maximum (AC-3)", () => {
+    expect(clampSidebarWidth(SIDEBAR_MAX_PX + 1)).toBe(SIDEBAR_MAX_PX)
+    expect(clampSidebarWidth(99999)).toBe(SIDEBAR_MAX_PX)
+  })
+
+  it("floors a non-finite width to the minimum (corrupt stored value)", () => {
+    expect(clampSidebarWidth(NaN)).toBe(SIDEBAR_MIN_PX)
+    expect(clampSidebarWidth(Infinity)).toBe(SIDEBAR_MAX_PX)
+  })
+})
+
+describe("wireSidebarResize (FEAT-0044)", () => {
+  const varOf = (sidebar: HTMLElement) => sidebar.style.getPropertyValue("--sidebar-width")
+
+  it("applies a clamped initial width to the sidebar's CSS basis var (AC-5)", () => {
+    const handle = document.createElement("div")
+    const sidebar = document.createElement("aside")
+    wireSidebarResize(handle, sidebar, { initialWidth: 300, onChange: vi.fn() })
+    expect(varOf(sidebar)).toBe("300px")
+  })
+
+  it("clamps an out-of-range stored width before applying it (AC-2/AC-3)", () => {
+    const handle = document.createElement("div")
+    const sidebar = document.createElement("aside")
+    wireSidebarResize(handle, sidebar, { initialWidth: 99999, onChange: vi.fn() })
+    expect(varOf(sidebar)).toBe(`${SIDEBAR_MAX_PX}px`)
+  })
+
+  it("leaves the basis var unset when there is no stored width (default 14rem applies)", () => {
+    const handle = document.createElement("div")
+    const sidebar = document.createElement("aside")
+    wireSidebarResize(handle, sidebar, { initialWidth: null, onChange: vi.fn() })
+    expect(varOf(sidebar)).toBe("")
   })
 })
 

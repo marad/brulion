@@ -13,6 +13,8 @@ import {
   loadVimMode,
   saveExpandedFolders,
   loadExpandedFolders,
+  saveSidebarWidth,
+  loadSidebarWidth,
   saveRecency,
   loadRecency,
 } from "./session"
@@ -130,6 +132,29 @@ describe("saveExpandedFolders / loadExpandedFolders (FEAT-0043)", () => {
   it("defaults to an empty set when nothing is stored (folders collapsed by default)", async () => {
     get.mockResolvedValue(undefined)
     expect(await loadExpandedFolders()).toEqual(new Set())
+  })
+})
+
+describe("saveSidebarWidth / loadSidebarWidth (FEAT-0044)", () => {
+  it("saves the width under a stable key", async () => {
+    await saveSidebarWidth(320)
+    expect(set).toHaveBeenCalledWith("brulion:sidebar-width", 320)
+  })
+
+  it("loads the stored width from the same key", async () => {
+    get.mockResolvedValue(320)
+    expect(await loadSidebarWidth()).toBe(320)
+    expect(get).toHaveBeenCalledWith("brulion:sidebar-width")
+  })
+
+  it("returns null when nothing is stored (default basis applies)", async () => {
+    get.mockResolvedValue(undefined)
+    expect(await loadSidebarWidth()).toBeNull()
+  })
+
+  it("returns null for a corrupt non-number stored value", async () => {
+    get.mockResolvedValue("oops" as unknown as number)
+    expect(await loadSidebarWidth()).toBeNull()
   })
 })
 
