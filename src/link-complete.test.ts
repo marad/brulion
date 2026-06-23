@@ -57,14 +57,14 @@ describe("wikilinkSource", () => {
     )
   })
 
-  it("AC-3: accepting inserts the display path, closes `]]`, caret after it", () => {
-    // Use a *partial* query so the inserted text differs from what was typed —
-    // proving apply inserts the note's display path, not just echoes the target.
-    const result = sourceAt("[[dia")!
-    const opt = result.options.find((o) => o.label === "diablo")!
-    // buffer "[[dia", replace the partial target [2,5) with the chosen note
-    const { text, caret } = applyTo("[[dia", opt, 2, 5)
-    expect(text).toBe("[[diablo]]")
+  it("AC-3/AC-9: accepting a unique nested note inserts its bare name, closes `]]`", () => {
+    // `journal` is a unique basename → name-only (Obsidian-style), even though the
+    // note lives in `projects/`. The partial query proves apply inserts the chosen
+    // note's text, not what was typed.
+    const result = sourceAt("[[jou")!
+    const opt = result.options.find((o) => o.label === "projects/journal")!
+    const { text, caret } = applyTo("[[jou", opt, 2, 5)
+    expect(text).toBe("[[journal]]") // bare name, not `projects/journal`
     expect(caret).toBe(text.length) // after the closing `]]`
   })
 
@@ -89,7 +89,9 @@ describe("wikilinkSource", () => {
     expect(sourceAt("[[", [])).toBeNull() // no notes at all
   })
 
-  it("AC-6: inserts the full path so a shared basename resolves to the chosen note", () => {
+  it("AC-6: an ambiguous basename inserts the full path so it resolves to the chosen note", () => {
+    // `diablo` is shared by `diablo.md` and `projects/diablo.md`, so the nested one
+    // must insert its full path (the bare name would be ambiguous).
     const result = sourceAt("[[diablo")!
     const labels = result.options.map((o) => o.label)
     expect(labels).toContain("diablo") // root note

@@ -8,6 +8,8 @@ import {
   setHeadingLines,
   clearFormatting,
 } from "./markdown-transforms"
+import { linkContext } from "./markdown-render"
+import { computeWikilinkToggle } from "./wikilink"
 
 /**
  * Right-click formatting popup. Replaces the native context menu inside the
@@ -40,6 +42,24 @@ function closeMenu() {
   close = null
 }
 
+/** The formatting items plus, when the right-click lands on a wikilink that points
+ * at a nested note with a unique basename, a leading item to switch the link
+ * between its full-path and name-only forms (FEAT-0037). */
+function itemsFor(view: EditorView, x: number, y: number): MenuItem[] {
+  const pos = view.posAtCoords({ x, y })
+  if (pos == null) return ITEMS
+  const toggle = computeWikilinkToggle(
+    view.state.doc.toString(),
+    pos,
+    view.state.facet(linkContext).notePaths,
+  )
+  if (!toggle) return ITEMS
+  return [
+    { label: toggle.label, run: () => ({ changes: { from: toggle.from, to: toggle.to, insert: toggle.insert } }) },
+    ...ITEMS,
+  ]
+}
+
 function openMenu(view: EditorView, x: number, y: number) {
   closeMenu()
 
@@ -47,7 +67,7 @@ function openMenu(view: EditorView, x: number, y: number) {
   menu.className = "cm-context-menu"
   menu.setAttribute("role", "menu")
 
-  for (const item of ITEMS) {
+  for (const item of itemsFor(view, x, y)) {
     const button = document.createElement("button")
     button.type = "button"
     button.setAttribute("role", "menuitem")

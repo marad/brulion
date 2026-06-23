@@ -20,6 +20,7 @@ import { Autolink } from "@lezer/markdown"
 import { syntaxTree } from "@codemirror/language"
 import type { SyntaxNode } from "@lezer/common"
 import { isExternalLink, normalizeNoteName, resolveNotePath, resolveWikilink } from "./note-name"
+import { WIKILINK_RE } from "./wikilink"
 
 /**
  * What the link decorator needs to tell a valid internal link from a broken one
@@ -187,10 +188,6 @@ export function markdownSyntaxRanges(
 
   return { hidden, marks }
 }
-
-/** `[[target]]` / `[[target|alias]]`. The target/alias char classes exclude
- * `[`, `]`, `|` so a malformed or empty form simply doesn't match. */
-const WIKILINK_RE = /\[\[([^\]\[|]+)(?:\|([^\]\[]+))?\]\]/g
 
 /**
  * Scan `slice` (the text of `[offset, offset+slice.length)`) for wikilinks and

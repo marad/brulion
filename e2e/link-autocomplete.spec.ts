@@ -90,16 +90,51 @@ test("accepting a suggestion inserts `[[path]]` resolving to the note (AC-3)", a
   await expect.poll(() => readNote(page, "home.md")).toBe("see [[alpha]]")
 })
 
-test("a nested note inserts its full path (AC-6)", async ({ page }) => {
+test("a nested note with a unique basename inserts the bare name (AC-9)", async ({ page }) => {
   await createNote(page, "projects/diablo")
   await createNote(page, "home")
 
   await editor(page).click()
   await page.keyboard.type("[[dia")
   await expect(menu(page)).toBeVisible()
+  // the list label shows the full path (to disambiguate), but the insert is the
+  // bare name since `diablo` is unique in this vault
   await options(page).filter({ hasText: "projects/diablo" }).click()
   await expect(menu(page)).toBeHidden()
 
   await page.keyboard.press("Control+s")
+  await expect.poll(() => readNote(page, "home.md")).toBe("[[diablo]]")
+})
+
+test("right-click toggles a link between name-only and full path (AC-10/AC-11)", async ({
+  page,
+}) => {
+  await createNote(page, "projects/diablo")
+  await createNote(page, "home")
+
+  // Type a name-only link by hand; Escape closes the autocomplete menu, leaving the
+  // caret after the link so it renders (caret outside reveals nothing).
+  await editor(page).click()
+  await page.keyboard.type("[[diablo]]")
+  await page.keyboard.press("Escape")
+  await expect(link(page, "diablo")).toBeVisible()
+
+  // Right-click the rendered link → "Use full path".
+  await link(page, "diablo").click({ button: "right" })
+  const fullItem = page.locator(".cm-context-menu button", { hasText: "Use full path" })
+  await expect(fullItem).toBeVisible()
+  await fullItem.click()
+  await page.keyboard.press("Control+s")
   await expect.poll(() => readNote(page, "home.md")).toBe("[[projects/diablo]]")
+
+  // Right-clicking placed the caret inside the link (revealing it raw); move the
+  // caret to the line start so it renders as a link again, then toggle back.
+  await page.keyboard.press("Home")
+  await expect(link(page, "projects/diablo")).toBeVisible()
+  await link(page, "projects/diablo").click({ button: "right" })
+  const nameItem = page.locator(".cm-context-menu button", { hasText: "Use name only" })
+  await expect(nameItem).toBeVisible()
+  await nameItem.click()
+  await page.keyboard.press("Control+s")
+  await expect.poll(() => readNote(page, "home.md")).toBe("[[diablo]]")
 })

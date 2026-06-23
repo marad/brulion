@@ -8,6 +8,7 @@ import { markdownLanguage } from "@codemirror/lang-markdown"
 import { displayName } from "./note-name"
 import { searchNotes } from "./note-search"
 import { linkContext } from "./markdown-render"
+import { shortestLinkText } from "./wikilink"
 
 /**
  * Wikilink autocomplete (FEAT-0037): typing `[[` opens a list of existing notes,
@@ -15,19 +16,20 @@ import { linkContext } from "./markdown-render"
  * the order is consistent between the two surfaces. The candidate notes come from
  * the editor's existing `linkContext` facet (`notePaths`) — one source of truth for
  * "which notes exist", shared with valid-vs-broken link rendering. Accepting inserts
- * the note's full display path and closes the `]]`. Existing notes only: no
+ * the note's name in its shortest unambiguous form (bare name when its basename is
+ * unique, else the full path — see `shortestLinkText`) and closes the `]]`. Existing
+ * notes only: no
  * create-on-miss, and typing an unknown name is left untouched (a dangling wikilink,
  * which FEAT-0027 already handles). The completion only edits the buffer's link
  * text — nothing is read from or written to the folder (the moat).
  */
 
-/** Accept handler for one suggested note `path`: replace the partial target with
- * the note's display path (no `.md`) and ensure the link is closed with `]]`,
- * leaving the caret after it. An existing `]]` right after the caret is reused, not
+/** Accept handler that replaces the partial target with `insert` (the note's
+ * shortest-unambiguous link text) and ensures the link is closed with `]]`, leaving
+ * the caret after it. An existing `]]` right after the caret is reused, not
  * duplicated, so accepting inside `[[…]]` yields a single well-formed link. */
-function applyWikilink(path: string) {
+function applyWikilink(insert: string) {
   return (view: EditorView, _completion: Completion, from: number, to: number): void => {
-    const insert = displayName(path)
     const hasClose = view.state.doc.sliceString(to, to + 2) === "]]"
     view.dispatch({
       changes: { from, to, insert: hasClose ? insert : `${insert}]]` },
@@ -56,13 +58,17 @@ export function wikilinkSource(context: CompletionContext): CompletionResult | n
   // (and any other tool) can't represent such a note as a wikilink — never suggest
   // a target we'd insert as a dead link. (`|` can't occur: it's rejected by
   // `normalizeNoteName`.) These names are valid on disk, just not wikilink-addressable.
-  const paths = [...context.state.facet(linkContext).notePaths].filter((p) => !/[[\]]/.test(p))
-  const { matches } = searchNotes(query, paths)
+  const notePaths = context.state.facet(linkContext).notePaths
+  const addressable = [...notePaths].filter((p) => !/[[\]]/.test(p))
+  const { matches } = searchNotes(query, addressable)
   if (matches.length === 0) return null
+  // Label shows the full display path so same-named notes are distinguishable in the
+  // list; the *inserted* text is the shortest unambiguous form (bare name when its
+  // basename is unique across the whole vault, else the full path).
   const options: Completion[] = matches.map((path) => ({
     label: displayName(path),
     type: "text",
-    apply: applyWikilink(path),
+    apply: applyWikilink(shortestLinkText(path, notePaths)),
   }))
   return { from, options, filter: false }
 }
