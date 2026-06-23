@@ -979,3 +979,9 @@ with no custom history stack. Decisions:
   reuses for most-recently-visited recency.
 - *Deferred:* in-app Back/Forward buttons (M9/PWA), recency ranking (M21),
   create-on-miss from a URL, and deep-linking to a position inside a note.
+- *Known cosmetic edges (accepted):* navigating Back/Forward onto a note that has
+  since vanished (externally deleted, or the standing-conflict modal blocking the
+  switch) leaves the address bar momentarily naming a note that isn't open — the
+  switch is correctly inert, and the URL self-heals on the next navigation. No data
+  loss; restoring the hash would mean fighting the browser's own history, not worth
+  it at this scale.
