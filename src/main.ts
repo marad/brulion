@@ -18,8 +18,8 @@ import {
   loadSidebarCollapsed,
   saveVimMode,
   loadVimMode,
-  saveCollapsedFolders,
-  loadCollapsedFolders,
+  saveExpandedFolders,
+  loadExpandedFolders,
   saveRecency,
   loadRecency,
 } from "./session"
@@ -213,12 +213,12 @@ const view = mountEditor(editorEl, {
 })
 // The diff view shown while a conflict stands (FEAT-0022); null when none does.
 let conflictDiff: ConflictDiff | null = null
-// The folders the user left collapsed (FEAT-0024). Loaded before the first
-// folder open (openNote awaits it), so the tree's first paint matches the saved
-// state instead of flashing fully expanded.
-let collapsedFolders = new Set<string>()
-const collapsedFoldersReady = loadCollapsedFolders().then((set) => {
-  collapsedFolders = set
+// The folders the user expanded (FEAT-0043); every other folder renders collapsed
+// by default. Loaded before the first folder open (openNote awaits it), so the
+// tree's first paint matches the saved state instead of flashing fully collapsed.
+let expandedFolders = new Set<string>()
+const expandedFoldersReady = loadExpandedFolders().then((set) => {
+  expandedFolders = set
 })
 controller = createNoteController(view, {
   onConflict: (versions) => {
@@ -279,12 +279,14 @@ controller = createNoteController(view, {
           }
         },
         onToggleFolder: (path, collapsed) => {
-          if (collapsed) collapsedFolders.add(path)
-          else collapsedFolders.delete(path)
-          void saveCollapsedFolders(collapsedFolders)
+          // The persisted set holds expanded folders (FEAT-0043), so invert:
+          // collapsing drops the path, expanding adds it.
+          if (collapsed) expandedFolders.delete(path)
+          else expandedFolders.add(path)
+          void saveExpandedFolders(expandedFolders)
         },
       },
-      collapsedFolders,
+      expandedFolders,
     )
   },
 })
@@ -350,7 +352,7 @@ window.addEventListener(
 // folder the controller currently holds.
 const poller = createPoller(() => controller.refreshFromDisk(), POLL_MS)
 const openNote = async (dir: FileSystemDirectoryHandle) => {
-  await collapsedFoldersReady // first tree paint should match the saved collapse state
+  await expandedFoldersReady // first tree paint should match the saved expand state
   await recencyReady // load the MRU list before the first visit is recorded (no race)
   if (!initialRouteConsumed) {
     // First folder open: the URL hash (a bookmark/reload) beats the persisted

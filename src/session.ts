@@ -10,7 +10,7 @@ const DIR_KEY = "brulion:dir"
 const ACTIVE_KEY = "brulion:active"
 const SIDEBAR_KEY = "brulion:sidebar-collapsed"
 const VIM_KEY = "brulion:vim"
-const COLLAPSED_FOLDERS_KEY = "brulion:collapsed-folders"
+const EXPANDED_FOLDERS_KEY = "brulion:expanded-folders"
 const RECENCY_KEY = "brulion:recency"
 const MODE = { mode: "readwrite" } as const
 
@@ -54,14 +54,17 @@ export async function loadVimMode(): Promise<boolean> {
   return (await get<boolean>(VIM_KEY)) === true
 }
 
-/** Remember which folders are collapsed in the tree (FEAT-0024), as an array. */
-export function saveCollapsedFolders(paths: ReadonlySet<string>): Promise<void> {
-  return set(COLLAPSED_FOLDERS_KEY, [...paths])
+/** Remember which folders the user expanded in the tree (FEAT-0043), as an array. */
+export function saveExpandedFolders(paths: ReadonlySet<string>): Promise<void> {
+  return set(EXPANDED_FOLDERS_KEY, [...paths])
 }
 
-/** The set of collapsed folder paths; empty when none was stored. */
-export async function loadCollapsedFolders(): Promise<Set<string>> {
-  return new Set((await get<string[]>(COLLAPSED_FOLDERS_KEY)) ?? [])
+/**
+ * The set of expanded folder paths; empty when none was stored — so by default
+ * every folder renders collapsed (FEAT-0043). Absence means collapsed.
+ */
+export async function loadExpandedFolders(): Promise<Set<string>> {
+  return new Set((await get<string[]>(EXPANDED_FOLDERS_KEY)) ?? [])
 }
 
 /** Persist the most-recently-visited note list, most-recent first (FEAT-0039). */

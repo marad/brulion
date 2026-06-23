@@ -124,22 +124,23 @@ export interface NoteListHandlers {
  * name button — display name drops `.md` — plus a delete button); folders render
  * as a header with a disclosure control over an indented children container.
  * `onSelect`/`onDelete` receive the note's **full path**. The active note's row
- * is marked wherever it sits. A folder renders collapsed when its path is in
- * `collapsed`, except that the active note's ancestors are always expanded so it
- * stays visible (the set is read, never mutated, here). Clicking a folder header
- * hides/shows its children in place and reports the new state via
- * `onToggleFolder`. Rebuilds the container each call.
+ * is marked wherever it sits. A folder renders **collapsed by default** (FEAT-0043)
+ * and is expanded only when its path is in `expanded` or it is an ancestor of the
+ * active note (which is always expanded so the open note stays visible). The set
+ * is read, never mutated, here. Clicking a folder header hides/shows its children
+ * in place and reports the new collapsed state via `onToggleFolder`. Rebuilds the
+ * container each call.
  */
 export function renderNoteList(
   container: HTMLElement,
   notes: string[],
   active: string,
   handlers: NoteListHandlers,
-  collapsed: ReadonlySet<string> = new Set(),
+  expanded: ReadonlySet<string> = new Set(),
 ): void {
   container.replaceChildren()
   for (const node of buildNoteTree(notes)) {
-    container.append(renderNode(node, active, handlers, collapsed))
+    container.append(renderNode(node, active, handlers, expanded))
   }
 }
 
@@ -148,17 +149,18 @@ function renderNode(
   node: TreeNode,
   active: string,
   handlers: NoteListHandlers,
-  collapsed: ReadonlySet<string>,
+  expanded: ReadonlySet<string>,
 ): HTMLElement {
   if (node.kind === "note") return renderNoteRow(node, active, handlers)
 
   const folder = document.createElement("div")
   folder.className = "note-folder"
 
-  // The active note's ancestors stay open so a freshly created/restored nested
-  // note is never hidden; every other folder honors the persisted collapsed set.
+  // Collapsed by default (FEAT-0043): a folder opens only when the user expanded
+  // it, or when it is an ancestor of the active note — that rule always wins so a
+  // freshly created/restored nested note is never hidden behind a collapsed folder.
   const isAncestorOfActive = active === node.path || active.startsWith(node.path + "/")
-  const isCollapsed = collapsed.has(node.path) && !isAncestorOfActive
+  const isCollapsed = !expanded.has(node.path) && !isAncestorOfActive
 
   const header = document.createElement("button")
   header.type = "button"
@@ -171,7 +173,7 @@ function renderNode(
   children.className = "folder-children"
   children.hidden = isCollapsed
   for (const child of node.children) {
-    children.append(renderNode(child, active, handlers, collapsed))
+    children.append(renderNode(child, active, handlers, expanded))
   }
 
   header.addEventListener("click", () => {

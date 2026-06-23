@@ -1266,3 +1266,38 @@ chip. The decisions, all bending to the file-fidelity moat:
   range (a one-way `markdown-render → frontmatter` dependency). Correct in both
   states: collapsed, the region is block-replaced anyway; expanded, the raw text
   shows unstyled.
+
+## Folder tree opens collapsed by default; persist the *expanded* set, not the collapsed one (M13 / FEAT-0043)
+
+In a large vault the note tree opening fully expanded is a wall of every note at
+every depth. M13 Phase 1 flips the default: the tree opens **collapsed** (only the
+top level), the user expands what they need, and that choice persists. The
+decisions:
+
+- **Persist the expanded set, invert the polarity.** FEAT-0024 stored the folders
+  the user *collapsed* (absent = expanded). With collapsed as the new default that
+  polarity can't work — a single "collapsed" set has no way to also record an
+  *expanded* folder, and an absent folder must now read as collapsed. So the
+  persisted set is inverted to hold the folders the user **expanded** (absent =
+  collapsed). The render rule becomes
+  `isCollapsed = !expanded.has(path) && !isAncestorOfActive`; the toggle handler
+  inverts (`collapsed ? delete : add`). *Consequence:* `renderNoteList`'s 5th
+  param and the session helpers are renamed collapsed→expanded; the
+  `onToggleFolder(path, collapsed)` callback contract is deliberately left as-is
+  (it still reports the new *collapsed* state), so the inversion is localized to
+  the one caller in `main.ts`.
+- **New storage key, old one abandoned — no migration.** Stored under a new
+  `brulion:expanded-folders` key; the old `brulion:collapsed-folders` is simply
+  left behind. Its meaning is inverted, so migrating it would be wrong; on first
+  load the new key is empty ⇒ the tree opens fully collapsed, which is exactly the
+  intended new default. *Consequence:* an existing user's folder-expansion state
+  resets once, to "all collapsed" — trivial, transient UI state, and the feature
+  changes that default anyway.
+- **The "reveal the active note's ancestors" rule is preserved and still not
+  persisted.** An ancestor of the open note is always rendered expanded
+  (overriding the collapsed default and absence from the set) so the open note is
+  never hidden — but force-showing it does *not* add it to the expanded set, so it
+  collapses again once the active note moves elsewhere (unless the user expanded
+  it explicitly).
+- **Moat-neutral.** Expand/collapse is browser-local UI state (idb-keyval);
+  opening, expanding, or collapsing a folder writes nothing to the user's folder.
