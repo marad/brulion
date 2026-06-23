@@ -998,3 +998,44 @@ with no custom history stack. Decisions:
   loss; restoring the hash would mean fighting the browser's own history, not worth
   it at this scale. (The other earlier edge — Back onto an externally-deleted note —
   is now resolved by the missing-note banner above.)
+
+## Wikilink autocomplete: reuse the switcher's scoring and the editor's note set (M20 / FEAT-0037)
+Typing `[[` opens a `@codemirror/autocomplete` list of existing notes — the
+name-first ergonomic linking M8/FEAT-0027 promised, now suggested instead of typed
+from memory. The source (`src/link-complete.ts`) is a peer to the slash source
+(both registered via `markdownLanguage.data.of({ autocomplete })`; each returns
+null off its own trigger, so they coexist). Decisions:
+
+- **One source of truth, twice.** Candidates come from the editor's existing
+  `linkContext` facet (`notePaths`) — the *same* set that drives valid-vs-broken
+  link rendering — not a separately threaded list; and ranking calls the existing
+  `note-search.ts` (`searchNotes`), the *same* fuzzy scoring the Ctrl+K switcher
+  uses, so the order is consistent between the two surfaces. No second list, no
+  second scoring. (Rejected: thread the note list in through `EditorOptions` — a
+  second copy that could drift from the render facet; a bespoke fuzzy match — a
+  second ranking that would disagree with the switcher.)
+- **`filter: false`, no `validFor` → re-rank per keystroke.** Returning the result
+  with `filter: false` keeps the `note-search` order authoritative (CodeMirror does
+  not re-sort), and omitting `validFor` makes CM re-invoke the source on each
+  keystroke, so the ranking refreshes against the growing query rather than CM
+  narrowing the first snapshot with its own (different) fuzzy filter. Cheap at
+  tens-to-hundreds of notes. (Rejected: CM's default filtering — a *third* ranking,
+  inconsistent with the switcher.)
+- **Insert the full display path, not the bare basename.** Accepting replaces the
+  partial target with the note's `displayName` (folder-relative, `.md` stripped —
+  `projects/diablo`, not `diablo`). A bare wikilink resolves by basename and an
+  ambiguous basename picks the first sorted match (FEAT-0027); inserting the full
+  path makes the link resolve unambiguously to the note the user actually chose. It
+  also closes `]]` (reusing an existing `]]` right after the caret rather than
+  doubling it) and leaves the caret after the link.
+- **Existing notes only; no create-on-miss.** Unlike the switcher, autocomplete only
+  *suggests* — it never creates. Typing a name that matches nothing is left alone
+  (a dangling wikilink, which FEAT-0027's missing-target handling already renders
+  broken and offers to create on follow). A note whose name contains `[`/`]` is
+  **never offered**: those break the `[[…]]` delimiters, so the renderer (and any
+  other tool) can't represent it as a wikilink — suggesting it would insert a dead
+  link. (Such names are valid on disk, just not wikilink-addressable; `|` can't
+  occur — `normalizeNoteName` rejects it.)
+- **Moat: editor-only.** The completion reads the facet and edits the buffer's link
+  text; nothing is read from or written to the folder. The bytes the user owns are
+  the plain `[[path]]` they'd have typed by hand.
