@@ -117,6 +117,49 @@ describe("serializeCopy", () => {
     })
   })
 
+  describe("does not misfire where the renderer hides nothing", () => {
+    function rawState(doc: string): EditorState {
+      return EditorState.create({ doc, extensions: [markdown({ extensions: [Autolink] })] })
+    }
+
+    it("does not treat a fenced-code line as a heading", () => {
+      // The `# comment` line is CodeText inside a fence, not a heading.
+      const doc = "```\n# comment\n```"
+      const from = doc.indexOf("comment")
+      expect(serializeCopy(rawState(doc), [{ from, to: from + "comment".length }])).toBe(
+        "comment",
+      )
+    })
+
+    it("does not treat a fenced-code line as a list item", () => {
+      const doc = "```\n- item\n```"
+      const from = doc.indexOf("item")
+      expect(serializeCopy(rawState(doc), [{ from, to: from + "item".length }])).toBe("item")
+    })
+
+    it("does not pull a marker from an (expanded) frontmatter line", () => {
+      // The markdown parser parses `- tag` as a list item, but it sits in the
+      // leading `---…---` frontmatter block, which the renderer leaves raw.
+      const doc = "---\n- tag\n---\nbody"
+      const from = doc.indexOf("tag")
+      expect(serializeCopy(rawState(doc), [{ from, to: from + "tag".length }])).toBe("tag")
+    })
+  })
+
+  describe("empty ranges in a multi-range selection", () => {
+    it("are skipped, not joined as blank lines", () => {
+      const doc = "alpha beta"
+      const state = EditorState.create({
+        doc,
+        extensions: [markdown({ extensions: [Autolink] })],
+      })
+      const b = doc.indexOf("beta")
+      // A collapsed caret at 0 plus a real range — the empty one must not add a
+      // leading blank line.
+      expect(serializeCopy(state, [{ from: 0, to: 0 }, { from: b, to: b + 4 }])).toBe("beta")
+    })
+  })
+
   describe("plain paragraph", () => {
     it("returns the slice unchanged when there are no markers", () => {
       expect(copy("just [some] text")).toBe("some")

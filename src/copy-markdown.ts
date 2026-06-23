@@ -2,6 +2,7 @@ import { type EditorState, type Extension } from "@codemirror/state"
 import { EditorView } from "@codemirror/view"
 import { syntaxTree } from "@codemirror/language"
 import { type SyntaxNode } from "@lezer/common"
+import { frontmatterRange } from "./frontmatter"
 
 /**
  * Copy fidelity (FEAT-0045). CodeMirror's default copy hands the clipboard the raw
@@ -87,13 +88,37 @@ function inlineDelimiters(
 }
 
 /**
+ * True when the line starting at `lineStart` is one of the block constructs the
+ * renderer actually hides a leading marker for: an ATX heading, a blockquote, or an
+ * unordered-list item. Confirmed via the syntax tree so a *text-only* match can't
+ * misfire on a code-block line (a literal `# comment` inside a fence is `CodeText`,
+ * not a heading, and the renderer hides nothing there). A fenced/indented code
+ * container short-circuits to false.
+ */
+function lineHasHiddenMarker(state: EditorState, lineStart: number): boolean {
+  for (let n: SyntaxNode | null = syntaxTree(state).resolveInner(lineStart, 1); n; n = n.parent) {
+    if (n.name === "FencedCode" || n.name === "CodeBlock") return false
+    if (n.name.startsWith("ATXHeading") || n.name === "Blockquote") return true
+    if (n.name === "ListItem" && n.parent?.name === "BulletList") return true
+  }
+  return false
+}
+
+/**
  * The leading block-marker run to prepend for the first selected line, read verbatim,
- * or `""`. Returned only when the line carries a marker the renderer hides and the
- * selection starts at or past it (`from - line.from >= run.length`) — so a plain
- * paragraph, or a line selected from its very start, repairs nothing.
+ * or `""`. Returned only when the line is genuinely a hidden-marker construct (per
+ * the syntax tree) AND the selection starts at or past the marker run
+ * (`from - line.from >= run.length`) — so a plain paragraph, a line selected from its
+ * very start, a code-block line, or an expanded frontmatter line repairs nothing.
  */
 function lineMarkerPrefix(state: EditorState, from: number): string {
   const line = state.doc.lineAt(from)
+  // Frontmatter is left raw by the renderer (FEAT-0042) — but the markdown parser,
+  // ignorant of frontmatter, still parses a `- tag` line there as a list item. Skip
+  // the whole block so its visible markers are never pulled in.
+  const fm = frontmatterRange(state)
+  if (fm && line.from < fm.to && line.to > fm.from) return ""
+  if (!lineHasHiddenMarker(state, line.from)) return ""
   const run = LINE_MARKER_RE.exec(line.text)?.[0] ?? ""
   return run.length > 0 && from - line.from >= run.length ? run : ""
 }
@@ -106,8 +131,8 @@ function lineMarkerPrefix(state: EditorState, from: number): string {
  */
 export function serializeCopy(state: EditorState, ranges: readonly SelRange[]): string {
   return ranges
+    .filter(({ from, to }) => from !== to) // skip empty ranges (CodeMirror's own copy does too)
     .map(({ from, to }) => {
-      if (from === to) return ""
       const prefix =
         lineMarkerPrefix(state, from) + inlineDelimiters(state, from, "open").join("")
       const suffix = inlineDelimiters(state, to, "close").join("")
