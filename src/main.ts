@@ -225,6 +225,17 @@ let expandedFolders = new Set<string>()
 const expandedFoldersReady = loadExpandedFolders().then((set) => {
   expandedFolders = set
 })
+// Drag-to-resize the sidebar (FEAT-0044): restore the saved width onto the
+// sidebar's flex-basis var and persist the new width on each drag end. The handle
+// is revealed with the workspace (showWorkspace) and hidden by CSS while the
+// sidebar is collapsed. openNote awaits this before the first paint, so a saved
+// width applies with no flash of the default basis.
+const sidebarWidthReady = loadSidebarWidth().then((px) => {
+  wireSidebarResize(sidebarResizerEl, sidebarEl, {
+    initialWidth: px,
+    onChange: (width) => void saveSidebarWidth(width),
+  })
+})
 controller = createNoteController(view, {
   onConflict: (versions) => {
     // Modal: show the choice and lock the editor; navigation is blocked in the
@@ -359,6 +370,7 @@ window.addEventListener(
 const poller = createPoller(() => controller.refreshFromDisk(), POLL_MS)
 const openNote = async (dir: FileSystemDirectoryHandle) => {
   await expandedFoldersReady // first tree paint should match the saved expand state
+  await sidebarWidthReady // apply the saved sidebar width before first paint (no flash)
   await recencyReady // load the MRU list before the first visit is recorded (no race)
   if (!initialRouteConsumed) {
     // First folder open: the URL hash (a bookmark/reload) beats the persisted
@@ -439,17 +451,6 @@ void loadSidebarCollapsed().then((collapsed) => {
       event.preventDefault()
       sidebar.toggle()
     }
-  })
-})
-
-// Drag-to-resize the sidebar (FEAT-0044): restore the saved width onto the
-// sidebar's flex-basis var and persist the new width on each drag end. The handle
-// itself is revealed with the workspace (showWorkspace) and hidden by CSS while
-// the sidebar is collapsed.
-void loadSidebarWidth().then((px) => {
-  wireSidebarResize(sidebarResizerEl, sidebarEl, {
-    initialWidth: px,
-    onChange: (width) => void saveSidebarWidth(width),
   })
 })
 

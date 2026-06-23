@@ -1301,3 +1301,41 @@ decisions:
   it explicitly).
 - **Moat-neutral.** Expand/collapse is browser-local UI state (idb-keyval);
   opening, expanding, or collapsing a folder writes nothing to the user's folder.
+
+## Sidebar width: drag the border, a clamped pixel basis via a CSS var (M13 / FEAT-0044)
+
+The sidebar was a fixed `14rem`. M13 Phase 2 lets the user drag the
+sidebar/editor border to set its width. The decisions:
+
+- **A flex-child handle + a CSS-var basis.** The width is applied as a
+  `--sidebar-width` custom property the sidebar's `flex: 0 0 var(--sidebar-width,
+  14rem)` reads, so it composes with the existing `min-width: 0` ellipsis and the
+  collapse rule untouched; the former `14rem` survives as the var's fallback
+  default. The grab handle is a thin flex child sitting on the border between
+  `#sidebar` and `#editor`. *Consequence:* no layout restructure — one declaration
+  changes, plus a 5px handle element.
+- **Clamped to `[144, 560]` px, pure.** A pure `clampSidebarWidth` bounds the
+  width so a drag can neither shrink the sidebar to an unusable sliver nor let it
+  swallow the editor; a non-finite stored value floors to the minimum, so a corrupt
+  preference still yields a usable sidebar. Both the live drag and the
+  restore-on-load run through it. *Consequence:* the stored width is always
+  applied within bounds — no defensive checks scattered at call sites.
+- **End the drag on `lostpointercapture`, not `pointerup`.** The drag uses
+  `setPointerCapture` (keeps tracking if the pointer leaves the thin handle) and
+  ends on `lostpointercapture`, which fires on both a normal release *and* an
+  interruption (pointercancel, an OS gesture). *Why:* a single end path guarantees
+  cleanup (text-selection suppression, listener removal) always runs, and it
+  persists the *last applied* width — exactly what the user sees. A `pointerup`-only
+  handler would leak state on an interrupted drag.
+- **Persisted browser-local, awaited before first paint.** The clamped width is
+  saved under `brulion:sidebar-width` (idb-keyval, like the other UI prefs) and
+  the load is awaited in `openNote` alongside the expanded-folders/recency loads,
+  so a saved width applies before the sidebar first paints (no flash of the
+  default). *Consequence:* moat-neutral — resizing writes nothing to the user's
+  folder.
+- **Handle present only while the sidebar is visible.** It is `hidden` before a
+  folder opens (revealed by `showWorkspace`) and removed by CSS while the sidebar
+  is collapsed — there is nothing to resize in those states.
+- **Out of scope:** keyboard resizing and double-click-reset (a later
+  keyboard/mobile concern), a settings-modal width control (M16), and
+  touch/mobile behavior (M17).
