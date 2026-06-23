@@ -27,6 +27,18 @@ async function writeNote(page: Page, name: string, text: string) {
   )
 }
 
+async function readNoteContent(page: Page, name: string): Promise<string> {
+  return await page.evaluate(
+    async ([folder, file]) => {
+      const root = await navigator.storage.getDirectory()
+      const dir = await root.getDirectoryHandle(folder, { create: true })
+      const handle = await dir.getFileHandle(file)
+      return await (await handle.getFile()).text()
+    },
+    [FOLDER, name] as const,
+  )
+}
+
 async function noteExists(page: Page, name: string): Promise<boolean> {
   return await page.evaluate(
     async ([folder, file]) => {
@@ -124,6 +136,50 @@ test("a rename onto an existing name is refused and keeps the editor open (AC-7)
   // Neither file was touched.
   expect(await noteExists(page, "alpha.md")).toBe(true)
   expect(await noteExists(page, "beta.md")).toBe(true)
+})
+
+test("rewrites inbound links in another note when the rename is confirmed (FEAT-0040 AC-9)", async ({
+  page,
+}) => {
+  await stubPicker(page)
+  // Accept the "update links" confirmation when it appears.
+  page.on("dialog", (dialog) => dialog.accept())
+  await page.goto("/brulion/")
+  // `linked.md` sorts first → it is the active note; `n.md` links to it both ways.
+  await writeNote(page, "linked.md", "linked body")
+  await writeNote(page, "n.md", "see [[linked]] and [md](linked.md)")
+  await page.locator("#open-folder").click()
+
+  await expect(display(page)).toContainText("linked")
+  await display(page).click()
+  await input(page).fill("renamed")
+  await input(page).press("Enter")
+
+  await expect.poll(() => noteExists(page, "renamed.md")).toBe(true)
+  // The inbound links in n.md followed the rename on disk.
+  await expect
+    .poll(() => readNoteContent(page, "n.md"))
+    .toBe("see [[renamed]] and [md](renamed.md)")
+})
+
+test("leaves inbound links dangling when the update is declined (FEAT-0040 AC-10)", async ({
+  page,
+}) => {
+  await stubPicker(page)
+  page.on("dialog", (dialog) => dialog.dismiss()) // decline the link-update confirmation
+  await page.goto("/brulion/")
+  await writeNote(page, "linked.md", "linked body")
+  await writeNote(page, "n.md", "see [[linked]]")
+  await page.locator("#open-folder").click()
+
+  await expect(display(page)).toContainText("linked")
+  await display(page).click()
+  await input(page).fill("renamed")
+  await input(page).press("Enter")
+
+  // The rename itself still happened, but n.md was left untouched.
+  await expect.poll(() => noteExists(page, "renamed.md")).toBe(true)
+  expect(await readNoteContent(page, "n.md")).toBe("see [[linked]]")
 })
 
 test("Escape cancels the rename without moving the file (AC-8)", async ({ page }) => {

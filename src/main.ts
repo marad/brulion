@@ -221,6 +221,16 @@ const collapsedFoldersReady = loadCollapsedFolders().then((set) => {
   collapsedFolders = set
 })
 controller = createNoteController(view, {
+  // Confirm rewriting inbound links on a rename (FEAT-0040): name the notes whose
+  // links would change so the multi-file write is never silent. Declining leaves
+  // the links dangling (the FEAT-0034 status quo).
+  confirmLinkUpdate: (affected) => {
+    const list = affected.map((p) => `• ${displayName(p)}`).join("\n")
+    const n = affected.length
+    return window.confirm(
+      `Update links to the renamed note in ${n} other note${n === 1 ? "" : "s"}?\n\n${list}`,
+    )
+  },
   onConflict: (versions) => {
     // Modal: show the choice and lock the editor; navigation is blocked in the
     // controller. The only way forward is one of the two resolution buttons.

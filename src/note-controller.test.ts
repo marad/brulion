@@ -564,6 +564,106 @@ describe("renameActive (FEAT-0034)", () => {
   })
 })
 
+describe("renameActive — inbound link rewriting (FEAT-0040)", () => {
+  // Open with `active` selected and a fixed listing; `n.md` carries whatever links
+  // a scenario needs. The post-move listing is set by each test before renaming.
+  async function open(active: string, names: string[], links: Record<string, string>) {
+    const view = mountView()
+    listNotes.mockResolvedValue(names)
+    loadActiveNote.mockResolvedValue(active)
+    readNote.mockImplementation(async (_dir, name) => ({
+      content: links[name] ?? `${name} body`,
+      lastModified: 7,
+    }))
+    const confirmLinkUpdate = vi.fn().mockResolvedValue(true)
+    const controller = createNoteController(view, { confirmLinkUpdate, debounceMs: 10_000 })
+    await controller.open(DIR)
+    return { view, controller, confirmLinkUpdate }
+  }
+
+  it("rewrites a wikilink and a markdown link in another note under confirmation (AC-9)", async () => {
+    const { controller, confirmLinkUpdate } = await open("diablo.md", ["diablo.md", "n.md"], {
+      "n.md": "wiki [[diablo]] and md [d](diablo.md)",
+    })
+    listNotes.mockResolvedValue(["diablo-2.md", "n.md"]) // listing after the move
+
+    const result = await controller.renameActive("diablo-2")
+
+    expect(result).toEqual({ ok: true })
+    expect(moveNote).toHaveBeenCalledWith(DIR, "diablo.md", "diablo-2.md")
+    expect(confirmLinkUpdate).toHaveBeenCalledWith(["n.md"])
+    expect(saveNote).toHaveBeenCalledWith(
+      DIR,
+      "n.md",
+      "wiki [[diablo-2]] and md [d](diablo-2.md)",
+      7,
+    )
+  })
+
+  it("leaves inbound links untouched when the confirmation is declined (AC-10)", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["diablo.md", "n.md"])
+    loadActiveNote.mockResolvedValue("diablo.md")
+    readNote.mockImplementation(async (_dir, name) => ({
+      content: name === "n.md" ? "[[diablo]]" : `${name} body`,
+      lastModified: 7,
+    }))
+    const confirmLinkUpdate = vi.fn().mockResolvedValue(false)
+    const controller = createNoteController(view, { confirmLinkUpdate, debounceMs: 10_000 })
+    await controller.open(DIR)
+    listNotes.mockResolvedValue(["diablo-2.md", "n.md"])
+
+    const result = await controller.renameActive("diablo-2")
+
+    expect(result).toEqual({ ok: true }) // the rename itself still stands
+    expect(moveNote).toHaveBeenCalledWith(DIR, "diablo.md", "diablo-2.md")
+    expect(confirmLinkUpdate).toHaveBeenCalledWith(["n.md"])
+    expect(saveNote).not.toHaveBeenCalledWith(DIR, "n.md", expect.anything(), expect.anything())
+  })
+
+  it("asks nothing and writes nothing extra when no note links to the renamed one (AC-11)", async () => {
+    const { controller, confirmLinkUpdate } = await open("diablo.md", ["diablo.md", "n.md"], {
+      "n.md": "no links here, just prose",
+    })
+    listNotes.mockResolvedValue(["diablo-2.md", "n.md"])
+
+    const result = await controller.renameActive("diablo-2")
+
+    expect(result).toEqual({ ok: true })
+    expect(confirmLinkUpdate).not.toHaveBeenCalled()
+    expect(saveNote).not.toHaveBeenCalledWith(DIR, "n.md", expect.anything(), expect.anything())
+  })
+
+  it("skips an inbound write that would clobber an externally-changed file (AC-12)", async () => {
+    const { controller } = await open("diablo.md", ["diablo.md", "n.md"], {
+      "n.md": "[d](diablo.md)",
+    })
+    listNotes.mockResolvedValue(["diablo-2.md", "n.md"])
+    // The guarded write of n.md races an external edit → conflict; it must not throw
+    // or abort the rename, and n.md is simply not overwritten.
+    saveNote.mockImplementation(async (_dir, name) =>
+      name === "n.md" ? { status: "conflict" } : { status: "saved", lastModified: 2 },
+    )
+
+    const result = await controller.renameActive("diablo-2")
+
+    expect(result).toEqual({ ok: true }) // the move + other files still complete
+    expect(saveNote).toHaveBeenCalledWith(DIR, "n.md", "[d](diablo-2.md)", 7) // attempted, then skipped on conflict
+  })
+
+  it("never rewrites the renamed note's own bytes (it is excluded from the scan)", async () => {
+    // diablo.md links to itself; after the move it is `diablo-2.md` and must not be
+    // read or written by the inbound pass.
+    const { controller } = await open("diablo.md", ["diablo.md"], {})
+    listNotes.mockResolvedValue(["diablo-2.md"])
+
+    const result = await controller.renameActive("diablo-2")
+
+    expect(result).toEqual({ ok: true })
+    expect(saveNote).not.toHaveBeenCalledWith(DIR, "diablo-2.md", expect.anything(), expect.anything())
+  })
+})
+
 describe("classifyDiskCheck (pure)", () => {
   const base = {
     knownNotes: ["a.md"],
