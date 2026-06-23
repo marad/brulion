@@ -45,11 +45,12 @@ editor's own keymaps**, which yields the correct split:
   lists and quotes, the slash menu opens on `/` and accepts on Enter, and the
   format shortcuts reshape the markdown — exactly as with Vim off.
 
-The toggle control stays reachable regardless of editor state, and a Vim-mode
-indicator (the library's own cursor/mode affordance) shows the active mode. The
-same toggle is also bound to a keyboard chord (Ctrl/Cmd+;) so Vim can be
-switched on or off without leaving the keyboard; the chord flips the same state and
-persistence as the button.
+A visible toggle control turns Vim on/off, and a Vim-mode indicator (the library's
+own cursor/mode affordance) shows the active mode. (Originally a header button; as
+of M16/FEAT-0048 the visible toggle lives in the settings modal, reached by the
+header gear or `Ctrl/Cmd+,`.) The same state is also bound to a keyboard chord
+(`Ctrl/Cmd+;`) so Vim can be switched without leaving the keyboard; the chord flips
+the same state and persistence as the modal toggle.
 
 **Visible selection (drawSelection).** Vim hides the browser's native selection so
 it can paint its own (block cursor, visual-mode highlight). The editor had been
@@ -154,6 +155,6 @@ shifted away from the text) — with or without Vim.
 **AC-11** — A keyboard chord toggles Vim mode.
 Given a folder is open,
 When the user presses Ctrl/Cmd+;,
-Then Vim mode toggles on or off exactly as the header button would — the indicator
-and the persisted choice track the change — without the chord being swallowed by
-the editor or the Vim layer.
+Then Vim mode toggles on or off exactly as the settings-modal toggle would — the
+indicator and the persisted choice track the change — without the chord being
+swallowed by the editor or the Vim layer.
