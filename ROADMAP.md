@@ -15,9 +15,10 @@ Every technical decision defers to that.
 ## Milestones
 
 > **Execution order (next up), agreed with the user.** M-numbers are **stable
-> identities, not the running order**. M1–M12, **M14**, **M19**, and **M20** are done. Next, in priority:
+> identities, not the running order**. M1–M12, **M14**, **M19**, **M20**, and
+> **M21** are done. Next, in priority:
 >
-> **M25 → M21 → M23 → M22**
+> **M25 → M23 → M22**
 >
 > then the rest as capacity allows: **M13, M15, M16, M17, M18, M24**.
 >

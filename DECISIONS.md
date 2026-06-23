@@ -1058,3 +1058,47 @@ null off its own trigger, so they coexist). Decisions:
 - **Moat: editor-only.** The completion reads the facet and edits the buffer's link
   text; nothing is read from or written to the folder. The bytes the user owns are
   the plain `[[path]]` they'd have typed by hand.
+
+## Search ranking & recency: two-tier scoring + an own MRU list (M21 / FEAT-0038, FEAT-0039)
+
+Two reported daily-use failures in the quick switcher, fixed as two phases on
+`note-search.ts`. Pure ranking logic — no file behavior changes, moat untouched.
+
+- **Ranking is two disjoint tiers (FEAT-0038).** The old greedy subsequence scorer
+  charged the first matched char a penalty equal to its absolute distance from the
+  string start — so a note matched deep in a long path (`Allegro/Journal/Week/…`)
+  sank purely for its folder depth — and grabbed the first occurrence of each query
+  char left-to-right, so a clean contiguous run was never recognized *as* contiguous
+  when an earlier scattered alignment existed. `fuzzyScore` now: (1) if the query is
+  a **literal contiguous substring**, scores it in a band (`SUBSTRING_BASE`) strictly
+  above any gapped match, ranked by where the run begins (segment-start > mid-token);
+  (2) otherwise runs a **best-alignment DP** (max over all alignments, not greedy);
+  (3) penalizes only **interior** gaps (chars skipped *between* matches), never
+  leading distance — so **folder depth costs nothing**. Tier 2 is clamped strictly
+  below the substring band so a substring match always wins, for any input length.
+  `searchNotes`'s contract (return shape, empty-query name order, path tiebreak,
+  `create`) is unchanged, so both callers — the Ctrl+K switcher and the wikilink
+  autocomplete (FEAT-0037) — keep working untouched and share the one scorer.
+
+- **Recency keeps its own MRU list — the roadmap's "reuse M19's visit history" was
+  not literally possible (FEAT-0039).** M19 (FEAT-0036) leans entirely on the
+  browser's Back/Forward stack, which JavaScript cannot read back. So recency
+  maintains its **own** most-recently-visited list of note paths (`touchRecency`,
+  pure: front + dedupe + cap 50), persisted in IndexedDB (`brulion:recency`) beside
+  the other `brulion:` UI state, and touched on every genuine active-note change —
+  the same signal M19 already mirrors into the URL. *Consequence:* one more IDB key;
+  the list is loaded before the first folder open (`openNote` awaits `recencyReady`)
+  so the first recorded visit can't race past the persisted list.
+
+- **Recency is a sort key, never a score term.** `searchNotes` gained an optional
+  `recency` arg used as the tiebreak **between** score and path:
+  `score desc → recency → path asc`. *Consequence in the UI:* an **empty** switcher
+  query (all scores 0) collapses to most-recently-visited first, then name order —
+  so the note you were just in sits at the top, a couple of arrow-downs from its
+  neighbours. A **typed** query is ordered by match quality; recency only reorders
+  notes with the **equal** score, so a freshly-touched poor match can never jump a
+  better one. Never-visited paths share a finite rank sentinel (`recency.length`,
+  not `Infinity`) so two of them compare equal and fall through to name order
+  without producing a `NaN` comparator. Recency applies to the quick switcher only;
+  the wikilink autocomplete keeps its pure match-quality order (it calls
+  `searchNotes` 2-arg, so `recency` defaults to empty).
