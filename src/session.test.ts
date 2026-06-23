@@ -11,6 +11,8 @@ import {
   loadSidebarCollapsed,
   saveVimMode,
   loadVimMode,
+  saveExpandedFolders,
+  loadExpandedFolders,
   saveRecency,
   loadRecency,
 } from "./session"
@@ -110,6 +112,24 @@ describe("saveVimMode / loadVimMode", () => {
   it("defaults to false (off — Vim is opt-in) when nothing is stored", async () => {
     get.mockResolvedValue(undefined)
     expect(await loadVimMode()).toBe(false)
+  })
+})
+
+describe("saveExpandedFolders / loadExpandedFolders (FEAT-0043)", () => {
+  it("saves the set as an array under a stable key", async () => {
+    await saveExpandedFolders(new Set(["a", "a/b"]))
+    expect(set).toHaveBeenCalledWith("brulion:expanded-folders", ["a", "a/b"])
+  })
+
+  it("loads the stored paths back into a set", async () => {
+    get.mockResolvedValue(["a", "a/b"])
+    expect(await loadExpandedFolders()).toEqual(new Set(["a", "a/b"]))
+    expect(get).toHaveBeenCalledWith("brulion:expanded-folders")
+  })
+
+  it("defaults to an empty set when nothing is stored (folders collapsed by default)", async () => {
+    get.mockResolvedValue(undefined)
+    expect(await loadExpandedFolders()).toEqual(new Set())
   })
 })
 

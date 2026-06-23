@@ -29,6 +29,24 @@ async function noteExists(page: Page, path: string): Promise<boolean> {
   )
 }
 
+async function readNote(page: Page, path: string): Promise<string | null> {
+  return await page.evaluate(
+    async ([folder, rel]) => {
+      const root = await navigator.storage.getDirectory()
+      let dir = await root.getDirectoryHandle(folder, { create: true })
+      const segments = rel.split("/")
+      try {
+        for (const seg of segments.slice(0, -1)) dir = await dir.getDirectoryHandle(seg)
+        const handle = await dir.getFileHandle(segments[segments.length - 1])
+        return await (await handle.getFile()).text()
+      } catch {
+        return null
+      }
+    },
+    [FOLDER, path] as const,
+  )
+}
+
 const editor = (page: Page) => page.locator(".cm-content")
 const row = (page: Page, name: string) => page.locator(".note-row", { hasText: name })
 const folderHeader = (page: Page, name: string) =>
@@ -83,4 +101,44 @@ test("creates a subfolder note, switches, and removes the folder on delete (AC-7
   await expect(folderHeader(page, "sub")).toHaveCount(0)
   expect(await noteExists(page, "sub/one.md")).toBe(false)
   await expect(editor(page)).toHaveText("top body") // switched to the remaining root note
+})
+
+test("folders open collapsed by default; the expansion persists and toggling writes nothing (FEAT-0043 AC-1, AC-3, AC-6, AC-7)", async ({
+  page,
+}) => {
+  await stubPicker(page)
+  await page.goto("/brulion/")
+  await page.locator("#open-folder").click()
+
+  // Create a nested note and give it disk content.
+  await createNote(page, "sub/one")
+  const nested = page.locator(".folder-children .note-row", { hasText: "one" })
+  await expect(nested).toBeVisible() // active note's ancestor folder is revealed (AC-3)
+  await editor(page).click()
+  await page.keyboard.type("body")
+  await page.keyboard.press("Control+s")
+  await expect.poll(() => readNote(page, "sub/one.md")).toBe("body")
+
+  // Switch to a root note: `sub` is no longer an ancestor and was never expanded,
+  // so it falls back to the collapsed default (AC-1) — only its header remains.
+  await createNote(page, "top")
+  await expect(folderHeader(page, "sub")).toBeVisible()
+  await expect(nested).toBeHidden()
+
+  // Expanding, then collapsing, then expanding again touches only browser-local
+  // state — the note's bytes are untouched (AC-7).
+  await folderHeader(page, "sub").click()
+  await expect(nested).toBeVisible()
+  await folderHeader(page, "sub").click()
+  await expect(nested).toBeHidden()
+  await folderHeader(page, "sub").click()
+  await expect(nested).toBeVisible()
+  expect(await readNote(page, "sub/one.md")).toBe("body")
+
+  // The expansion survives a reload (AC-6): the folder auto-restores and `sub`
+  // comes back expanded with its child visible, though `top` is the active note.
+  await page.reload()
+  await expect(page.locator("#welcome")).toBeHidden()
+  await expect(folderHeader(page, "sub")).toBeVisible()
+  await expect(page.locator(".folder-children .note-row", { hasText: "one" })).toBeVisible()
 })

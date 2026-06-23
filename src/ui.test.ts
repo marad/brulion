@@ -270,33 +270,51 @@ describe("renderNoteList tree (FEAT-0024)", () => {
     expect(h.onDelete).toHaveBeenCalledWith("sub/b.md")
   })
 
-  it("toggling a folder hides its children and reports the new collapsed state (AC-4)", () => {
+  it("renders a folder collapsed by default when absent from the expanded set (FEAT-0043 AC-1)", () => {
     const container = document.createElement("div")
-    const h = handlers()
-    renderNoteList(container, ["root.md", "sub/b.md"], "root.md", h)
-    const header = folderHeader(container, "sub")!
-    const children = container.querySelector<HTMLElement>(".folder-children")!
-    expect(children.hidden).toBe(false)
-
-    header.click()
-    expect(children.hidden).toBe(true)
-    expect(h.onToggleFolder).toHaveBeenCalledWith("sub", true)
-  })
-
-  it("renders a folder collapsed when its path is in the persisted set (AC-4)", () => {
-    const container = document.createElement("div")
-    renderNoteList(container, ["root.md", "sub/b.md"], "root.md", handlers(), new Set(["sub"]))
+    renderNoteList(container, ["root.md", "sub/b.md"], "root.md", handlers())
 
     expect(container.querySelector<HTMLElement>(".folder-children")!.hidden).toBe(true)
   })
 
-  it("force-expands ancestors of the active note despite the collapsed set, without mutating it (AC-5)", () => {
+  it("renders a folder expanded when its path is in the expanded set (FEAT-0043 AC-2)", () => {
     const container = document.createElement("div")
-    const collapsed = new Set(["sub"])
-    renderNoteList(container, ["sub/b.md"], "sub/b.md", handlers(), collapsed)
+    renderNoteList(container, ["root.md", "sub/b.md"], "root.md", handlers(), new Set(["sub"]))
 
     expect(container.querySelector<HTMLElement>(".folder-children")!.hidden).toBe(false)
-    expect([...collapsed]).toEqual(["sub"]) // render reads, never writes, the set
+  })
+
+  it("collapsing an expanded folder reports onToggleFolder(path, true) (FEAT-0043 AC-5)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["root.md", "sub/b.md"], "root.md", h, new Set(["sub"]))
+    const children = container.querySelector<HTMLElement>(".folder-children")!
+    expect(children.hidden).toBe(false)
+
+    folderHeader(container, "sub")!.click()
+    expect(children.hidden).toBe(true)
+    expect(h.onToggleFolder).toHaveBeenCalledWith("sub", true)
+  })
+
+  it("expanding a collapsed folder reports onToggleFolder(path, false) (FEAT-0043 AC-4)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["root.md", "sub/b.md"], "root.md", h)
+    const children = container.querySelector<HTMLElement>(".folder-children")!
+    expect(children.hidden).toBe(true)
+
+    folderHeader(container, "sub")!.click()
+    expect(children.hidden).toBe(false)
+    expect(h.onToggleFolder).toHaveBeenCalledWith("sub", false)
+  })
+
+  it("force-expands ancestors of the active note despite absence from the set, without mutating it (FEAT-0043 AC-3)", () => {
+    const container = document.createElement("div")
+    const expanded = new Set<string>()
+    renderNoteList(container, ["sub/b.md"], "sub/b.md", handlers(), expanded)
+
+    expect(container.querySelector<HTMLElement>(".folder-children")!.hidden).toBe(false)
+    expect([...expanded]).toEqual([]) // render reads, never writes, the set
   })
 
   it("marks exactly the active note's row wherever it sits (AC-6)", () => {
