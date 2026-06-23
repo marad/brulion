@@ -198,6 +198,12 @@ for the most popular languages, driven by the fence's info string (```` ```ts ``
 Editor-only (CodeMirror language data / highlight); the on-disk markdown is
 unchanged — purely how the block is painted.
 
+- **Follow-up (from the M23 review): highlight the expanded frontmatter as YAML.**
+  The expanded `---…---` region (M23) is plain editor lines today; once this
+  milestone wires per-language highlighting, paint that region as YAML on the same
+  infrastructure. Still decoration-only and opaque (colors tokens, never
+  interprets fields) — consistent with the M23 moat stance.
+
 ### M16 — Settings modal
 **Goal:** a single home for preferences — real new appearance settings plus the
 relocated Vim toggle. Stored in **a file in the open folder** (`.brulion.json` at
