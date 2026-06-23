@@ -929,3 +929,53 @@ wrong. The folder is the API; a rename moves one file.
   rename on a case-insensitive filesystem is refused by the no-clobber guard.
 - *Deferred:* the header identity display and click-to-rename UI (FEAT-0035);
   rewriting inbound links; rename undo.
+
+## Note URLs: hash route mirroring the open note (M19 / FEAT-0036)
+Every open note gets an address so it can be bookmarked, shared, and walked with
+the browser's own Back/Forward — turning visit history into prev/next navigation
+with no custom history stack. Decisions:
+
+- **Hash routing, not History `pushState` paths.** Brulion is a static GitHub
+  Pages site with no server to rewrite deep paths — a real path URL (`/a/b`) would
+  404 on reload. A location hash (`#/a/b`) is the only zero-config option and is
+  consistent with the no-backend moat. (Rejected: real-path pushState; needs SPA
+  fallback/rewrites we deliberately don't have.)
+- **URL shape: `#/segment/segment`, `.md` stripped, segments individually
+  percent-encoded, `/` preserved as separator.** Mirrors the user-facing
+  `displayName` (no `.md`) while staying path-addressed (FEAT-0023). A new pure
+  module `note-route.ts` owns the total round-trip codec (`pathToHash` /
+  `hashToPath`); unit-tested directly with no DOM. A malformed/empty hash, or one
+  with an empty segment, decodes to `null` (no bogus path).
+- **The open note is the single source of truth; the URL mirrors it.** The
+  controller already announces every active-note change via `onListChanged`; that
+  one site reflects the active note into the hash. A genuine navigation pushes a
+  history entry (`location.hash =`); the initial load settles the URL with
+  `history.replaceState` so landing on a note leaves exactly one entry (no phantom
+  "previous" for Back to step onto). Setting the hash to its current value adds no
+  entry.
+- **`hashchange` drives `switchTo`; no feedback loop.** Back/Forward/typed-URL fire
+  `hashchange`; the handler switches to the named note via the existing `switchTo`.
+  Mirroring the active note into the hash fires `hashchange` too, but the handler
+  no-ops when the target already equals the open note — so reflecting never reads
+  back as a fresh navigation.
+- **A hash naming a missing note is inert.** No create-on-miss from a URL: a
+  bookmark to a since-deleted note leaves you on the current note (the existing
+  missing-link handling already covers dangling references elsewhere).
+- **On load the hash beats the persisted last-active note.** Once the folder is
+  granted, an initial hash naming an existing note opens it; with no hash / a
+  malformed hash / a hash naming an absent note, the normal persisted-active (else
+  seed) flow stands. Honored only after a folder is opened — before that the
+  first-run screen shows.
+
+**Consequences.**
+- *New module:* `note-route.ts` — pure `pathToHash`/`hashToPath` codec.
+- *Wiring (`main.ts`):* `onListChanged` mirrors active→hash; a `hashchange`
+  listener drives `switchTo` (guarded against the loop and against missing notes);
+  the open flow consumes the initial hash once, settling the URL with
+  `replaceState`.
+- *Moat:* unchanged — the hash is navigation state only; no file is read or written
+  differently.
+- *Foundation for M21:* the browser now records visit history for free, which M21
+  reuses for most-recently-visited recency.
+- *Deferred:* in-app Back/Forward buttons (M9/PWA), recency ranking (M21),
+  create-on-miss from a URL, and deep-linking to a position inside a note.
