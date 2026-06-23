@@ -21,6 +21,7 @@ import {
   loadCollapsedFolders,
 } from "./session"
 import { displayName, isExternalLink, resolveNotePath } from "./note-name"
+import { pathToHash, hashToPath } from "./note-route"
 import { wireFlushOnHide } from "./flush"
 import { createPoller } from "./watch"
 import { registerServiceWorker } from "./pwa"
@@ -94,6 +95,22 @@ let identity: NoteIdentityHandle
 // loading → welcome-vs-workspace resolution so the welcome never flashes before
 // an auto-restored folder loads (FEAT-0031).
 let workspaceShown = false
+// Note URL hash route (FEAT-0036). The open note mirrors into `#/path` so the
+// browser's own Back/Forward walks visit history. `suppressRouteSync` silences the
+// mirror while we resolve the initial hash on load (so that resolution leaves a
+// single history entry, settled with replaceState); `initialRouteConsumed` makes
+// the load-time hash resolution happen exactly once (the first folder open).
+let suppressRouteSync = false
+let initialRouteConsumed = false
+// Mirror the active note into the location hash. No-op when already mirrored —
+// which both avoids a duplicate history entry and is the loop guard against the
+// hashchange listener reading our own write back as a fresh navigation. Comparing
+// decoded paths (not raw hash strings) stays robust to browser hash re-encoding.
+const syncRouteToActive = (active: string) => {
+  if (suppressRouteSync) return
+  if (hashToPath(location.hash) === active) return
+  location.hash = pathToHash(active) // pushes a history entry
+}
 // Follow a resolved internal note path: switch to it if it exists, else offer to
 // create it (shared by markdown links and wikilinks — FEAT-0026/0027).
 const openNotePath = (path: string) => {
@@ -167,6 +184,7 @@ controller = createNoteController(view, {
     // and a follow resolves relative to the right note (FEAT-0025).
     currentActive = active
     currentNotes = notes
+    syncRouteToActive(active) // mirror the open note into the URL hash (FEAT-0036)
     identity.update(active) // keep the header naming the open note (FEAT-0035)
     setLinkContext(view, { activeNote: active, notePaths: new Set(notes) })
     renderNoteList(
@@ -253,9 +271,41 @@ window.addEventListener(
 const poller = createPoller(() => controller.refreshFromDisk(), POLL_MS)
 const openNote = async (dir: FileSystemDirectoryHandle) => {
   await collapsedFoldersReady // first tree paint should match the saved collapse state
-  await controller.open(dir)
+  if (!initialRouteConsumed) {
+    // First folder open: the URL hash (a bookmark/reload) beats the persisted
+    // last-active note (FEAT-0036). Read it before opening, mirror nothing while
+    // we resolve, then settle the URL with replaceState so landing leaves exactly
+    // one history entry (no phantom previous for Back to step onto).
+    initialRouteConsumed = true
+    const target = hashToPath(location.hash)
+    suppressRouteSync = true
+    try {
+      await controller.open(dir)
+      if (target && target !== currentActive && currentNotes.includes(target)) {
+        await controller.switchTo(target)
+      }
+    } finally {
+      suppressRouteSync = false
+    }
+    history.replaceState(null, "", pathToHash(currentActive))
+  } else {
+    await controller.open(dir)
+  }
   poller.start()
 }
+
+// URL → open note (FEAT-0036): Back/Forward, the mouse back button, or an edited
+// URL fire hashchange. Switch to the note the hash names, reusing switchTo. Guards:
+// before a folder is open the hash is inert; a hash equal to the open note is a
+// no-op (the loop guard — our own mirror writes land here too); a hash naming a
+// note absent from the folder is inert (no create-on-miss).
+window.addEventListener("hashchange", () => {
+  if (!workspaceShown) return
+  const target = hashToPath(location.hash)
+  if (target && target !== currentActive && currentNotes.includes(target)) {
+    void controller.switchTo(target)
+  }
+})
 
 // The two ways out of a conflict; the controller clears it via onConflictResolved.
 keepButton.addEventListener("click", () => void controller.resolveKeepMine())

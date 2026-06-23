@@ -1,0 +1,100 @@
+import { test, expect, type Page } from "@playwright/test"
+
+// FEAT-0036: the open note mirrors into a `#/path` hash route, so the browser's
+// own Back/Forward walks visit history and a `#/…` URL is a bookmark. Exercised
+// against a real OPFS-backed folder handle and the real History API.
+const FOLDER = "e2e-note-url-folder"
+
+async function stubPicker(page: Page) {
+  await page.addInitScript((folder) => {
+    window.showDirectoryPicker = async () => {
+      const root = await navigator.storage.getDirectory()
+      return await root.getDirectoryHandle(folder, { create: true })
+    }
+  }, FOLDER)
+}
+
+async function writeNote(page: Page, name: string, text: string) {
+  await page.evaluate(
+    async ([folder, file, content]) => {
+      const root = await navigator.storage.getDirectory()
+      const dir = await root.getDirectoryHandle(folder, { create: true })
+      const handle = await dir.getFileHandle(file, { create: true })
+      const writable = await handle.createWritable()
+      await writable.write(content)
+      await writable.close()
+    },
+    [FOLDER, name, text] as const,
+  )
+}
+
+const display = (page: Page) => page.locator("#note-identity .note-identity-display")
+const row = (page: Page, name: string) => page.locator(".note-row", { hasText: name })
+const hash = (page: Page) => page.evaluate(() => location.hash)
+
+// Two root-level notes; `alpha` sorts first, so it is the active note on a fresh
+// open (no persisted active, no start.md).
+async function openWithTwoNotes(page: Page) {
+  await stubPicker(page)
+  await page.goto("/brulion/")
+  await writeNote(page, "alpha.md", "alpha body")
+  await writeNote(page, "beta.md", "beta body")
+  await page.locator("#open-folder").click()
+  await expect(display(page)).toContainText("alpha")
+}
+
+test("opening a note mirrors it into the URL hash (AC-5)", async ({ page }) => {
+  await openWithTwoNotes(page)
+  await expect.poll(() => hash(page)).toBe("#/alpha")
+
+  await row(page, "beta").click()
+  await expect(display(page)).toContainText("beta")
+  await expect.poll(() => hash(page)).toBe("#/beta")
+})
+
+test("Back returns to the prior note, Forward re-opens it (AC-6, AC-7)", async ({ page }) => {
+  await openWithTwoNotes(page)
+  await row(page, "beta").click()
+  await expect.poll(() => hash(page)).toBe("#/beta")
+
+  await page.goBack()
+  await expect(display(page)).toContainText("alpha")
+  await expect.poll(() => hash(page)).toBe("#/alpha")
+
+  await page.goForward()
+  await expect(display(page)).toContainText("beta")
+  await expect.poll(() => hash(page)).toBe("#/beta")
+})
+
+test("a hash naming a missing note is inert (AC-8)", async ({ page }) => {
+  await openWithTwoNotes(page)
+  await page.evaluate(() => {
+    location.hash = "#/ghost"
+  })
+  // The open note does not change and no note is created.
+  await expect(display(page)).toContainText("alpha")
+  await expect(row(page, "ghost")).toHaveCount(0)
+})
+
+test("a bookmarked hash opens that note on load, beating the persisted active (AC-9, AC-10)", async ({
+  page,
+}) => {
+  // First session: open the folder and switch to alpha so it is persisted active.
+  await openWithTwoNotes(page)
+  await row(page, "alpha").click()
+  await expect(display(page)).toContainText("alpha")
+
+  // Reload with a bookmark to beta. The folder silently re-attaches (OPFS handle
+  // in idb), then the hash beats the persisted alpha.
+  await page.goto("/brulion/#/beta")
+  await expect(display(page)).toContainText("beta")
+  await expect.poll(() => hash(page)).toBe("#/beta")
+})
+
+test("no hash falls back to the persisted/seed note (AC-11)", async ({ page }) => {
+  await openWithTwoNotes(page)
+  // No hash given on this fresh open: the first-sorted note (alpha) opens, exactly
+  // as before this feature, and the URL settles to mirror it.
+  await expect(display(page)).toContainText("alpha")
+  await expect.poll(() => hash(page)).toBe("#/alpha")
+})
