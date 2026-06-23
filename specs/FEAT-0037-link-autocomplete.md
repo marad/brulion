@@ -38,12 +38,30 @@ so the order is consistent between the two surfaces. The editor's own
 re-filtering is disabled so this ranking is authoritative.
 
 **Acceptance.** Choosing a suggestion (Enter, Tab, or click) replaces the partial
-target with the chosen note's **display path** (folder-relative, `.md` stripped —
-e.g. `projects/diablo`) and ensures the link is closed with `]]`, leaving the
-caret after the closing `]]`. If a `]]` already sits right after the caret, it is
-reused rather than duplicated. Inserting the full path (not the bare basename)
-makes the wikilink resolve unambiguously to the chosen note even when two notes
-share a basename in different folders.
+target with the chosen note's **name in its shortest unambiguous form** and ensures
+the link is closed with `]]`, leaving the caret after the closing `]]`. If a `]]`
+already sits right after the caret, it is reused rather than duplicated.
+
+The shortest unambiguous form is Obsidian's "shortest path when possible": the
+**bare basename** (`.md` stripped, no folder) when that basename is **unique** in
+the vault — so a nested note `projects/diablo.md` inserts simply as `[[diablo]]` —
+and the **full folder path** (`[[projects/diablo]]`) only when the basename is
+**ambiguous** (another note shares it). The bare form is preferred because it reads
+cleaner and survives the note moving between folders; the full form is used on a
+collision so the link still resolves to exactly the chosen note (a bare ambiguous
+name would resolve to the first match, FEAT-0027).
+
+**Switching a link's form (right-click toggle).** Right-clicking a rendered
+wikilink that points at an existing note offers, in the editor's context menu, a
+single toggle item to switch that link between its two forms: **"Use full path"**
+when it is currently name-only, **"Use name only"** when it is currently a full
+path. Choosing it rewrites only the link's **target** (any `|alias` is preserved)
+and the link still resolves to the same note. The item is shown only when the
+switch is meaningful and safe: the link resolves to an existing note that lives in
+a subfolder *and* whose basename is unique (so both forms exist and resolve
+identically). It is not offered for a root-level note (the two forms are equal), an
+ambiguous basename (the name-only form would retarget), or a dangling link (no
+note to canonicalize against).
 
 **Existing notes only; new names still allowed.** The list never offers a
 "create" row and never creates a note. Typing a name that matches nothing is fully
@@ -61,9 +79,13 @@ nothing when its own trigger is absent, so they never collide.
 - **Reuse the switcher's scoring.** Ranking calls the existing `note-search.ts`
   (`searchNotes`) — no second fuzzy/scoring implementation. The order matches the
   Ctrl+K switcher.
-- **One source of truth for known notes.** The candidate notes come from the
-  editor's existing `linkContext` facet (`notePaths`), the same set that drives
-  link valid-vs-broken rendering — not a separately threaded list.
+- **One source of truth for known notes.** The candidate notes — and the note set
+  the form-toggle resolves against — come from the editor's existing `linkContext`
+  facet (`notePaths`), the same set that drives link valid-vs-broken rendering —
+  not a separately threaded list.
+- **One definition of a link's shortest form.** The autocomplete insert and the
+  right-click "Use name only" produce the *same* shortest-unambiguous text from one
+  shared helper, so the two surfaces never disagree.
 - **No new dependency.** Built on `@codemirror/autocomplete`, already in use for
   the slash menu.
 - **No create-on-miss.** Autocomplete suggests existing notes only and writes
@@ -98,11 +120,18 @@ Then the list narrows to notes whose display path fuzzily matches, ordered by th
 same `note-search.ts` scoring the quick switcher uses (best match first, ties by
 path).
 
-**AC-3** — Accepting inserts the note's display path and closes the link.
+**AC-3** — Accepting inserts the note's name (shortest form) and closes the link.
 Given the completion list is open with a highlighted note,
 When the user accepts it (Enter, Tab, or click),
-Then the partial target is replaced by that note's display path (no `.md`), the
-link is closed with `]]`, and the caret is left after the closing `]]`.
+Then the partial target is replaced by that note's name in its shortest unambiguous
+form (no `.md`), the link is closed with `]]`, and the caret is left after the
+closing `]]`.
+
+**AC-9** — A nested note with a unique basename is inserted by bare name.
+Given a note `projects/diablo.md` whose basename `diablo` is unique in the vault,
+When the user accepts it from the list,
+Then `[[diablo]]` is inserted (name-only, Obsidian-style), which resolves to that
+note.
 
 **AC-4** — An already-present `]]` is not duplicated.
 Given the caret sits inside `[[…]]` with the closing `]]` already present right
@@ -117,11 +146,12 @@ When the user types a target that matches no existing note,
 Then the list shows no match and offers no create row, yet the user can finish
 typing the name and brackets to leave a (dangling) wikilink unimpeded.
 
-**AC-6** — The wikilink target resolves to the chosen note.
+**AC-6** — An ambiguous basename is inserted as the full path.
 Given two notes share a basename in different folders,
 When the user accepts one of them from the list,
-Then the inserted target is the full display path, so the wikilink resolves to the
-chosen note (not the other same-named one).
+Then the inserted target is that note's full display path (the bare basename would
+be ambiguous), so the wikilink resolves to the chosen note (not the other
+same-named one).
 
 **AC-7** — The slash menu still works alongside it.
 Given the link-autocomplete source is registered,
@@ -134,3 +164,23 @@ Given a folder is open,
 When the user opens the suggestion list, filters it, and accepts a suggestion,
 Then nothing is written to or read from the folder by the completion (only the
 editor buffer's link text changes).
+
+**AC-10** — Right-clicking a resolvable wikilink offers a form toggle.
+Given a wikilink that points at an existing note in a subfolder whose basename is
+unique, and the caret/selection is not inside it,
+When the user right-clicks the rendered link,
+Then the context menu includes a toggle item — "Use full path" when the link is
+name-only, "Use name only" when it is a full path — above the formatting items.
+
+**AC-11** — Toggling rewrites only the target and preserves the alias.
+Given a wikilink `[[projects/diablo|alias]]`,
+When the user chooses "Use name only",
+Then it becomes `[[diablo|alias]]` (the alias is kept) and still resolves to the
+same note; choosing "Use full path" on `[[diablo|alias]]` reverses it to
+`[[projects/diablo|alias]]`.
+
+**AC-12** — The toggle is hidden when it would be a no-op or unsafe.
+Given a wikilink that points at a root-level note, or whose basename is ambiguous,
+or that is dangling (names no existing note),
+When the user right-clicks it,
+Then no form-toggle item is shown (only the formatting items appear).
