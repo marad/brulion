@@ -1464,3 +1464,34 @@ for the engine under the modal (the modal UI itself is P2):
   hand-editable; a malicious or fat-fingered name must not break or inject into the
   `--font-stack` inline style. The P2 picker only ever supplies real installed-font
   names, so this only guards a tampered file.
+
+## Settings modal, entry points, and local-font access (M16 P2 / FEAT-0048)
+
+The visible surface over the P1 engine. Decisions:
+
+- **The modal owns no state.** It reads the current settings to seed its controls
+  and reports change patches to the P1 `updateSettings` (apply + persist); after any
+  change the host calls `settingsModal.sync()` to re-seed. *Why:* one source of
+  truth (`.brulion.json`), no modal-vs-file drift. *Consequence:* there is no
+  Save/Cancel — every control applies live, matching the single-source model.
+- **Header Vim button removed; gear + `Ctrl/Cmd+,` are the entry points.** The Vim
+  toggle now lives inside the modal; `Ctrl/Cmd+;` is unchanged. *Consequence:*
+  FEAT-0021's header-button UI is superseded (its spec + e2e were reconciled to the
+  modal toggle and the chord; the chord drives the Vim e2e via `.cm-vimMode`).
+- **Font: pick one primary family, never free text; generic floor auto-appended.**
+  The model supports a longer ordered stack (`font: string[]`), but the v1 UI sets a
+  single primary face (P1's `buildFontStack` appends the `sans-serif` floor). *Why:*
+  lean — a multi-font reorderable stack builder is deferred until wanted. Selection
+  only, because a free-typed name silently fails when the font is absent.
+- **Local fonts via `queryLocalFonts`, degrading to a curated preset list.** When the
+  API is missing (non-Chromium), denied, or throws, `resolveFontChoices` returns a
+  small cross-OS preset list instead of erroring. *Why:* consistent with the
+  FSA-only, Chromium-first stance; the control must never break. A family chosen on
+  another machine still shows as selected even if not in the resolved list.
+- **The stepper steps from the seeded value, not a live read.** `baseSize` is set
+  only by `seed()` (on open and on the host's post-change sync), so each ± is
+  independent of the other and the modal behaves correctly whether or not the host
+  re-seeds synchronously — chosen over reading `getSettings()` live (which couples
+  per-press correctness to the host's sync timing).
+- **Modal hygiene:** focus is captured on open and restored on close (like the quick
+  switcher), and the modal won't stack over the switcher (mutual keyboard guards).
