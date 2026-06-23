@@ -1497,3 +1497,28 @@ The visible surface over the P1 engine. Decisions:
   per-press correctness to the host's sync timing).
 - **Modal hygiene:** focus is captured on open and restored on close (like the quick
   switcher), and the modal won't stack over the switcher (mutual keyboard guards).
+
+## Code-block syntax highlighting (M15 P1 / FEAT-0049)
+
+- **Languages via `@codemirror/language-data` (lazy `codeLanguages`).** A fenced
+  block's info string selects the parser; parsers dynamic-import on first use, so a
+  code-free note loads no grammar and the main bundle grows ~5% (the 143-language
+  descriptor table only). *Why:* lean at runtime — don't ship parsers to users who
+  never open a code block — and the FEAT-0029 service worker caches each loaded
+  chunk cache-first, so a language highlights offline after one online encounter.
+  *Consequence:* the build emits ~95 small lazy chunks (~460 KB total, all on-demand);
+  an unknown/blank info string stays a plain box; the very first offline encounter of
+  an uncached language shows plain (graceful, no error).
+- **Highlight is scoped by *range* to fenced blocks, not a global
+  `syntaxHighlighting`.** *Why (caught in code review):* markdown prose and nested
+  code share one highlight-tag namespace — `@lezer/markdown` tags `Escape`, `Comment`,
+  and `LinkTitle` with `escape`/`comment`/`string`, exactly the tags code needs — so a
+  global highlighter would recolor prose backslash-escapes (`\*`), HTML comments, and
+  link titles (a visible AC-4 violation). Instead `collectCodeMarks` runs the tree
+  highlighter only over each `FencedCode` range and emits `tok-*` mark decorations,
+  colored by a small `.tok-*` CSS palette. *Consequence:* prose is provably never
+  touched (a unit test asserts no marks outside code; an e2e asserts no `tok-*` spans
+  in a prose note with escapes + comments); the stable `tok-*` class names also set up
+  M18 theming. The render plugin rebuilds on a `syntaxTree` change so colors appear
+  when a lazily-loaded language finishes parsing.
+- **One light palette (GitHub-light-ish).** A dark variant waits for M18's theme.
