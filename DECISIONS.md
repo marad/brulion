@@ -1541,3 +1541,20 @@ YAML.
   atomic; no field is interpreted; the bytes are never read-for-rewrite nor modified
   (the FEAT-0042/M23 moat stance). Parsing is synchronous (frontmatter is small) and
   error-tolerant (malformed YAML still renders).
+
+## Mobile UX — responsive drawer & touch formatting (M17 / FEAT-0051, FEAT-0052)
+
+- **Touch/narrow usability where FSA runs, not a phone storage fallback.** M17 makes
+  the UI touch- and narrow-viewport-friendly (touchscreen laptops, tablets/Chromebooks,
+  phones if/when the File System Access API lands there). It deliberately does **not**
+  add a non-FSA storage path for phone browsers — that would dilute the file-fidelity
+  moat; the no-folder case still shows the welcome screen. *(Flag for review.)*
+- **P1: the sidebar drawer reuses the collapse state (one state, two renderings).**
+  Below a `40rem` breakpoint the sidebar is an absolute overlay drawer over a
+  full-width editor with a dimmed backdrop; at/above it, the inline column as before.
+  The same FEAT-0020 `sidebar-collapsed` state drives both — no second toggle, no
+  per-device persisted flag — so the ☰ button and `Ctrl/Cmd+\` work unchanged. *Why:*
+  one source of truth. *Consequence:* a backdrop tap and a note-select close the
+  drawer (expected drawer UX), both gated on the breakpoint so desktop is untouched;
+  the resize handle and wordmark are hidden when narrow to fit a phone. The persisted
+  collapse pref is shared with desktop (no mobile-specific default) for simplicity.
