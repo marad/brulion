@@ -1558,3 +1558,18 @@ YAML.
   drawer (expected drawer UX), both gated on the breakpoint so desktop is untouched;
   the resize handle and wordmark are hidden when narrow to fit a phone. The persisted
   collapse pref is shared with desktop (no mobile-specific default) for simplicity.
+
+(continued — M17 P2)
+
+- **P2: a touch selection toolbar, gated to touch/narrow, sharing the menu's actions.**
+  A floating toolbar appears over a non-empty selection only when `(pointer: coarse)`
+  or the narrow breakpoint matches — so a desktop mouse user keeps right-click +
+  `Ctrl` and gets no new always-on UI. Its buttons reuse the extracted `FORMAT_ITEMS`
+  (now shared by the context menu and the toolbar — one definition, identical clean
+  markdown). *Implementation note:* positioning reads the editor layout, which throws
+  if done during a CodeMirror update, so it runs in the measure phase via
+  `requestMeasure`; the toolbar also tracks scroll to stay anchored.
+  *Flag for review (live touch check):* two behaviors are best confirmed on a real
+  device — the toolbar following the selection during a touch scroll, and hiding when
+  focus leaves the editor without a CodeMirror focus-change (e.g. tapping a header
+  control). Both look correct in code/e2e but the e2e can't fully exercise touch.
