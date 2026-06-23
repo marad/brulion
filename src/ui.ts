@@ -426,3 +426,59 @@ export function wireToggle(
   button.addEventListener("click", toggle)
   return { toggle }
 }
+
+/** Controls the missing-note banner (FEAT-0036): show it naming a note, or hide it. */
+export interface MissingNoteBannerHandle {
+  /** Reveal the banner announcing that `name` (a display path, no `.md`) is missing. */
+  show(name: string): void
+  /** Hide the banner. */
+  hide(): void
+}
+
+/**
+ * Mount the non-blocking "this note doesn't exist" banner (FEAT-0036). When a URL
+ * hash names a note absent from the folder, the banner names it and offers to
+ * create it — instead of the address bar silently disagreeing with the open note.
+ * `onCreate` fires on the Create button (the caller makes the note via the normal
+ * create path); `onDismiss` fires on the × (the caller re-syncs the URL to the
+ * open note). Pure DOM glue; the caller owns both the create and the URL re-sync.
+ */
+export function mountMissingNoteBanner(
+  container: HTMLElement,
+  handlers: { onCreate: () => void; onDismiss: () => void },
+): MissingNoteBannerHandle {
+  const banner = document.createElement("div")
+  banner.className = "missing-note-banner"
+  banner.setAttribute("role", "status")
+  banner.hidden = true
+
+  const message = document.createElement("span")
+  message.className = "missing-note-message"
+
+  const create = document.createElement("button")
+  create.type = "button"
+  create.className = "missing-note-create"
+  create.textContent = "Create"
+
+  const dismiss = document.createElement("button")
+  dismiss.type = "button"
+  dismiss.className = "missing-note-dismiss"
+  dismiss.setAttribute("aria-label", "Dismiss")
+  dismiss.textContent = "×"
+
+  create.addEventListener("click", () => handlers.onCreate())
+  dismiss.addEventListener("click", () => handlers.onDismiss())
+
+  banner.append(message, create, dismiss)
+  container.append(banner)
+
+  return {
+    show(name) {
+      message.textContent = `"${name}" doesn't exist yet.`
+      banner.hidden = false
+    },
+    hide() {
+      banner.hidden = true
+    },
+  }
+}

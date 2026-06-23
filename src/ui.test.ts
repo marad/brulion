@@ -10,6 +10,7 @@ import {
   wireToggle,
   showWorkspace,
   mountNoteIdentity,
+  mountMissingNoteBanner,
 } from "./ui"
 
 vi.mock("./fs", () => ({ pickFolder: vi.fn() }))
@@ -541,5 +542,52 @@ describe("mountNoteIdentity (FEAT-0035)", () => {
 
     expect(onRename).not.toHaveBeenCalled()
     expect(display(c).textContent).toContain("a")
+  })
+})
+
+describe("mountMissingNoteBanner (FEAT-0036)", () => {
+  const msg = (c: HTMLElement) => c.querySelector<HTMLElement>(".missing-note-message")!
+  const createBtn = (c: HTMLElement) => c.querySelector<HTMLButtonElement>(".missing-note-create")!
+  const dismissBtn = (c: HTMLElement) =>
+    c.querySelector<HTMLButtonElement>(".missing-note-dismiss")!
+
+  it("is hidden until shown (AC-13)", () => {
+    const c = document.createElement("div")
+    mountMissingNoteBanner(c, { onCreate: vi.fn(), onDismiss: vi.fn() })
+    expect(c.querySelector<HTMLElement>(".missing-note-banner")!.hidden).toBe(true)
+  })
+
+  it("show reveals the banner naming the missing note (AC-13)", () => {
+    const c = document.createElement("div")
+    const banner = mountMissingNoteBanner(c, { onCreate: vi.fn(), onDismiss: vi.fn() })
+    banner.show("projects/ghost")
+    expect(c.querySelector<HTMLElement>(".missing-note-banner")!.hidden).toBe(false)
+    expect(msg(c).textContent).toContain("projects/ghost")
+  })
+
+  it("the Create button fires onCreate (AC-14)", () => {
+    const c = document.createElement("div")
+    const onCreate = vi.fn()
+    const banner = mountMissingNoteBanner(c, { onCreate, onDismiss: vi.fn() })
+    banner.show("ghost")
+    createBtn(c).click()
+    expect(onCreate).toHaveBeenCalledOnce()
+  })
+
+  it("the dismiss button fires onDismiss (AC-15)", () => {
+    const c = document.createElement("div")
+    const onDismiss = vi.fn()
+    const banner = mountMissingNoteBanner(c, { onCreate: vi.fn(), onDismiss })
+    banner.show("ghost")
+    dismissBtn(c).click()
+    expect(onDismiss).toHaveBeenCalledOnce()
+  })
+
+  it("hide conceals the banner", () => {
+    const c = document.createElement("div")
+    const banner = mountMissingNoteBanner(c, { onCreate: vi.fn(), onDismiss: vi.fn() })
+    banner.show("ghost")
+    banner.hide()
+    expect(c.querySelector<HTMLElement>(".missing-note-banner")!.hidden).toBe(true)
   })
 })

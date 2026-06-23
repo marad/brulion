@@ -668,3 +668,66 @@ header button:hover {
 .cm-context-menu button:hover {
   background: #f2f2f1;
 }
+
+/* Missing-note banner (FEAT-0036): a non-blocking notice when a URL hash names a
+   note that doesn't exist, offering to create it. Anchored top-center, floating
+   over the workspace — never modal, never blocking the editor. */
+.missing-note-banner {
+  position: fixed;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: calc(100vw - 2rem);
+  padding: 0.45rem 0.5rem 0.45rem 0.9rem;
+  border: 1px solid #d8c79a;
+  border-radius: 8px;
+  background: #fffaf0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  font-size: 0.9rem;
+  color: #1a1a1a;
+}
+
+.missing-note-banner[hidden] {
+  display: none;
+}
+
+.missing-note-message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.missing-note-create {
+  font: inherit;
+  padding: 0.25rem 0.7rem;
+  border: 1px solid #d8c79a;
+  border-radius: 6px;
+  background: #fff;
+  color: #1a1a1a;
+  cursor: pointer;
+}
+
+.missing-note-create:hover {
+  background: #fbf3df;
+}
+
+.missing-note-dismiss {
+  font: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0.1rem 0.4rem;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: #6b6b6b;
+  cursor: pointer;
+}
+
+.missing-note-dismiss:hover {
+  background: #f0e6cf;
+  color: #1a1a1a;
+}

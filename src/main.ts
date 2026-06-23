@@ -9,6 +9,7 @@ import {
   wireToggle,
   showWorkspace,
   mountNoteIdentity,
+  mountMissingNoteBanner,
   type NoteIdentityHandle,
 } from "./ui"
 import { mountQuickSwitcher } from "./quick-switcher"
@@ -38,6 +39,7 @@ const sidebarEl = document.querySelector<HTMLElement>("#sidebar")
 const toggleSidebarEl = document.querySelector<HTMLButtonElement>("#toggle-sidebar")
 const toggleVimEl = document.querySelector<HTMLButtonElement>("#toggle-vim")
 const noteIdentityEl = document.querySelector<HTMLElement>("#note-identity")
+const missingNoteEl = document.querySelector<HTMLElement>("#missing-note")
 const reopenButton = document.querySelector<HTMLButtonElement>("#reopen-folder")
 const listEl = document.querySelector<HTMLElement>("#note-list")
 const sidebarSearchEl = document.querySelector<HTMLButtonElement>("#sidebar-search")
@@ -61,6 +63,7 @@ if (
   !toggleSidebarEl ||
   !toggleVimEl ||
   !noteIdentityEl ||
+  !missingNoteEl ||
   !reopenButton ||
   !listEl ||
   !sidebarSearchEl ||
@@ -124,14 +127,42 @@ const syncRouteToActive = (active: string) => {
     location.hash = hash // genuine navigation — push a history entry
   }
 }
-// The note the current URL hash names and we should switch to, or null: nothing
-// when the hash is malformed, names the already-open note (the loop guard against
-// our own mirror writes), or names a note absent from the folder (inert — no
-// create-on-miss). Used by both the load-time resolution and the hashchange path,
-// so the two apply one identical policy.
-const hashTargetToOpen = (): string | null => {
+// Classify what the current URL hash means against the open folder (FEAT-0036).
+// `none` — malformed, or names the already-open note (the loop guard against our
+// own mirror writes); ignored. `switch` — names an existing note; navigate to it.
+// `missing` — well-formed but names a note absent from the folder; raise the
+// missing-note banner (offer to create it) rather than silently desync the URL.
+// One classifier for both the load-time resolution and the hashchange path.
+type HashResolution =
+  | { kind: "none" }
+  | { kind: "switch"; path: string }
+  | { kind: "missing"; path: string }
+const resolveHash = (): HashResolution => {
   const target = hashToPath(location.hash)
-  return target && target !== currentActive && currentNotes.includes(target) ? target : null
+  if (target === null || target === currentActive) return { kind: "none" }
+  return currentNotes.includes(target) ? { kind: "switch", path: target } : { kind: "missing", path: target }
+}
+// The missing-note banner (FEAT-0036). Shown when a hash names a note absent from
+// the folder; `pendingMissingTarget` is the note path it currently offers to
+// create. Create makes that note (the route's one explicit, user-gated write — the
+// resulting active-note announcement hides the banner and validates the hash);
+// dismiss re-syncs the URL back to the open note so the bar stops naming an absent
+// note. The banner is also hidden on any active-note change (in onListChanged), so
+// it never outlives the state it described.
+let pendingMissingTarget: string | null = null
+const missingBanner = mountMissingNoteBanner(missingNoteEl, {
+  onCreate: () => {
+    if (pendingMissingTarget) void controller.addNote(displayName(pendingMissingTarget))
+  },
+  onDismiss: () => {
+    missingBanner.hide()
+    pendingMissingTarget = null
+    history.replaceState(null, "", pathToHash(currentActive))
+  },
+})
+const showMissingBanner = (target: string) => {
+  pendingMissingTarget = target
+  missingBanner.show(displayName(target))
 }
 // Follow a resolved internal note path: switch to it if it exists, else offer to
 // create it (shared by markdown links and wikilinks — FEAT-0026/0027).
@@ -206,6 +237,8 @@ controller = createNoteController(view, {
     // and a follow resolves relative to the right note (FEAT-0025).
     currentActive = active
     currentNotes = notes
+    missingBanner.hide() // the active note changed — drop any stale missing-note notice
+    pendingMissingTarget = null
     syncRouteToActive(active) // mirror the open note into the URL hash (FEAT-0036)
     identity.update(active) // keep the header naming the open note (FEAT-0035)
     setLinkContext(view, { activeNote: active, notePaths: new Set(notes) })
@@ -300,16 +333,27 @@ const openNote = async (dir: FileSystemDirectoryHandle) => {
     // one history entry (no phantom previous for Back to step onto).
     initialRouteConsumed = true
     suppressRouteSync = true
+    let missing: string | null = null
     try {
       await controller.open(dir)
       // The hash held steady across open() (mirroring is suppressed), so it still
       // names the bookmark; honor it over the persisted active note.
-      const target = hashTargetToOpen()
-      if (target) await controller.switchTo(target)
+      const resolution = resolveHash()
+      if (resolution.kind === "switch") await controller.switchTo(resolution.path)
+      else if (resolution.kind === "missing") missing = resolution.path
     } finally {
       suppressRouteSync = false
     }
-    history.replaceState(null, "", pathToHash(currentActive))
+    if (missing) {
+      // The bookmark names a note that's gone: the fallback note is open, but keep
+      // the bookmark hash in the bar (it names what the banner offers to create)
+      // and surface the banner — don't settle the URL away from it.
+      showMissingBanner(missing)
+    } else {
+      // Settle the URL so landing leaves exactly one history entry (no phantom
+      // previous for Back to step onto).
+      history.replaceState(null, "", pathToHash(currentActive))
+    }
   } else {
     await controller.open(dir)
   }
@@ -317,14 +361,16 @@ const openNote = async (dir: FileSystemDirectoryHandle) => {
 }
 
 // URL → open note (FEAT-0036): Back/Forward, the mouse back button, or an edited
-// URL fire hashchange. Switch to the note the hash names, reusing switchTo. Guards:
-// before a folder is open the hash is inert; a hash equal to the open note is a
-// no-op (the loop guard — our own mirror writes land here too); a hash naming a
-// note absent from the folder is inert (no create-on-miss).
+// URL fire hashchange. Before a folder is open the hash is inert. Otherwise resolve
+// it: switch to a named existing note; raise the missing-note banner for a
+// well-formed hash naming an absent note (keeping the hash, which names the note
+// the banner offers to create); ignore a malformed hash or one equal to the open
+// note (the loop guard — our own mirror writes land here too).
 window.addEventListener("hashchange", () => {
   if (!workspaceShown) return
-  const target = hashTargetToOpen()
-  if (target) void controller.switchTo(target)
+  const resolution = resolveHash()
+  if (resolution.kind === "switch") void controller.switchTo(resolution.path)
+  else if (resolution.kind === "missing") showMissingBanner(resolution.path)
 })
 
 // The two ways out of a conflict; the controller clears it via onConflictResolved.
