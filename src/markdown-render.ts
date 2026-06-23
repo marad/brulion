@@ -541,7 +541,9 @@ function buildBlockDecorations(state: EditorState): {
   const all: Range<Decoration>[] = []
   const hidden: Range<Decoration>[] = []
   for (const l of lines) {
-    if (inFrontmatter(fm, l.from, l.from + 1)) continue
+    // A line decoration attaches at one offset (the line start); it's inside the
+    // block when that offset falls within the range.
+    if (fm !== null && l.from >= fm.from && l.from < fm.to) continue
     all.push(Decoration.line({ class: l.cls }).range(l.from))
   }
   for (const h of hides) {
