@@ -15,15 +15,18 @@ Every technical decision defers to that.
 ## Milestones
 
 > **Execution order (next up), agreed with the user.** M-numbers are **stable
-> identities, not the running order**. M1–M12 are done. Next, in priority:
+> identities, not the running order**. M1–M12 and **M14** are done. Next, in priority:
 >
-> **M14 → M19 → M20 → M21 → M23 → M22**
+> **M19 → M20 → M25 → M21 → M23 → M22**
 >
 > then the rest as capacity allows: **M13, M15, M16, M17, M18, M24**.
 >
 > (The user's own pain-ranking: rename + note-URLs + link-autocomplete first, then
 > the search-ranking and frontmatter/copy irritants; settings, sidebar comfort,
-> highlighting, theme, the scroll-jump fix and mobile come later.)
+> highlighting, theme, the scroll-jump fix and mobile come later. **M25**
+> — keeping links consistent when a note is renamed — was pulled in during the M14
+> review: the user values vault consistency over the manual-fix-up status quo, so it
+> sits right after link-autocomplete in the link-domain cluster.)
 
 ### M1 — Full pipeline on a single note
 **Goal:** prove the whole plumbing works end-to-end on one note, before adding
@@ -313,6 +316,33 @@ jumping to the top (and stop losing the caret). Editor/refresh layer.
   the viewport anchor (top visible position) is mapped via `tr.changes.mapPos` and
   scrolled back — so the view holds the *same text* even when edits landed above it.
 - Shares the diff infrastructure with **M7** (conflict diff/preview); coordinate.
+
+### M25 — Update references when a note is renamed
+**Goal:** keep the vault consistent across a rename — links in *other* notes that
+point at the renamed/moved note follow it, instead of silently dangling. The M14
+follow-up agreed in that milestone's review: rename (FEAT-0034) deliberately moves
+only the one file; this milestone closes the loop on inbound links. In the links
+domain (M8); follow-up to link-autocomplete (M20).
+
+This is **not** a moat violation — rewriting a link is still plain markdown the
+user owns, and it happens only on an explicit, user-initiated rename — but it is a
+real multi-file write with genuine edge cases, so it gets its own spec/test/review
+cycle rather than riding along with M14.
+
+In:
+- On rename, scan the vault for links targeting the old path and rewrite them to
+  the new one. Handle all three link forms M8 produces — **markdown relative**
+  (rebased when the note changes folder), **markdown root-relative**, and
+  **wikilinks** (basename vs slashed) — each of which breaks differently under a
+  rename vs a folder move.
+- **Show which files will change** and write through the existing per-note
+  conflict guard (never clobber a file edited out from under us); a rename that
+  touches N files must not lose an edit in any of them.
+- Reuse the existing resolvers (`resolveNotePath`/`resolveWikilink`) so the
+  "what does this link point at" logic stays a single source of truth.
+
+Out (for now): a global rename-any-note (not just the active one) surface; undo of
+a multi-file rename.
 
 ## Later / backlog (out of MVP, on purpose)
 
