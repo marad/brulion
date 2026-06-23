@@ -40,8 +40,17 @@ persisted in IndexedDB with the other UI state, so it survives a reload.
 **Empty query → most-recently-visited first.** When the switcher is opened with no
 query (or whitespace only), the notes are listed **most-recently-visited first**,
 then every remaining (never-visited) note in the existing path-ascending name
-order. So the note you were just in sits at the top, and a couple of arrow-downs
-reach the ones around it — usually no typing needed to switch nearby.
+order. So the most recent note you can switch to sits at the top, and a couple of
+arrow-downs reach the ones around it — usually no typing needed to switch nearby.
+
+**The currently-open note is excluded from the switcher.** The switcher lists
+notes you can switch *to*; switching to the note you are already in is a no-op, so
+the open note never appears in the results (for any query, not just the empty one).
+The direct consequence — agreed in the M21 review — is that on an empty query the
+**first** row is the *previously*-visited note, so Enter performs a back-and-forth
+toggle to where you just came from. The exclusion lives in the switcher, not in
+`searchNotes` (so it does not affect the wikilink autocomplete, which may legitimately
+list the open note).
 
 **Non-empty query → recency breaks ties only.** When a query is typed, notes are
 ordered by match score (the FEAT-0038 ranking) exactly as before; recency is
@@ -139,3 +148,11 @@ Given the MRU list contains a path that no longer names an existing note,
 When `searchNotes` ranks the current notes with that list,
 Then the stale path is absent from the results and the live notes are ordered
 correctly (the stale entry neither appears nor breaks the ordering).
+
+**AC-8** — The currently-open note is excluded from the switcher (M21 review).
+Given a folder is open with the active note among the notes,
+When the switcher renders its results (empty query or a query that would match the
+open note),
+Then the open note is not listed, so on an empty query the first row is the
+previously-visited note (Enter toggles back to where you came from). The exclusion
+is in the switcher only — `searchNotes` itself still returns the note.
