@@ -1258,3 +1258,11 @@ chip. The decisions, all bending to the file-fidelity moat:
 - **New module `frontmatter.ts`,** wired into the editor's extension list beside
   `markdownRendering`, rather than bloating `markdown-render.ts`. The detector is
   pure and unit-tested; the field/widgets are the only stateful glue.
+- **The markdown renderers skip the frontmatter range.** `renderPlugin` and
+  `blockRenderingField` don't know about frontmatter, so in the *expanded* state
+  they'd hide/style markdown-active characters inside the raw YAML (a `# comment`
+  line → heading, `**x**` → bold) — breaking the "raw, opaque" promise. Both build
+  sites now drop any decoration whose span intersects the detected frontmatter
+  range (a one-way `markdown-render → frontmatter` dependency). Correct in both
+  states: collapsed, the region is block-replaced anyway; expanded, the raw text
+  shows unstyled.
