@@ -21,6 +21,7 @@ import { syntaxTree } from "@codemirror/language"
 import type { SyntaxNode } from "@lezer/common"
 import { isExternalLink, normalizeNoteName, resolveNotePath, resolveWikilink } from "./note-name"
 import { WIKILINK_RE } from "./wikilink"
+import { type FrontmatterRange, frontmatterRange } from "./frontmatter"
 
 /**
  * What the link decorator needs to tell a valid internal link from a broken one
@@ -435,6 +436,13 @@ class BulletWidget extends WidgetType {
   }
 }
 
+/** True when `[from, to)` overlaps a detected frontmatter block — those bytes are
+ * the frontmatter renderer's (FEAT-0042), so the markdown layer leaves them raw
+ * (else its emphasis/heading hiding would leak into the expanded raw YAML). */
+function inFrontmatter(fm: FrontmatterRange | null, from: number, to: number): boolean {
+  return fm !== null && from < fm.to && to > fm.from
+}
+
 /** Build the display decorations and the (separate) atomic hidden set for a view. */
 function buildDecorations(view: EditorView): {
   all: DecorationSet
@@ -442,6 +450,7 @@ function buildDecorations(view: EditorView): {
 } {
   const all: Range<Decoration>[] = []
   const hidden: Range<Decoration>[] = []
+  const fm = frontmatterRange(view.state)
   // A node straddling the gap between two visible ranges is reported (with its
   // full bounds) by both iterations; dedupe so the same run isn't decorated
   // twice — duplicate replace ranges would otherwise overlap and throw.
@@ -450,12 +459,14 @@ function buildDecorations(view: EditorView): {
   for (const { from, to } of view.visibleRanges) {
     const { hidden: hides, marks } = markdownSyntaxRanges(view.state, from, to)
     for (const m of marks) {
+      if (inFrontmatter(fm, m.from, m.to)) continue
       const key = `m:${m.from}:${m.to}:${m.cls}`
       if (seen.has(key)) continue
       seen.add(key)
       all.push(Decoration.mark({ class: m.cls, attributes: m.attrs }).range(m.from, m.to))
     }
     for (const h of hides) {
+      if (inFrontmatter(fm, h.from, h.to)) continue
       const key = `h:${h.from}:${h.to}`
       if (seen.has(key)) continue
       seen.add(key)
@@ -526,10 +537,15 @@ function buildBlockDecorations(state: EditorState): {
   hidden: DecorationSet
 } {
   const { hidden: hides, lines, bullets } = blockSyntaxRanges(state)
+  const fm = frontmatterRange(state)
   const all: Range<Decoration>[] = []
   const hidden: Range<Decoration>[] = []
-  for (const l of lines) all.push(Decoration.line({ class: l.cls }).range(l.from))
+  for (const l of lines) {
+    if (inFrontmatter(fm, l.from, l.from + 1)) continue
+    all.push(Decoration.line({ class: l.cls }).range(l.from))
+  }
   for (const h of hides) {
+    if (inFrontmatter(fm, h.from, h.to)) continue
     const r = hideMark.range(h.from, h.to)
     all.push(r)
     hidden.push(r)
@@ -537,6 +553,7 @@ function buildBlockDecorations(state: EditorState): {
   // Replace each list marker with its bullet widget, and make the run atomic so
   // the caret steps over it onto the item text (FEAT-0016 AC-7 / FEAT-0019).
   for (const b of bullets) {
+    if (inFrontmatter(fm, b.from, b.to)) continue
     const r = Decoration.replace({ widget: new BulletWidget(b.marker) }).range(
       b.from,
       b.to,

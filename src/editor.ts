@@ -1,10 +1,12 @@
 import { EditorView, keymap, highlightSpecialChars, drawSelection } from "@codemirror/view"
-import { Annotation, Compartment, EditorState } from "@codemirror/state"
+import { Compartment, EditorState } from "@codemirror/state"
 import { history, historyKeymap, defaultKeymap } from "@codemirror/commands"
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete"
 import { deleteMarkupBackward } from "@codemirror/lang-markdown"
 import { vim } from "@replit/codemirror-vim"
 import { markdownRendering, linkContext, type LinkContext } from "./markdown-render"
+import { frontmatterRendering } from "./frontmatter"
+import { ProgrammaticLoad } from "./editor-load"
 import {
   markdownCommands,
   continueOrExitMarkup,
@@ -39,10 +41,6 @@ const typography = EditorView.theme({
   ".cm-activeLine": { backgroundColor: "transparent" }, // no code-editor line highlight
   "&.cm-focused": { outline: "none" },
 })
-
-/** Marks transactions that load content programmatically, so they aren't
- * mistaken for user edits (which would trigger an autosave of just-loaded text). */
-const External = Annotation.define<boolean>()
 
 /** Toggles the editor between writable and read-only (used to lock it while a
  * conflict is being resolved — FEAT-0015). */
@@ -147,6 +145,7 @@ export function mountEditor(
         },
       }),
       markdownRendering, // hide markdown markup; render text as rich content
+      frontmatterRendering, // collapse a leading `---…---` block into a metadata chip
       markdownCommands, // Ctrl+B/I/E and heading shortcuts reshape the markdown
       slashCommands, // "/" at line start opens a menu to reshape the line
       wikilinkCompletions, // "[[" opens a list of existing notes, ranked like Ctrl+K
@@ -164,7 +163,7 @@ export function mountEditor(
       ]),
       EditorView.updateListener.of((update) => {
         if (!update.docChanged) return
-        if (update.transactions.some((tr) => tr.annotation(External))) return
+        if (update.transactions.some((tr) => tr.annotation(ProgrammaticLoad))) return
         opts.onChange?.()
       }),
     ],
@@ -188,7 +187,7 @@ export function mountEditor(
 export function setEditorText(view: EditorView, text: string): void {
   view.dispatch({
     changes: { from: 0, to: view.state.doc.length, insert: text },
-    annotations: External.of(true),
+    annotations: ProgrammaticLoad.of(true),
   })
 }
 
