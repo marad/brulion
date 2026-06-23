@@ -17,6 +17,11 @@ import { wikilinkCompletions } from "./link-complete"
 import { contextMenu } from "./context-menu"
 import { vimCaretGuard } from "./vim-caret"
 import { copyMarkdown } from "./copy-markdown"
+import { installVimMarkdownYank } from "./vim-yank"
+
+// Route Vim's yank through the same markdown serializer as clipboard copy/cut
+// (FEAT-0046). Global + idempotent; only ever invoked while Vim mode is active.
+installVimMarkdownYank()
 
 /** Clean, prose-friendly typography: proportional font, readable measure,
  * comfortable spacing, no code-like gutter. No syntax hiding — that is M2.
