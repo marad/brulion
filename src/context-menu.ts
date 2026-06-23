@@ -1,13 +1,6 @@
 import { EditorView, ViewPlugin } from "@codemirror/view"
-import { type Extension, type EditorState, type TransactionSpec } from "@codemirror/state"
-import {
-  BOLD,
-  ITALIC,
-  CODE,
-  toggleInline,
-  setHeadingLines,
-  clearFormatting,
-} from "./markdown-transforms"
+import { type Extension } from "@codemirror/state"
+import { type MenuItem, FORMAT_ITEMS } from "./format-actions"
 import { linkContext } from "./markdown-render"
 import { computeWikilinkToggle } from "./wikilink"
 
@@ -18,21 +11,6 @@ import { computeWikilinkToggle } from "./wikilink"
  * markdown the shortcuts produce. Heading/clear apply per line across the whole
  * selection; bold/italic/code toggle the selection.
  */
-
-interface MenuItem {
-  label: string
-  run: (state: EditorState) => TransactionSpec | null
-}
-
-const ITEMS: MenuItem[] = [
-  { label: "Bold", run: (s) => toggleInline(s, BOLD) },
-  { label: "Italic", run: (s) => toggleInline(s, ITALIC) },
-  { label: "Code", run: (s) => toggleInline(s, CODE) },
-  { label: "Heading 1", run: (s) => setHeadingLines(s, 1) },
-  { label: "Heading 2", run: (s) => setHeadingLines(s, 2) },
-  { label: "Heading 3", run: (s) => setHeadingLines(s, 3) },
-  { label: "Clear formatting", run: (s) => clearFormatting(s) },
-]
 
 /** The single open menu and the teardown that removes it + its listeners. */
 let close: (() => void) | null = null
@@ -47,16 +25,16 @@ function closeMenu() {
  * between its full-path and name-only forms (FEAT-0037). */
 function itemsFor(view: EditorView, x: number, y: number): MenuItem[] {
   const pos = view.posAtCoords({ x, y })
-  if (pos == null) return ITEMS
+  if (pos == null) return FORMAT_ITEMS
   const toggle = computeWikilinkToggle(
     view.state.doc.toString(),
     pos,
     view.state.facet(linkContext).notePaths,
   )
-  if (!toggle) return ITEMS
+  if (!toggle) return FORMAT_ITEMS
   return [
     { label: toggle.label, run: () => ({ changes: { from: toggle.from, to: toggle.to, insert: toggle.insert } }) },
-    ...ITEMS,
+    ...FORMAT_ITEMS,
   ]
 }
 

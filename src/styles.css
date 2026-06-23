@@ -858,6 +858,49 @@ header button:hover {
   background: #f2f2f1;
 }
 
+/* Touch selection formatting toolbar (FEAT-0052): a compact floating pill of format
+   buttons over a non-empty selection, shown only in a touch/narrow context. Mirrors
+   the context-menu look, laid out as a horizontal row. */
+.cm-selection-toolbar {
+  position: fixed;
+  z-index: 30;
+  display: flex;
+  gap: 0.15rem;
+  padding: 0.2rem;
+  background: #fff;
+  border: 1px solid #d4d4d4;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 16%);
+}
+
+.cm-selection-toolbar button {
+  font: inherit;
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 0.4rem;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #1a1a1a;
+  cursor: pointer;
+}
+
+.cm-selection-toolbar button:hover {
+  background: #f2f2f1;
+}
+
+/* Legible glyphs: bold Bold, italic Italic, monospace Code. */
+.cm-selection-toolbar button[aria-label="Bold"] {
+  font-weight: 700;
+}
+.cm-selection-toolbar button[aria-label="Italic"] {
+  font-style: italic;
+}
+.cm-selection-toolbar button[aria-label="Code"] {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+}
+
 /* Missing-note banner (FEAT-0036): a non-blocking notice when a URL hash names a
    note that doesn't exist, offering to create it. Anchored top-center, floating
    over the workspace — never modal, never blocking the editor. */

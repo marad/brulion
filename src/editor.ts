@@ -15,6 +15,7 @@ import {
 import { slashCommands } from "./slash-commands"
 import { wikilinkCompletions } from "./link-complete"
 import { contextMenu } from "./context-menu"
+import { selectionToolbar } from "./selection-toolbar"
 import { vimCaretGuard } from "./vim-caret"
 import { copyMarkdown } from "./copy-markdown"
 import { installVimMarkdownYank } from "./vim-yank"
@@ -161,6 +162,7 @@ export function mountEditor(
       slashCommands, // "/" at line start opens a menu to reshape the line
       wikilinkCompletions, // "[[" opens a list of existing notes, ranked like Ctrl+K
       contextMenu, // right-click opens a formatting popup over the selection
+      selectionToolbar, // touch/narrow: a floating format toolbar over a selection (FEAT-0052)
       copyMarkdown, // copy/cut re-serialize the selection to valid markdown (FEAT-0045)
       typography,
       keymap.of([
