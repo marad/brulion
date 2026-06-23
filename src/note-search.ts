@@ -92,7 +92,8 @@ export function fuzzyScore(query: string, target: string): number | null {
     }
     row = next
   }
-  const best = Math.max(...row)
+  let best = NEG
+  for (const s of row) if (s > best) best = s
   if (best === NEG) return null
   // Keep tier 2 strictly below the substring band, so a literal substring match
   // always wins regardless of how long the inputs are (the clamp only ever bites
