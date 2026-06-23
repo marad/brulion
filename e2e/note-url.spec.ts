@@ -113,6 +113,21 @@ test("dismissing the banner re-syncs the URL to the open note (AC-15)", async ({
   await expect.poll(() => hash(page)).toBe("#/alpha") // URL no longer names an absent note
 })
 
+test("navigating back to the open note hides a stale missing-note banner (AC-15)", async ({
+  page,
+}) => {
+  await openWithTwoNotes(page) // settles #/alpha as the single landing entry
+  await page.evaluate(() => {
+    location.hash = "#/ghost" // pushes #/ghost; banner appears
+  })
+  await expect(banner(page)).toBeVisible()
+
+  await page.goBack() // back to #/alpha (the open note) — the banner must not outlive it
+  await expect(banner(page)).toBeHidden()
+  await expect(display(page)).toContainText("alpha")
+  await expect.poll(() => hash(page)).toBe("#/alpha")
+})
+
 test("a malformed hash raises no banner and does not switch (AC-16)", async ({ page }) => {
   await openWithTwoNotes(page)
   await page.evaluate(() => {

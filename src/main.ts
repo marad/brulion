@@ -152,14 +152,20 @@ const resolveHash = (): HashResolution => {
 let pendingMissingTarget: string | null = null
 const missingBanner = mountMissingNoteBanner(missingNoteEl, {
   onCreate: () => {
-    if (pendingMissingTarget) void controller.addNote(displayName(pendingMissingTarget))
+    const target = pendingMissingTarget
+    if (!target) return
+    clearMissingBanner() // synchronous, so a double-click can't fire a second create
+    void controller.addNote(displayName(target))
   },
   onDismiss: () => {
-    missingBanner.hide()
-    pendingMissingTarget = null
-    history.replaceState(null, "", pathToHash(currentActive))
+    clearMissingBanner()
+    history.replaceState(null, "", pathToHash(currentActive)) // stop the URL naming an absent note
   },
 })
+const clearMissingBanner = () => {
+  missingBanner.hide()
+  pendingMissingTarget = null
+}
 const showMissingBanner = (target: string) => {
   pendingMissingTarget = target
   missingBanner.show(displayName(target))
@@ -237,8 +243,7 @@ controller = createNoteController(view, {
     // and a follow resolves relative to the right note (FEAT-0025).
     currentActive = active
     currentNotes = notes
-    missingBanner.hide() // the active note changed — drop any stale missing-note notice
-    pendingMissingTarget = null
+    clearMissingBanner() // the active note changed — drop any stale missing-note notice
     syncRouteToActive(active) // mirror the open note into the URL hash (FEAT-0036)
     identity.update(active) // keep the header naming the open note (FEAT-0035)
     setLinkContext(view, { activeNote: active, notePaths: new Set(notes) })
@@ -371,6 +376,7 @@ window.addEventListener("hashchange", () => {
   const resolution = resolveHash()
   if (resolution.kind === "switch") void controller.switchTo(resolution.path)
   else if (resolution.kind === "missing") showMissingBanner(resolution.path)
+  else clearMissingBanner() // hash now names the open note (or is malformed) — drop any stale notice
 })
 
 // The two ways out of a conflict; the controller clears it via onConflictResolved.
