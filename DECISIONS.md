@@ -1447,7 +1447,9 @@ for the engine under the modal (the modal UI itself is P2):
   `.brulion.json`** — so FEAT-0021's old AC-8 ("nothing is written to the folder")
   was reworded to "never writes a *note* file" (the moat guarantee — note `.md`
   bytes are still never touched). This is the one debatable M16 call: a case exists
-  for Vim being a personal per-device habit that should stay in idb. Revisit live.
+  for Vim being a personal per-device habit that should stay in idb.
+  **Reviewed & confirmed:** the user clicked through the deployed M16 and confirmed
+  Vim *should* travel with the vault — kept as built.
 - **Applied via three CSS custom properties, headings scale for free.**
   `applySettings` sets `--editor-font-size`, `--editor-measure`, and (when a font is
   chosen) `--font-stack` on `:root`, and toggles Vim via the existing `setVimMode`.
