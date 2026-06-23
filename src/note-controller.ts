@@ -436,8 +436,15 @@ export function createNoteController(
         const pathsBefore = new Set(notes) // pre-move listing — still names `from`
         notes = await listNotes(dir)
         await activate(dir, normalized.filename)
-        // Re-point inbound links in other notes at the new path (FEAT-0040).
-        await updateInboundLinks(dir, from, normalized.filename, pathsBefore)
+        // Re-point inbound links in other notes at the new path (FEAT-0040). The
+        // move already succeeded, so a failure in this follow-on pass (a rejected
+        // confirm, an I/O error part-way) must not report the rename as failed —
+        // the inbound links simply stay as they were (dangling), like a decline.
+        try {
+          await updateInboundLinks(dir, from, normalized.filename, pathsBefore)
+        } catch {
+          // best-effort: leave inbound links as-is rather than failing the rename
+        }
         return { ok: true }
       })
     },

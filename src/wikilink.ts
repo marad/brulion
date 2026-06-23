@@ -46,27 +46,32 @@ export interface FoundWikilink {
   alias: string | null
 }
 
-/** The wikilink whose span contains `pos` (edges inclusive), or `null`. Uses a
- * fresh regex so it never races the shared `WIKILINK_RE`'s `lastIndex`. */
-export function findWikilinkAt(text: string, pos: number): FoundWikilink | null {
+/** Every `[[…]]` in `text`, in document order — the single place wikilink span,
+ * target, and alias offsets are derived, shared by {@link findWikilinkAt} and the
+ * rename rewrite (FEAT-0040). Uses a fresh regex so it never races the shared
+ * `WIKILINK_RE`'s `lastIndex`. */
+export function findWikilinks(text: string): FoundWikilink[] {
   const re = new RegExp(WIKILINK_RE.source, "g")
+  const found: FoundWikilink[] = []
   let m: RegExpExecArray | null
   while ((m = re.exec(text)) !== null) {
     const from = m.index
-    const to = from + m[0].length
-    if (pos >= from && pos <= to) {
-      const targetFrom = from + 2
-      return {
-        from,
-        to,
-        target: m[1],
-        targetFrom,
-        targetTo: targetFrom + m[1].length,
-        alias: m[2] ?? null,
-      }
-    }
+    const targetFrom = from + 2
+    found.push({
+      from,
+      to: from + m[0].length,
+      target: m[1],
+      targetFrom,
+      targetTo: targetFrom + m[1].length,
+      alias: m[2] ?? null,
+    })
   }
-  return null
+  return found
+}
+
+/** The wikilink whose span contains `pos` (edges inclusive), or `null`. */
+export function findWikilinkAt(text: string, pos: number): FoundWikilink | null {
+  return findWikilinks(text).find((w) => pos >= w.from && pos <= w.to) ?? null
 }
 
 /** The right-click "switch a link's form" action. */

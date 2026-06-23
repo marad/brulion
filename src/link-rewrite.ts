@@ -5,8 +5,7 @@ import {
   resolveNotePath,
   resolveWikilink,
 } from "./note-name"
-import { shortestLinkText } from "./wikilink"
-import { WIKILINK_RE } from "./wikilink"
+import { findWikilinks, shortestLinkText } from "./wikilink"
 
 /**
  * Rewrite the links in **one** note that point at a renamed note, so they follow
@@ -107,11 +106,8 @@ export function rewriteLinksForRename(args: RenameRewrite): string | null {
   // rewrite), slashed links keep their full-path form. Detection uses the
   // pre-rename set (the old note still exists there); the new form uses the
   // post-rename set for the ambiguity check.
-  const re = new RegExp(WIKILINK_RE.source, "g")
-  let m: RegExpExecArray | null
-  while ((m = re.exec(text)) !== null) {
-    const rawTarget = m[1]
-    const target = rawTarget.trim()
+  for (const w of findWikilinks(text)) {
+    const target = w.target.trim()
     if (resolveWikilink(target, pathsBefore).resolved !== oldPath) continue
     const insert = target.includes("/")
       ? displayName(newPath) // slashed → keep a full root-relative path
@@ -120,8 +116,7 @@ export function rewriteLinksForRename(args: RenameRewrite): string | null {
     // case-insensitive, so a bare name differing only in case still resolves —
     // compare case-insensitively to avoid churning a link a folder move left valid.
     if (insert.toLowerCase() === target.toLowerCase()) continue
-    const from = m.index + 2 // past the opening `[[`
-    edits.push({ from, to: from + rawTarget.length, insert })
+    edits.push({ from: w.targetFrom, to: w.targetTo, insert })
   }
 
   if (edits.length === 0) return null
