@@ -14,7 +14,6 @@ import {
   clampSidebarWidth,
   wireSidebarResize,
   SIDEBAR_MIN_PX,
-  SIDEBAR_MAX_PX,
 } from "./ui"
 
 vi.mock("./fs", () => ({ pickFolder: vi.fn() }))
@@ -422,10 +421,10 @@ describe("showWorkspace (FEAT-0031)", () => {
 })
 
 describe("clampSidebarWidth (FEAT-0044)", () => {
-  it("returns a width within range unchanged (AC-1)", () => {
-    expect(clampSidebarWidth(300)).toBe(300)
+  it("returns a width at or above the minimum unchanged — no upper bound (AC-1)", () => {
     expect(clampSidebarWidth(SIDEBAR_MIN_PX)).toBe(SIDEBAR_MIN_PX)
-    expect(clampSidebarWidth(SIDEBAR_MAX_PX)).toBe(SIDEBAR_MAX_PX)
+    expect(clampSidebarWidth(300)).toBe(300)
+    expect(clampSidebarWidth(99999)).toBe(99999) // no fixed max — the editor's min-width caps the render
   })
 
   it("clamps a too-small width up to the minimum (AC-2)", () => {
@@ -434,12 +433,7 @@ describe("clampSidebarWidth (FEAT-0044)", () => {
     expect(clampSidebarWidth(-50)).toBe(SIDEBAR_MIN_PX)
   })
 
-  it("clamps a too-large width down to the maximum (AC-3)", () => {
-    expect(clampSidebarWidth(SIDEBAR_MAX_PX + 1)).toBe(SIDEBAR_MAX_PX)
-    expect(clampSidebarWidth(99999)).toBe(SIDEBAR_MAX_PX)
-  })
-
-  it("floors any non-finite width to the minimum (corrupt stored value)", () => {
+  it("floors any non-finite width to the minimum (corrupt stored value) (AC-2)", () => {
     expect(clampSidebarWidth(NaN)).toBe(SIDEBAR_MIN_PX)
     expect(clampSidebarWidth(Infinity)).toBe(SIDEBAR_MIN_PX)
     expect(clampSidebarWidth(-Infinity)).toBe(SIDEBAR_MIN_PX)
@@ -456,11 +450,11 @@ describe("wireSidebarResize (FEAT-0044)", () => {
     expect(varOf(sidebar)).toBe("300px")
   })
 
-  it("clamps an out-of-range stored width before applying it (AC-2/AC-3)", () => {
+  it("floors a too-small stored width to the minimum before applying it (AC-2)", () => {
     const handle = document.createElement("div")
     const sidebar = document.createElement("aside")
-    wireSidebarResize(handle, sidebar, { initialWidth: 99999, onChange: vi.fn() })
-    expect(varOf(sidebar)).toBe(`${SIDEBAR_MAX_PX}px`)
+    wireSidebarResize(handle, sidebar, { initialWidth: 10, onChange: vi.fn() })
+    expect(varOf(sidebar)).toBe(`${SIDEBAR_MIN_PX}px`)
   })
 
   it("leaves the basis var unset when there is no stored width (default 14rem applies)", () => {

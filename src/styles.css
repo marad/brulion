@@ -232,8 +232,11 @@ header button:hover {
 
 /* The note list: a quiet sidebar with a find-or-create button and clickable rows. */
 #sidebar {
-  /* Default basis 14rem; a drag (FEAT-0044) overrides it via the inline var. */
-  flex: 0 0 var(--sidebar-width, 14rem);
+  /* Default basis 14rem; a drag (FEAT-0044) overrides it via the inline var.
+     flex-shrink: 1 lets the sidebar give way when its requested width is too wide
+     for the window, so the editor's min-width wins (a viewport-relative cap, not
+     a fixed maximum). */
+  flex: 0 1 var(--sidebar-width, 14rem);
   /* Without `min-width: 0` a flex item's `min-width: auto` floors its width at the
      content's min-content size — so a wide note tree (long names, deep folders)
      would balloon the sidebar past 14rem and squeeze the editor. With it pinned,
@@ -656,7 +659,10 @@ header button:hover {
 
 #editor {
   flex: 1;
-  min-width: 0;
+  /* The editor's minimum width is the de-facto cap on how wide the sidebar can be
+     dragged (FEAT-0044): the sidebar shrinks before the editor drops below this,
+     so the editor stays usable however wide the sidebar's stored width. */
+  min-width: 20rem;
   min-height: 0;
 }
 

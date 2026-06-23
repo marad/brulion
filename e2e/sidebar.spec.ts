@@ -38,6 +38,10 @@ async function sidebarWidth(page: Page): Promise<number> {
   return (await sidebar(page).boundingBox())!.width
 }
 
+async function editorWidth(page: Page): Promise<number> {
+  return (await page.locator("#editor").boundingBox())!.width
+}
+
 test.beforeEach(async ({ page }) => {
   await stubPicker(page)
   await page.goto("/brulion/")
@@ -137,6 +141,26 @@ test("dragging the resize handle widens the sidebar, persists it, and writes not
   await page.reload()
   await expect(page.locator("#welcome")).toBeHidden()
   await expect.poll(() => sidebarWidth(page)).toBeGreaterThan(before + 80)
+})
+
+test("dragging far past the available space pins the editor at its min width, sidebar takes the rest (FEAT-0044 AC-3)", async ({
+  page,
+}) => {
+  await page.locator("#open-folder").click()
+  await expect(sidebar(page)).toBeVisible()
+
+  const box = (await resizer(page).boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 4000, box.y + box.height / 2, { steps: 10 }) // drag way past the window
+  await page.mouse.up()
+
+  // The editor holds at its 20rem (~320px) min-width — never squeezed to nothing —
+  // and the sidebar absorbs the remaining space rather than overflowing the window.
+  const ew = await editorWidth(page)
+  expect(ew).toBeGreaterThanOrEqual(300)
+  expect(ew).toBeLessThan(360)
+  expect(await sidebarWidth(page)).toBeGreaterThan(700)
 })
 
 test("the resize handle is absent before a folder opens and while collapsed (FEAT-0044 AC-6)", async ({

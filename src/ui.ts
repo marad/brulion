@@ -431,19 +431,19 @@ export function wireToggle(
   return { toggle }
 }
 
-/** The sidebar's resizable width bounds in pixels (FEAT-0044). */
+/** The sidebar's minimum resizable width in pixels (FEAT-0044). */
 export const SIDEBAR_MIN_PX = 144
-export const SIDEBAR_MAX_PX = 560
 
 /**
- * Clamp a desired sidebar width to `[SIDEBAR_MIN_PX, SIDEBAR_MAX_PX]` (FEAT-0044):
- * never so narrow it's unusable nor so wide it crowds the editor. A non-finite
- * value (a corrupt stored width) floors to the minimum, so the sidebar is always
- * usable. Pure.
+ * Floor a desired sidebar width at `SIDEBAR_MIN_PX` (FEAT-0044): never so narrow
+ * it's unusable (or invisible-but-present). A non-finite value (a corrupt stored
+ * width) also floors to the minimum. There is no upper bound — the editor's CSS
+ * `min-width` caps how wide the sidebar can *render*, a cap that scales with the
+ * window rather than an arbitrary pixel limit. Pure.
  */
 export function clampSidebarWidth(px: number): number {
   if (!Number.isFinite(px)) return SIDEBAR_MIN_PX
-  return Math.min(SIDEBAR_MAX_PX, Math.max(SIDEBAR_MIN_PX, px))
+  return Math.max(SIDEBAR_MIN_PX, px)
 }
 
 /**

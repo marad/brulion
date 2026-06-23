@@ -1314,12 +1314,17 @@ sidebar/editor border to set its width. The decisions:
   default. The grab handle is a thin flex child sitting on the border between
   `#sidebar` and `#editor`. *Consequence:* no layout restructure — one declaration
   changes, plus a 5px handle element.
-- **Clamped to `[144, 560]` px, pure.** A pure `clampSidebarWidth` bounds the
-  width so a drag can neither shrink the sidebar to an unusable sliver nor let it
-  swallow the editor; a non-finite stored value floors to the minimum, so a corrupt
-  preference still yields a usable sidebar. Both the live drag and the
-  restore-on-load run through it. *Consequence:* the stored width is always
-  applied within bounds — no defensive checks scattered at call sites.
+- **Floored at 144px, no fixed maximum (revised in the M13 review).** A pure
+  `clampSidebarWidth` floors the width at 144px so a drag (or a corrupt non-finite
+  stored value) can't shrink the sidebar to an unusable sliver. There is **no upper
+  clamp**: instead the editor carries `min-width: 20rem` and the sidebar is
+  flex-shrinkable (`flex: 0 1 …`), so widening the sidebar stops once the editor
+  would drop below its minimum — a *viewport-relative* cap that adapts to the
+  window rather than an arbitrary pixel limit. The stored width may exceed what
+  currently fits; it renders capped and renders wider again on a wider screen.
+  *Why the change:* the original fixed `560px` max was an arbitrary proxy for
+  "leave the editor room"; expressing that intent as the editor's own min-width is
+  more honest and scales across screens (decided in the M13 milestone review).
 - **End the drag on `lostpointercapture`, not `pointerup`.** The drag uses
   `setPointerCapture` (keeps tracking if the pointer leaves the thin handle) and
   ends on `lostpointercapture`, which fires on both a normal release *and* an
