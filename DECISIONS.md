@@ -1344,3 +1344,51 @@ sidebar/editor border to set its width. The decisions:
 - **Out of scope:** keyboard resizing and double-click-reset (a later
   keyboard/mobile concern), a settings-modal width control (M16), and
   touch/mobile behavior (M17).
+
+## Copy fidelity: repair the selection's two boundaries, don't re-serialize (M22 / FEAT-0045)
+
+CodeMirror's default copy hands the clipboard `sliceDoc(from, to)` — the raw
+source *inside* the selection. Because our markdown markup is rendered as atomic,
+hidden runs, a selection's boundaries snap *past* a leading `# `/`> `/`* ` or
+*inside* a `**…**`/`` `…` `` span, so the slice drops those markers: copying a
+heading's visible text pasted as plain text, copying half a bold word pasted
+malformed. The decisions:
+
+- **Boundary repair, not whole-selection re-serialization.** The interior of the
+  slice is verbatim source and already carries every marker of every construct it
+  fully contains — only the *first and last* selected positions can sit past an
+  opening marker or before a closing one. So a new pure serializer
+  (`copy-markdown.ts → serializeCopy`) emits `prefix + sliceDoc(from,to) + suffix`,
+  where the prefix/suffix are exactly the markers the two boundaries dropped:
+  the first line's leading block marker, and the inline delimiters synthesized
+  around the fragment. *Why:* "copy the selection, not the snagged construct" —
+  add only what makes the selection valid markdown, never a character more.
+  *Consequence:* a full-construct selection is byte-identical to the source (no
+  doubled markers); the on-disk file is never touched (clipboard-only).
+- **Delimiters read verbatim; nesting ordered.** The synthesized markers are read
+  from the document (`__`/`_`/multi-backtick survive, not normalized to `**`/`*`),
+  and nested spans repair outermost-first on open / innermost-first on close, so a
+  fragment inside `**_x_**` round-trips as `***`-wrapped, not crossed. *Why:*
+  fidelity to what the user actually wrote.
+- **Links & wikilinks deliberately out of scope.** markdown-render already reveals
+  a link's raw `[text](url)` / `[[target]]` whenever the selection touches it
+  (FEAT-0026), so the raw markup is *already inside the slice* at copy time. No
+  repair needed; repairing them would double markers. *Consequence:* the repair
+  scope is headings, blockquotes, unordered lists, bold/italic/inline-code only.
+- **The line-marker repair is confirmed against the syntax tree, not just text**
+  (review fix). A text-only regex would misfire on a `# comment`/`- item` line
+  *inside a fenced code block* (literal `CodeText`, which the renderer hides
+  nothing on) and on a `- tag` line *inside expanded frontmatter* (the markdown
+  parser, blind to frontmatter, parses it as a list). The prefix is added only
+  when the syntax tree confirms the line is a real heading/blockquote/list
+  container *and* the line is outside the frontmatter range — mirroring exactly
+  what the renderer hides. *Why:* the repair must never invent a marker the user
+  can't see.
+- **Cut repairs identically, then deletes only the selected range.** The
+  synthesized markers live *outside* the selection, in the file, so cutting half a
+  bold word puts `**half**` on the clipboard while the document keeps `**bold**`
+  valid. Empty selections fall through to CodeMirror's default (linewise copy);
+  empty ranges in a multi-range selection are skipped, matching the built-in.
+- **Out of scope:** a `text/html` rich-text clipboard flavor (the backlog's coupled
+  "rich-text copy + paste" item), paste (unchanged), and fenced-code-block fences
+  (only *inline* code is repaired).
