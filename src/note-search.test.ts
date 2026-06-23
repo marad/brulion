@@ -99,3 +99,42 @@ describe("searchNotes (FEAT-0033 AC-2)", () => {
     expect(result.create).toBe("..")
   })
 })
+
+describe("ranking (FEAT-0038)", () => {
+  it("AC-1: a contiguous substring outranks a scattered match, even when deeper", () => {
+    // "2026" is a contiguous run in the deep path and only a scattered
+    // subsequence in the shallow one — the deep contiguous match must win.
+    const ranked = searchNotes("2026", ["2x0x2x6.md", "x/y/z/report-2026.md"])
+    expect(ranked.matches[0]).toBe("x/y/z/report-2026.md")
+  })
+
+  it("AC-2: folder depth does not lower a match's score", () => {
+    // The same name matched at the root vs four folders deep scores identically.
+    expect(fuzzyScore("week", "Week")).toBe(fuzzyScore("week", "a/b/c/Week"))
+  })
+
+  it("AC-3: the contiguous run is found, not the first greedy alignment", () => {
+    // The query's chars appear early-scattered (a-b-c) and later-contiguous (abc).
+    // The score must reflect the contiguous run — i.e. equal the substring score.
+    const score = fuzzyScore("abc", "a-b-c-abc")
+    expect(score).toBe(fuzzyScore("abc", "abc")! + 10) // +boundary: "abc" sits after a "-"
+  })
+
+  it("AC-3: best alignment, not greedy, within the subsequence tier", () => {
+    // Neither target contains "ab" contiguously, so both fall to the DP tier. The
+    // first has a second 'a' closer to the 'b' (a tighter alignment the greedy
+    // left-to-right matcher would miss), so it must score strictly higher.
+    expect(fuzzyScore("ab", "a x a b")!).toBeGreaterThan(fuzzyScore("ab", "a x x x b")!)
+  })
+
+  it("AC-4: a segment-start run beats a mid-token run", () => {
+    // "bar" begins a segment in "x/bar" (after "/") but is buried in "foobar".
+    const ranked = searchNotes("bar", ["foobar.md", "x/bar.md"])
+    expect(ranked.matches).toEqual(["x/bar.md", "foobar.md"])
+  })
+
+  it("AC-5: stays total — null for a non-subsequence, 0 for empty", () => {
+    expect(fuzzyScore("xyz", "abc")).toBeNull()
+    expect(fuzzyScore("", "anything")).toBe(0)
+  })
+})
