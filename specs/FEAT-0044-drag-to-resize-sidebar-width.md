@@ -13,11 +13,13 @@ lets the user **grab the border between the sidebar and the editor and drag** to
 set the sidebar width; the chosen width persists across reloads and replaces the
 hard-coded `14rem` as the basis.
 
-The width is **clamped** to a sane minimum and maximum so the drag can neither
-shrink the sidebar to nothing (no invisible-but-present sidebar) nor let it
-swallow the editor. The resize affordance only exists while the sidebar is
-actually on screen — when the sidebar is collapsed (FEAT-0020) or no folder is
-open, there is nothing to resize and the handle is gone.
+The drag can never shrink the sidebar below a usable **minimum** (no
+invisible-but-present sidebar). There is **no fixed maximum**: instead the editor
+keeps a minimum width, so widening the sidebar stops once the editor would be
+squeezed — a cap that scales with the window rather than an arbitrary pixel limit.
+The resize affordance only exists while the sidebar is actually on screen — when
+the sidebar is collapsed (FEAT-0020) or no folder is open, there is nothing to
+resize and the handle is gone.
 
 Like the other sidebar-comfort work, this is a browser-local UI preference: the
 width lives in the same `brulion:` local storage as the collapse/expand state and
@@ -36,11 +38,17 @@ horizontally changes the sidebar width in real time, tracking the pointer
 tracking even if the pointer briefly leaves the handle, and it does not select
 text while dragging. Releasing ends the drag.
 
-**Clamping (pure).** The applied width is clamped to a fixed `[min, max]` pixel
-range: never narrower than the minimum (a comfortably usable sidebar) nor wider
-than the maximum (so the editor always keeps the bulk of the width). A pure
-function maps a desired pixel width to the clamped width; both the live drag and
-the restore-on-load path run through it.
+**Lower clamp (pure).** The applied width is floored at a fixed minimum pixel
+value (a comfortably usable sidebar); a pure function maps a desired pixel width
+to the floored width, and both the live drag and the restore-on-load path run
+through it. There is no upper clamp.
+
+**The editor's minimum width is the de-facto cap.** The editor carries a
+`min-width`, and the sidebar is allowed to shrink, so when the requested width
+would leave the editor below that minimum the layout holds the editor at its
+minimum and the sidebar takes the rest. The sidebar's stored width can exceed
+what currently fits; it simply renders capped, and renders wider again on a wider
+window. This replaces a fixed maximum with a viewport-relative one.
 
 **Persistence.** On drag end the clamped width is saved under a dedicated
 browser-local key. On load, a saved width is read and applied as the sidebar's
@@ -50,18 +58,23 @@ basis (the former `14rem`).
 **The width is the sidebar's flex basis.** The width is applied as a CSS custom
 property the sidebar's `flex-basis` reads, so it composes with the existing
 `min-width: 0` ellipsis behavior and the collapse rule (a collapsed sidebar is
-`display: none` regardless of its width).
+`display: none` regardless of its width). The sidebar is flex-shrinkable so the
+editor's `min-width` can win the space contest when the requested width is too
+large for the window.
 
 ## Constraints
 
 - **No document mutation.** The width is browser-local UI state; resizing writes
   nothing to the user's folder.
-- The applied width is **always within `[min, max]`** — both during the live drag
-  and after restore — so a corrupt or out-of-range stored value cannot produce an
-  unusable sidebar.
+- The applied width is **never below the minimum** — during the live drag and
+  after restore — so neither a drag nor a corrupt stored value can produce an
+  unusably narrow (or invisible-but-present) sidebar. There is no upper clamp; the
+  editor's `min-width` bounds how wide the sidebar can *render*.
+- The editor **never shrinks below its `min-width`**, however wide the sidebar is
+  dragged — the editor stays usable.
 - The handle is **absent whenever the sidebar is not visible** (no folder open, or
   collapsed) — there is nothing to resize in those states.
-- The clamp is a **pure** function of the desired width and the bounds.
+- The lower clamp is a **pure** function of the desired width and the minimum.
 - Resizing must not break the existing collapse toggle (FEAT-0020) or the
   ellipsis behavior of long rows (`min-width: 0`).
 
@@ -79,20 +92,24 @@ property the sidebar's `flex-basis` reads, so it composes with the existing
 
 ## Acceptance criteria
 
-**AC-1** — A desired width within range is applied unchanged.
-Given a desired pixel width between the minimum and maximum,
+**AC-1** — A desired width at or above the minimum is applied unchanged.
+Given a desired pixel width greater than or equal to the minimum (with no upper
+clamp),
 When the clamp runs,
 Then it returns that width unchanged.
 
 **AC-2** — A too-small desired width is clamped up to the minimum.
-Given a desired pixel width below the minimum (including zero or negative),
+Given a desired pixel width below the minimum (including zero, negative, or a
+non-finite/corrupt value),
 When the clamp runs,
 Then it returns the minimum.
 
-**AC-3** — A too-large desired width is clamped down to the maximum.
-Given a desired pixel width above the maximum,
-When the clamp runs,
-Then it returns the maximum.
+**AC-3** — The editor keeps a minimum width however wide the sidebar is dragged.
+Given an open folder with the sidebar visible,
+When the user drags the sidebar wider than the space the window can give it,
+Then the editor stops at its minimum width and the sidebar takes the remaining
+space (the editor is never squeezed to nothing) — a viewport-relative cap rather
+than a fixed maximum.
 
 **AC-4** — Dragging the handle resizes the sidebar live.
 Given an open folder with the sidebar visible,
