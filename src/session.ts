@@ -11,6 +11,7 @@ const ACTIVE_KEY = "brulion:active"
 const SIDEBAR_KEY = "brulion:sidebar-collapsed"
 const VIM_KEY = "brulion:vim"
 const EXPANDED_FOLDERS_KEY = "brulion:expanded-folders"
+const SIDEBAR_WIDTH_KEY = "brulion:sidebar-width"
 const RECENCY_KEY = "brulion:recency"
 const MODE = { mode: "readwrite" } as const
 
@@ -65,6 +66,21 @@ export function saveExpandedFolders(paths: ReadonlySet<string>): Promise<void> {
  */
 export async function loadExpandedFolders(): Promise<Set<string>> {
   return new Set((await get<string[]>(EXPANDED_FOLDERS_KEY)) ?? [])
+}
+
+/** Remember the user's chosen sidebar width in pixels (FEAT-0044). */
+export function saveSidebarWidth(px: number): Promise<void> {
+  return set(SIDEBAR_WIDTH_KEY, px)
+}
+
+/**
+ * The stored sidebar width in pixels, or `null` when none was stored (or the
+ * stored value is not a finite number) — in which case the sidebar uses its
+ * default CSS basis (FEAT-0044).
+ */
+export async function loadSidebarWidth(): Promise<number | null> {
+  const px = await get<number>(SIDEBAR_WIDTH_KEY)
+  return typeof px === "number" && Number.isFinite(px) ? px : null
 }
 
 /** Persist the most-recently-visited note list, most-recent first (FEAT-0039). */

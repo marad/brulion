@@ -232,7 +232,8 @@ header button:hover {
 
 /* The note list: a quiet sidebar with a find-or-create button and clickable rows. */
 #sidebar {
-  flex: 0 0 14rem;
+  /* Default basis 14rem; a drag (FEAT-0044) overrides it via the inline var. */
+  flex: 0 0 var(--sidebar-width, 14rem);
   /* Without `min-width: 0` a flex item's `min-width: auto` floors its width at the
      content's min-content size — so a wide note tree (long names, deep folders)
      would balloon the sidebar past 14rem and squeeze the editor. With it pinned,
@@ -254,6 +255,26 @@ header button:hover {
    open). Hiding the sidebar lets the editor (flex: 1) fill the width. The class
    sits on .workspace so its specificity beats the bare `#sidebar` flex rule. */
 .workspace.sidebar-collapsed #sidebar {
+  display: none;
+}
+
+/* Drag-to-resize handle on the sidebar/editor border (FEAT-0044): a thin grab
+   strip with a resize cursor and a hairline that surfaces on hover. `hidden`
+   (UA `display: none`) covers the no-folder state; the collapse rule below
+   removes it when the sidebar is hidden — there's nothing to resize then.
+   `touch-action: none` keeps a pointer drag from being stolen as a scroll. */
+#sidebar-resizer {
+  flex: 0 0 5px;
+  cursor: col-resize;
+  background: transparent;
+  touch-action: none;
+}
+
+#sidebar-resizer:hover {
+  background: #e0e0dd;
+}
+
+.workspace.sidebar-collapsed #sidebar-resizer {
   display: none;
 }
 

@@ -364,6 +364,7 @@ export interface WorkspaceRefs {
   toggleVim: HTMLElement
   reopen: HTMLElement
   identity: HTMLElement
+  resizer: HTMLElement
 }
 
 /**
@@ -380,6 +381,7 @@ export function showWorkspace(refs: WorkspaceRefs): void {
   refs.toggleVim.hidden = false
   refs.reopen.hidden = false
   refs.identity.hidden = false
+  refs.resizer.hidden = false // the sidebar is on screen now, so the resize handle applies (FEAT-0044)
 }
 
 /** Wire `button`'s click (the required user gesture) to {@link openFolder}. */
@@ -427,6 +429,61 @@ export function wireToggle(
   render() // reflect the restored state before any interaction
   button.addEventListener("click", toggle)
   return { toggle }
+}
+
+/** The sidebar's resizable width bounds in pixels (FEAT-0044). */
+export const SIDEBAR_MIN_PX = 144
+export const SIDEBAR_MAX_PX = 560
+
+/**
+ * Clamp a desired sidebar width to `[SIDEBAR_MIN_PX, SIDEBAR_MAX_PX]` (FEAT-0044):
+ * never so narrow it's unusable nor so wide it crowds the editor. A non-finite
+ * value (a corrupt stored width) floors to the minimum, so the sidebar is always
+ * usable. Pure.
+ */
+export function clampSidebarWidth(px: number): number {
+  if (!Number.isFinite(px)) return SIDEBAR_MIN_PX
+  return Math.min(SIDEBAR_MAX_PX, Math.max(SIDEBAR_MIN_PX, px))
+}
+
+/**
+ * Wire the sidebar/editor border handle so dragging it resizes the sidebar
+ * (FEAT-0044). The width is driven through the `--sidebar-width` custom property
+ * the sidebar's `flex-basis` reads; `initialWidth` (a restored width, or `null`
+ * for the CSS default) is applied on wire through {@link clampSidebarWidth}, and
+ * `onChange` fires once on drag end with the final clamped width to persist.
+ *
+ * The drag is delta-based (final = start width + pointer delta), so it's
+ * independent of the sidebar's left offset; pointer capture keeps it tracking if
+ * the pointer leaves the thin handle, and text selection is suppressed while
+ * dragging.
+ */
+export function wireSidebarResize(
+  handle: HTMLElement,
+  sidebar: HTMLElement,
+  opts: { initialWidth: number | null; onChange: (px: number) => void },
+): void {
+  const setWidth = (px: number) => sidebar.style.setProperty("--sidebar-width", `${px}px`)
+  if (opts.initialWidth !== null) setWidth(clampSidebarWidth(opts.initialWidth))
+
+  handle.addEventListener("pointerdown", (event) => {
+    event.preventDefault() // don't start a text selection / focus shift
+    const startX = event.clientX
+    const startWidth = sidebar.getBoundingClientRect().width
+    const widthAt = (ev: PointerEvent) => clampSidebarWidth(startWidth + ev.clientX - startX)
+    handle.setPointerCapture(event.pointerId)
+    document.body.style.userSelect = "none" // no text selection mid-drag
+
+    const onMove = (ev: PointerEvent) => setWidth(widthAt(ev))
+    const onUp = (ev: PointerEvent) => {
+      handle.removeEventListener("pointermove", onMove)
+      handle.removeEventListener("pointerup", onUp)
+      document.body.style.userSelect = ""
+      opts.onChange(widthAt(ev))
+    }
+    handle.addEventListener("pointermove", onMove)
+    handle.addEventListener("pointerup", onUp)
+  })
 }
 
 /** Controls the missing-note banner (FEAT-0036): show it naming a note, or hide it. */

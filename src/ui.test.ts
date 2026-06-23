@@ -439,9 +439,10 @@ describe("clampSidebarWidth (FEAT-0044)", () => {
     expect(clampSidebarWidth(99999)).toBe(SIDEBAR_MAX_PX)
   })
 
-  it("floors a non-finite width to the minimum (corrupt stored value)", () => {
+  it("floors any non-finite width to the minimum (corrupt stored value)", () => {
     expect(clampSidebarWidth(NaN)).toBe(SIDEBAR_MIN_PX)
-    expect(clampSidebarWidth(Infinity)).toBe(SIDEBAR_MAX_PX)
+    expect(clampSidebarWidth(Infinity)).toBe(SIDEBAR_MIN_PX)
+    expect(clampSidebarWidth(-Infinity)).toBe(SIDEBAR_MIN_PX)
   })
 })
 

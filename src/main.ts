@@ -7,6 +7,7 @@ import {
   restoreFolder,
   renderNoteList,
   wireToggle,
+  wireSidebarResize,
   showWorkspace,
   mountNoteIdentity,
   mountMissingNoteBanner,
@@ -20,6 +21,8 @@ import {
   loadVimMode,
   saveExpandedFolders,
   loadExpandedFolders,
+  saveSidebarWidth,
+  loadSidebarWidth,
   saveRecency,
   loadRecency,
 } from "./session"
@@ -40,6 +43,7 @@ const loadingEl = document.querySelector<HTMLElement>("#loading")
 const welcomeEl = document.querySelector<HTMLElement>("#welcome")
 const sidebarEl = document.querySelector<HTMLElement>("#sidebar")
 const toggleSidebarEl = document.querySelector<HTMLButtonElement>("#toggle-sidebar")
+const sidebarResizerEl = document.querySelector<HTMLElement>("#sidebar-resizer")
 const toggleVimEl = document.querySelector<HTMLButtonElement>("#toggle-vim")
 const noteIdentityEl = document.querySelector<HTMLElement>("#note-identity")
 const missingNoteEl = document.querySelector<HTMLElement>("#missing-note")
@@ -64,6 +68,7 @@ if (
   !welcomeEl ||
   !sidebarEl ||
   !toggleSidebarEl ||
+  !sidebarResizerEl ||
   !toggleVimEl ||
   !noteIdentityEl ||
   !missingNoteEl ||
@@ -250,6 +255,7 @@ controller = createNoteController(view, {
       toggleVim: toggleVimEl,
       reopen: reopenButton,
       identity: noteIdentityEl,
+      resizer: sidebarResizerEl,
     })
     // Feed the editor the open note + known paths so links render valid-vs-broken
     // and a follow resolves relative to the right note (FEAT-0025).
@@ -433,6 +439,17 @@ void loadSidebarCollapsed().then((collapsed) => {
       event.preventDefault()
       sidebar.toggle()
     }
+  })
+})
+
+// Drag-to-resize the sidebar (FEAT-0044): restore the saved width onto the
+// sidebar's flex-basis var and persist the new width on each drag end. The handle
+// itself is revealed with the workspace (showWorkspace) and hidden by CSS while
+// the sidebar is collapsed.
+void loadSidebarWidth().then((px) => {
+  wireSidebarResize(sidebarResizerEl, sidebarEl, {
+    initialWidth: px,
+    onChange: (width) => void saveSidebarWidth(width),
   })
 })
 
