@@ -20,8 +20,9 @@ Every technical decision defers to that.
 > Next, in priority:
 >
 > the rest as capacity allows: **M26** (table rendering), **M29** (editable code-fence
-> markers), **M18** (light/dark theme), and **M24** (scroll/caret preservation on
-> external refresh).
+> markers), **M18** (light/dark theme), **M24** (scroll/caret preservation on external
+> refresh), and the newest cluster **M30** (command palette + action bar), **M31**
+> (journaling), **M32** (link anchors), **M33** (multiple vaults).
 >
 > (The user's own pain-ranking: rename + note-URLs + link-autocomplete first, then
 > the search-ranking and frontmatter/copy irritants; settings, sidebar comfort,
@@ -423,6 +424,60 @@ In:
   `markdown-render.ts` (`blockSyntaxRanges`). Applies to **all** fenced blocks
   (Mermaid benefits for free — revealing a diagram then shows its ```` ```mermaid ````).
 
+> M30–M33 come from a later round of real daily-use observations. Unscheduled for
+> now — slot into the execution order at the top when they go active. M30 is the
+> foundation M31 builds on.
+
+### M30 — Command palette + customizable action bar
+**Goal:** a keyboard-first way to run *actions* (not just open notes), and a
+configurable top bar. A command palette — same overlay pattern as the M12 Ctrl+K
+note switcher, likely sharing its infrastructure — lists the available **actions**
+(go to a note, change folder, toggle Vim, …) for fuzzy-search + run. Actions are a
+first-class concept: each can be **pinned to the top bar** (configured in the M16
+settings) and given an **icon** (from the M27 Lucide set) shown both on its toolbar
+button and in the palette. Existing header controls (folder switch, Vim toggle)
+migrate onto this action model. Pure UI/UX over existing capability; no file-behavior
+change.
+
+In:
+- An action registry (id, label, optional icon, run()) and a palette overlay that
+  fuzzy-searches and runs them (keyboard nav, like the switcher).
+- A settings surface (M16) to choose which actions are pinned to the top bar and in
+  what order; the bar renders those as icon/label buttons.
+- Reframe the current folder-switch (M27) and Vim toggle as registered actions.
+
+### M31 — Journaling: week-note navigation + quick day-log
+**Goal:** make the weekly-journal workflow one keystroke. Builds on M30 (actions) and
+M16 (settings). Two coupled parts (may split into phases):
+- **Templated week-note navigation** — a settings field holds a date-templated path
+  with a placeholder, e.g. `Allegro/Journal/Week/{mondayOfTheWeek}`; an action
+  resolves the placeholder against the current date and opens that note (creating it,
+  with the week template, if missing).
+- **Quick day-log** — an action that appends a log entry to the **current week note's
+  matching day section**, which implies a defined **weekly-note structure** (per-day
+  headings) the template seeds and the append targets.
+
+Out (for now): a general per-note-type template system; this is scoped to the weekly
+journal until a second use appears.
+
+### M32 — Link section anchors (`#anchor`)
+**Goal:** support a section anchor in a note link — `[text](note#section-title)` and
+the wikilink equivalent — resolving to the target note **and** scrolling to that
+heading. Extends M8 (links); reuses the existing resolvers, adds anchor parsing and a
+scroll-to-heading step. Moat-neutral (still plain markdown links).
+
+### M33 — Multiple vaults / workspaces
+**Goal:** make working across several folders painless — promotes the backlog
+"Workspaces" item, pulled forward by real friction. Two parts:
+- **Switch between granted folders** — keep the set of previously-granted folder
+  handles (already in IndexedDB) and offer quick switching between them (a palette
+  action / settings list), instead of re-picking via the native picker each time.
+- **Per-window vault identity** — two windows open on two vaults currently share one
+  origin-global handle in IndexedDB, so a refresh can swap a window to "the other"
+  vault. Give each window a stable vault identity (e.g. a `?ws=` URL param, à la the
+  backlog Workspaces sketch) so a reload re-attaches to the *same* vault and the two
+  windows stay independent.
+
 ## Later / backlog (out of MVP, on purpose)
 
 Everything concrete is now scheduled in M5–M10 above. What remains here is
@@ -434,6 +489,8 @@ deliberately unscheduled — needs product-market-fit or a real demand signal fi
   bridge); parked until there's real demand. Distinct from M22, which only fixes
   plain-markdown copy fidelity.
 - **Workspaces** — `?ws=diablo`, multiple folder handles per origin in IndexedDB.
+  **Now scheduled as M33** (switching between granted folders + per-window vault
+  identity), pulled forward by real friction.
 - **Sync (paid)** — BYO-cloud (Dropbox/Drive/OneDrive) via OAuth PKCE,
   client-side, no data hosted by us. License validation via merchant-of-record
   (Lemon Squeezy / Paddle). Not before product-market-fit.
