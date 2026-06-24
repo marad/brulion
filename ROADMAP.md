@@ -19,8 +19,9 @@ Every technical decision defers to that.
 > **M19**, **M20**, **M21**, **M22**, **M23**, **M25**, and **M27** are done. Next, in
 > priority:
 >
-> the rest as capacity allows: **M26** (table rendering), **M18** (light/dark theme),
-> and **M24** (scroll/caret preservation on external refresh).
+> the rest as capacity allows: **M26** (table rendering), **M28** (Mermaid diagram
+> rendering), **M18** (light/dark theme), and **M24** (scroll/caret preservation on
+> external refresh).
 >
 > (The user's own pain-ranking: rename + note-URLs + link-autocomplete first, then
 > the search-ranking and frontmatter/copy irritants; settings, sidebar comfort,
@@ -351,7 +352,7 @@ In:
 Out (for now): a global rename-any-note (not just the active one) surface; undo of
 a multi-file rename.
 
-> M26–M27 below come from a later round of real daily-use observations
+> M26–M28 below come from a later round of real daily-use observations
 > (after the M19–M24 batch). Unscheduled for now — slot into the execution
 > order at the top when they go active.
 
@@ -385,6 +386,28 @@ In:
   (**Lucide**) for the header instead of one-off hand-authored SVGs, convert the ☰
   sidebar toggle to the same family, and normalize the header buttons to one
   height. Header chrome only; no file-behavior change.
+
+### M28 — Mermaid diagram rendering
+**Goal:** a fenced ```` ```mermaid ```` code block renders as the diagram it
+describes, instead of showing the raw Mermaid source. Same family as M5 (rendering
+gaps), M15 (code highlighting), and M26 (tables): **visual only** — moat-critical
+that we do NOT touch the bytes. The diagram source stays a plain fenced code block
+in the file; we decorate how it paints.
+
+In:
+- Detect a fenced block with the `mermaid` info string and render the parsed diagram
+  in place (CodeMirror decoration / widget), the source preserved verbatim on disk.
+- Editing UX (cursor inside the block, reveal raw vs. rendered on the active block,
+  what to show on a parse error) decided at spec time — consistent with M26's "raw
+  on the active line" question.
+- **Dependency weight is the open question.** Mermaid is a large library; pulling it
+  into the main bundle fights the lean, fast-loading, offline-PWA stance. Likely a
+  **lazy/dynamic import** so the engine loads only when a note actually contains a
+  Mermaid block (and the editor stays instant for notes that don't) — settle the
+  loading strategy and the offline-cache implications at spec time.
+
+Out (for now): a Mermaid *authoring* aid (live preview pane, snippet menu); this is
+render-on-display only, like the other M-rendering milestones.
 
 ## Later / backlog (out of MVP, on purpose)
 
