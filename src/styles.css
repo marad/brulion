@@ -313,6 +313,12 @@ header button:hover {
     display: none;
   }
 
+  /* The drawer opens from the left, so put its ☰ toggle at the left edge (M17
+     review) — a flex reorder, no DOM change. The other controls stay right. */
+  #toggle-sidebar {
+    order: -1;
+  }
+
   /* Backdrop visible only when narrow AND a folder is open (#sidebar not [hidden])
      AND the drawer is open (workspace not collapsed). A tap on it closes the drawer
      (wired in main.ts). */
@@ -325,11 +331,9 @@ header button:hover {
   }
 }
 
-/* Header toggles read as pressed (sidebar hidden / Vim on) so state is legible. */
-#toggle-sidebar[aria-pressed="true"],
-#toggle-vim[aria-pressed="true"] {
-  background: #ececec;
-}
+/* The ☰ toggle is a plain button: no pressed-state highlight (M17 review). Whether
+   the sidebar/drawer is open is already visible from the layout, so the highlight was
+   redundant; `aria-pressed` stays on the element for screen readers. */
 
 /* The sidebar's entry into the quick switcher (FEAT-0033): a faux search box that
    reads as "type to find or create", replacing the old new-note textbox. */

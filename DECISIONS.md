@@ -1544,20 +1544,28 @@ YAML.
 
 ## Mobile UX — responsive drawer & touch formatting (M17 / FEAT-0051, FEAT-0052)
 
-- **Touch/narrow usability where FSA runs, not a phone storage fallback.** M17 makes
-  the UI touch- and narrow-viewport-friendly (touchscreen laptops, tablets/Chromebooks,
-  phones if/when the File System Access API lands there). It deliberately does **not**
-  add a non-FSA storage path for phone browsers — that would dilute the file-fidelity
-  moat; the no-folder case still shows the welcome screen. *(Flag for review.)*
-- **P1: the sidebar drawer reuses the collapse state (one state, two renderings).**
+- **Target Chrome; no storage fallback for other browsers.** M17 makes the UI touch-
+  and narrow-viewport-friendly. **Reviewed & confirmed:** the user runs Chrome, where
+  the File System Access API works (including on the phone), so the touch UI genuinely
+  serves phones — consistent with the project's existing FSA-only, Chromium-first
+  stance. We deliberately do **not** add a non-FSA storage path for browsers that lack
+  it (that would dilute the file-fidelity moat); there, the app degrades to the welcome
+  screen.
+- **P1: the sidebar drawer reuses the collapse state, but starts closed when narrow.**
   Below a `40rem` breakpoint the sidebar is an absolute overlay drawer over a
-  full-width editor with a dimmed backdrop; at/above it, the inline column as before.
-  The same FEAT-0020 `sidebar-collapsed` state drives both — no second toggle, no
-  per-device persisted flag — so the ☰ button and `Ctrl/Cmd+\` work unchanged. *Why:*
-  one source of truth. *Consequence:* a backdrop tap and a note-select close the
-  drawer (expected drawer UX), both gated on the breakpoint so desktop is untouched;
-  the resize handle and wordmark are hidden when narrow to fit a phone. The persisted
-  collapse pref is shared with desktop (no mobile-specific default) for simplicity.
+  full-width editor with a dimmed backdrop; at/above it, the inline column as before —
+  the same FEAT-0020 `sidebar-collapsed` state, rendered two ways. *Consequence:* a
+  backdrop tap and a note-select close the drawer, both gated on the breakpoint so
+  desktop is untouched; the resize handle and wordmark are hidden when narrow.
+  **Reviewed & changed:** on a narrow viewport the drawer now **always starts closed**
+  and does **not** read or write the persisted collapse pref (that pref stays purely
+  desktop) — a deliberate per-device default, because opening over the editor on every
+  phone load was annoying. The ☰ control is also **moved to the left edge** on narrow
+  (the drawer opens from the left).
+- **The ☰ toggle is a plain button — no pressed-state highlight (desktop + narrow).**
+  **Reviewed & changed:** the `[aria-pressed="true"]` background was dropped; whether
+  the sidebar/drawer is open is already visible from the layout, so the highlight was
+  redundant. The `aria-pressed` attribute stays for screen readers.
 
 (continued — M17 P2)
 

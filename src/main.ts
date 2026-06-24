@@ -506,14 +506,20 @@ void restoreFolder(resumeButton, openNote).finally(() => {
 // toggle, and bind Ctrl+\ to the same flip. CodeMirror has no binding for that
 // chord, so the event bubbles to window and never disturbs the editor shortcuts.
 void loadSidebarCollapsed().then((collapsed) => {
-  let isCollapsed = collapsed
+  // On a narrow viewport the sidebar is a slide-over drawer: always start it closed
+  // and don't touch the persisted preference (which stays purely a desktop setting),
+  // so the drawer never opens over the editor on a phone load (M17 review).
+  const startCollapsed = MOBILE.matches ? true : collapsed
+  let isCollapsed = startCollapsed
   const sidebar = wireToggle(toggleSidebarEl, {
-    initialOn: collapsed,
+    initialOn: startCollapsed,
     apply: (on) => {
       isCollapsed = on
       workspaceEl.classList.toggle("sidebar-collapsed", on)
     },
-    onChange: (on) => void saveSidebarCollapsed(on),
+    onChange: (on) => {
+      if (!MOBILE.matches) void saveSidebarCollapsed(on) // narrow drawer state isn't persisted
+    },
   })
   // Drawer dismiss (FEAT-0051): collapse only when currently open, so a tap when
   // already closed is inert. Wired to the backdrop and (via dismissDrawerIfMobile)

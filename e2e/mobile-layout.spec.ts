@@ -39,22 +39,32 @@ async function setup(page: Page) {
   await page.goto("/brulion/")
   await seedNotes(page) // OPFS needs the loaded page — seed after goto, before opening
   await page.locator("#open-folder").click()
-  await expect(page.locator(".note-name").first()).toBeVisible()
+  // Wait for the workspace (the gear is revealed with it) — not the note list, which
+  // is hidden when the narrow drawer starts closed.
+  await expect(page.locator("#open-settings")).toBeVisible()
 }
+
+const bgColor = (page: Page, sel: string) =>
+  page.locator(sel).evaluate((el) => getComputedStyle(el).backgroundColor)
 
 test.describe("narrow viewport (drawer)", () => {
   test.use({ viewport: { width: 375, height: 700 } })
 
-  test("the sidebar overlays the editor as a drawer with a backdrop (AC-1)", async ({ page }) => {
+  test("the drawer starts closed and overlays the editor when opened (AC-1)", async ({ page }) => {
     await setup(page)
 
-    // Drawer open by default (not collapsed): editor spans full width and the
-    // sidebar overlays its left edge rather than taking layout width.
+    // Starts closed: editor full-width, no drawer, no backdrop.
+    await expect(sidebar(page)).not.toBeVisible()
+    await expect(backdrop(page)).not.toBeVisible()
+    expect((await box(page, "#editor")).width).toBeGreaterThan(360) // ~viewport width
+
+    // Open it: the drawer overlays the editor's left edge (doesn't take layout width).
+    await toggle(page).click()
     const ed = await box(page, "#editor")
     const sb = await box(page, "#sidebar")
-    expect(ed.x).toBeLessThan(2) // editor starts at the left edge (full width)
-    expect(ed.width).toBeGreaterThan(360) // ~viewport width
-    expect(sb.x).toBeLessThan(2) // sidebar overlays the same left edge
+    expect(ed.x).toBeLessThan(2) // editor still starts at the left edge
+    expect(ed.width).toBeGreaterThan(360) // still ~full width — drawer overlays
+    expect(sb.x).toBeLessThan(2) // drawer over the same left edge
     expect(sb.width).toBeLessThan(330) // a drawer, not the whole screen
     await expect(backdrop(page)).toBeVisible()
   })
@@ -64,19 +74,24 @@ test.describe("narrow viewport (drawer)", () => {
     await expect(resizer(page)).not.toBeVisible()
   })
 
-  test("the toggle opens and closes the drawer (AC-2)", async ({ page }) => {
+  test("the toggle opens and closes the drawer, with no pressed-state highlight (AC-2)", async ({
+    page,
+  }) => {
     await setup(page)
 
-    await expect(sidebar(page)).toBeVisible() // open by default
+    const closedBg = await bgColor(page, "#toggle-sidebar")
     await toggle(page).click()
-    await expect(sidebar(page)).not.toBeVisible() // closed
+    await expect(sidebar(page)).toBeVisible() // opened
+    await page.mouse.move(200, 450) // move off the toggle so :hover doesn't skew the bg
+    expect(await bgColor(page, "#toggle-sidebar")).toBe(closedBg) // no pressed-state highlight
     await toggle(page).click()
-    await expect(sidebar(page)).toBeVisible() // open again
+    await expect(sidebar(page)).not.toBeVisible() // closed again
   })
 
   test("tapping the backdrop closes the drawer (AC-3)", async ({ page }) => {
     await setup(page)
 
+    await toggle(page).click() // open the drawer
     await expect(backdrop(page)).toBeVisible()
     await backdrop(page).click({ position: { x: 350, y: 350 } }) // tap outside the drawer
     await expect(sidebar(page)).not.toBeVisible()
@@ -86,9 +101,29 @@ test.describe("narrow viewport (drawer)", () => {
   test("selecting a note closes the drawer (AC-4)", async ({ page }) => {
     await setup(page)
 
+    await toggle(page).click() // open the drawer to reach the note list
     await page.locator(".note-name", { hasText: "beta" }).click()
     await expect(page.locator("#note-identity")).toContainText("beta")
     await expect(sidebar(page)).not.toBeVisible() // drawer dismissed after navigating
+  })
+
+  test("the narrow drawer state isn't persisted — a reload starts closed (AC-7)", async ({
+    page,
+  }) => {
+    await setup(page)
+
+    await toggle(page).click()
+    await expect(sidebar(page)).toBeVisible() // opened
+    await page.reload()
+    await expect(page.locator("#open-settings")).toBeVisible() // workspace restored
+    await expect(sidebar(page)).not.toBeVisible() // narrow always starts closed
+  })
+
+  test("the toggle sits at the left edge, before the other controls (AC-8)", async ({ page }) => {
+    await setup(page)
+    const tog = await box(page, "#toggle-sidebar")
+    const gear = await box(page, "#open-settings")
+    expect(tog.x).toBeLessThan(gear.x) // ☰ is left of the gear
   })
 })
 

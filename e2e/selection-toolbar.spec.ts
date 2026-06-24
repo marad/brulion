@@ -33,11 +33,9 @@ async function openAndType(page: Page, text: string) {
   await stubPicker(page)
   await page.goto("/brulion/")
   await page.locator("#open-folder").click()
-  await expect(editor(page)).toBeVisible()
-  // Collapse the sidebar so it never overlays the editor (on narrow it opens as a
-  // drawer by default); then the editor is freely interactive.
-  await page.locator("#toggle-sidebar").click()
-  await expect(page.locator("#sidebar")).not.toBeVisible()
+  await expect(page.locator("#open-settings")).toBeVisible() // workspace shown (folder open)
+  // The narrow drawer starts closed (M17 review), so the editor is unobstructed and
+  // freely interactive without collapsing anything.
   await editor(page).click()
   await page.keyboard.type(text)
 }

@@ -60,18 +60,22 @@ close-on-select, no overlay.
 
 ## Constraints
 
-- **One state, two renderings.** The drawer is the same `sidebar-collapsed` state
-  (FEAT-0020) rendered differently by a media query — no second toggle, no separate
-  persisted flag. *Why:* one source of truth; the ☰ button keeps working as-is.
+- **One state, two renderings — but a per-device default.** The drawer is the same
+  `sidebar-collapsed` state (FEAT-0020) rendered differently by a media query (no
+  second toggle). On a narrow viewport, though, it **starts closed and is not
+  persisted**: the saved collapse preference stays purely a desktop setting, and a
+  narrow load never opens the drawer over the editor. *Why:* opening over the note on
+  every phone load is annoying; the persisted pref is desktop-shaped.
+- **Plain toggle button.** The ☰ shows no pressed-state highlight (the layout already
+  shows whether the sidebar/drawer is open); `aria-pressed` stays for screen readers.
 - **Additive, breakpoint-scoped behaviors.** Backdrop-tap-close and
   close-on-select fire only in the narrow layout (guarded by the same breakpoint),
   so desktop interaction is untouched.
-- **CSS-driven layout.** The overlay/full-width/hidden-resizer switch is a media
-  query; the JS only adds the backdrop element and the two close behaviors.
+- **CSS-driven layout.** The overlay/full-width/hidden-resizer switch, the hidden
+  wordmark, and the ☰-to-the-left reorder are a media query; the JS only adds the
+  backdrop element, the two close behaviors, and the narrow start-closed default.
 - **Moat untouched.** No change to storage, the note list contents, or file
   behavior — purely how the existing sidebar and editor are arranged and dismissed.
-- **No regression to the collapse preference.** The persisted collapsed state still
-  loads and is honored; the drawer just reinterprets it visually when narrow.
 
 ## Out of scope
 
@@ -81,22 +85,24 @@ close-on-select, no overlay.
 - **Touch formatting** — FEAT-0052 (M17 P2).
 - **A swipe-to-open gesture** for the drawer — the ☰ button (and backdrop to close)
   is the affordance; edge-swipe is deferred unless asked for.
-- **Per-device collapse defaults** — the single persisted collapsed state is reused
-  as-is; no separate mobile default.
+- **Persisting the narrow drawer's open/closed state** — deliberately ephemeral; a
+  narrow load always starts closed (the desktop preference is the only persisted one).
 
 ## Acceptance criteria
 
-**AC-1** — Narrow viewport renders the sidebar as an overlay drawer.
-Given a narrow viewport with a folder open and the sidebar not collapsed,
+**AC-1** — Narrow viewport: the drawer starts closed and, when opened, overlays.
+Given a narrow viewport with a folder open,
 When the workspace is shown,
-Then the sidebar overlays the editor as a drawer (it does not take layout width from
-the editor, which spans the full width) and a dimmed backdrop covers the rest.
+Then the drawer starts closed (the editor is unobstructed and full-width); and when
+opened it overlays the editor as a drawer (it does not take layout width from the
+editor) with a dimmed backdrop over the rest.
 
-**AC-2** — The ☰ toggle opens and closes the drawer.
+**AC-2** — The ☰ toggle opens and closes the drawer, with no pressed-state highlight.
 Given the narrow layout,
 When the user taps the ☰ toggle,
 Then the drawer opens when it was closed and closes when it was open (the
-sidebar-collapsed state flips), and its pressed state reflects the new state.
+sidebar-collapsed state flips); the ☰ shows no pressed-state background (it is a plain
+button on every viewport).
 
 **AC-3** — Tapping the backdrop closes the drawer.
 Given the narrow layout with the drawer open,
@@ -119,3 +125,15 @@ When a folder is open,
 Then the sidebar sits inline beside the editor (taking layout width), the resize
 handle is present, there is no backdrop, and selecting a note leaves the sidebar
 open — exactly as before this phase.
+
+**AC-7** — The narrow drawer doesn't touch the persisted desktop preference.
+Given a narrow viewport,
+When the user opens or closes the drawer,
+Then the persisted (desktop) collapse preference is not written; and a fresh narrow
+load always starts with the drawer closed regardless of that preference.
+
+**AC-8** — The ☰ toggle sits at the left edge when narrow.
+Given the narrow layout,
+When the header is shown,
+Then the ☰ toggle is at the left edge (where the drawer opens from), with the other
+header controls to the right.
