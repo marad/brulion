@@ -1685,3 +1685,42 @@ YAML.
   local notes.
 - **Render-on-display only.** No authoring aid (live-preview pane, snippet menu) — out
   of scope, consistent with the other rendering milestones.
+
+## M30 — Command palette + customizable action bar
+
+(M30 design, decided up front; refined per phase below)
+
+- **Actions are a first-class model: `Action { id, label, icon?, run() }`, with a
+  registry built in `main.ts`.** The app already has a handful of invocable
+  capabilities scattered as ad-hoc functions (open the switcher, switch folder,
+  toggle Vim, toggle the note list, open settings). M30 names them: each becomes an
+  `Action` in one registry. *Why:* the palette and the configurable bar both need a
+  single, uniform list of "things you can run" with a label and an optional icon;
+  without one model they'd each grow their own. *Consequence:* folder-switch
+  (FEAT-0054) and the Vim toggle (FEAT-0021/0047) — the M30 "migrate onto the action
+  model" bullet — are reframed as registered actions, reachable from the palette and
+  pinnable to the bar; their existing entry points (settings modal, `Ctrl/Cmd+;`)
+  stay unchanged and now just call the action's `run()`.
+- **The command palette is a NEW module sharing the switcher's *pattern*, not the
+  switcher itself.** A separate `command-palette.ts` with its own hidden overlay DOM,
+  mounted stateless like the quick switcher (a `getActions()` dep + run on select). It
+  reuses `fuzzyScore` from `note-search.ts` and mirrors the switcher's keyboard nav /
+  focus-restore / backdrop-click. *Why not reuse `quick-switcher.ts`:* the switcher is
+  note-specific (create-on-miss, `displayName`, recency ranking, omit-the-active-note)
+  — semantics a palette over actions doesn't share. One small focused module per
+  surface beats a generic overlay forked with flags. The shared parts that *are* worth
+  factoring (the fuzzy scorer) are already a standalone pure function.
+- **Palette shortcut: `Ctrl/Cmd+Shift+P`** (the VS Code convention). `Ctrl/Cmd+P` is
+  the browser's print/quick-open and `Ctrl/Cmd+K` is taken by the note switcher; the
+  Shift variant is unclaimed and familiar. Capture-phase listener (so neither
+  CodeMirror nor Vim swallows it), gated on workspace-shown + conflict-hidden + no
+  other modal stacked — matching the existing `Ctrl/Cmd+K`/`,`/`;` handlers.
+- **The configurable action bar is additive; the settings gear stays a fixed
+  anchor.** Pinned actions render as an extra header group of icon+label buttons; the
+  always-present chrome (sidebar toggle, settings gear, install) is untouched. The
+  gear is deliberately **not** pinnable/removable — it's the entry point to the very
+  surface that configures the bar, so letting the user un-pin it would be a footgun.
+  *Consequence:* `Settings.actionBar: string[]` (ordered, pinned action ids) is added
+  to the M16 model; the default is **empty** (no surprise UI — the palette is the
+  discoverable entry, the bar is opt-in); `normalizeSettings` drops unknown/duplicate
+  ids so a hand-edited `.brulion.json` can't break the header.
