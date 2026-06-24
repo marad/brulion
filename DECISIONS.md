@@ -1724,3 +1724,26 @@ YAML.
   to the M16 model; the default is **empty** (no surprise UI — the palette is the
   discoverable entry, the bar is opt-in); `normalizeSettings` drops unknown/duplicate
   ids so a hand-edited `.brulion.json` can't break the header.
+
+(M30 P2, FEAT-0058 — refines the "action bar" decision above)
+
+- **All registered actions are pinnable; no `pinnable` flag.** The up-front design
+  worried about the settings gear being un-pinned and locking the user out. But the
+  gear is a **fixed** header button regardless of the bar, so that lockout can't
+  happen — which makes the pinnability of the "Open settings" action moot. Rather
+  than special-case which actions may be pinned (a flag + two render-time skips), the
+  bar offers **every** registered action; pinning one that already has fixed chrome
+  (e.g. settings, note-list) just adds a convenience button — the user's call,
+  harmless. Simpler and leaner than a capability flag.
+- **Default `actionBar` is empty; unknown ids ignored at render, not in normalize.**
+  `normalizeSettings` stays registry-agnostic (it can't import the registry without a
+  cycle): it only keeps string entries and de-dups. The **bar renderer** resolves each
+  id against the live registry and silently skips misses — so a stale/hand-typed id is
+  harmless and `settings.ts` never needs to know the action ids. Default empty means
+  zero header change for existing vaults (no surprise UI).
+- **Reorder via explicit up/down controls, not drag.** The settings Action-bar section
+  lists registered actions with a pin checkbox; the pinned ones show in order with
+  move-up/down controls. Drag-to-reorder is more code and a second interaction model
+  for a weekend-scale tool — deferred until wanted. Pure list manipulation
+  (`togglePinned`, `movePinned`) lives as unit-tested pure helpers beside the existing
+  UI glue, consistent with `buildNoteTree`.
