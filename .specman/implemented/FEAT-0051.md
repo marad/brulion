@@ -71,9 +71,10 @@ close-on-select, no overlay.
 - **Additive, breakpoint-scoped behaviors.** Backdrop-tap-close and
   close-on-select fire only in the narrow layout (guarded by the same breakpoint),
   so desktop interaction is untouched.
-- **CSS-driven layout.** The overlay/full-width/hidden-resizer switch, the hidden
-  wordmark, and the ☰-to-the-left reorder are a media query; the JS only adds the
-  backdrop element, the two close behaviors, and the narrow start-closed default.
+- **CSS-driven layout.** The overlay/full-width/hidden-resizer switch and the hidden
+  wordmark are a media query; the ☰-to-the-left reorder applies on every viewport
+  (the sidebar is always on the left). The JS only adds the backdrop element, the two
+  close behaviors, and the narrow start-closed default.
 - **Moat untouched.** No change to storage, the note list contents, or file
   behavior — purely how the existing sidebar and editor are arranged and dismissed.
 
@@ -132,8 +133,9 @@ When the user opens or closes the drawer,
 Then the persisted (desktop) collapse preference is not written; and a fresh narrow
 load always starts with the drawer closed regardless of that preference.
 
-**AC-8** — The ☰ toggle sits at the left edge when narrow.
-Given the narrow layout,
+**AC-8** — The ☰ toggle sits at the left edge (every viewport).
+Given a folder is open (narrow or desktop),
 When the header is shown,
-Then the ☰ toggle is at the left edge (where the drawer opens from), with the other
+Then the ☰ toggle is at the left edge — aligned with the sidebar it controls (a
+left-side drawer when narrow, the inline left column on desktop) — with the other
 header controls to the right.
