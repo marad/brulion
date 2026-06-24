@@ -1600,3 +1600,50 @@ YAML.
   wikilink-toggle-only). *Known nit (not P3):* `frontmatter.spec.ts` shows occasional
   load-induced flakiness under the full 8-worker e2e run (a different no-selection test
   each time; passes in isolation) — an e2e-timing fragility, not a product bug.
+
+## M27 — Settings & header polish
+
+(M27 P1, FEAT-0054)
+
+- **Folder switching moved out of the header into the settings modal.** The header's
+  plain "Switch folder" button is gone; the settings modal gained a Folder section
+  (open folder's name + a "Switch folder…" button). *Why:* folder switching is a rare
+  action that spent a permanent header slot; it belongs with the other preferences,
+  and the header stays lean (note identity + sidebar toggle + gear). *Consequence:* the
+  header carries **no** folder indicator at all; the open folder's name is visible in
+  the modal when wanted. The switch reuses the existing open flow unchanged (picker →
+  reload notes + `.brulion.json` → persist handle).
+- **"Switch folder…" closes the modal on click, not on a successful pick.**
+  **Reviewed & kept:** the modal dismisses the moment the button is clicked, then the
+  native picker opens; cancelling the picker leaves you in the editor on the old
+  folder (not back in the modal). *Why:* the native picker takes the whole screen, so
+  holding the modal underneath just to restore it on cancel is artificial — after a
+  cancel most people want to get back to writing. Also simpler (the open flow doesn't
+  report whether a folder was chosen).
+- **Settings entry point is an inline SVG gear, not the `⚙` glyph.** *Why:* the Unicode
+  `⚙` renders inconsistently across OS/fonts (colored emoji, boxy shape) — the very
+  "doesn't look like a gear" complaint that opened M27. An inline SVG renders
+  identically everywhere and inherits the header text color.
+- **The Vim toggle shows its `Ctrl/Cmd+;` shortcut as a `<kbd>` chip beside it.** Added
+  on the user's request mid-build (folded into FEAT-0054 as AC-8, not done off-spec).
+  **Reviewed & kept** as a bare chord chip with no "Shortcut:" label — consistent with
+  the app's existing `<kbd>` hints. *Why:* the chord was otherwise undocumented in the
+  UI.
+
+(M27 P2, FEAT-0055 — decided in the M27 review)
+
+- **Adopt Lucide as the header icon set; drop hand-authored SVGs.** The P1 review found
+  the hand-rolled gear SVG inconsistent beside the ☰ sidebar toggle, and the two header
+  buttons rendered at **different heights** (a text glyph sizes by line-height, an SVG
+  by its box). Resolution: route header icons through a shared icon set rather than
+  hand-authoring one-off SVGs. **Chose Lucide over Font Awesome.** *Why:* Lucide is the
+  maintained successor to Feather, so the P1 gear stays visually the same (no shock);
+  it tree-shakes to only the icons imported (vs FA's webfont — heavy, FOUT, sizing tied
+  to font metrics); and a CDN is off the table since Brulion is an offline-capable PWA
+  on Pages (everything self-hosted in the bundle). Moat-neutral — bundled build-time
+  dep, output is still a static site, no file behavior touched.
+- **Convert the ☰ toggle to the same family and normalize the header buttons.** The ☰
+  becomes a Lucide icon (`PanelLeft` — a show/hide-the-side-panel glyph, clearer than a
+  generic hamburger for a named note-list sidebar), all header icons are sized
+  uniformly, and the header button box is normalized so the controls share one height —
+  the actual fix for the height mismatch the user reported.

@@ -380,6 +380,10 @@ In:
 - **Better settings icon.** The current M16 entry-point glyph doesn't read as a
   gear; swap it for an icon that clearly says "settings" (a real gear, or a
   cleaner alternative). Pure icon swap; the `Ctrl/Cmd+,` shortcut is unchanged.
+- **Consistent icon set (from the M27 review).** Adopt a tree-shakeable icon set
+  (**Lucide**) for the header instead of one-off hand-authored SVGs, convert the ☰
+  sidebar toggle to the same family, and normalize the header buttons to one
+  height. Header chrome only; no file-behavior change.
 
 ## Later / backlog (out of MVP, on purpose)
 
