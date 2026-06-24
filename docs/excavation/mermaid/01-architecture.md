@@ -75,6 +75,17 @@ flowchart TD
 - **Decoration field:** the `DecorationSet`, derived purely from `(doc, selection)`.
   No mutable state of its own.
 
+## Phase 5 refinement — click-to-reveal handler
+
+Implementation surfaced one addition the diagram didn't anticipate: a block-replace
+widget is **atomic**, so a plain click lands the caret on a block boundary, which the
+*strict* selection-overlap rule (chosen so a note opening on a diagram still renders,
+not reveals) deliberately does NOT treat as "inside". To keep click-to-edit working,
+the **Decoration field** module also installs a small `mousedown` handler
+(`EditorView.domEventHandlers`): a click on a rendered diagram moves the caret just
+inside that block, so the next rebuild reveals the raw source. Public surface is
+unchanged (`mermaidRendering: Extension` now bundles the field + this handler).
+
 ## Resolved details (not load-bearing for signatures)
 
 - **Unique render ids:** a module-level incrementing counter, not `Date.now`/

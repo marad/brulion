@@ -6,6 +6,7 @@ import { deleteMarkupBackward } from "@codemirror/lang-markdown"
 import { vim } from "@replit/codemirror-vim"
 import { markdownRendering, linkContext, type LinkContext } from "./markdown-render"
 import { frontmatterRendering } from "./frontmatter"
+import { mermaidRendering } from "./mermaid-render"
 import { ProgrammaticLoad } from "./editor-load"
 import {
   markdownCommands,
@@ -157,6 +158,7 @@ export function mountEditor(
         },
       }),
       markdownRendering, // hide markdown markup; render text as rich content
+      mermaidRendering, // render ```mermaid blocks as diagrams (lazy-loaded)
       frontmatterRendering, // collapse a leading `---…---` block into a metadata chip
       markdownCommands, // Ctrl+B/I/E and heading shortcuts reshape the markdown
       slashCommands, // "/" at line start opens a menu to reshape the line

@@ -1037,3 +1037,35 @@ header button:hover {
   background: #f0e6cf;
   color: #1a1a1a;
 }
+
+/* Mermaid diagrams (FEAT-0056): a rendered ```mermaid block. Centered, with room to
+   breathe; the SVG scales down to fit narrow editors. The error/empty states are
+   discreet in-place boxes, never a crash. */
+.cm-mermaid {
+  display: flex;
+  justify-content: center;
+  padding: 0.6rem 0;
+}
+
+.cm-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.cm-mermaid-error,
+.cm-mermaid-empty {
+  display: block;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid #d8c79a;
+  border-radius: 6px;
+  background: #fbf3df;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+}
+
+.cm-mermaid-error {
+  border-color: #d9a8a0;
+  background: #fbeae7;
+  color: #8a2d22;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
