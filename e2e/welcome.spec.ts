@@ -42,6 +42,13 @@ test("welcome → open folder → workspace, then re-pick (AC-1, AC-4, AC-5)", a
   await expect(page.locator("#welcome")).toBeVisible()
   await expect(page.locator("#sidebar")).toBeHidden()
   await expect(page.locator("#welcome #open-folder")).toBeVisible()
+  // The header controls carry a `hidden` attribute until they apply: the in-note
+  // controls wait for a folder, the Install button for `beforeinstallprompt`. Guard
+  // that `hidden` actually hides them (a header-button `display` rule must not
+  // override the attribute — regression from FEAT-0055).
+  await expect(page.locator("#toggle-sidebar")).toBeHidden()
+  await expect(page.locator("#open-settings")).toBeHidden()
+  await expect(page.locator("#install-app")).toBeHidden()
 
   // Open folder A from the welcome CTA.
   await writeNote(page, FOLDER_A, "alpha.md", "alpha body")

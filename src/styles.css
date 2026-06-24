@@ -37,9 +37,14 @@ header button {
   background: #fff;
   color: #1a1a1a;
   cursor: pointer;
-  /* Center contents (FEAT-0055): the icon buttons hold an injected Lucide icon, so
-     with identical padding the icon buttons resolve to one shared height; harmless
-     on the text buttons, which just center their label. */
+}
+
+/* Center contents (FEAT-0055): the icon buttons hold an injected Lucide icon, so
+   with identical padding the icon buttons resolve to one shared height; harmless on
+   the text buttons, which just center their label. Scoped to `:not([hidden])` so an
+   author `display` never overrides the `hidden` attribute — several header buttons
+   stay `hidden` until they apply (folder open; `beforeinstallprompt`). */
+header button:not([hidden]) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
