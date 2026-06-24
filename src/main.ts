@@ -111,7 +111,8 @@ if (
 // Header icons from Lucide (FEAT-0055): one source for size + look, tree-shaken to
 // just these icons. The class is the CSS sizing hook (`.header-icon`) and lets the
 // icons inherit the header text color via the default `currentColor` stroke.
-const headerIcon = (node: IconNode) => createElement(node, { class: "header-icon" })
+const headerIcon = (node: IconNode) =>
+  createElement(node, { class: "header-icon", "aria-hidden": "true" })
 toggleSidebarEl.replaceChildren(headerIcon(PanelLeft))
 openSettingsEl.replaceChildren(headerIcon(SettingsIcon))
 

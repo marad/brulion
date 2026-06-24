@@ -37,21 +37,20 @@ header button {
   background: #fff;
   color: #1a1a1a;
   cursor: pointer;
+  /* Center contents (FEAT-0055): the icon buttons hold an injected Lucide icon, so
+     with identical padding the icon buttons resolve to one shared height; harmless
+     on the text buttons, which just center their label. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 header button:hover {
   background: #f2f2f1;
 }
 
-/* Header icon buttons (FEAT-0055): center the injected Lucide icon and size every
-   header icon uniformly in one place, so the toggle and the gear share one icon size
-   — and, with identical padding, one button height. */
-header button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
+/* One size for every header icon (FEAT-0055), set in a single place so the toggle
+   and the gear can't drift apart. */
 .header-icon {
   width: 1.15rem;
   height: 1.15rem;
