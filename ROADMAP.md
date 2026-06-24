@@ -16,10 +16,11 @@ Every technical decision defers to that.
 
 > **Execution order (next up), agreed with the user.** M-numbers are **stable
 > identities, not the running order**. M1–M13, **M14**, **M15**, **M16**, **M17**,
-> **M19**, **M20**, **M21**, **M22**, **M23**, and **M25** are done. Next, in priority:
+> **M19**, **M20**, **M21**, **M22**, **M23**, **M25**, and **M27** are done. Next, in
+> priority:
 >
-> the rest as capacity allows: **M18, M24**, and the newest observations
-> **M26** (table rendering) and **M27** (settings & header polish).
+> the rest as capacity allows: **M26** (table rendering), **M18** (light/dark theme),
+> and **M24** (scroll/caret preservation on external refresh).
 >
 > (The user's own pain-ranking: rename + note-URLs + link-autocomplete first, then
 > the search-ranking and frontmatter/copy irritants; settings, sidebar comfort,
