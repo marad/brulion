@@ -24,6 +24,9 @@ export interface Settings {
   editorWidth: EditorWidth
   /** Whether opt-in Vim mode is on. */
   vim: boolean
+  /** Ordered ids of actions pinned to the header action bar (FEAT-0058); empty by
+   * default. Unknown ids are tolerated and ignored when the bar renders. */
+  actionBar: string[]
 }
 
 /** The on-disk settings file at the folder root. */
@@ -42,6 +45,7 @@ export const DEFAULT_SETTINGS: Settings = {
   textSize: 16,
   editorWidth: "narrow",
   vim: false,
+  actionBar: [],
 }
 
 /** Each width preset's CSS `max-width` value for the content column. */
@@ -68,7 +72,21 @@ export function normalizeSettings(raw: unknown): Settings {
     textSize: clampSize(r.textSize),
     editorWidth: isEditorWidth(r.editorWidth) ? r.editorWidth : "narrow",
     vim: Boolean(r.vim),
+    actionBar: Array.isArray(r.actionBar) ? dedupeStrings(r.actionBar) : [],
   }
+}
+
+/** Keep only string entries, dropping duplicates (first occurrence wins). Pure. */
+function dedupeStrings(values: unknown[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const v of values) {
+    if (typeof v === "string" && !seen.has(v)) {
+      seen.add(v)
+      out.push(v)
+    }
+  }
+  return out
 }
 
 /** Round and clamp a candidate text size into [MIN_SIZE, MAX_SIZE]; a non-number

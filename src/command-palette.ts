@@ -60,6 +60,50 @@ export function rankActions(query: string, actions: readonly Action[]): Action[]
 }
 
 /**
+ * Resolve an ordered list of pinned action `ids` to their {@link Action}s against
+ * the registry, preserving id order and **dropping** ids that match no action
+ * (FEAT-0058). Pure & total — a stale/unknown id yields no entry, never a throw.
+ */
+export function resolvePinned(ids: readonly string[], actions: readonly Action[]): Action[] {
+  void ids
+  void actions
+  throw new Error("stub")
+}
+
+/**
+ * Toggle `id` in a pinned-id `list` (FEAT-0058): append it if absent, remove it if
+ * present. Pure — returns a new list, input unchanged.
+ */
+export function togglePinned(list: readonly string[], id: string): string[] {
+  void list
+  void id
+  throw new Error("stub")
+}
+
+/**
+ * Move `id` one slot toward the front (`dir === -1`) or back (`dir === 1`) in a
+ * pinned-id `list` (FEAT-0058), clamped at the ends. An id not in `list`, or a move
+ * past an end, returns an equivalent list. Pure — returns a new list.
+ */
+export function movePinned(list: readonly string[], id: string, dir: -1 | 1): string[] {
+  void list
+  void id
+  void dir
+  throw new Error("stub")
+}
+
+/**
+ * Render `actions` into `container` as the header action bar (FEAT-0058): clear it,
+ * then append one icon+label `<button class="action-bar-button">` per action, each
+ * wired to that action's `run`. An action with no icon renders label-only.
+ */
+export function renderActionBar(container: HTMLElement, actions: readonly Action[]): void {
+  void container
+  void actions
+  throw new Error("stub")
+}
+
+/**
  * Mount the command palette over its (hidden) DOM nodes and wire its internal events
  * (input filtering, arrow/Enter/Esc keys, row clicks, backdrop click). The host adds
  * the `Ctrl/Cmd+Shift+P` shortcut that calls `open()`. Running an action closes the

@@ -122,6 +122,16 @@ describe("normalizeSettings (AC-3)", () => {
     expect(normalizeSettings({}).vim).toBe(false)
   })
 
+  it("FEAT-0058 AC-1: keeps actionBar string ids in order, dropping non-strings and dups", () => {
+    expect(normalizeSettings({ actionBar: ["goto", "vim", "goto", 7, null, "vim", "x"] }).actionBar).toEqual([
+      "goto",
+      "vim",
+      "x",
+    ])
+    expect(normalizeSettings({}).actionBar).toEqual([])
+    expect(normalizeSettings({ actionBar: "goto" }).actionBar).toEqual([]) // not an array
+  })
+
   it("AC-3: returns the defaults for a non-object input", () => {
     expect(normalizeSettings(null)).toEqual(DEFAULT_SETTINGS)
     expect(normalizeSettings(undefined)).toEqual(DEFAULT_SETTINGS)
@@ -162,6 +172,7 @@ describe("loadSettings / saveSettings round-trip (AC-5, AC-2)", () => {
       textSize: 20,
       editorWidth: "wider",
       vim: true,
+      actionBar: ["toggle-vim", "switch-folder"],
     }
     await saveSettings(folder.dir, settings)
     expect(folder.has(SETTINGS_FILE)).toBe(true)
@@ -193,6 +204,7 @@ describe("loadSettings / saveSettings round-trip (AC-5, AC-2)", () => {
       textSize: 24,
       editorWidth: "narrow",
       vim: true,
+      actionBar: [],
     })
   })
 })
@@ -204,7 +216,7 @@ describe("applySettings DOM variables", () => {
     try {
       applySettings(
         view,
-        { font: [], textSize: 20, editorWidth: "wider", vim: false },
+        { font: [], textSize: 20, editorWidth: "wider", vim: false, actionBar: [] },
         root,
       )
       expect(root.style.getPropertyValue("--editor-font-size")).toBe("20px")

@@ -20,6 +20,13 @@ import type { FontChoices } from "./font-access"
 
 const FONT_CHOICES: FontChoices = { source: "preset", families: ["Georgia", "Menlo"] }
 
+// The registry meta the host hands the modal (FEAT-0058): id + label per action.
+const ACTION_META = [
+  { id: "goto", label: "Go to note…" },
+  { id: "switch-folder", label: "Switch folder…" },
+  { id: "toggle-vim", label: "Toggle Vim mode" },
+]
+
 function makeHandlers(initial: Settings, folderName = "vault") {
   const state: { current: Settings; folderName: string } = {
     current: { ...initial },
@@ -35,6 +42,7 @@ function makeHandlers(initial: Settings, folderName = "vault") {
     resolveFontChoices: () => Promise.resolve(FONT_CHOICES),
     getFolderName: () => state.folderName,
     onSwitchFolder,
+    getActions: () => ACTION_META,
   }
   return { handlers, onChange, onSwitchFolder, state }
 }
@@ -115,6 +123,7 @@ describe("mountSettingsModal open/seed (FEAT-0048 AC-1)", () => {
       textSize: 20,
       editorWidth: "wider",
       vim: true,
+      actionBar: [],
     }
     const { backdrop, handle } = mount(initial)
 
@@ -351,5 +360,59 @@ describe("mountSettingsModal dismiss (FEAT-0048 AC-1)", () => {
 
     backdrop.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
     expect(document.activeElement).toBe(opener) // and is handed back on close
+  })
+})
+
+describe("Action bar section (FEAT-0058 AC-4, AC-5)", () => {
+  // DOM contract: each registered action is a row identified by `data-action-id`,
+  // with a checkbox (checked === pinned). A pinned row also has "Move up"/"Move
+  // down" controls (queried by aria-label).
+  const actionRow = (root: HTMLElement, id: string) =>
+    root.querySelector<HTMLElement>(`[data-action-id="${id}"]`)!
+  const rowCheckbox = (root: HTMLElement, id: string) =>
+    actionRow(root, id).querySelector<HTMLInputElement>('input[type="checkbox"]')!
+  const moveButton = (root: HTMLElement, id: string, label: string) =>
+    actionRow(root, id).querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)
+
+  it("pins a previously-unpinned action when its checkbox is checked", () => {
+    const { backdrop, handle, onChange } = mount(DEFAULT_SETTINGS) // actionBar: []
+    handle.open()
+
+    const box = rowCheckbox(backdrop, "goto")
+    expect(box.checked).toBe(false)
+    box.checked = true
+    box.dispatchEvent(new Event("change", { bubbles: true }))
+
+    expect(onChange).toHaveBeenCalledWith({ actionBar: ["goto"] })
+  })
+
+  it("unpins a pinned action when its checkbox is unchecked", () => {
+    const { backdrop, handle, onChange } = mount({ ...DEFAULT_SETTINGS, actionBar: ["toggle-vim"] })
+    handle.open()
+
+    const box = rowCheckbox(backdrop, "toggle-vim")
+    expect(box.checked).toBe(true)
+    box.checked = false
+    box.dispatchEvent(new Event("change", { bubbles: true }))
+
+    expect(onChange).toHaveBeenCalledWith({ actionBar: [] })
+  })
+
+  it("reorders pinned actions with the move controls", () => {
+    const { backdrop, handle, onChange } = mount({
+      ...DEFAULT_SETTINGS,
+      actionBar: ["goto", "toggle-vim"],
+    })
+    handle.open()
+
+    moveButton(backdrop, "goto", "Move down")!.click()
+    expect(onChange).toHaveBeenCalledWith({ actionBar: ["toggle-vim", "goto"] })
+  })
+
+  it("shows no move controls for an unpinned action", () => {
+    const { backdrop, handle } = mount(DEFAULT_SETTINGS)
+    handle.open()
+    expect(moveButton(backdrop, "goto", "Move up")).toBeNull()
+    expect(moveButton(backdrop, "goto", "Move down")).toBeNull()
   })
 })
