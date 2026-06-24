@@ -19,8 +19,9 @@ Every technical decision defers to that.
 > **M19**, **M20**, **M21**, **M22**, **M23**, **M25**, **M27**, and **M28** are done.
 > Next, in priority:
 >
-> the rest as capacity allows: **M26** (table rendering), **M18** (light/dark theme),
-> and **M24** (scroll/caret preservation on external refresh).
+> the rest as capacity allows: **M26** (table rendering), **M29** (editable code-fence
+> markers), **M18** (light/dark theme), and **M24** (scroll/caret preservation on
+> external refresh).
 >
 > (The user's own pain-ranking: rename + note-URLs + link-autocomplete first, then
 > the search-ranking and frontmatter/copy irritants; settings, sidebar comfort,
@@ -407,6 +408,20 @@ In:
 
 Out (for now): a Mermaid *authoring* aid (live preview pane, snippet menu); this is
 render-on-display only, like the other M-rendering milestones.
+
+### M29 — Reveal code-fence markers when editing inside
+**Goal:** make a fenced code block's markers editable. Today (since M5/FEAT-0016) the
+opening ```` ```lang ```` and closing ```` ``` ```` lines are **always** hidden, so a
+typo in the fence or its info string (e.g. ```` ```mermiad ````, or changing
+```` ```js ```` → ```` ```ts ````) can't be fixed in place. Surfaced during the M28
+review. Editor-only, no file-behavior change.
+
+In:
+- When the selection/cursor is **inside** a fenced code block, stop hiding the fence
+  lines — reveal the backticks + info string so they're editable; re-hide on the way
+  out. The same reveal-on-selection pattern links already use; the change lives in
+  `markdown-render.ts` (`blockSyntaxRanges`). Applies to **all** fenced blocks
+  (Mermaid benefits for free — revealing a diagram then shows its ```` ```mermaid ````).
 
 ## Later / backlog (out of MVP, on purpose)
 
