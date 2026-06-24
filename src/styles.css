@@ -43,6 +43,14 @@ header button:hover {
   background: #f2f2f1;
 }
 
+/* The settings button holds an inline SVG gear (FEAT-0054); center it in the
+   button so the icon sits on the same baseline as the text controls beside it. */
+#open-settings {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* Brand wordmark. The open-note identity (when shown) carries the
    `margin-right: auto` that pushes the header controls to the right edge; before
    a folder opens the identity is hidden and the lone wordmark sits left. */
@@ -822,6 +830,56 @@ header button:hover {
   gap: 0.3rem;
   font-size: 0.9rem;
   cursor: pointer;
+}
+
+/* Vim row: the checkbox plus a keycap chip for its toggle shortcut (FEAT-0054). */
+.settings-vim-control {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.settings-shortcut {
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid #d8c79a;
+  border-radius: 4px;
+  background: #fbf3df;
+  color: #6b5d36;
+  white-space: nowrap;
+}
+
+/* Folder row: the open folder's name beside a switch-folder button (FEAT-0054). */
+.settings-folder {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.settings-folder-name {
+  font-size: 0.9rem;
+  color: #555;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 11rem;
+}
+
+.settings-switch-folder {
+  font: inherit;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid #d8c79a;
+  border-radius: 6px;
+  background: #fff;
+  color: #1a1a1a;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.settings-switch-folder:hover {
+  background: #fbf3df;
 }
 
 #editor {

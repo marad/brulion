@@ -362,7 +362,6 @@ export interface WorkspaceRefs {
   sidebar: HTMLElement
   toggleSidebar: HTMLElement
   settings: HTMLElement
-  reopen: HTMLElement
   identity: HTMLElement
   resizer: HTMLElement
 }
@@ -379,7 +378,6 @@ export function showWorkspace(refs: WorkspaceRefs): void {
   refs.sidebar.hidden = false
   refs.toggleSidebar.hidden = false
   refs.settings.hidden = false
-  refs.reopen.hidden = false
   refs.identity.hidden = false
   refs.resizer.hidden = false // the sidebar is on screen now, so the resize handle applies (FEAT-0044)
 }

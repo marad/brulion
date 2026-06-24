@@ -125,6 +125,61 @@ test("the font control lists options and choosing one applies + persists (AC-7, 
   await expect.poll(async () => (await readSettings(page, folder)).font).toEqual([])
 })
 
+test("the Folder section names the open folder; the gear is an SVG (FEAT-0054 AC-1, AC-5, AC-6)", async ({
+  page,
+}) => {
+  await openFolder(page, "e2e-sm-folder")
+
+  // AC-6: the entry point renders an inline SVG gear, not the ⚙ glyph.
+  await expect(page.locator("#open-settings svg")).toBeVisible()
+  await expect(page.locator("#open-settings")).not.toContainText("⚙")
+  // AC-5: the header keeps no folder button.
+  await expect(page.locator("#reopen-folder")).toHaveCount(0)
+
+  await page.locator("#open-settings").click()
+  // AC-1: the Folder section names the open folder and offers a switch button.
+  await expect(page.locator(".settings-folder-name")).toHaveText("e2e-sm-folder")
+  await expect(page.locator(".settings-switch-folder")).toBeVisible()
+})
+
+test("Switch folder… opens another folder and dismisses the modal (FEAT-0054 AC-2, AC-3)", async ({
+  page,
+}) => {
+  // A picker that returns whichever folder __pick names, so one stub can open two.
+  await page.addInitScript(() => {
+    ;(window as unknown as { __pick: string }).__pick = "e2e-sm-switch-a"
+    window.showDirectoryPicker = async () => {
+      const root = await navigator.storage.getDirectory()
+      const which = (window as unknown as { __pick: string }).__pick
+      return await root.getDirectoryHandle(which, { create: true })
+    }
+  })
+  await page.goto("/brulion/")
+  // Seed the second folder with a distinctive note.
+  await page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory()
+    const dir = await root.getDirectoryHandle("e2e-sm-switch-b", { create: true })
+    const h = await dir.getFileHandle("zeta.md", { create: true })
+    const w = await h.createWritable()
+    await w.write("zeta body")
+    await w.close()
+  })
+  await page.locator("#open-folder").click()
+  await expect(page.locator("#note-identity")).toBeVisible()
+
+  await page.locator("#open-settings").click()
+  await expect(backdrop(page)).toBeVisible()
+  // Point the stub at folder B, then switch from inside the modal.
+  await page.evaluate(() => {
+    ;(window as unknown as { __pick: string }).__pick = "e2e-sm-switch-b"
+  })
+  await page.locator(".settings-switch-folder").click()
+
+  // AC-3: the modal is dismissed; AC-2: folder B's note is now listed.
+  await expect(backdrop(page)).toBeHidden()
+  await expect(page.locator(".note-name")).toHaveText(["zeta"])
+})
+
 test("the modal closes on Esc and on a backdrop click (AC-9)", async ({ page }) => {
   await openFolder(page, "e2e-sm-close")
 

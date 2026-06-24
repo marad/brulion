@@ -396,7 +396,6 @@ describe("showWorkspace (FEAT-0031)", () => {
     const sidebar = el()
     const toggleSidebar = el()
     const settings = el()
-    const reopen = el()
     const identity = el()
     const resizer = el()
     // Pre-folder state: hero shown, controls hidden.
@@ -404,17 +403,15 @@ describe("showWorkspace (FEAT-0031)", () => {
     sidebar.hidden = true
     toggleSidebar.hidden = true
     settings.hidden = true
-    reopen.hidden = true
     identity.hidden = true
     resizer.hidden = true
 
-    showWorkspace({ welcome, sidebar, toggleSidebar, settings, reopen, identity, resizer })
+    showWorkspace({ welcome, sidebar, toggleSidebar, settings, identity, resizer })
 
     expect(welcome.hidden).toBe(true)
     expect(sidebar.hidden).toBe(false)
     expect(toggleSidebar.hidden).toBe(false)
     expect(settings.hidden).toBe(false)
-    expect(reopen.hidden).toBe(false)
     expect(identity.hidden).toBe(false)
     expect(resizer.hidden).toBe(false)
   })

@@ -4,6 +4,7 @@ import { createNoteController, type NoteController } from "./note-controller"
 import { mountConflictDiff, type ConflictDiff } from "./conflict-view"
 import {
   wireOpenFolder,
+  openFolder,
   restoreFolder,
   renderNoteList,
   wireToggle,
@@ -63,7 +64,6 @@ const openSettingsEl = document.querySelector<HTMLButtonElement>("#open-settings
 const settingsBackdropEl = document.querySelector<HTMLElement>("#settings-backdrop")
 const noteIdentityEl = document.querySelector<HTMLElement>("#note-identity")
 const missingNoteEl = document.querySelector<HTMLElement>("#missing-note")
-const reopenButton = document.querySelector<HTMLButtonElement>("#reopen-folder")
 const listEl = document.querySelector<HTMLElement>("#note-list")
 const sidebarSearchEl = document.querySelector<HTMLButtonElement>("#sidebar-search")
 const switcherBackdropEl = document.querySelector<HTMLDivElement>("#switcher-backdrop")
@@ -90,7 +90,6 @@ if (
   !settingsBackdropEl ||
   !noteIdentityEl ||
   !missingNoteEl ||
-  !reopenButton ||
   !listEl ||
   !sidebarSearchEl ||
   !switcherBackdropEl ||
@@ -312,7 +311,6 @@ controller = createNoteController(view, {
       sidebar: sidebarEl,
       toggleSidebar: toggleSidebarEl,
       settings: openSettingsEl,
-      reopen: reopenButton,
       identity: noteIdentityEl,
       resizer: sidebarResizerEl,
     })
@@ -490,9 +488,8 @@ keepButton.addEventListener("click", () => void controller.resolveKeepMine())
 diskButton.addEventListener("click", () => void controller.resolveTakeTheirs())
 
 wireOpenFolder(openButton, resumeButton, openNote)
-// Re-pick a different folder once one is open (FEAT-0031): same open flow, driven
-// from the header (the welcome CTA is hidden behind the workspace by then).
-wireOpenFolder(reopenButton, resumeButton, openNote)
+// Re-picking a different folder once one is open (FEAT-0031) now lives in the
+// settings modal's Folder section (FEAT-0054), wired below via onSwitchFolder.
 // Try to silently re-attach to the last folder, then settle the first-paint
 // state: the loading overlay gives way to the workspace (if a folder restored) or
 // the welcome screen (if not) — so the welcome never flashes before an
@@ -545,6 +542,10 @@ settingsModal = mountSettingsModal(settingsBackdropEl, {
   getSettings: () => currentSettings,
   onChange: updateSettings,
   resolveFontChoices,
+  // The open folder's name for the modal's Folder section, and the switch action —
+  // the same open flow the old header button drove (FEAT-0054).
+  getFolderName: () => settingsDir?.name ?? "",
+  onSwitchFolder: () => void openFolder(resumeButton, openNote),
 })
 // Two entry points open it: the header gear and `Ctrl/Cmd+,`. The gear replaces the
 // old header Vim button (Vim now lives inside the modal).

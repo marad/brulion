@@ -53,13 +53,16 @@ test("welcome → open folder → workspace, then re-pick (AC-1, AC-4, AC-5)", a
   await expect(page.locator("#sidebar")).toBeVisible()
   await expect(page.locator(".note-name")).toHaveText(["alpha"])
 
-  // AC-5: re-pick a different folder from the header; its notes show, hero stays gone.
+  // AC-5: re-pick a different folder from the settings modal (FEAT-0054); its notes
+  // show, the modal closes, and the hero stays gone.
   await writeNote(page, FOLDER_B, "beta.md", "beta body")
   await page.evaluate(() => {
     ;(window as unknown as { __pick: string }).__pick = "e2e-welcome-b"
   })
-  await page.locator("#reopen-folder").click()
+  await page.locator("#open-settings").click()
+  await page.locator(".settings-switch-folder").click()
 
   await expect(page.locator(".note-name")).toHaveText(["beta"])
+  await expect(page.locator("#settings-backdrop")).toBeHidden()
   await expect(page.locator("#welcome")).toBeHidden()
 })

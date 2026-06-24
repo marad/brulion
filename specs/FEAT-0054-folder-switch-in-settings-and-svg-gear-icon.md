@@ -52,6 +52,13 @@ character. The button's behavior is unchanged: it opens the modal on click, keep
 its `aria-label`/`title` of "Settings" (with the platform-correct `Ctrl/Cmd+,`
 shortcut hint), and the `Ctrl/Cmd+,` shortcut itself is untouched.
 
+**Vim shortcut hint.** The Vim toggle (relocated into the modal by FEAT-0048) can be
+flipped from the keyboard with `Ctrl/Cmd+;`, but that chord is otherwise
+undocumented in the UI. The modal's Vim control shows the **platform-correct chord**
+(`Ctrl+;` / `⌘;`) as a key-chip beside the toggle — consistent with the app's
+existing `<kbd>` shortcut chips — so the shortcut is discoverable from the settings
+surface. Hint only; the toggle and the `Ctrl/Cmd+;` binding are unchanged.
+
 ## Constraints
 
 - **Reuse the open flow, don't fork it.** "Switch folder…" drives the same
@@ -116,3 +123,9 @@ inheriting the header text color.
 Given a folder is open,
 When the user clicks the gear or presses `Ctrl/Cmd+,`,
 Then the settings modal opens, and the button keeps its "Settings" accessible label.
+
+**AC-8** — The Vim control shows its toggle shortcut.
+Given the settings modal is open,
+When the user views the Vim mode control,
+Then the platform-correct toggle shortcut (`Ctrl+;` on non-Mac, `⌘;` on Mac) is
+shown beside it.

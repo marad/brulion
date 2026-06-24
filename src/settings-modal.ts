@@ -15,6 +15,11 @@ export interface SettingsModalHandlers {
   onChange: (patch: Partial<Settings>) => void
   /** Resolve the selectable font families (local or preset). */
   resolveFontChoices: () => Promise<FontChoices>
+  /** The open folder's name, shown in the Folder section (FEAT-0054). */
+  getFolderName: () => string
+  /** The user asked to switch folder; the host runs the open-folder flow
+   * (FEAT-0054). The modal has already dismissed itself by the time this fires. */
+  onSwitchFolder: () => void
 }
 
 export interface SettingsModalHandle {
@@ -103,13 +108,36 @@ export function mountSettingsModal(
   })
   const widthRow = labeledRow("Editor width", widthControl)
 
-  // Vim — a checkbox.
+  // Vim — a checkbox plus a key-chip documenting the toggle shortcut (FEAT-0054).
+  // The chord is layout-correct per platform, matching the app's other <kbd> hints.
   const vimCheckbox = document.createElement("input")
   vimCheckbox.type = "checkbox"
   vimCheckbox.className = "settings-vim"
-  const vimRow = labeledRow("Vim mode", vimCheckbox)
+  const isMac = /mac/i.test(navigator.platform)
+  const vimHint = document.createElement("kbd")
+  vimHint.className = "settings-shortcut"
+  vimHint.textContent = isMac ? "⌘;" : "Ctrl+;"
+  vimHint.title = "Toggle Vim mode"
+  const vimControl = document.createElement("div")
+  vimControl.className = "settings-vim-control"
+  vimControl.append(vimCheckbox, vimHint)
+  const vimRow = labeledRow("Vim mode", vimControl)
 
-  dialog.append(titleBar, fontRow, sizeRow, widthRow, vimRow)
+  // Folder — the open folder's name + a button that switches folders (FEAT-0054).
+  // Switching reloads the workspace and this folder's settings, so the click closes
+  // the modal (below) before handing off to the host's open-folder flow.
+  const folderName = document.createElement("span")
+  folderName.className = "settings-folder-name"
+  const switchFolder = document.createElement("button")
+  switchFolder.type = "button"
+  switchFolder.className = "settings-switch-folder"
+  switchFolder.textContent = "Switch folder…"
+  const folderControl = document.createElement("div")
+  folderControl.className = "settings-folder"
+  folderControl.append(folderName, switchFolder)
+  const folderRow = labeledRow("Folder", folderControl)
+
+  dialog.append(titleBar, fontRow, sizeRow, widthRow, vimRow, folderRow)
   backdrop.append(dialog)
 
   let isOpen = false
@@ -138,6 +166,7 @@ export function mountSettingsModal(
     sizeInc.disabled = s.textSize >= MAX_SIZE
     for (const r of widthRadios) r.checked = r.value === s.editorWidth
     vimCheckbox.checked = s.vim
+    folderName.textContent = handlers.getFolderName()
     const family = s.font[0] ?? DEFAULT_FONT_VALUE
     // Keep the select honest if the active family isn't (yet) an option — e.g. a
     // font set on another machine. Without this the value would snap to "Default".
@@ -177,6 +206,14 @@ export function mountSettingsModal(
     restoreFocus = null
   }
   closeButton.addEventListener("click", close)
+  // Switching folders reloads the very settings this modal shows, so dismiss it
+  // first, then hand off to the host's open-folder flow (FEAT-0054). A cancelled
+  // picker is a no-op there, leaving the open folder untouched — the modal just
+  // stays closed.
+  switchFolder.addEventListener("click", () => {
+    close()
+    handlers.onSwitchFolder()
+  })
   backdrop.addEventListener("click", (event) => {
     if (event.target === backdrop) close() // a click on the backdrop, not the dialog
   })
