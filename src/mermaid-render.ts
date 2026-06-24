@@ -74,6 +74,10 @@ function selectionTouches(state: EditorState, from: number, to: number): boolean
  * editable. Pure (constructs widgets but does not render them).
  */
 export function mermaidDecorations(state: EditorState): DecorationSet {
+  // Note: `markdown-render.ts`'s block field also decorates this same range (it styles
+  // any closed fenced block as a code box). A block `replace` here hides those lines,
+  // so the two coexist; the live coexistence is guarded by e2e (a render that threw a
+  // decoration RangeError would surface as a page error there).
   const builder = new RangeSetBuilder<Decoration>()
   for (const block of findMermaidBlocks(state)) {
     if (selectionTouches(state, block.from, block.to)) continue

@@ -50,12 +50,19 @@ const PLAIN = "# Just prose\n\nNo diagrams here.\n"
 const isMermaidChunk = (url: string) => /mermaid|flowdiagram/i.test(url) && !url.includes("/src/")
 
 test("a valid ```mermaid block renders an SVG diagram (AC-1)", async ({ page }) => {
+  // Catch any uncaught error during render — notably a CodeMirror decoration conflict
+  // between this block-replace field and markdown-render's block field over the same
+  // range (the two-field coexistence is only observable in a live editor).
+  const errors: string[] = []
+  page.on("pageerror", (e) => errors.push(String(e)))
+
   await stubPicker(page)
   await page.goto("/brulion/")
   await seedNote(page, "start.md", FLOWCHART)
   await page.locator("#open-folder").click()
   // The engine loads lazily; once it resolves the diagram appears as an SVG.
   await expect(page.locator(".cm-mermaid svg")).toBeVisible({ timeout: 10000 })
+  expect(errors).toEqual([])
 })
 
 test("rendering never rewrites the bytes (AC-2)", async ({ page }) => {
