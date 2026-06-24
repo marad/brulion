@@ -1,7 +1,8 @@
 import { test, expect, type Page } from "@playwright/test"
 
-// M17 P2 (FEAT-0052): a floating formatting toolbar over a non-empty selection in a
-// touch/narrow context, reusing the FEAT-0007 transforms; absent on desktop mouse.
+// M17 P2/P3 (FEAT-0052/FEAT-0053): a floating formatting toolbar over a non-empty
+// selection — the single formatting surface on desktop and touch (on desktop it
+// appears once a pointer drag settles), reusing the FEAT-0007 transforms.
 
 const FOLDER = "e2e-selection-toolbar"
 
@@ -73,14 +74,28 @@ test.describe("touch / narrow context", () => {
   })
 })
 
-test.describe("desktop mouse (wide viewport)", () => {
+test.describe("desktop (wide viewport) — unified toolbar (FEAT-0053)", () => {
   test.use({ viewport: { width: 1280, height: 800 } })
 
-  test("the toolbar never appears (AC-4)", async ({ page }) => {
+  test("a keyboard selection shows the toolbar and Bold applies (AC-1, AC-3)", async ({ page }) => {
     await openAndType(page, "word")
-    await page.keyboard.press("Shift+Home") // a real selection
-    await expect(editor(page)).toBeFocused()
-    // No floating toolbar on a fine-pointer wide viewport — right-click/shortcuts stay.
-    await expect(toolbar(page)).toHaveCount(0)
+    await page.keyboard.press("Shift+Home") // select "word" (no pointer drag)
+    await expect(toolbar(page)).toBeVisible() // toolbar now appears on desktop too
+
+    await toolbar(page).locator('button[aria-label="Bold"]').click()
+    await page.keyboard.press("Control+s")
+    await expect.poll(() => readStartMd(page)).toBe("**word**")
+  })
+
+  test("a pointer drag-select shows the toolbar only on mouse-up (AC-2)", async ({ page }) => {
+    await openAndType(page, "hello world this is a longer line")
+    const line = (await page.locator(".cm-line").first().boundingBox())!
+    const y = line.y + line.height / 2
+    await page.mouse.move(line.x + 4, y)
+    await page.mouse.down()
+    await page.mouse.move(line.x + line.width - 4, y, { steps: 8 }) // drag-select
+    await expect(toolbar(page)).not.toBeVisible() // hidden mid-drag (no flicker)
+    await page.mouse.up()
+    await expect(toolbar(page)).toBeVisible() // appears once the selection settles
   })
 })

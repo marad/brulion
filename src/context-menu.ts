@@ -1,15 +1,15 @@
 import { EditorView, ViewPlugin } from "@codemirror/view"
 import { type Extension } from "@codemirror/state"
-import { type MenuItem, FORMAT_ITEMS } from "./format-actions"
+import { type MenuItem } from "./format-actions"
 import { linkContext } from "./markdown-render"
 import { computeWikilinkToggle } from "./wikilink"
 
 /**
- * Right-click formatting popup. Replaces the native context menu inside the
- * editor with a small on-demand menu (no always-visible toolbar) whose items
- * reuse the FEAT-0007 transforms, so the on-disk result is the same clean
- * markdown the shortcuts produce. Heading/clear apply per line across the whole
- * selection; bold/italic/code toggle the selection.
+ * The right-click menu (FEAT-0009), reduced in M17 P3 (FEAT-0053) to its one
+ * position-based item: the **wikilink-form toggle**. Formatting moved to the selection
+ * toolbar (FEAT-0052/FEAT-0053). So this menu opens *only* when the click lands on a
+ * togglable wikilink; on plain text it does nothing and the browser's native menu is
+ * left to show.
  */
 
 /** The single open menu and the teardown that removes it + its listeners. */
@@ -20,32 +20,32 @@ function closeMenu() {
   close = null
 }
 
-/** The formatting items plus, when the right-click lands on a wikilink that points
- * at a nested note with a unique basename, a leading item to switch the link
- * between its full-path and name-only forms (FEAT-0037). */
-function itemsFor(view: EditorView, x: number, y: number): MenuItem[] {
+/** The wikilink-form toggle item for a right-click at `(x, y)`, when the click lands
+ * on a wikilink that points at a nested note with a unique basename — else `null` (no
+ * menu). The single item this menu still hosts (FEAT-0053). */
+function toggleItemFor(view: EditorView, x: number, y: number): MenuItem | null {
   const pos = view.posAtCoords({ x, y })
-  if (pos == null) return FORMAT_ITEMS
+  if (pos == null) return null
   const toggle = computeWikilinkToggle(
     view.state.doc.toString(),
     pos,
     view.state.facet(linkContext).notePaths,
   )
-  if (!toggle) return FORMAT_ITEMS
-  return [
-    { label: toggle.label, run: () => ({ changes: { from: toggle.from, to: toggle.to, insert: toggle.insert } }) },
-    ...FORMAT_ITEMS,
-  ]
+  if (!toggle) return null
+  return {
+    label: toggle.label,
+    run: () => ({ changes: { from: toggle.from, to: toggle.to, insert: toggle.insert } }),
+  }
 }
 
-function openMenu(view: EditorView, x: number, y: number) {
+function openMenu(view: EditorView, x: number, y: number, items: MenuItem[]) {
   closeMenu()
 
   const menu = document.createElement("div")
   menu.className = "cm-context-menu"
   menu.setAttribute("role", "menu")
 
-  for (const item of itemsFor(view, x, y)) {
+  for (const item of items) {
     const button = document.createElement("button")
     button.type = "button"
     button.setAttribute("role", "menuitem")
@@ -96,11 +96,14 @@ function openMenu(view: EditorView, x: number, y: number) {
   }
 }
 
-/** Opens our popup on right-click instead of the browser's native menu. */
+/** Opens our one-item toggle popup only when the right-click lands on a togglable
+ * wikilink; otherwise falls through to the browser's native menu (FEAT-0053). */
 const contextMenuHandler = EditorView.domEventHandlers({
   contextmenu(event, view) {
+    const item = toggleItemFor(view, event.clientX, event.clientY)
+    if (!item) return false // plain text → leave the native context menu
     event.preventDefault()
-    openMenu(view, event.clientX, event.clientY)
+    openMenu(view, event.clientX, event.clientY, [item])
     return true
   },
 })

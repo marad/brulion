@@ -1,5 +1,9 @@
 import { test, expect, type Page } from "@playwright/test"
 
+// FEAT-0009, reduced in M17 P3 (FEAT-0053): the right-click menu is now the
+// wikilink-form toggle only — formatting moved to the selection toolbar. So the menu
+// opens only on a togglable wikilink; plain-text right-click leaves the native menu.
+
 const FOLDER = "e2e-context-menu-folder"
 
 async function stubPicker(page: Page) {
@@ -11,13 +15,30 @@ async function stubPicker(page: Page) {
   }, FOLDER)
 }
 
+// Seed a nested target note and a start note linking to it by full path, so the
+// wikilink has a form toggle (its basename `target` is unique → "Use name only").
+async function seed(page: Page) {
+  await page.evaluate(async (folder) => {
+    const root = await navigator.storage.getDirectory()
+    const dir = await root.getDirectoryHandle(folder, { create: true })
+    const sub = await dir.getDirectoryHandle("sub", { create: true })
+    const t = await sub.getFileHandle("target.md", { create: true })
+    let w = await t.createWritable()
+    await w.write("target body")
+    await w.close()
+    const s = await dir.getFileHandle("start.md", { create: true })
+    w = await s.createWritable()
+    await w.write("see [[sub/target]] here\n")
+    await w.close()
+  }, FOLDER)
+}
+
 async function readStartMd(page: Page): Promise<string | null> {
   return await page.evaluate(async (folder) => {
     const root = await navigator.storage.getDirectory()
     const dir = await root.getDirectoryHandle(folder, { create: true })
     try {
-      const handle = await dir.getFileHandle("start.md")
-      return await (await handle.getFile()).text()
+      return await (await (await dir.getFileHandle("start.md")).getFile()).text()
     } catch {
       return null
     }
@@ -26,112 +47,44 @@ async function readStartMd(page: Page): Promise<string | null> {
 
 const editor = (page: Page) => page.locator(".cm-content")
 const cmenu = (page: Page) => page.locator(".cm-context-menu")
-const item = (page: Page, label: string) =>
-  page.locator(".cm-context-menu button", { hasText: label })
-
-async function openMenu(page: Page) {
-  await editor(page).click({ button: "right" })
-  await expect(cmenu(page)).toBeVisible()
-}
+const wikilink = (page: Page) => page.locator("[data-note]").first()
 
 test.beforeEach(async ({ page }) => {
   await stubPicker(page)
   await page.goto("/brulion/")
+  await seed(page)
   await page.locator("#open-folder").click()
-  await editor(page).click()
+  await expect(wikilink(page)).toBeVisible() // start.md (with the link) is open
 })
 
-test("right-click opens the custom formatting menu (AC-1)", async ({ page }) => {
-  await page.keyboard.type("hello")
-  await openMenu(page)
-  await expect(page.locator(".cm-context-menu button")).toHaveText([
-    "Bold",
-    "Italic",
-    "Code",
-    "Heading 1",
-    "Heading 2",
-    "Heading 3",
-    "Clear formatting",
-  ])
-})
-
-test("Heading 2 applies to every line of a multi-line selection (AC-2)", async ({
+test("right-clicking a togglable wikilink opens a one-item toggle menu (FEAT-0009 AC-1)", async ({
   page,
 }) => {
-  await page.keyboard.type("a\nb\nc")
-  await page.keyboard.press("Control+a")
-  await openMenu(page)
-  await item(page, "Heading 2").click()
+  await wikilink(page).click({ button: "right" })
+  await expect(cmenu(page)).toBeVisible()
+  // Exactly one item — the form toggle — and no formatting items (FEAT-0053 AC-3/AC-5).
+  await expect(cmenu(page).locator("button")).toHaveCount(1)
+  await expect(cmenu(page).locator("button")).toHaveText("Use name only")
 
+  await cmenu(page).locator("button").click()
   await page.keyboard.press("Control+s")
-  await expect.poll(() => readStartMd(page)).toBe("## a\n## b\n## c")
+  await expect.poll(() => readStartMd(page)).toBe("see [[target]] here\n") // switched to name-only
 })
 
-test("Bold wraps the selection (AC-3)", async ({ page }) => {
-  await page.keyboard.type("word")
-  await page.keyboard.press("Control+a")
-  await openMenu(page)
-  await item(page, "Bold").click()
-
-  await page.keyboard.press("Control+s")
-  await expect.poll(() => readStartMd(page)).toBe("**word**")
+test("right-clicking plain text opens no custom menu (FEAT-0053 AC-4)", async ({ page }) => {
+  // Right-click in the prose, away from the link.
+  await editor(page).click({ button: "right", position: { x: 4, y: 4 } })
+  // No custom menu — the browser's native menu is left to appear.
+  await expect(cmenu(page)).toHaveCount(0)
 })
 
-test("Bold across multiple lines stays valid markdown (per-line)", async ({
+test("the toggle menu dismisses on Esc without changing the document (FEAT-0009 AC-4)", async ({
   page,
 }) => {
-  // Wrapping the whole span would write `**a\nb**` (straddles block boundaries,
-  // invalid CommonMark). Each line must be wrapped on its own.
-  await page.keyboard.type("a\nb")
-  await page.keyboard.press("Control+a")
-  await openMenu(page)
-  await item(page, "Bold").click()
-
-  await page.keyboard.press("Control+s")
-  await expect.poll(() => readStartMd(page)).toBe("**a**\n**b**")
-})
-
-test("Clear formatting strips headings across the selection (AC-4)", async ({
-  page,
-}) => {
-  await page.keyboard.type("# one\n## two")
-  await page.keyboard.press("Control+a")
-  await openMenu(page)
-  await item(page, "Clear formatting").click()
-
-  await page.keyboard.press("Control+s")
-  await expect.poll(() => readStartMd(page)).toBe("one\ntwo")
-})
-
-test("Clear formatting unwraps inline marks too, not just headings (AC-1/AC-9)", async ({
-  page,
-}) => {
-  // The M5 gap: the menu used to clear only headings. It must now strip inline
-  // marks as well — matching what /clear does (AC-9, the single shared transform).
-  await page.keyboard.type("a **b** and *i* and `c`")
-  await page.keyboard.press("Control+a")
-  await openMenu(page)
-  await item(page, "Clear formatting").click()
-
-  await page.keyboard.press("Control+s")
-  await expect.poll(() => readStartMd(page)).toBe("a b and i and c")
-})
-
-test("Esc dismisses the menu without changing the document (AC-5)", async ({
-  page,
-}) => {
-  await page.keyboard.type("keep me")
-  await openMenu(page)
+  const before = await readStartMd(page)
+  await wikilink(page).click({ button: "right" })
+  await expect(cmenu(page)).toBeVisible()
   await page.keyboard.press("Escape")
-  await expect(cmenu(page)).toBeHidden()
-
-  await page.keyboard.press("Control+s")
-  await expect.poll(() => readStartMd(page)).toBe("keep me")
-})
-
-test("clicking outside dismisses the menu (AC-5)", async ({ page }) => {
-  await page.keyboard.type("text")
-  await openMenu(page)
-  await page.locator("header").click()
-  await expect(cmenu(page)).toBeHidden()
+  await expect(cmenu(page)).toHaveCount(0)
+  expect(await readStartMd(page)).toBe(before)
 })
