@@ -1647,3 +1647,41 @@ YAML.
   generic hamburger for a named note-list sidebar), all header icons are sized
   uniformly, and the header button box is normalized so the controls share one height —
   the actual fix for the height mismatch the user reported.
+
+## M28 — Mermaid diagram rendering
+
+(M28 P1, FEAT-0056)
+
+- **Render `mermaid` fenced blocks visually; never touch the bytes.** A closed
+  `FencedCode` node with info string `mermaid` is replaced by a rendered SVG widget
+  (`Decoration.replace({ widget, block: true })` from a `StateField`, the same
+  block-decoration mechanism as code blocks/frontmatter). The diagram source stays a
+  plain fenced code block on disk. *Why:* consistent with the M5/M15/M23/M26
+  rendering family and the file-fidelity moat — decorate display only, no
+  parse-and-reserialize.
+- **Lazy-load Mermaid via a dynamic `import("mermaid")` singleton.** Mermaid is large
+  (tens of MB unbundled); it must not sit in the main bundle. A module-level promise
+  imports it once, on first need; notes without a Mermaid block never load it, so the
+  editor stays instant. *Consequence:* the engine is a separate Vite chunk; the
+  runtime-caching service worker (FEAT-0029) caches it on first online load, so
+  offline use works after the diagram has been seen once. *Considered & declined:*
+  bundling Mermaid eagerly (kills the lean fast-load + bloats every page load) and a
+  CDN (breaks the offline-PWA / self-hosted stance).
+- **Selection-overlap reveals the raw source; otherwise render the diagram.** Reuses
+  the established reveal pattern (rebuild on `selectionSet`): cursor/selection inside
+  the block → show the fenced source for editing; outside → show the diagram. *Why:*
+  one consistent editing affordance across rendered constructs, and no
+  reveal-on-every-keystroke churn.
+- **Async widget with source-keyed `eq()`.** `toDOM()` returns a placeholder
+  synchronously and the diagram renders into it asynchronously (Mermaid's
+  `render()` is promise-based). The widget's `eq()` compares the diagram source, so a
+  rebuild from an unrelated edit reuses the existing DOM and never re-runs Mermaid for
+  an unchanged block. A stale async render (widget destroyed before the promise
+  resolves) is dropped.
+- **Parse/render errors show in place, not as a crash.** An invalid diagram renders a
+  discreet error box (the message) instead of throwing or leaving a broken SVG; the
+  user reveals the raw source (selection) to fix it. Mermaid runs at its default
+  `securityLevel` (strict, sanitizing) — fine here since the content is the user's own
+  local notes.
+- **Render-on-display only.** No authoring aid (live-preview pane, snippet menu) — out
+  of scope, consistent with the other rendering milestones.
