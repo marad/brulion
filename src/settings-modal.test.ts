@@ -20,26 +20,32 @@ import type { FontChoices } from "./font-access"
 
 const FONT_CHOICES: FontChoices = { source: "preset", families: ["Georgia", "Menlo"] }
 
-function makeHandlers(initial: Settings) {
-  const state: { current: Settings } = { current: { ...initial } }
+function makeHandlers(initial: Settings, folderName = "vault") {
+  const state: { current: Settings; folderName: string } = {
+    current: { ...initial },
+    folderName,
+  }
   const onChange = vi.fn((patch: Partial<Settings>) => {
     state.current = { ...state.current, ...patch }
   })
+  const onSwitchFolder = vi.fn()
   const handlers: SettingsModalHandlers = {
     getSettings: () => state.current,
     onChange,
     resolveFontChoices: () => Promise.resolve(FONT_CHOICES),
+    getFolderName: () => state.folderName,
+    onSwitchFolder,
   }
-  return { handlers, onChange, state }
+  return { handlers, onChange, onSwitchFolder, state }
 }
 
-function mount(initial: Settings = DEFAULT_SETTINGS) {
+function mount(initial: Settings = DEFAULT_SETTINGS, folderName = "vault") {
   const backdrop = document.createElement("div")
   backdrop.hidden = true
   document.body.append(backdrop)
-  const { handlers, onChange, state } = makeHandlers(initial)
+  const { handlers, onChange, onSwitchFolder, state } = makeHandlers(initial, folderName)
   const handle = mountSettingsModal(backdrop, handlers)
-  return { backdrop, handle, onChange, state }
+  return { backdrop, handle, onChange, onSwitchFolder, state }
 }
 
 // --- generic control queries (no class/tag pinning) ---
@@ -56,6 +62,17 @@ const widthRadios = (root: HTMLElement) =>
 
 const widthRadio = (root: HTMLElement, value: string) =>
   widthRadios(root).find((r) => r.value === value)!
+
+// True if some leaf element's exact text is `text` (used to assert the folder name
+// and the Vim shortcut chip without pinning their class/tag).
+const hasLeafText = (root: HTMLElement, text: string) =>
+  [...root.querySelectorAll<HTMLElement>("*")].some(
+    (el) => el.children.length === 0 && (el.textContent ?? "").trim() === text,
+  )
+
+// The "Switch folder…" button, found by its label rather than a class.
+const switchFolderButton = (root: HTMLElement) =>
+  buttons(root).find((b) => /switch folder/i.test(b.textContent ?? ""))!
 
 const selectedWidth = (root: HTMLElement) =>
   widthRadios(root).find((r) => r.checked)?.value
@@ -249,6 +266,52 @@ describe("mountSettingsModal sync (FEAT-0048 AC-9)", () => {
     handle.sync()
 
     expect(backdrop.hidden).toBe(true)
+  })
+})
+
+describe("mountSettingsModal folder section (FEAT-0054 AC-1, AC-3)", () => {
+  it("shows the open folder's name from getFolderName()", async () => {
+    const { backdrop, handle } = mount(DEFAULT_SETTINGS, "diablo-notes")
+    handle.open()
+    await flush()
+
+    expect(hasLeafText(backdrop, "diablo-notes")).toBe(true)
+    expect(switchFolderButton(backdrop)).toBeTruthy()
+  })
+
+  it("re-seeds the folder name on sync()", async () => {
+    const { backdrop, handle, state } = mount(DEFAULT_SETTINGS, "old-folder")
+    handle.open()
+    await flush()
+    expect(hasLeafText(backdrop, "old-folder")).toBe(true)
+
+    state.folderName = "new-folder"
+    handle.sync()
+
+    expect(hasLeafText(backdrop, "new-folder")).toBe(true)
+  })
+
+  it("clicking Switch folder… calls onSwitchFolder once and closes the modal", async () => {
+    const { backdrop, handle, onSwitchFolder } = mount(DEFAULT_SETTINGS)
+    handle.open()
+    await flush()
+    expect(backdrop.hidden).toBe(false)
+
+    switchFolderButton(backdrop).click()
+
+    expect(onSwitchFolder).toHaveBeenCalledTimes(1)
+    expect(backdrop.hidden).toBe(true) // dismissed before the picker appears
+  })
+})
+
+describe("mountSettingsModal vim shortcut hint (FEAT-0054 AC-8)", () => {
+  it("shows the platform-correct toggle chord beside the Vim control", async () => {
+    const { backdrop, handle } = mount(DEFAULT_SETTINGS)
+    handle.open()
+    await flush()
+
+    // happy-dom reports a non-Mac platform, so the chord is the Ctrl form.
+    expect(hasLeafText(backdrop, "Ctrl+;") || hasLeafText(backdrop, "⌘;")).toBe(true)
   })
 })
 
