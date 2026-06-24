@@ -18,7 +18,8 @@ Every technical decision defers to that.
 > identities, not the running order**. M1–M13, **M14**, **M15**, **M16**, **M17**,
 > **M19**, **M20**, **M21**, **M22**, **M23**, and **M25** are done. Next, in priority:
 >
-> the rest as capacity allows: **M18, M24**.
+> the rest as capacity allows: **M18, M24**, and the newest observations
+> **M26** (table rendering) and **M27** (settings & header polish).
 >
 > (The user's own pain-ranking: rename + note-URLs + link-autocomplete first, then
 > the search-ranking and frontmatter/copy irritants; settings, sidebar comfort,
@@ -348,6 +349,37 @@ In:
 
 Out (for now): a global rename-any-note (not just the active one) surface; undo of
 a multi-file rename.
+
+> M26–M27 below come from a later round of real daily-use observations
+> (after the M19–M24 batch). Unscheduled for now — slot into the execution
+> order at the top when they go active.
+
+### M26 — Table rendering
+**Goal:** a leading-pipe markdown table (`| a | b |` + the `|---|` separator row)
+renders as a real aligned table, not raw pipes and dashes. Same spirit as M5
+(rendering gaps) and M15 (highlighting): **visual only** — moat-critical that we
+do NOT touch the bytes. Likely CodeMirror decorations in `markdown-render.ts`.
+
+In:
+- Detect a contiguous table block (header row + separator + body rows) and render
+  it with aligned columns and cell borders; honor the separator's alignment hints
+  (`:---`, `:--:`, `---:`).
+- Stays plain pipe-delimited markdown in the document; decorate rendering only,
+  bytes unchanged — consistent with the M23 frontmatter stance.
+- Editing UX (how the cursor behaves inside a rendered table, whether cells stay
+  editable in place vs. revealing raw on the active row) decided at spec time.
+
+### M27 — Settings & header polish
+**Goal:** two small follow-ups to the M16 settings modal, both from real use; no
+change to file behavior.
+
+In:
+- **Move "change folder" into Settings.** Relocate the folder-switch action out of
+  the header into the M16 settings modal, so the header stays lean and folder
+  switching lives with the other preferences.
+- **Better settings icon.** The current M16 entry-point glyph doesn't read as a
+  gear; swap it for an icon that clearly says "settings" (a real gear, or a
+  cleaner alternative). Pure icon swap; the `Ctrl/Cmd+,` shortcut is unchanged.
 
 ## Later / backlog (out of MVP, on purpose)
 
