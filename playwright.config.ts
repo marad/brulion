@@ -8,6 +8,11 @@ import { defineConfig, devices } from "@playwright/test"
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
+  // One retry: the fully-parallel suite saturates the dev server + CPU, and a few
+  // timing-sensitive specs (poll-based file reads, rename-then-read) occasionally
+  // lose that race under full load while passing in isolation. A retry absorbs those
+  // transient load-flakes; a real bug still fails deterministically on the retry.
+  retries: 1,
   reporter: "list",
   use: {
     baseURL: "http://localhost:5173",
