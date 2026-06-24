@@ -1,5 +1,13 @@
 import "./styles.css"
-import { createElement, Settings as SettingsIcon, PanelLeft, type IconNode } from "lucide"
+import {
+  createElement,
+  Settings as SettingsIcon,
+  PanelLeft,
+  Search,
+  FolderOpen,
+  Keyboard,
+  type IconNode,
+} from "lucide"
 import { mountEditor, setEditorEditable, setLinkContext } from "./editor"
 import { createNoteController, type NoteController } from "./note-controller"
 import { mountConflictDiff, type ConflictDiff } from "./conflict-view"
@@ -16,6 +24,7 @@ import {
   type NoteIdentityHandle,
 } from "./ui"
 import { mountQuickSwitcher } from "./quick-switcher"
+import { mountCommandPalette, type Action } from "./command-palette"
 import {
   saveSidebarCollapsed,
   loadSidebarCollapsed,
@@ -52,6 +61,10 @@ const MOBILE = window.matchMedia("(max-width: 40rem)")
  * toggle is wired. A no-op on desktop (and before wiring). Used after a note-select
  * so the drawer dismisses to reveal the note. */
 let dismissDrawerIfMobile = (): void => {}
+/** Toggle the note-list sidebar — assigned once the sidebar toggle is wired (it
+ * lives inside an async restore callback). A no-op before then. Used by the
+ * "Toggle note list" command-palette action (FEAT-0057). */
+let toggleNoteList = (): void => {}
 
 const editorEl = document.querySelector<HTMLDivElement>("#editor")
 const workspaceEl = document.querySelector<HTMLElement>(".workspace")
@@ -71,6 +84,9 @@ const switcherBackdropEl = document.querySelector<HTMLDivElement>("#switcher-bac
 const switcherInputEl = document.querySelector<HTMLInputElement>("#switcher-input")
 const switcherListEl = document.querySelector<HTMLElement>("#switcher-list")
 const switcherErrorEl = document.querySelector<HTMLElement>("#switcher-error")
+const paletteBackdropEl = document.querySelector<HTMLDivElement>("#palette-backdrop")
+const paletteInputEl = document.querySelector<HTMLInputElement>("#palette-input")
+const paletteListEl = document.querySelector<HTMLElement>("#palette-list")
 const openButton = document.querySelector<HTMLButtonElement>("#open-folder")
 const resumeButton = document.querySelector<HTMLButtonElement>("#resume-access")
 const installButton = document.querySelector<HTMLButtonElement>("#install-app")
@@ -97,6 +113,9 @@ if (
   !switcherInputEl ||
   !switcherListEl ||
   !switcherErrorEl ||
+  !paletteBackdropEl ||
+  !paletteInputEl ||
+  !paletteListEl ||
   !openButton ||
   !resumeButton ||
   !installButton ||
@@ -414,7 +433,8 @@ window.addEventListener(
       event.key.toLowerCase() === "k" &&
       workspaceShown &&
       conflictBackdropEl.hidden && // the conflict modal must stay the only forward path
-      settingsBackdropEl.hidden // don't stack the switcher over an open settings modal
+      settingsBackdropEl.hidden && // don't stack the switcher over an open settings modal
+      paletteBackdropEl.hidden // …nor over an open command palette (FEAT-0057)
     ) {
       event.preventDefault()
       switcher.open()
@@ -537,6 +557,7 @@ void loadSidebarCollapsed().then((collapsed) => {
   dismissDrawerIfMobile = () => {
     if (MOBILE.matches) closeDrawer()
   }
+  toggleNoteList = () => sidebar.toggle() // expose to the command palette (FEAT-0057)
   window.addEventListener("keydown", (event) => {
     if (event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && event.key === "\\") {
       event.preventDefault()
@@ -560,6 +581,59 @@ settingsModal = mountSettingsModal(settingsBackdropEl, {
 // old header Vim button (Vim now lives inside the modal).
 openSettingsEl.addEventListener("click", () => settingsModal?.open())
 
+// Action registry + command palette (FEAT-0057/M30 P1). Actions are the app's
+// invocable capabilities named as first-class `{ id, label, icon?, run }` records;
+// the palette lists them for fuzzy-search + run, and folder-switch / Vim toggle
+// thereby "migrate onto the action model" (their existing entry points keep working
+// and now share the same `run`). The `run` closures reference live host state, so
+// the registry must live here (the only place that has the switcher handle, the
+// open-folder flow, toggleVim, the sidebar toggle, and the settings modal in scope).
+// Icons come from the M27 Lucide set; the palette sizes them via `.palette-icon`.
+const actions: Action[] = [
+  { id: "goto", label: "Go to note…", icon: Search, run: () => switcher.open() },
+  {
+    id: "switch-folder",
+    label: "Switch folder…",
+    icon: FolderOpen,
+    run: () => void openFolder(resumeButton, openNote),
+  },
+  { id: "toggle-vim", label: "Toggle Vim mode", icon: Keyboard, run: toggleVim },
+  // `toggleNoteList` is a reassigned `let` (the real sidebar handle exists only inside
+  // the async restore callback), so wrap the call — passing it bare would freeze the
+  // no-op stub at registry-build time. (toggleVim above is a const, so it's safe bare.)
+  { id: "toggle-note-list", label: "Toggle note list", icon: PanelLeft, run: () => toggleNoteList() },
+  { id: "open-settings", label: "Open settings", icon: SettingsIcon, run: () => settingsModal?.open() },
+]
+const palette = mountCommandPalette(
+  { backdrop: paletteBackdropEl, input: paletteInputEl, list: paletteListEl },
+  { getActions: () => actions },
+)
+// `Ctrl/Cmd+Shift+P` opens the palette (the VS Code convention; `Ctrl/Cmd+P` is the
+// browser's and `Ctrl/Cmd+K` is the switcher's). Capture-phase + `event.code` so
+// neither CodeMirror nor the Vim layer swallows it and it's layout-proof. Gated like
+// the other shortcuts: a folder must be open, the conflict modal must be the only
+// forward path, and we never stack over another open modal (switcher/settings).
+window.addEventListener(
+  "keydown",
+  (event) => {
+    if (
+      (event.ctrlKey || event.metaKey) &&
+      event.shiftKey &&
+      !event.altKey &&
+      event.code === "KeyP" &&
+      workspaceShown &&
+      conflictBackdropEl.hidden &&
+      switcherBackdropEl.hidden &&
+      settingsBackdropEl.hidden &&
+      !palette.isOpen()
+    ) {
+      event.preventDefault()
+      palette.open()
+    }
+  },
+  true,
+)
+
 // Opt-in Vim mode (FEAT-0021), now backed by the per-vault settings file
 // (M16/FEAT-0047) instead of idb, and toggled from inside the settings modal or via
 // the `Ctrl/Cmd+;` chord — both flip `settings.vim` through updateSettings, which
@@ -575,7 +649,9 @@ window.addEventListener(
   "keydown",
   (event) => {
     if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
-    if (!workspaceShown || !conflictBackdropEl.hidden) return
+    // Don't fire these chords behind an open modal: the conflict modal must stay the
+    // only forward path, and the command palette (FEAT-0057) is modal too.
+    if (!workspaceShown || !conflictBackdropEl.hidden || !paletteBackdropEl.hidden) return
     if (event.code === "Semicolon") {
       event.preventDefault()
       toggleVim()

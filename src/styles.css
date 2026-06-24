@@ -521,7 +521,8 @@ header button:hover {
 /* Quick switcher (FEAT-0033): a modal find-or-create palette. Same backdrop
    pattern as the conflict modal, but anchored near the top (palette convention)
    and calmer — a tool, not an alert. */
-#switcher-backdrop {
+#switcher-backdrop,
+#palette-backdrop {
   position: fixed;
   inset: 0;
   z-index: 100;
@@ -532,11 +533,13 @@ header button:hover {
   background: rgb(0 0 0 / 22%);
 }
 
-#switcher-backdrop[hidden] {
+#switcher-backdrop[hidden],
+#palette-backdrop[hidden] {
   display: none;
 }
 
-#switcher {
+#switcher,
+#palette {
   display: flex;
   flex-direction: column;
   width: min(34rem, 100%);
@@ -548,7 +551,8 @@ header button:hover {
   overflow: hidden;
 }
 
-#switcher-input {
+#switcher-input,
+#palette-input {
   font: inherit;
   font-size: 1.05rem;
   flex: 0 0 auto;
@@ -559,7 +563,8 @@ header button:hover {
   color: #1a1a1a;
 }
 
-#switcher-input:focus {
+#switcher-input:focus,
+#palette-input:focus {
   outline: none;
 }
 
@@ -580,7 +585,8 @@ header button:hover {
 /* The scroll area: take the remaining height and scroll, rather than letting the
    column distribute its overflow by shrinking the rows. `min-height: 0` lets a
    flex child shrink below its content so `overflow-y` actually engages. */
-#switcher-list {
+#switcher-list,
+#palette-list {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -591,7 +597,8 @@ header button:hover {
 }
 
 .switch-row,
-.switch-create {
+.switch-create,
+.palette-row {
   font: inherit;
   /* Keep their natural height — without this the rows shrink to fit a long list
      (height shrinking with item count), instead of the list scrolling. */
@@ -613,8 +620,29 @@ header button:hover {
 }
 
 .switch-row.active,
-.switch-create.active {
+.switch-create.active,
+.palette-row.active {
   background: #ececec;
+}
+
+/* A palette row lays out an optional Lucide icon beside the label (FEAT-0057). The
+   label takes the ellipsis so a long action name truncates, not the icon. */
+.palette-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.palette-icon {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  stroke: currentColor;
+}
+
+.palette-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Conflict resolution is modal: the open note changed on disk under unsaved

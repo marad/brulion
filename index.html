@@ -43,6 +43,18 @@
         <div id="switcher-list" aria-label="Results"></div>
       </div>
     </div>
+    <div id="palette-backdrop" hidden>
+      <div id="palette" role="dialog" aria-modal="true" aria-label="Run a command">
+        <input
+          id="palette-input"
+          type="text"
+          placeholder="Run a command…"
+          aria-label="Run a command"
+          autocomplete="off"
+        />
+        <div id="palette-list" aria-label="Actions"></div>
+      </div>
+    </div>
     <div id="conflict-backdrop" hidden>
       <div id="conflict" role="alertdialog" aria-modal="true" aria-label="Note changed on disk">
         <p>This note changed on disk. Keep your version or take the one on disk?</p>
