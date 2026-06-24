@@ -24,7 +24,7 @@ import {
   type NoteIdentityHandle,
 } from "./ui"
 import { mountQuickSwitcher } from "./quick-switcher"
-import { mountCommandPalette, type Action } from "./command-palette"
+import { mountCommandPalette, renderActionBar, resolvePinned, type Action } from "./command-palette"
 import {
   saveSidebarCollapsed,
   loadSidebarCollapsed,
@@ -65,6 +65,10 @@ let dismissDrawerIfMobile = (): void => {}
  * lives inside an async restore callback). A no-op before then. Used by the
  * "Toggle note list" command-palette action (FEAT-0057). */
 let toggleNoteList = (): void => {}
+/** Repaint the header action bar from the current settings — assigned once the
+ * action registry exists. A no-op before then. Called on folder open and after any
+ * settings change (FEAT-0058). */
+let refreshActionBar = (): void => {}
 
 const editorEl = document.querySelector<HTMLDivElement>("#editor")
 const workspaceEl = document.querySelector<HTMLElement>(".workspace")
@@ -75,6 +79,7 @@ const toggleSidebarEl = document.querySelector<HTMLButtonElement>("#toggle-sideb
 const sidebarResizerEl = document.querySelector<HTMLElement>("#sidebar-resizer")
 const sidebarBackdropEl = document.querySelector<HTMLElement>("#sidebar-backdrop")
 const openSettingsEl = document.querySelector<HTMLButtonElement>("#open-settings")
+const actionBarEl = document.querySelector<HTMLElement>("#action-bar")
 const settingsBackdropEl = document.querySelector<HTMLElement>("#settings-backdrop")
 const noteIdentityEl = document.querySelector<HTMLElement>("#note-identity")
 const missingNoteEl = document.querySelector<HTMLElement>("#missing-note")
@@ -104,6 +109,7 @@ if (
   !sidebarResizerEl ||
   !sidebarBackdropEl ||
   !openSettingsEl ||
+  !actionBarEl ||
   !settingsBackdropEl ||
   !noteIdentityEl ||
   !missingNoteEl ||
@@ -283,6 +289,7 @@ let loadingSettings = false
 const updateSettings = (patch: Partial<Settings>) => {
   currentSettings = { ...currentSettings, ...patch }
   applySettings(view, currentSettings)
+  refreshActionBar() // a changed actionBar (or any setting) repaints the header bar
   settingsModal?.sync()
   void persistSettings()
 }
@@ -341,6 +348,7 @@ controller = createNoteController(view, {
       settings: openSettingsEl,
       identity: noteIdentityEl,
       resizer: sidebarResizerEl,
+      actionBar: actionBarEl,
     })
     // Feed the editor the open note + known paths so links render valid-vs-broken
     // and a follow resolves relative to the right note (FEAT-0025).
@@ -463,6 +471,7 @@ const openNote = async (dir: FileSystemDirectoryHandle) => {
     loadingSettings = false
   }
   applySettings(view, currentSettings)
+  refreshActionBar() // paint this folder's pinned action bar (FEAT-0058)
   settingsModal?.sync() // reflect this folder's settings if the modal is open
   if (!initialRouteConsumed) {
     // First folder open: the URL hash (a bookmark/reload) beats the persisted
@@ -576,6 +585,8 @@ settingsModal = mountSettingsModal(settingsBackdropEl, {
   // the same open flow the old header button drove (FEAT-0054).
   getFolderName: () => settingsDir?.name ?? "",
   onSwitchFolder: () => void openFolder(resumeButton, openNote),
+  // The registry's id/label for the Action bar section (FEAT-0058).
+  getActions: () => actions.map((a) => ({ id: a.id, label: a.label })),
 })
 // Two entry points open it: the header gear and `Ctrl/Cmd+,`. The gear replaces the
 // old header Vim button (Vim now lives inside the modal).
@@ -608,6 +619,12 @@ const palette = mountCommandPalette(
   { backdrop: paletteBackdropEl, input: paletteInputEl, list: paletteListEl },
   { getActions: () => actions },
 )
+// The header action bar (FEAT-0058) renders the pinned actions (settings.actionBar),
+// resolved against the registry so an unknown/stale id is silently skipped. Painted
+// now (covers the case where a folder restored before this point) and on every
+// settings change / folder open via the forward-declared refreshActionBar.
+refreshActionBar = () => renderActionBar(actionBarEl, resolvePinned(currentSettings.actionBar, actions))
+refreshActionBar()
 // `Ctrl/Cmd+Shift+P` opens the palette (the VS Code convention; `Ctrl/Cmd+P` is the
 // browser's and `Ctrl/Cmd+K` is the switcher's). Capture-phase + `event.code` so
 // neither CodeMirror nor the Vim layer swallows it and it's layout-proof. Gated like

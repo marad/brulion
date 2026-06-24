@@ -415,4 +415,18 @@ describe("Action bar section (FEAT-0058 AC-4, AC-5)", () => {
     expect(moveButton(backdrop, "goto", "Move up")).toBeNull()
     expect(moveButton(backdrop, "goto", "Move down")).toBeNull()
   })
+
+  it("keeps focus on the same control across a section rebuild (sync)", () => {
+    const { backdrop, handle } = mount({ ...DEFAULT_SETTINGS, actionBar: ["goto", "toggle-vim"] })
+    handle.open()
+    const down = moveButton(backdrop, "goto", "Move down")!
+    down.focus()
+    expect(document.activeElement).toBe(down)
+
+    handle.sync() // what updateSettings triggers after a change — rebuilds the section
+
+    const rebuilt = moveButton(backdrop, "goto", "Move down")!
+    expect(rebuilt).not.toBe(down) // it really is a fresh node
+    expect(document.activeElement).toBe(rebuilt) // …and focus followed it
+  })
 })

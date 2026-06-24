@@ -247,7 +247,7 @@ describe("applySettings DOM variables", () => {
     try {
       applySettings(
         view,
-        { font: ["Menlo", "Courier New"], textSize: 16, editorWidth: "narrow", vim: false },
+        { font: ["Menlo", "Courier New"], textSize: 16, editorWidth: "narrow", vim: false, actionBar: [] },
         root,
       )
       expect(root.style.getPropertyValue("--font-stack")).toBe(

@@ -62,6 +62,27 @@ header button:hover {
   display: block;
 }
 
+/* Customizable action bar (FEAT-0058): a header group of pinned-action buttons,
+   each an icon + label. Empty (and `hidden`) by default, so it's invisible until
+   the user pins something. */
+.action-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.action-bar[hidden] {
+  display: none;
+}
+.action-bar-button {
+  gap: 0.3rem;
+}
+.action-bar-icon {
+  width: 1.05rem;
+  height: 1.05rem;
+  display: block;
+  stroke: currentColor;
+}
+
 /* Brand wordmark. The open-note identity (when shown) carries the
    `margin-right: auto` that pushes the header controls to the right edge; before
    a folder opens the identity is hidden and the lone wordmark sits left. */
@@ -918,6 +939,40 @@ header button:hover {
 }
 
 .settings-switch-folder:hover {
+  background: #fbf3df;
+}
+
+/* Action bar section (FEAT-0058): a column of action rows (checkbox + label, and
+   move-up/down for the pinned ones). Right-aligned in its settings row. */
+.settings-actionbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 14rem;
+}
+.settings-action-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.settings-action-label {
+  flex: 1;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.settings-action-move {
+  font: inherit;
+  line-height: 1;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid #d8c79a;
+  border-radius: 6px;
+  background: #fff;
+  color: #1a1a1a;
+  cursor: pointer;
+}
+.settings-action-move:hover {
   background: #fbf3df;
 }
 

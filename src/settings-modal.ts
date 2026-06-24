@@ -1,5 +1,13 @@
 import { MIN_SIZE, MAX_SIZE, type Settings, type EditorWidth } from "./settings"
 import type { FontChoices } from "./font-access"
+import { togglePinned, movePinned } from "./command-palette"
+
+/** The minimal action metadata the modal needs to list pinnable actions (FEAT-0058);
+ * the host maps the full action registry down to this. */
+export interface ActionMeta {
+  id: string
+  label: string
+}
 
 /**
  * The settings modal (FEAT-0048): the visible surface over the P1 settings engine.
@@ -20,6 +28,9 @@ export interface SettingsModalHandlers {
   /** The user asked to switch folder; the host runs the open-folder flow
    * (FEAT-0054). The modal has already dismissed itself by the time this fires. */
   onSwitchFolder: () => void
+  /** The registered actions (id + label) offered for pinning to the action bar
+   * (FEAT-0058); the host maps its FEAT-0057 action registry to this. */
+  getActions: () => readonly ActionMeta[]
 }
 
 export interface SettingsModalHandle {
@@ -137,7 +148,14 @@ export function mountSettingsModal(
   folderControl.append(folderName, switchFolder)
   const folderRow = labeledRow("Folder", folderControl)
 
-  dialog.append(titleBar, fontRow, sizeRow, widthRow, vimRow, folderRow)
+  // Action bar (FEAT-0058) — pin/unpin + reorder the actions shown in the header.
+  // Rebuilt by seed() from the current settings; placed last so the earlier control
+  // queries (e.g. the Vim checkbox) are unaffected by its inputs.
+  const actionBarControl = document.createElement("div")
+  actionBarControl.className = "settings-actionbar"
+  const actionBarRow = labeledRow("Action bar", actionBarControl)
+
+  dialog.append(titleBar, fontRow, sizeRow, widthRow, vimRow, folderRow, actionBarRow)
   backdrop.append(dialog)
 
   let isOpen = false
@@ -155,6 +173,61 @@ export function mountSettingsModal(
   // to refresh the controls. The modal owns no settings state, so emit does not
   // re-seed itself.
   const emit = (patch: Partial<Settings>) => handlers.onChange(patch)
+
+  // Rebuild the Action bar section from the current settings (FEAT-0058): pinned
+  // actions first, in their pinned order with move-up/down controls, then the rest
+  // unpinned (registry order). A pinned id with no matching registered action is
+  // skipped (can't show a label) — consistent with the bar ignoring unknown ids.
+  const renderActionBarSection = () => {
+    const pinned = handlers.getSettings().actionBar
+    const all = handlers.getActions()
+    // Preserve keyboard focus across the rebuild (replaceChildren detaches the very
+    // control that fired the change): remember which control (action id + kind) was
+    // focused, then restore the equivalent one — so repeated reorder/pin keystrokes
+    // don't drop focus to <body>.
+    const focused = focusKeyWithin(actionBarControl)
+    const ordered: { meta: ActionMeta; isPinned: boolean }[] = [
+      ...pinned
+        .map((id) => all.find((a) => a.id === id))
+        .filter((a): a is ActionMeta => a !== undefined)
+        .map((meta) => ({ meta, isPinned: true })),
+      ...all.filter((a) => !pinned.includes(a.id)).map((meta) => ({ meta, isPinned: false })),
+    ]
+    actionBarControl.replaceChildren()
+    for (const { meta, isPinned } of ordered) {
+      const row = document.createElement("div")
+      row.className = "settings-action-row"
+      row.dataset.actionId = meta.id
+
+      const pin = document.createElement("input")
+      pin.type = "checkbox"
+      pin.checked = isPinned
+      pin.addEventListener("change", () =>
+        emit({ actionBar: togglePinned(handlers.getSettings().actionBar, meta.id) }),
+      )
+      const label = document.createElement("span")
+      label.className = "settings-action-label"
+      label.textContent = meta.label
+      row.append(pin, label)
+
+      if (isPinned) {
+        const move = (glyph: string, aria: string, dir: -1 | 1) => {
+          const b = document.createElement("button")
+          b.type = "button"
+          b.className = "settings-action-move"
+          b.setAttribute("aria-label", aria)
+          b.textContent = glyph
+          b.addEventListener("click", () =>
+            emit({ actionBar: movePinned(handlers.getSettings().actionBar, meta.id, dir) }),
+          )
+          return b
+        }
+        row.append(move("↑", "Move up", -1), move("↓", "Move down", 1))
+      }
+      actionBarControl.append(row)
+    }
+    restoreActionFocus(actionBarControl, focused)
+  }
 
   // Reflect the current settings onto every control. Font only sets if a matching
   // option exists (open() guarantees the current family is an option).
@@ -174,6 +247,7 @@ export function mountSettingsModal(
       fontSelect.append(option(family, family))
     }
     fontSelect.value = family
+    renderActionBarSection()
   }
 
   const fillFontOptions = (families: string[]) => {
@@ -245,6 +319,41 @@ export function mountSettingsModal(
 /** Round and clamp a size into the P1 [MIN_SIZE, MAX_SIZE] bounds. */
 function clampSize(value: number): number {
   return Math.min(MAX_SIZE, Math.max(MIN_SIZE, Math.round(value)))
+}
+
+/** Which action-bar control currently holds focus, as an `(action id, kind)` key —
+ * so the section rebuild can restore the equivalent control. `null` when focus is
+ * outside the section. */
+type ActionFocusKind = "pin" | "up" | "down"
+function focusKeyWithin(container: HTMLElement): { id: string; kind: ActionFocusKind } | null {
+  const active = document.activeElement as HTMLElement | null
+  if (!active || !container.contains(active)) return null
+  const row = active.closest<HTMLElement>("[data-action-id]")
+  const id = row?.dataset.actionId
+  if (!id) return null
+  const kind: ActionFocusKind =
+    active.getAttribute("aria-label") === "Move up"
+      ? "up"
+      : active.getAttribute("aria-label") === "Move down"
+        ? "down"
+        : "pin"
+  return { id, kind }
+}
+
+/** Restore focus to the rebuilt control matching `key` (the same kind if it still
+ * exists, else that row's pin checkbox); a no-op if the row is gone or `key` null. */
+function restoreActionFocus(
+  container: HTMLElement,
+  key: { id: string; kind: ActionFocusKind } | null,
+): void {
+  if (!key) return
+  const row = container.querySelector<HTMLElement>(`[data-action-id="${key.id}"]`)
+  if (!row) return
+  const byKind =
+    key.kind === "pin"
+      ? row.querySelector<HTMLElement>('input[type="checkbox"]')
+      : row.querySelector<HTMLElement>(`[aria-label="${key.kind === "up" ? "Move up" : "Move down"}"]`)
+  ;(byKind ?? row.querySelector<HTMLElement>('input[type="checkbox"]'))?.focus()
 }
 
 /** A labeled control row: a `<label>` text beside the control. */

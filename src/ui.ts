@@ -364,6 +364,7 @@ export interface WorkspaceRefs {
   settings: HTMLElement
   identity: HTMLElement
   resizer: HTMLElement
+  actionBar: HTMLElement
 }
 
 /**
@@ -380,6 +381,7 @@ export function showWorkspace(refs: WorkspaceRefs): void {
   refs.settings.hidden = false
   refs.identity.hidden = false
   refs.resizer.hidden = false // the sidebar is on screen now, so the resize handle applies (FEAT-0044)
+  refs.actionBar.hidden = false // the header action bar applies once a folder is open (FEAT-0058)
 }
 
 /** Wire `button`'s click (the required user gesture) to {@link openFolder}. */

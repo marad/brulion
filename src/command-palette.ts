@@ -65,9 +65,9 @@ export function rankActions(query: string, actions: readonly Action[]): Action[]
  * (FEAT-0058). Pure & total — a stale/unknown id yields no entry, never a throw.
  */
 export function resolvePinned(ids: readonly string[], actions: readonly Action[]): Action[] {
-  void ids
-  void actions
-  throw new Error("stub")
+  return ids
+    .map((id) => actions.find((a) => a.id === id))
+    .filter((a): a is Action => a !== undefined)
 }
 
 /**
@@ -75,9 +75,7 @@ export function resolvePinned(ids: readonly string[], actions: readonly Action[]
  * present. Pure — returns a new list, input unchanged.
  */
 export function togglePinned(list: readonly string[], id: string): string[] {
-  void list
-  void id
-  throw new Error("stub")
+  return list.includes(id) ? list.filter((x) => x !== id) : [...list, id]
 }
 
 /**
@@ -86,10 +84,12 @@ export function togglePinned(list: readonly string[], id: string): string[] {
  * past an end, returns an equivalent list. Pure — returns a new list.
  */
 export function movePinned(list: readonly string[], id: string, dir: -1 | 1): string[] {
-  void list
-  void id
-  void dir
-  throw new Error("stub")
+  const from = list.indexOf(id)
+  const to = from + dir
+  if (from === -1 || to < 0 || to >= list.length) return [...list] // absent or past an end
+  const next = [...list]
+  ;[next[from], next[to]] = [next[to], next[from]]
+  return next
 }
 
 /**
@@ -98,9 +98,22 @@ export function movePinned(list: readonly string[], id: string, dir: -1 | 1): st
  * wired to that action's `run`. An action with no icon renders label-only.
  */
 export function renderActionBar(container: HTMLElement, actions: readonly Action[]): void {
-  void container
-  void actions
-  throw new Error("stub")
+  container.replaceChildren()
+  for (const action of actions) {
+    const button = document.createElement("button")
+    button.type = "button"
+    button.className = "action-bar-button"
+    button.title = action.label
+    if (action.icon) {
+      button.append(createElement(action.icon, { class: "action-bar-icon", "aria-hidden": "true" }))
+    }
+    const label = document.createElement("span")
+    label.className = "action-bar-label"
+    label.textContent = action.label
+    button.append(label)
+    button.addEventListener("click", action.run)
+    container.append(button)
+  }
 }
 
 /**
