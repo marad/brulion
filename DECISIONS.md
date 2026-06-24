@@ -1581,3 +1581,22 @@ YAML.
   device — the toolbar following the selection during a touch scroll, and hiding when
   focus leaves the editor without a CodeMirror focus-change (e.g. tapping a header
   control). Both look correct in code/e2e but the e2e can't fully exercise touch.
+
+(continued — M17 P3, decided in the review)
+
+- **One formatting surface: the selection toolbar, everywhere.** The M17 review found
+  that on touch a long-press (how you select) fired the right-click *formatting* menu
+  on top of the toolbar — a duplicate popup. Resolution: the toolbar drops its
+  touch/narrow gate and becomes the single formatting surface on **desktop and touch**;
+  the right-click menu is **reduced to its one position-based item, the wikilink-form
+  toggle**, and opens only on a wikilink (plain-text right-click → the browser's native
+  menu). *Why:* one consistent affordance, less code, and the duplicate popup is gone
+  by construction (the menu no longer carries formatting). *Considered & declined:*
+  putting the wikilink toggle on the toolbar — it's position-based, not
+  selection-based, so it stays a (slim) right-click menu. *Consequence:* on desktop
+  the toolbar now appears on a selection; to avoid mid-drag flicker it shows only once
+  a pointer drag **settles** (a drag flag cleared on pointerup/pointercancel/blur).
+  FEAT-0009's spec was reconciled (formatting moved to the toolbar; menu is
+  wikilink-toggle-only). *Known nit (not P3):* `frontmatter.spec.ts` shows occasional
+  load-induced flakiness under the full 8-worker e2e run (a different no-selection test
+  each time; passes in isolation) — an e2e-timing fragility, not a product bug.
