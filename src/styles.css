@@ -43,12 +43,19 @@ header button:hover {
   background: #f2f2f1;
 }
 
-/* The settings button holds an inline SVG gear (FEAT-0054); center it in the
-   button so the icon sits on the same baseline as the text controls beside it. */
-#open-settings {
+/* Header icon buttons (FEAT-0055): center the injected Lucide icon and size every
+   header icon uniformly in one place, so the toggle and the gear share one icon size
+   — and, with identical padding, one button height. */
+header button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+.header-icon {
+  width: 1.15rem;
+  height: 1.15rem;
+  display: block;
 }
 
 /* Brand wordmark. The open-note identity (when shown) carries the

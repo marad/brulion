@@ -1,4 +1,5 @@
 import "./styles.css"
+import { createElement, Settings as SettingsIcon, PanelLeft, type IconNode } from "lucide"
 import { mountEditor, setEditorEditable, setLinkContext } from "./editor"
 import { createNoteController, type NoteController } from "./note-controller"
 import { mountConflictDiff, type ConflictDiff } from "./conflict-view"
@@ -106,6 +107,13 @@ if (
 ) {
   throw new Error("missing mount points in index.html")
 }
+
+// Header icons from Lucide (FEAT-0055): one source for size + look, tree-shaken to
+// just these icons. The class is the CSS sizing hook (`.header-icon`) and lets the
+// icons inherit the header text color via the default `currentColor` stroke.
+const headerIcon = (node: IconNode) => createElement(node, { class: "header-icon" })
+toggleSidebarEl.replaceChildren(headerIcon(PanelLeft))
+openSettingsEl.replaceChildren(headerIcon(SettingsIcon))
 
 // The editor needs the controller and the controller needs the view; the
 // callbacks only fire on user interaction, after both are assigned.
