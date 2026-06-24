@@ -16,13 +16,13 @@ Every technical decision defers to that.
 
 > **Execution order (next up), agreed with the user.** M-numbers are **stable
 > identities, not the running order**. M1–M13, **M14**, **M15**, **M16**, **M17**,
-> **M19**, **M20**, **M21**, **M22**, **M23**, **M25**, **M27**, and **M28** are done.
-> Next, in priority:
+> **M19**, **M20**, **M21**, **M22**, **M23**, **M25**, **M27**, **M28**, and **M30**
+> are done. Next, in priority:
 >
 > the rest as capacity allows: **M26** (table rendering), **M29** (editable code-fence
 > markers), **M18** (light/dark theme), **M24** (scroll/caret preservation on external
-> refresh), and the newest cluster **M30** (command palette + action bar), **M31**
-> (journaling), **M32** (link anchors), **M33** (multiple vaults).
+> refresh), and the rest of the newest cluster **M31** (journaling), **M32** (link
+> anchors), **M33** (multiple vaults). **M30** (command palette + action bar) is done.
 >
 > (The user's own pain-ranking: rename + note-URLs + link-autocomplete first, then
 > the search-ranking and frontmatter/copy irritants; settings, sidebar comfort,
