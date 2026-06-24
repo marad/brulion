@@ -142,6 +142,9 @@ test.describe("desktop viewport (unchanged)", () => {
     await expect(backdrop(page)).not.toBeVisible()
     await expect(resizer(page)).toBeVisible()
 
+    // The ☰ sits at the left edge on desktop too (AC-8): left of the gear.
+    expect((await box(page, "#toggle-sidebar")).x).toBeLessThan((await box(page, "#open-settings")).x)
+
     // Selecting a note leaves the sidebar open on desktop.
     await page.locator(".note-name", { hasText: "beta" }).click()
     await expect(page.locator("#note-identity")).toContainText("beta")
