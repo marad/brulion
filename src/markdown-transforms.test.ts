@@ -39,13 +39,11 @@ function stateOf(marked: string): EditorState {
     selection: { anchor, head },
     extensions: [markdown()],
   })
-  // Force a COMPLETE parse: clearFormatting walks the syntax tree, and a
-  // time-budgeted lazy parse can be incomplete under heavy parallel-test CPU load
-  // (a marker node not yet parsed → a missed strip). Loop until the tree is whole,
-  // so the transforms see the full document deterministically.
-  while (ensureSyntaxTree(state, doc.length, 5000) === null) {
-    /* keep parsing — progress is cached on the state, so each call advances it */
-  }
+  // Force a COMPLETE parse deterministically: clearFormatting walks the syntax tree,
+  // and a small wall-clock budget could leave a partial tree under heavy parallel-test
+  // CPU load (a marker node unparsed → a missed strip). A huge budget lets the parser
+  // finish this tiny doc in a single pass regardless of load.
+  ensureSyntaxTree(state, doc.length, 1e9)
   return state
 }
 
