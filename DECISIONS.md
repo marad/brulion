@@ -1834,3 +1834,34 @@ matching decision above.
   settings **Workspaces** section (reusing `removeVault`); the **currently-open**
   workspace has no enabled forget control — you can't pull the vault out from under
   the window. Moat untouched: switching/forgetting touch only the vault set + URL.
+
+## M32 — Link section anchors (FEAT-0061)
+
+- **A `#` in an *internal* link target splits note path from section anchor**
+  (`note#section`, `sub/note#section`, `#section`, `[[note#section]]`). Split on the
+  first `#`; the path part resolves exactly as M8 (`resolveNotePath` /
+  `resolveWikilink`), the rest is the anchor. **External** links (`isExternalLink`)
+  are left whole — their `#fragment` is a real URL fragment, not a note anchor. *Why
+  split in the render layer for internal links:* wikilink resolution + broken-vs-valid
+  styling already happens at decoration time, so the anchor is stripped there and
+  carried in a `data-anchor` attribute beside `data-href`/`data-note`; the click
+  handler passes it through to the follow callbacks. Markdown links split there too
+  (guarded by `isExternalLink`) so the click handler treats both uniformly.
+- **Heading match by a Unicode-aware slug; first match wins.** `headingSlug` lower-
+  cases, drops punctuation, and collapses whitespace to single hyphens, **keeping
+  `\p{L}\p{N}`** so Polish/non-English headings slug correctly (ASCII `\w` would drop
+  accented letters). Both the anchor and each heading line are slugified and compared.
+  Duplicate-heading disambiguation (GitHub's `-1`/`-2`) is out of scope — the first
+  matching heading is the target. A missing heading is a silent no-op (the note still
+  opens), never an error.
+- **Scroll by scanning document lines, not the syntax tree.** `scrollEditorToHeading`
+  walks the doc's lines for a heading prefix (`#`–`######` + space) and slugifies the
+  text — parse-independent, so it finds a heading below the just-loaded viewport that
+  the incremental Lezer parse hasn't reached yet (the same parse-completeness trap the
+  unit tests hit). It scrolls the heading to the top (`EditorView.scrollIntoView`,
+  `y: "start"`) and places the caret there.
+- **Same-note anchor jumps without switching** (`[text](#section)`, `[[#section]]`):
+  an empty path part targets the open note — no `switchTo`, just a scroll. A nice
+  in-note table-of-contents affordance that falls out of the same code.
+- **Moat untouched.** Splitting/resolving/scrolling are read-only; the only write is
+  the unchanged M8 create-on-miss when the *note* doesn't exist.
