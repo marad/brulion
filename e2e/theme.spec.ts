@@ -121,6 +121,27 @@ test("the frontmatter chip is legible in dark mode (AC-6)", async ({ page }) => 
   expect(chipBg).not.toBe(editorBg) // the chip stands out from the editor surface
 })
 
+test("code-block syntax colors are readable in dark mode (FEAT-0066 AC-1)", async ({ page }) => {
+  const folder = "e2e-theme-syntax"
+  await stubPicker(page, folder)
+  await page.goto("/brulion/")
+  await seedNote(page, folder, "code.md", '```js\nconst greeting = "hello";\n```\n')
+  await page.locator("#open-folder").click()
+  await expect(page.locator("#note-identity")).toBeVisible()
+
+  await page.locator("#open-settings").click()
+  await page.locator('input[name="settings-theme"][value="dark"]').check()
+  await page.keyboard.press("Escape")
+
+  // The string token ("hello") is the worst case: a near-black navy in the light
+  // palette, unreadable on the dark code box. In dark mode it must be light.
+  const str = page.locator(".cm-code-block .tok-string").first()
+  await expect(str).toBeVisible()
+  const color = await str.evaluate((el) => getComputedStyle(el).color)
+  const [r, g, b] = color.match(/\d+/g)!.map(Number)
+  expect(Math.max(r, g, b)).toBeGreaterThan(130) // a light, readable token color
+})
+
 test("switching theme writes no note bytes (AC-7)", async ({ page }) => {
   const folder = "e2e-theme-moat"
   const body = "# Title\n\nUntouched body with trailing spaces.   \n"
