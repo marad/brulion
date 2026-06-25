@@ -7,6 +7,7 @@ import {
   FolderOpen,
   Folders,
   Keyboard,
+  Command,
   type IconNode,
 } from "lucide"
 import { mountEditor, setEditorEditable, setLinkContext } from "./editor"
@@ -693,6 +694,10 @@ const actions: Action[] = [
   { id: "toggle-note-list", label: "Toggle note list", icon: PanelLeft, run: () => toggleNoteList() },
   { id: "open-settings", label: "Open settings", icon: SettingsIcon, run: () => settingsModal?.open() },
   { id: "switch-workspace", label: "Switch workspace…", icon: Folders, run: () => void openWorkspaceSwitcher() },
+  // Opens the palette itself — its value is being pinnable to the action bar and
+  // tappable on mobile (no Ctrl/Cmd+Shift+K there). Running it from within the
+  // palette just reopens it (harmless).
+  { id: "open-palette", label: "Open command palette", icon: Command, run: () => palette.open() },
 ]
 const palette = mountCommandPalette(
   { backdrop: paletteBackdropEl, input: paletteInputEl, list: paletteListEl },
