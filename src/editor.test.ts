@@ -118,6 +118,17 @@ describe("scrollEditorToHeading (FEAT-0061)", () => {
     view.destroy()
   })
 
+  it("does not get stuck in-fence when a code block contains a different fence char", () => {
+    const view = mountEditor(document.createElement("div"))
+    // A ``` block whose body contains a literal `~~~` line. Toggling on any fence
+    // char would leave the parity inverted and skip the real heading below.
+    setEditorText(view, "```\n~~~\n```\n\n## Target\n\nbody\n")
+
+    expect(scrollEditorToHeading(view, "target")).toBe(true)
+    expect(view.state.doc.lineAt(view.state.selection.main.head).text).toBe("## Target")
+    view.destroy()
+  })
+
   it("returns false and does not move the caret when no heading matches", () => {
     const view = mountEditor(document.createElement("div"))
     setEditorText(view, doc)

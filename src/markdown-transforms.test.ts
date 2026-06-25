@@ -75,6 +75,20 @@ describe("toggleInline", () => {
     })
   })
 
+  it("unwraps when the caret rests just after a span's closing marker", () => {
+    // Forward-only resolveInner missed the span here and inserted a fresh empty
+    // pair (`**word****`); probing both sides must unwrap to `word` instead.
+    expect(toggle("**word**|", BOLD)).toEqual({ doc: "word", selected: "word" })
+    expect(toggle("a *b*| c", ITALIC).doc).toBe("a b c")
+    expect(toggle("x `code`| y", CODE).doc).toBe("x code y")
+  })
+
+  it("does not wrap a whitespace-only line segment in a multi-line selection", () => {
+    // Line 1's selected segment is just two trailing spaces; wrapping it would
+    // emit an empty `**  **` span. Only the line with real content gets wrapped.
+    expect(toggle("a[  \nbc]", BOLD).doc).toBe("a  \n**bc**")
+  })
+
   it("toggles italic and inline code the same way (AC-3)", () => {
     expect(toggle("a [b] c", ITALIC).doc).toBe("a *b* c")
     expect(toggle("a *[b]* c", ITALIC).doc).toBe("a b c")
@@ -137,6 +151,16 @@ describe("heading level helpers", () => {
     expect(withHeadingLevel("## note", 1)).toBe("# note")
     expect(withHeadingLevel("### note", 0)).toBe("note")
     expect(withHeadingLevel("note", 0)).toBe("note")
+  })
+
+  it("drops a list/quote marker when converting that line to a heading", () => {
+    // A heading and a list/quote are mutually exclusive blocks, so "- item" must
+    // become "# item", not "# - item" (the old bug on /h1 over a list line).
+    expect(withHeadingLevel("- item", 1)).toBe("# item")
+    expect(withHeadingLevel("* item", 2)).toBe("## item")
+    expect(withHeadingLevel("> quote", 3)).toBe("### quote")
+    // To a plain paragraph, a list/quote marker is preserved (not a heading op).
+    expect(withHeadingLevel("- item", 0)).toBe("- item")
   })
 
   it("promotes paragraph → H3 → H2 → H1 and stops", () => {

@@ -60,12 +60,17 @@ export function relativeLink(fromNote: string, target: string): string {
   return [...ups, ...targetSegs.slice(common)].join("/")
 }
 
-/** A markdown link destination for `rel`: wrapped in CommonMark's `<…>` form when
- * it contains a space or parenthesis (which would otherwise break a bare
- * destination), else `rel` as-is. Our paths never contain `<`/`>` — `normalizeNoteName`
- * rejects them — so the angle-bracket form is always safe. */
+/** A markdown link destination for `rel`: a literal `#` is percent-encoded first
+ * (in a destination `#` starts a section anchor, so a note named `a#b` would be
+ * split into path `a` + anchor `b` and the link would silently retarget — the
+ * `<…>` wrapper does not help, the `#` stays literal inside it). `resolveNotePath`
+ * decodes the `%23` back. The result is then wrapped in CommonMark's `<…>` form
+ * when it contains a space or parenthesis (which would otherwise break a bare
+ * destination). Our paths never contain `<`/`>` — `normalizeNoteName` rejects
+ * them — so the angle-bracket form is always safe. */
 function markdownDest(rel: string): string {
-  return /[ ()]/.test(rel) ? `<${rel}>` : rel
+  const encoded = rel.replace(/#/g, "%23")
+  return /[ ()]/.test(encoded) ? `<${encoded}>` : encoded
 }
 
 /**
@@ -152,10 +157,14 @@ export function rewriteLinksForRename(args: RenameRewrite): string | null {
     const insert = target.includes("/")
       ? displayName(newPath) // slashed → keep a full root-relative path
       : shortestLinkText(newPath, pathsAfter) // bare → bare when unique, else full path
-    // No rewrite when the link already names the new note. `resolveWikilink` is
-    // case-insensitive, so a bare name differing only in case still resolves —
-    // compare case-insensitively to avoid churning a link a folder move left valid.
-    if (insert.toLowerCase() === target.toLowerCase()) continue
+    // No rewrite when the link is already in the form we'd write. `resolveWikilink`
+    // is case-insensitive and treats a trailing `.md` as redundant, so strip both
+    // before comparing — otherwise a still-valid link written as `[[diablo.md]]`
+    // (or differing only in case) would be churned to a different spelling. The
+    // comparison must stay on the spelling, not the resolved path: a bare name that
+    // now resolves ambiguously still needs promoting to a full path (AC-6).
+    const normalizedTarget = target.replace(/\.md$/i, "")
+    if (insert.toLowerCase() === normalizedTarget.toLowerCase()) continue
     edits.push({ from: w.targetFrom, to: w.targetTo, insert })
   }
 

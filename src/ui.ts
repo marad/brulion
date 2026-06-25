@@ -46,9 +46,14 @@ export async function restoreVault(
       return
     }
     resumeButton.hidden = false
-    resumeButton.addEventListener("click", () => {
+    // Assign `onclick` (not addEventListener): restoreVault can run more than once
+    // against the same shared button (e.g. a re-resolve / vault switch), and
+    // stacking listeners would fire resumeAccess — hence requestAccess — multiple
+    // times on a single click. Assignment replaces any prior handler; a declined
+    // attempt keeps the button and its (single) handler for a retry.
+    resumeButton.onclick = () => {
       void resumeAccess(vault, resumeButton, onAttach)
-    })
+    }
   } catch (err) {
     console.error("Failed to restore vault:", err)
   }

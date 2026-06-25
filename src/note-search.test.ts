@@ -84,6 +84,15 @@ describe("searchNotes (FEAT-0033 AC-2)", () => {
     expect(result.matches).toContain("projects/diablo.md")
   })
 
+  it("a case-variant of an existing note → create null (no case-colliding duplicate)", () => {
+    // "Ideas" normalizes to "Ideas.md"; "ideas.md" already exists. Note resolution
+    // is case-insensitive, so offering to create here would make a duplicate the
+    // resolvers can't disambiguate — existence must be checked case-insensitively.
+    const result = searchNotes("Ideas", paths)
+    expect(result.create).toBeNull()
+    expect(result.matches).toContain("ideas.md")
+  })
+
   it("a valid new name → create equals the trimmed query; matches excludes it", () => {
     const result = searchNotes("  newnote ", paths)
     expect(result.create).toBe("newnote")

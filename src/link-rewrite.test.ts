@@ -77,6 +77,21 @@ describe("rewriteLinksForRename — markdown links", () => {
     expect(out).toBe("go [d](<../x/new note.md>)")
     expect(resolveNotePath("sub/n.md", "<../x/new note.md>")).toBe("x/new note.md")
   })
+
+  it("percent-encodes a '#' in the destination so the link doesn't split into an anchor", () => {
+    const out = rewriteLinksForRename({
+      text: "go [d](diablo.md)",
+      notePath: "n.md",
+      oldPath: "diablo.md",
+      newPath: "build#1.md", // '#' is a legal note name (not in normalizeNoteName's UNSAFE)
+      pathsBefore: vault("n.md", "diablo.md"),
+      pathsAfter: vault("n.md", "build#1.md"),
+    })
+    expect(out).toBe("go [d](build%231.md)")
+    // round-trip: the encoded destination resolves back to the '#'-named note,
+    // not to a phantom note "build" with anchor "1".
+    expect(resolveNotePath("n.md", "build%231.md")).toBe("build#1.md")
+  })
 })
 
 describe("rewriteLinksForRename — wikilinks", () => {
@@ -262,6 +277,21 @@ describe("rewriteLinksForRename — wikilink whitespace, aliases, case", () => {
     // The link resolved to diablo.md and must be retargeted to the new note.
     expect(out).not.toBeNull()
     expect(out).toContain("diablo-2")
+  })
+
+  it("does not churn a bare [[name.md]] link that still resolves after a folder move", () => {
+    // [[diablo.md]] still resolves to the moved note by basename, so rewriting it
+    // to [[diablo]] would be a needless edit of another note's bytes. The guard
+    // compares by resolution (not spelling), so this returns null.
+    const out = rewriteLinksForRename({
+      text: "see [[diablo.md]]",
+      notePath: "n.md",
+      oldPath: "diablo.md",
+      newPath: "archive/diablo.md",
+      pathsBefore: vault("n.md", "diablo.md"),
+      pathsAfter: vault("n.md", "archive/diablo.md"),
+    })
+    expect(out).toBeNull()
   })
 })
 

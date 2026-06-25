@@ -157,7 +157,12 @@ export function searchNotes(
   let create: string | null = null
   if (trimmed) {
     const norm = normalizeNoteName(trimmed)
-    const exists = norm.ok && paths.includes(norm.filename)
+    // Case-insensitive existence check, matching how wikilinks/notes resolve
+    // (resolveWikilink). An exact-case `includes` would offer "create" for a
+    // case-variant of an existing note (query "note" vs an existing "Note.md"),
+    // producing a case-colliding duplicate the resolvers then can't disambiguate.
+    const wanted = norm.ok ? norm.filename.toLowerCase() : ""
+    const exists = norm.ok && paths.some((p) => p.toLowerCase() === wanted)
     if (!exists) create = trimmed
   }
 

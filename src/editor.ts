@@ -307,14 +307,21 @@ export function scrollEditorToHeading(view: EditorView, anchor: string): boolean
   const wanted = headingSlug(anchor)
   if (!wanted) return false
   const doc = view.state.doc
-  let inFence = false
+  // The opening fence char (`` ` `` or `~`) while inside a code block, else null. A
+  // block opened with one fence char is closed only by the *same* char, so a literal
+  // `~~~` line sitting inside a ```` ``` ```` block is content — not a close — and
+  // must not flip the in-fence state (which would mis-skip a real heading below it).
+  let fence: string | null = null
   for (let i = 1; i <= doc.lines; i++) {
     const line = doc.line(i)
-    if (/^\s*(```|~~~)/.test(line.text)) {
-      inFence = !inFence // a ``` / ~~~ fence opens or closes a code block
+    const fenceMatch = /^\s*(```+|~~~+)/.exec(line.text)
+    if (fenceMatch) {
+      const char = fenceMatch[1][0]
+      if (fence === null) fence = char // open a block, remember its fence char
+      else if (char === fence) fence = null // close only on a matching fence char
       continue
     }
-    if (inFence) continue
+    if (fence !== null) continue
     const m = /^#{1,6}\s+(.+?)\s*$/.exec(line.text)
     if (m && headingSlug(m[1]) === wanted) {
       view.dispatch({

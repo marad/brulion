@@ -35,14 +35,20 @@ function innerText(state: EditorState, node: SyntaxNode): string {
   return state.doc.sliceString(from, to)
 }
 
-/** The innermost `nodeName` node containing `pos`, if any (for a caret toggle). */
+/** The innermost `nodeName` node containing `pos`, if any (for a caret toggle).
+ * Probes both sides of the caret: side `1` (forward) finds a span the caret sits
+ * inside or at the start of; side `-1` (backward) catches a caret resting *just
+ * after* a span's closing marker (e.g. `**word**|`), which a forward-only resolve
+ * misses — it would then wrongly insert a fresh empty `****` instead of unwrapping. */
 function nodeAt(state: EditorState, pos: number, nodeName: string): SyntaxNode | null {
-  for (
-    let n: SyntaxNode | null = syntaxTree(state).resolveInner(pos, 1);
-    n;
-    n = n.parent
-  ) {
-    if (n.name === nodeName) return n
+  for (const side of [1, -1] as const) {
+    for (
+      let n: SyntaxNode | null = syntaxTree(state).resolveInner(pos, side);
+      n;
+      n = n.parent
+    ) {
+      if (n.name === nodeName) return n
+    }
   }
   return null
 }
@@ -128,7 +134,10 @@ export function toggleInline(
     const line = state.doc.line(n)
     const segFrom = Math.max(line.from, from)
     const segTo = Math.min(line.to, to)
-    if (segTo > segFrom) {
+    // Skip a segment with no visible content: wrapping whitespace-only (or empty)
+    // text would emit an empty span like `**  **`, which renders as literal
+    // asterisks rather than valid markdown.
+    if (/\S/.test(state.doc.sliceString(segFrom, segTo))) {
       changes.push({ from: segFrom, insert: marker }, { from: segTo, insert: marker })
     }
   }
@@ -149,8 +158,16 @@ export function headingLevelOf(line: string): number {
  * (`level === 0`). Only the `#` prefix changes; the line's text is preserved.
  */
 export function withHeadingLevel(line: string, level: number): string {
-  const text = line.replace(/^#{1,6} /, "")
-  return level > 0 ? `${"#".repeat(level)} ${text}` : text
+  if (level === 0) {
+    // To a plain paragraph: drop only the heading prefix. A list/quote line
+    // "demoted to paragraph" keeps its own marker — it was never a heading.
+    return line.replace(/^#{1,6} /, "")
+  }
+  // A heading replaces any existing block prefix, so converting a list item or
+  // blockquote into a heading drops that marker too: "- item" → "# item", not
+  // "# - item" (heading and list/quote are mutually exclusive block types).
+  const text = line.replace(/^(?:#{1,6}|[*\-+]|>) /, "")
+  return `${"#".repeat(level)} ${text}`
 }
 
 /** Promote one step toward H1: paragraph → H3 → H2 → H1 (stops at H1). */
