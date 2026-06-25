@@ -1979,3 +1979,25 @@ matching decision above.
   media-query mechanism. *Consequence:* code blocks now recolor with the theme; a
   follow-up review point is whether the chosen dark syntax hues suit the user's taste
   (one-line-per-token to retune).
+
+## M24 — Scroll/caret preservation on external refresh (FEAT-0067)
+
+- **Minimal-diff reload instead of a wholesale replace.** The M4 poller reloaded the
+  open note with `setEditorText` (replace `0..len`), so CodeMirror mapped the caret to
+  the document end and the view snapped to the top on every external change. A new pure
+  `diffRange(old, next)` computes the single differing span (longest common prefix +
+  non-overlapping suffix → one `{from, to, insert}`, `null` when identical), and
+  `reloadEditorText` dispatches only that change. *Consequence:* the reader keeps their
+  place when another tool/sync touches the file.
+- **No diff library; single contiguous hunk.** A hand-written prefix/suffix scan, per
+  the lean ethos. One middle-replace is enough to preserve position; a full multi-hunk
+  LCS was explicitly out of scope. MergeView (M7 conflict view) still computes its own
+  diff — the two aren't shared (its output isn't exposed as CM changes).
+- **Caret maps for free; scroll is anchored explicitly.** The reload dispatches only
+  `changes` (no selection), so CM maps the caret through them. The top-of-viewport line
+  is captured via `posAtCoords` (fallback `view.viewport.from`), mapped through the
+  change, and scrolled back with `scrollIntoView(y:"start")`.
+- **Guards and other load paths unchanged.** Only the safe-to-replace external-refresh
+  call swapped to the minimal reload; `refreshFromDisk`'s conflict handling and the
+  initial-load / note-switch path keep `setEditorText`. The `ProgrammaticLoad`
+  annotation still rides the reload, so it never trips autosave — no echo-write (moat).
