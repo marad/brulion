@@ -52,7 +52,14 @@ const typography = EditorView.theme({
   // text keeps its `--text` color (the fill is drawn behind it). `::selection`
   // covers native selection over rendered widgets the drawn layer doesn't paint.
   ".cm-selectionBackground": { backgroundColor: "var(--selection-bg)" },
-  "&.cm-focused .cm-selectionBackground": { backgroundColor: "var(--selection-bg)" },
+  // The focused-selection rule must mirror drawSelection's own selector structure
+  // exactly — its `&light.cm-focused > .cm-scroller > .cm-selectionLayer
+  // .cm-selectionBackground` is high-specificity, so a shorter selector loses the
+  // cascade even though this theme is injected later. Matching the structure ties
+  // the specificity, and later-injection then wins.
+  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
+    backgroundColor: "var(--selection-bg)",
+  },
   "::selection": { backgroundColor: "var(--selection-bg)" },
   ".cm-scroller": {
     fontFamily: "var(--font-stack)",
