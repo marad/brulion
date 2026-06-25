@@ -1946,3 +1946,26 @@ matching decision above.
   it normally.
 - **Editor-only; bytes untouched.** Reveal/hide is purely which decorations are
   emitted — no document change (the moat).
+
+## M18 — Light / dark theme (FEAT-0065)
+
+- **A semantic CSS-variable palette, light values as the default, dark as an override.**
+  The app's colors were scattered literal hex across `styles.css` + the editor theme.
+  They're migrated to a small set of semantic custom properties (page bg, surfaces,
+  text/muted, borders, accent + accent-fg, link, soft-accent fills, code bg, selection,
+  shadow). The **light** values equal today's colors (near-duplicate shades collapsed
+  to one token), so the light look is unchanged; only the dark set is new.
+- **Three modes via a `data-theme` root attribute + `prefers-color-scheme`.** `system`
+  (default) sets no attribute and lets a `@media (prefers-color-scheme: dark)` rule
+  supply dark on a dark OS; `light`/`dark` set `data-theme` to force a palette. JS only
+  sets/clears the attribute — the media query does the OS-following, no JS polling.
+  `color-scheme` is set to match so native scrollbars/controls follow.
+- **Default `system`.** Modern and respectful of the OS; a dark-OS user gets dark out
+  of the box once this ships (the point of the feature). The picker (M16 settings) lets
+  anyone pin light/dark. *Reviewable:* if a non-surprising default is preferred, it's a
+  one-line change to `"light"`.
+- **The editor reads the same vars.** CodeMirror's theme uses `var(--…)` for its
+  background/text/selection/code colors, so the editing surface themes with the chrome
+  rather than staying a fixed light theme.
+- **Editor/UI only; bytes untouched.** Theming is CSS vars + a root attribute + the
+  editor theme reading them — no note byte changes (the moat).
