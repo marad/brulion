@@ -1779,3 +1779,34 @@ matching decision above.
   reaching into the palette for list helpers — the dependency arrow pointed the wrong
   way). `renderActionBar` (DOM) moves to `ui.ts` beside the other DOM glue. The
   command palette keeps `rankActions` + the overlay.
+
+## M33 — Multiple vaults / workspaces
+
+(M33 design, decided up front; reviewed live at milestone end)
+
+- **A set of vaults replaces the single `brulion:dir` handle; each vault is
+  `{ id, handle, name }` with a short opaque generated `id`.** The id is stable and
+  independent of the folder name (names collide and change), so it can key the
+  per-window URL param and the IndexedDB set. A pre-M33 user's single handle migrates
+  in as the first vault on first load. *Why opaque id, not the folder name in the
+  URL:* robust against duplicate/renamed folders; the name is display-only.
+- **Per-window identity via `?ws=<id>` in the URL, not per-window IndexedDB state.**
+  The window's vault id rides the query string; combined with the existing `#/path`
+  note hash (FEAT-0036), the URL fully describes a window's state. On reload the
+  window re-attaches to *its* `?ws` vault — fixing the bug where two windows sharing
+  one origin-global handle could swap vaults on refresh. Two windows are independent
+  by construction, with no new per-window persisted state. *Considered & declined:*
+  a per-window IndexedDB record keyed by some window id — browsers give no stable
+  per-window/tab id that survives reload, and the URL is the natural carrier (and
+  bookmarkable/shareable), exactly as `#/path` already is for the note.
+- **Session state stays origin-global for now** (recency, expanded folders, sidebar
+  width/collapse). With multiple vaults this is slightly wrong (one vault's recency
+  bleeds into another's), but the URL already carries the per-window vault+note, so
+  the *correctness-critical* per-window state is covered. Per-vault session state is
+  a deliberate follow-up, not in M33 — keeping the milestone lean. The moat is
+  unaffected either way (this is all browser-private UI state).
+- **UI keeps the word "folder"** (Open folder / Switch folder…), "vault" is the
+  code/docs term — consistency with the existing FSA-folder framing the user knows.
+- **Moat: untouched, categorically.** Vault handles + the set live in IndexedDB; no
+  note file is read or written by any of this. Switching a vault is just opening a
+  different already-granted folder through the existing controller path.
