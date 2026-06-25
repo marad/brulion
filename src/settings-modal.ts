@@ -163,6 +163,21 @@ export function mountSettingsModal(
   folderControl.append(folderName, switchFolder)
   const folderRow = labeledRow("Folder", folderControl)
 
+  // Weekly journal path (FEAT-0062): a date-templated note path. A text input plus a
+  // hint listing the placeholders; emits on input so the value persists.
+  const journalInput = document.createElement("input")
+  journalInput.type = "text"
+  journalInput.className = "settings-journal"
+  journalInput.placeholder = "e.g. Journal/Week/{mondayOfTheWeek}"
+  journalInput.addEventListener("input", () => emit({ journalPath: journalInput.value }))
+  const journalHint = document.createElement("p")
+  journalHint.className = "settings-section-hint"
+  journalHint.textContent = "Placeholders: {year} {month} {day} {mondayOfTheWeek}"
+  const journalControl = document.createElement("div")
+  journalControl.className = "settings-journal-control"
+  journalControl.append(journalInput, journalHint)
+  const journalRow = labeledRow("Weekly journal", journalControl)
+
   // Action bar (FEAT-0058) — its own distinct section (own heading + scrollable
   // list), set off from the appearance controls so a growing action set doesn't
   // crowd the dialog. Rebuilt by seed() from the current settings; placed last so the
@@ -200,6 +215,7 @@ export function mountSettingsModal(
     widthRow,
     vimRow,
     folderRow,
+    journalRow,
     actionBarSection,
     workspacesSection,
   )
@@ -305,6 +321,10 @@ export function mountSettingsModal(
     sizeInc.disabled = s.textSize >= MAX_SIZE
     for (const r of widthRadios) r.checked = r.value === s.editorWidth
     vimCheckbox.checked = s.vim
+    // Only reassign when it actually differs: the input emits per keystroke and the
+    // host's updateSettings calls sync()→seed() right back, and reassigning `.value`
+    // to the string just typed would jump the caret to the end mid-edit.
+    if (journalInput.value !== s.journalPath) journalInput.value = s.journalPath
     folderName.textContent = handlers.getFolderName()
     const family = s.font[0] ?? DEFAULT_FONT_VALUE
     // Keep the select honest if the active family isn't (yet) an option — e.g. a

@@ -8,6 +8,7 @@ import {
   Folders,
   Keyboard,
   Command,
+  CalendarDays,
   type IconNode,
 } from "lucide"
 import { mountEditor, setEditorEditable, setLinkContext, scrollEditorToHeading } from "./editor"
@@ -61,7 +62,8 @@ import {
 import { mountSettingsModal, type SettingsModalHandle } from "./settings-modal"
 import { resolveFontChoices } from "./font-access"
 import { touchRecency } from "./note-search"
-import { displayName, isExternalLink, resolveNotePath } from "./note-name"
+import { displayName, isExternalLink, resolveNotePath, normalizeNoteName } from "./note-name"
+import { expandJournalPath } from "./journal"
 import { pathToHash, hashToPath } from "./note-route"
 import { wireFlushOnHide } from "./flush"
 import { createPoller } from "./watch"
@@ -585,6 +587,19 @@ const switchToVault = async (vault: Vault) => {
   if (!(await hasPermission(vault.handle)) && !(await requestAccess(vault.handle))) return
   await attachVault(vault)
 }
+// Open this week's journal (M31/FEAT-0062): expand the configured `journalPath`
+// template against today, normalize to a note path, and open it through the existing
+// open-note path (switch if it exists, else the create-on-miss prompt). When the
+// path is unset (or expands to something invalid), open settings so it can be fixed.
+const openWeeklyJournal = () => {
+  if (!currentSettings.journalPath) {
+    settingsModal?.open()
+    return
+  }
+  const norm = normalizeNoteName(expandJournalPath(currentSettings.journalPath, new Date()))
+  if (norm.ok) openNotePath(norm.filename)
+  else settingsModal?.open()
+}
 // The workspace switcher (FEAT-0060): open the command palette with a transient list
 // of the *other* granted vaults (omit the open one), each row switching to it.
 const openWorkspaceSwitcher = async () => {
@@ -707,6 +722,7 @@ const actions: Action[] = [
   { id: "toggle-note-list", label: "Toggle note list", icon: PanelLeft, run: () => toggleNoteList() },
   { id: "open-settings", label: "Open settings", icon: SettingsIcon, run: () => settingsModal?.open() },
   { id: "switch-workspace", label: "Switch workspace…", icon: Folders, run: () => void openWorkspaceSwitcher() },
+  { id: "open-journal", label: "Open this week's journal", icon: CalendarDays, run: openWeeklyJournal },
   // Opens the palette itself — its value is being pinnable to the action bar and
   // tappable on mobile (no Ctrl/Cmd+Shift+K there). Running it from within the
   // palette just reopens it (harmless).

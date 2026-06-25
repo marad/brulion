@@ -173,6 +173,7 @@ describe("loadSettings / saveSettings round-trip (AC-5, AC-2)", () => {
       editorWidth: "wider",
       vim: true,
       actionBar: ["toggle-vim", "switch-folder"],
+      journalPath: "Journal/Week/{mondayOfTheWeek}",
     }
     await saveSettings(folder.dir, settings)
     expect(folder.has(SETTINGS_FILE)).toBe(true)
@@ -205,6 +206,7 @@ describe("loadSettings / saveSettings round-trip (AC-5, AC-2)", () => {
       editorWidth: "narrow",
       vim: true,
       actionBar: [],
+      journalPath: "",
     })
   })
 })
@@ -216,7 +218,7 @@ describe("applySettings DOM variables", () => {
     try {
       applySettings(
         view,
-        { font: [], textSize: 20, editorWidth: "wider", vim: false, actionBar: [] },
+        { font: [], textSize: 20, editorWidth: "wider", vim: false, actionBar: [], journalPath: "" },
         root,
       )
       expect(root.style.getPropertyValue("--editor-font-size")).toBe("20px")
@@ -247,7 +249,7 @@ describe("applySettings DOM variables", () => {
     try {
       applySettings(
         view,
-        { font: ["Menlo", "Courier New"], textSize: 16, editorWidth: "narrow", vim: false, actionBar: [] },
+        { font: ["Menlo", "Courier New"], textSize: 16, editorWidth: "narrow", vim: false, actionBar: [], journalPath: "" },
         root,
       )
       expect(root.style.getPropertyValue("--font-stack")).toBe(

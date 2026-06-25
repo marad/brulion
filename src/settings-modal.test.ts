@@ -141,6 +141,7 @@ describe("mountSettingsModal open/seed (FEAT-0048 AC-1)", () => {
       editorWidth: "wider",
       vim: true,
       actionBar: [],
+      journalPath: "",
     }
     const { backdrop, handle } = mount(initial)
 
@@ -487,5 +488,37 @@ describe("Workspaces section (FEAT-0060)", () => {
     expect(onForgetWorkspace).toHaveBeenCalledWith("v2")
     await vi.waitFor(() => expect(wsRow(backdrop, "v2")).toBeNull()) // re-rendered without it
     expect(wsRow(backdrop, "v3")).not.toBeNull() // others remain
+  })
+})
+
+describe("Weekly journal field (FEAT-0062)", () => {
+  const journalInput = (root: HTMLElement) => root.querySelector<HTMLInputElement>(".settings-journal")!
+
+  it("seeds the input from journalPath and emits on input", () => {
+    const { backdrop, handle, onChange } = mount({
+      ...DEFAULT_SETTINGS,
+      journalPath: "Journal/Week/{mondayOfTheWeek}",
+    })
+    handle.open()
+    expect(journalInput(backdrop).value).toBe("Journal/Week/{mondayOfTheWeek}")
+
+    journalInput(backdrop).value = "Diary/{year}/{mondayOfTheWeek}"
+    journalInput(backdrop).dispatchEvent(new Event("input", { bubbles: true }))
+
+    expect(onChange).toHaveBeenCalledWith({ journalPath: "Diary/{year}/{mondayOfTheWeek}" })
+  })
+
+  it("does not reset the caret when sync re-seeds the same value (mid-edit)", () => {
+    const { backdrop, handle } = mount({ ...DEFAULT_SETTINGS, journalPath: "Journal/Week" })
+    handle.open()
+    const input = journalInput(backdrop)
+    input.focus()
+    input.setSelectionRange(7, 7) // caret in the middle ("Journal|/Week")
+
+    handle.sync() // what updateSettings triggers after every keystroke
+
+    // The value is unchanged, so seed() must NOT reassign it (which would move the caret).
+    expect(input.value).toBe("Journal/Week")
+    expect(input.selectionStart).toBe(7)
   })
 })

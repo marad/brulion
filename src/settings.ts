@@ -27,6 +27,9 @@ export interface Settings {
   /** Ordered ids of actions pinned to the header action bar (FEAT-0058); empty by
    * default. Unknown ids are tolerated and ignored when the bar renders. */
   actionBar: string[]
+  /** Folder-relative note-path template for the weekly journal (FEAT-0062), with date
+   * placeholders (`{mondayOfTheWeek}` etc.); empty (unconfigured) by default. */
+  journalPath: string
 }
 
 /** The on-disk settings file at the folder root. */
@@ -46,6 +49,7 @@ export const DEFAULT_SETTINGS: Settings = {
   editorWidth: "narrow",
   vim: false,
   actionBar: [],
+  journalPath: "",
 }
 
 /** Each width preset's CSS `max-width` value for the content column. */
@@ -73,6 +77,7 @@ export function normalizeSettings(raw: unknown): Settings {
     editorWidth: isEditorWidth(r.editorWidth) ? r.editorWidth : "narrow",
     vim: Boolean(r.vim),
     actionBar: Array.isArray(r.actionBar) ? dedupeStrings(r.actionBar) : [],
+    journalPath: typeof r.journalPath === "string" ? r.journalPath : "",
   }
 }
 
