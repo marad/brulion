@@ -53,7 +53,8 @@ to one token); only dark is new.
 - **Per-element theme overrides / custom palettes** — three modes only, one dark
   palette.
 - **A theme transition animation.**
-- **Syntax-highlight palette retuning for dark** beyond what the shared tokens give.
+- **Syntax-highlight palette retuning for dark** — handled separately in FEAT-0066
+  (M18 P2); this phase covers the chrome + editor surface only.
 
 ## Acceptance criteria
 
