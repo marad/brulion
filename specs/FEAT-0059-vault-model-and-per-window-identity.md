@@ -53,10 +53,13 @@ doesn't add history entries). Combined with the existing `#/path` note hash
 So a reload always returns the window to its own vault; two windows with different
 `?ws` stay independent.
 
-**Out-of-window changes.** Session state other than the vault+note (recency, expanded
-folders, sidebar width/collapse) remains origin-global in this phase — unchanged
-storage, shared across vaults. Only the vault identity and the open note are
-per-window (via the URL).
+**Per-vault session state.** The session state tied to a vault's *content* becomes
+per-vault, keyed by the vault id: the **recency** list (FEAT-0039) and the
+**expanded-folders** set (FEAT-0043). Attaching a vault loads *its* recency and
+expanded set; they no longer bleed between vaults. The legacy global values migrate
+onto the first (migrated) vault. State that is about the *window/screen* rather than
+the vault — **sidebar width and collapse** — stays origin-global (it's "how I like my
+window", independent of which folder is open).
 
 ## Constraints
 
@@ -75,8 +78,8 @@ per-window (via the URL).
 - **The vault switcher UI** — a palette action + chooser to switch between granted
   folders, and a surface to forget a vault, is FEAT-0060 (P2). Here, adding a folder
   is still the native picker and there is no in-app switch control.
-- **Per-vault session state** — recency / expanded folders / sidebar width stay
-  global; making them per-vault is a later follow-up.
+- **Per-vault sidebar width/collapse** — those stay origin-global (window-ergonomics,
+  not vault content); only recency + expanded-folders go per-vault here.
 - **Cross-window live sync** — two windows don't push state to each other beyond what
   the existing disk poller already does; this phase only stops them from clobbering
   each other's *vault identity* on reload.
@@ -135,3 +138,11 @@ the vault identity).
 Given any of the above (open, reload, migrate, re-pick),
 When the vault set and `?ws` are updated,
 Then no `.md` file is created or modified by this phase.
+
+**AC-10** — Recency and expanded-folders are per-vault.
+Given two vaults each with their own visit history and expanded-folder tree,
+When the window attaches to one and then the other,
+Then each shows its own recency order (in the quick switcher's empty-query list) and
+its own expanded-folder state — neither bleeds into the other; and a pre-M33 user's
+existing global recency/expanded values migrate onto the first (migrated) vault.
+(Sidebar width and collapse remain global — shared across vaults.)

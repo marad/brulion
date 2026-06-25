@@ -1799,14 +1799,20 @@ matching decision above.
   a per-window IndexedDB record keyed by some window id — browsers give no stable
   per-window/tab id that survives reload, and the URL is the natural carrier (and
   bookmarkable/shareable), exactly as `#/path` already is for the note.
-- **Session state stays origin-global for now** (recency, expanded folders, sidebar
-  width/collapse). With multiple vaults this is slightly wrong (one vault's recency
-  bleeds into another's), but the URL already carries the per-window vault+note, so
-  the *correctness-critical* per-window state is covered. Per-vault session state is
-  a deliberate follow-up, not in M33 — keeping the milestone lean. The moat is
-  unaffected either way (this is all browser-private UI state).
-- **UI keeps the word "folder"** (Open folder / Switch folder…), "vault" is the
-  code/docs term — consistency with the existing FSA-folder framing the user knows.
+- **Content-tied session state goes per-vault; window-ergonomics state stays global**
+  (decided in the M33 live discussion, overriding the initial "all global" lean).
+  **Recency** (FEAT-0039) and **expanded folders** (FEAT-0043) are keyed by vault id
+  — they describe a vault's content (its notes, its tree), so bleeding them across
+  vaults is wrong (mixed note names in the switcher, nonsense tree state). **Sidebar
+  width + collapse** stay origin-global — they're "how I like my window", not about
+  which folder is open, and per-vault would surprise the user by resizing the sidebar
+  on every switch. A pre-M33 user's global recency/expanded values migrate onto the
+  first (migrated) vault. The moat is unaffected (all browser-private UI state).
+- **UI calls the concept a "workspace"** (decided live; aligns with the backlog
+  "Workspaces" name): the switcher and management list say "workspace". "Open folder"
+  (the native picker) stays — you open a folder to *add* a workspace — and the code
+  keeps the `vault` term internally. So: a workspace *is* a granted folder; "switch
+  workspace" jumps between them.
 - **Moat: untouched, categorically.** Vault handles + the set live in IndexedDB; no
   note file is read or written by any of this. Switching a vault is just opening a
   different already-granted folder through the existing controller path.
