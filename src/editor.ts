@@ -1,5 +1,5 @@
 import { EditorView, keymap, highlightSpecialChars, drawSelection } from "@codemirror/view"
-import { Compartment, EditorState } from "@codemirror/state"
+import { ChangeSet, Compartment, EditorState } from "@codemirror/state"
 import { history, historyKeymap, defaultKeymap } from "@codemirror/commands"
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete"
 import { deleteMarkupBackward } from "@codemirror/lang-markdown"
@@ -10,6 +10,7 @@ import { headingSlug } from "./note-name"
 import { mermaidRendering } from "./mermaid-render"
 import { tableRendering } from "./table-render"
 import { ProgrammaticLoad } from "./editor-load"
+import { diffRange } from "./text-diff"
 import {
   markdownCommands,
   continueOrExitMarkup,
@@ -215,12 +216,44 @@ export function mountEditor(
   return view
 }
 
-/** Replace the whole document with `text` without it counting as a user edit. */
+/** Replace the whole document with `text` without it counting as a user edit. Used for
+ * an initial note load / programmatic note-switch, where the prior buffer is unrelated.
+ * For catching the *open* note up to an external change, prefer {@link reloadEditorText}
+ * so the caret and scroll survive. */
 export function setEditorText(view: EditorView, text: string): void {
   view.dispatch({
     changes: { from: 0, to: view.state.doc.length, insert: text },
     annotations: ProgrammaticLoad.of(true),
   })
+}
+
+/**
+ * Catch the open note's buffer up to `text` (its new on-disk content) with a *minimal*
+ * change — only the differing middle span is replaced (FEAT-0067), not the whole
+ * document — so the caret and scroll position survive an external refresh instead of
+ * jumping to the top/end. No explicit selection is dispatched, so CodeMirror maps the
+ * existing caret through the change; the top-of-viewport line is captured, mapped
+ * through the change, and scrolled back. A no-op when the buffer already equals `text`.
+ * Carries the {@link ProgrammaticLoad} annotation so it isn't treated as a user edit.
+ */
+export function reloadEditorText(view: EditorView, text: string): void {
+  const change = diffRange(view.state.doc.toString(), text)
+  if (!change) return // already in sync — dispatch nothing
+  const anchor = topViewportPos(view)
+  const changes = ChangeSet.of(change, view.state.doc.length)
+  view.dispatch({
+    changes,
+    effects: EditorView.scrollIntoView(changes.mapPos(anchor, 1), { y: "start" }),
+    annotations: ProgrammaticLoad.of(true),
+  })
+}
+
+/** The document position at the very top of the visible viewport — the line the reader
+ * is anchored on — found from the scroller's top-edge screen coordinates. Falls back to
+ * the rendered viewport start when coords don't resolve (e.g. an unmeasured view). */
+function topViewportPos(view: EditorView): number {
+  const rect = view.scrollDOM.getBoundingClientRect()
+  return view.posAtCoords({ x: rect.left + 1, y: rect.top + 1 }) ?? view.viewport.from
 }
 
 /** Lock or unlock the editor for typing (locked while a conflict is unresolved). */

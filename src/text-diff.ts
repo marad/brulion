@@ -23,5 +23,25 @@ export interface TextChange {
  * (`old.slice(0, from) + insert + old.slice(to)`) always yields `next` exactly.
  */
 export function diffRange(old: string, next: string): TextChange | null {
-  throw new Error("stub")
+  if (old === next) return null
+  const oldLen = old.length
+  const nextLen = next.length
+  const max = Math.min(oldLen, nextLen)
+
+  // Longest common prefix.
+  let prefix = 0
+  while (prefix < max && old.charCodeAt(prefix) === next.charCodeAt(prefix)) prefix++
+
+  // Longest common suffix, capped so it can't reach back into the prefix (else a run
+  // like "aaaa"→"aa" would count the same chars twice and produce from > to).
+  let suffix = 0
+  const maxSuffix = max - prefix
+  while (
+    suffix < maxSuffix &&
+    old.charCodeAt(oldLen - 1 - suffix) === next.charCodeAt(nextLen - 1 - suffix)
+  ) {
+    suffix++
+  }
+
+  return { from: prefix, to: oldLen - suffix, insert: next.slice(prefix, nextLen - suffix) }
 }

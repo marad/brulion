@@ -1,5 +1,5 @@
 import type { EditorView } from "codemirror"
-import { setEditorText } from "./editor"
+import { setEditorText, reloadEditorText } from "./editor"
 import { readNote, saveNote, listNotes, createNote, deleteNote, statNote, moveNote } from "./note"
 import { normalizeNoteName } from "./note-name"
 import { rewriteLinksForRename, rebaseOutboundLinks } from "./link-rewrite"
@@ -518,7 +518,9 @@ export function createNoteController(
             const note = await readNote(folder, activeName)
             if (safeToReplaceBuffer()) {
               lastModified = note.lastModified
-              setEditorText(view, note.content)
+              // Minimal-diff reload (FEAT-0067): replace only the differing span so the
+              // caret and scroll survive — not a wholesale set that jumps the view.
+              reloadEditorText(view, note.content)
               dirty = false
             } else {
               await raiseConflict()

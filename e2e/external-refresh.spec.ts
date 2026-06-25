@@ -37,7 +37,19 @@ async function deleteNote(page: Page, folder: string, name: string) {
   )
 }
 
+async function readNote(page: Page, folder: string, name: string): Promise<string> {
+  return await page.evaluate(
+    async ([f, file]) => {
+      const root = await navigator.storage.getDirectory()
+      const dir = await root.getDirectoryHandle(f, { create: true })
+      return await (await (await dir.getFileHandle(file)).getFile()).text()
+    },
+    [folder, name] as const,
+  )
+}
+
 const editor = (page: Page) => page.locator(".cm-content")
+const scroller = (page: Page) => page.locator(".cm-scroller")
 const row = (page: Page, name: string) => page.locator(".note-row", { hasText: name })
 
 test("a note added externally appears in the list (AC-1)", async ({ page }) => {
@@ -99,4 +111,39 @@ test("the open note deleted externally switches to another (AC-5)", async ({ pag
   await expect(page.locator(".note-name")).toHaveText(["b"])
   await expect(editor(page)).toHaveText("b body")
   await expect(row(page, "b")).toHaveClass(/active/)
+})
+
+test("an external edit preserves the scroll position, not jumping to the top (FEAT-0067 AC-1, AC-5)", async ({
+  page,
+}) => {
+  const folder = "e2e-refresh-scroll"
+  // A note tall enough to scroll well past one viewport.
+  const lines = Array.from({ length: 300 }, (_, i) => `line ${String(i + 1).padStart(3, "0")}`)
+  lines[299] = "LAST LINE original"
+  const body = lines.join("\n") + "\n"
+
+  await stubPicker(page, folder)
+  await page.goto("/brulion/")
+  await writeNote(page, folder, "long.md", body)
+  await page.locator("#open-folder").click()
+  await expect(editor(page)).toContainText("line 001") // top is rendered on open
+
+  // Scroll to the bottom and confirm the tail is in view.
+  await scroller(page).evaluate((el) => {
+    el.scrollTop = el.scrollHeight
+  })
+  const before = await scroller(page).evaluate((el) => el.scrollTop)
+  expect(before).toBeGreaterThan(500)
+  await expect(editor(page)).toContainText("LAST LINE original")
+
+  // Another tool edits the open note; the poller catches the buffer up.
+  const edited = body.replace("LAST LINE original", "LAST LINE EDITED")
+  await writeNote(page, folder, "long.md", edited)
+  await expect(editor(page)).toContainText("LAST LINE EDITED")
+
+  // The view did NOT reset to the top — the reader stays where they were.
+  const after = await scroller(page).evaluate((el) => el.scrollTop)
+  expect(after).toBeGreaterThan(before * 0.8)
+  // The reload echoed nothing back: the file is exactly the external content (the moat).
+  expect(await readNote(page, folder, "long.md")).toBe(edited)
 })
