@@ -666,7 +666,7 @@ const renderTheme = EditorView.baseTheme({
   // Links (FEAT-0025): styled text, markup hidden. A broken internal link (no
   // such note) is muted red with a dashed underline so it reads as "go nowhere".
   ".cm-link": {
-    color: "#2f6f9a",
+    color: "var(--link)",
     textDecoration: "underline",
     textDecorationColor: "rgba(47,111,154,0.4)",
     cursor: "pointer",
@@ -675,14 +675,14 @@ const renderTheme = EditorView.baseTheme({
   // cursor over a link reverts to the text caret to signal that (FEAT-0026).
   ".cm-mod-held .cm-link": { cursor: "text" },
   ".cm-link-broken": {
-    color: "#9a3b2f",
+    color: "var(--accent-text)",
     textDecorationStyle: "dashed",
     textDecorationColor: "rgba(154,59,47,0.5)",
   },
   ".cm-inline-code": {
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
     fontSize: "0.9em",
-    background: "rgba(0,0,0,0.05)",
+    background: "var(--code-bg)",
     borderRadius: "4px",
     padding: "0.1em 0.3em",
   },
@@ -692,16 +692,16 @@ const renderTheme = EditorView.baseTheme({
   ".cm-code-block": {
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
     fontSize: "0.9em",
-    background: "rgba(0,0,0,0.05)",
+    background: "var(--code-bg)",
     paddingLeft: "0.8em",
     paddingRight: "0.8em",
   },
   ".cm-code-top": { borderRadius: "6px 6px 0 0" },
   ".cm-code-bottom": { borderRadius: "0 0 6px 6px" },
   ".cm-blockquote": {
-    borderLeft: "3px solid rgba(0,0,0,0.2)",
+    borderLeft: "3px solid var(--border-strong)",
     paddingLeft: "0.7em",
-    color: "rgba(0,0,0,0.65)",
+    color: "var(--text-muted)",
     fontStyle: "italic",
   },
   // The `*`/`- ` marker run is replaced by this widget (FEAT-0019). A fixed-width

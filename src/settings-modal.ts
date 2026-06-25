@@ -1,4 +1,4 @@
-import { MIN_SIZE, MAX_SIZE, type Settings, type EditorWidth } from "./settings"
+import { MIN_SIZE, MAX_SIZE, type Settings, type EditorWidth, type Theme } from "./settings"
 import type { FontChoices } from "./font-access"
 import { togglePinned, reorderPinned } from "./actions"
 
@@ -71,6 +71,12 @@ const WIDTHS: { value: EditorWidth; label: string }[] = [
   { value: "full", label: "Full" },
 ]
 
+const THEMES: { value: Theme; label: string }[] = [
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+  { value: "system", label: "System" },
+]
+
 export function mountSettingsModal(
   backdrop: HTMLElement,
   handlers: SettingsModalHandlers,
@@ -133,6 +139,28 @@ export function mountSettingsModal(
     return radio
   })
   const widthRow = labeledRow("Editor width", widthControl)
+
+  // Theme — a Light/Dark/System radio group (FEAT-0065). System follows the OS via
+  // the stylesheet's prefers-color-scheme query; light/dark force that palette.
+  const themeControl = document.createElement("div")
+  themeControl.className = "settings-theme"
+  const themeRadios: HTMLInputElement[] = THEMES.map(({ value, label }) => {
+    const wrap = document.createElement("label")
+    wrap.className = "settings-theme-option"
+    const radio = document.createElement("input")
+    radio.type = "radio"
+    radio.name = "settings-theme"
+    radio.value = value
+    const text = document.createElement("span")
+    text.textContent = label
+    wrap.append(radio, text)
+    themeControl.append(wrap)
+    radio.addEventListener("change", () => {
+      if (radio.checked) emit({ theme: value })
+    })
+    return radio
+  })
+  const themeRow = labeledRow("Theme", themeControl)
 
   // Vim — a checkbox plus a key-chip documenting the toggle shortcut (FEAT-0054).
   // The chord is layout-correct per platform, matching the app's other <kbd> hints.
@@ -213,6 +241,7 @@ export function mountSettingsModal(
     fontRow,
     sizeRow,
     widthRow,
+    themeRow,
     vimRow,
     folderRow,
     journalRow,
@@ -320,6 +349,7 @@ export function mountSettingsModal(
     sizeDec.disabled = s.textSize <= MIN_SIZE
     sizeInc.disabled = s.textSize >= MAX_SIZE
     for (const r of widthRadios) r.checked = r.value === s.editorWidth
+    for (const r of themeRadios) r.checked = r.value === s.theme
     vimCheckbox.checked = s.vim
     // Only reassign when it actually differs: the input emits per keystroke and the
     // host's updateSettings calls sync()→seed() right back, and reassigning `.value`

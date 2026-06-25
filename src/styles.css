@@ -5,6 +5,85 @@
   --font-stack:
     system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
+
+  /* Theme palette (M18/FEAT-0065). The light values below are the app's original
+     colors; the dark set lives in the two rules after this one. Everything visual
+     references these tokens so light/dark/system flip in one place. */
+  --bg: #fbfbfa; /* page background */
+  --surface: #fff; /* panels, buttons, modals */
+  --surface-2: #f2f2f1; /* subtle fills: hover, code box, table header */
+  --text: #1a1a1a;
+  --text-muted: #6b6b6b;
+  --text-faint: #c2c2c2; /* barely-there glyphs revealed on hover (e.g. delete X) */
+  --border: #ececec;
+  --border-strong: #d4d4d4;
+  --accent: #9a3b2f; /* brand, for fills / borders (white text reads on it) */
+  --accent-strong: #863128; /* darker accent for the pressed/hover state of a fill */
+  --accent-text: #9a3b2f; /* brand-colored TEXT on the page bg */
+  --accent-fg: #fff; /* text on an --accent fill */
+  --link: #2f6f9a;
+  --code-bg: rgba(0, 0, 0, 0.05); /* inline code background */
+  --soft-surface: #fffdf6; /* warm near-white for large panels (settings/conflict modal) */
+  --soft-bg: #fbf3df; /* warm "cream" fills: settings buttons, hints, mermaid error */
+  --soft-border: #d8c79a;
+  --soft-text: #7a5a1e;
+  --danger-bg: #fdf3f1; /* inline error / conflict surfaces (reddish) */
+  --danger-border: #f3ddd8;
+  --shadow: rgb(0 0 0 / 22%); /* modal/overlay drop shadow */
+}
+
+/* Dark palette — applied when forced (`data-theme="dark"`) or, in system mode (no
+   `data-theme`), when the OS prefers dark. The two rules carry the same values (a
+   media query can't be ORed with an attribute selector in a single rule). */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1b1b1a;
+  --surface: #242423;
+  --surface-2: #2f2e2c;
+  --text: #e9e7e3;
+  --text-muted: #a09e98;
+  --text-faint: #56554f;
+  --border: #393834;
+  --border-strong: #4c4b46;
+  --accent: #b8503f;
+  --accent-strong: #9c4031;
+  --accent-text: #e3998b;
+  --accent-fg: #fff;
+  --link: #7fb0d4;
+  --code-bg: rgba(255, 255, 255, 0.09);
+  --soft-surface: #2b2825;
+  --soft-bg: #332b26;
+  --soft-border: #574636;
+  --soft-text: #d6b487;
+  --danger-bg: #382422;
+  --danger-border: #5a3a36;
+  --shadow: rgb(0 0 0 / 50%);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --bg: #1b1b1a;
+    --surface: #242423;
+    --surface-2: #2f2e2c;
+    --text: #e9e7e3;
+    --text-muted: #a09e98;
+    --text-faint: #56554f;
+    --border: #393834;
+    --border-strong: #4c4b46;
+    --accent: #b8503f;
+    --accent-strong: #9c4031;
+    --accent-text: #e3998b;
+    --accent-fg: #fff;
+    --link: #7fb0d4;
+    --code-bg: rgba(255, 255, 255, 0.09);
+    --soft-surface: #2b2825;
+    --soft-bg: #332b26;
+    --soft-border: #574636;
+    --soft-text: #d6b487;
+    --danger-bg: #382422;
+    --danger-border: #5a3a36;
+    --shadow: rgb(0 0 0 / 50%);
+  }
 }
 
 html,
@@ -17,8 +96,8 @@ body {
   display: flex;
   flex-direction: column;
   font-family: var(--font-stack);
-  color: #1a1a1a;
-  background: #fbfbfa;
+  color: var(--text);
+  background: var(--bg);
 }
 
 header {
@@ -26,16 +105,16 @@ header {
   gap: 0.5rem;
   align-items: center;
   padding: 0.6rem 1rem;
-  border-bottom: 1px solid #ececec;
+  border-bottom: 1px solid var(--border);
 }
 
 header button {
   font: inherit;
   padding: 0.35rem 0.8rem;
-  border: 1px solid #d4d4d4;
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
-  background: #fff;
-  color: #1a1a1a;
+  background: var(--surface);
+  color: var(--text);
   cursor: pointer;
 }
 
@@ -51,7 +130,7 @@ header button:not([hidden]) {
 }
 
 header button:hover {
-  background: #f2f2f1;
+  background: var(--surface-2);
 }
 
 /* One size for every header icon (FEAT-0055), set in a single place so the toggle
@@ -87,7 +166,7 @@ header button:hover {
   font-weight: 600;
   font-size: 1.05rem;
   letter-spacing: 0.01em;
-  color: #9a3b2f;
+  color: var(--accent-text);
   padding-left: 0.15rem;
 }
 
@@ -112,18 +191,18 @@ header button:hover {
   border: 1px solid transparent;
   border-radius: 6px;
   background: none;
-  color: #1a1a1a;
+  color: var(--text);
   cursor: text;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .note-identity-display:hover {
-  background: #f2f2f1;
-  border-color: #e0e0e0;
+  background: var(--surface-2);
+  border-color: var(--border);
 }
 .note-identity-path {
-  color: #9a9a96; /* muted folder prefix */
+  color: var(--text-muted); /* muted folder prefix */
 }
 .note-identity-name {
   font-weight: 600;
@@ -133,14 +212,14 @@ header button:hover {
   min-width: 12rem;
   max-width: 28rem;
   padding: 0.2rem 0.5rem;
-  border: 1px solid #9a3b2f;
+  border: 1px solid var(--accent);
   border-radius: 6px;
-  background: #fff;
-  color: #1a1a1a;
+  background: var(--surface);
+  color: var(--text);
 }
 .note-identity-error {
   font-size: 0.85rem;
-  color: #9a3b2f;
+  color: var(--accent-text);
 }
 
 /* Loading overlay (FEAT-0031): shown from first paint over the workspace until we
@@ -153,7 +232,7 @@ header button:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #fbfbfa;
+  background: var(--bg);
 }
 #loading[hidden] {
   display: none;
@@ -161,8 +240,8 @@ header button:hover {
 .spinner {
   width: 1.5rem;
   height: 1.5rem;
-  border: 2px solid #e7e7e3;
-  border-top-color: #9a3b2f;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent-text);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
@@ -182,7 +261,7 @@ header button:hover {
   align-items: center;
   justify-content: center;
   padding: 2rem;
-  background: #fbfbfa;
+  background: var(--bg);
 }
 /* `display: flex` above would otherwise override the `hidden` attribute. */
 #welcome[hidden] {
@@ -198,20 +277,20 @@ header button:hover {
   margin: 0 0 0.25rem;
   font-size: 2.4rem;
   font-weight: 700;
-  color: #9a3b2f;
+  color: var(--accent-text);
 }
 
 .welcome-pitch {
   margin: 0 0 1.25rem;
   font-size: 1.15rem;
-  color: #1a1a1a;
+  color: var(--text);
 }
 
 .welcome-fidelity {
   margin: 0 0 1.75rem;
   font-size: 0.98rem;
   line-height: 1.5;
-  color: #4a4a4a;
+  color: var(--text-muted);
 }
 
 .welcome-actions {
@@ -224,36 +303,36 @@ header button:hover {
 .welcome-actions .cta {
   font: inherit;
   padding: 0.55rem 1.3rem;
-  border: 1px solid #9a3b2f;
+  border: 1px solid var(--accent);
   border-radius: 6px;
-  background: #9a3b2f;
-  color: #fff;
+  background: var(--accent);
+  color: var(--accent-fg);
   cursor: pointer;
 }
 .welcome-actions .cta:hover {
-  background: #863128;
+  background: var(--accent-strong);
 }
 .welcome-actions button:not(.cta) {
   font: inherit;
   padding: 0.55rem 1.1rem;
-  border: 1px solid #d4d4d4;
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
-  background: #fff;
-  color: #1a1a1a;
+  background: var(--surface);
+  color: var(--text);
   cursor: pointer;
 }
 .welcome-actions button:not(.cta):hover {
-  background: #f2f2f1;
+  background: var(--surface-2);
 }
 
 .welcome-hint {
   margin: 1.5rem 0 0;
   font-size: 0.85rem;
-  color: #8a8a8a;
+  color: var(--text-muted);
 }
 .welcome-hint code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  background: #f0f0ee;
+  background: var(--surface-2);
   padding: 0 0.25rem;
   border-radius: 3px;
 }
@@ -282,8 +361,8 @@ header button:hover {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid #ececec;
-  background: #fafaf9;
+  border-right: 1px solid var(--border);
+  background: var(--bg);
 }
 
 /* `display: flex` above would otherwise override the `hidden` attribute. */
@@ -311,7 +390,7 @@ header button:hover {
 }
 
 #sidebar-resizer:hover {
-  background: #e0e0dd;
+  background: var(--border);
 }
 
 .workspace.sidebar-collapsed #sidebar-resizer {
@@ -337,7 +416,7 @@ header button:hover {
     inset: 0 auto 0 0;
     width: min(80vw, 16rem);
     z-index: 50;
-    box-shadow: 2px 0 12px rgb(0 0 0 / 18%);
+    box-shadow: 2px 0 12px var(--shadow);
   }
 
   /* Drag-to-resize is a pointer-precise desktop affordance — gone on touch. */
@@ -383,10 +462,10 @@ header button:hover {
   margin: 0.5rem;
   padding: 0.35rem 0.6rem;
   text-align: left;
-  border: 1px solid #d4d4d4;
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
-  background: #fff;
-  color: #8a8a8a;
+  background: var(--surface);
+  color: var(--text-muted);
   cursor: pointer;
 }
 
@@ -399,8 +478,8 @@ header button:hover {
 }
 
 #sidebar-search:hover {
-  border-color: #b9b9b9;
-  color: #5a5a5a;
+  border-color: var(--border-strong);
+  color: var(--text-muted);
 }
 
 /* The keyboard-shortcut hint, styled like a key cap. */
@@ -408,9 +487,9 @@ header button:hover {
   flex: 0 0 auto;
   font-size: 0.72em;
   font-family: inherit;
-  color: #9a9a9a;
-  background: #f3f3f1;
-  border: 1px solid #e2e2df;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 0.05em 0.4em;
 }
@@ -431,11 +510,11 @@ header button:hover {
 }
 
 .note-row:hover {
-  background: #f0f0ee;
+  background: var(--surface-2);
 }
 
 .note-row.active {
-  background: #e7e7e3;
+  background: var(--border);
 }
 
 .note-name {
@@ -447,7 +526,7 @@ header button:hover {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #1a1a1a;
+  color: var(--text);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -468,18 +547,18 @@ header button:hover {
   border: 0;
   border-radius: 5px;
   background: transparent;
-  color: #c2c2c2;
+  color: var(--text-faint);
   cursor: pointer;
 }
 
 .note-row:hover .note-delete {
-  color: #8a8a8a;
+  color: var(--text-muted);
 }
 
 .note-delete:hover,
 .note-delete:focus-visible {
-  color: #9a3b2f;
-  background: #f3ddd8;
+  color: var(--accent-text);
+  background: var(--danger-border);
 }
 
 /* Folder tree (FEAT-0024). A folder is a header row with a disclosure caret over
@@ -500,7 +579,7 @@ header button:hover {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #6a6a6a;
+  color: var(--text-muted);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -508,13 +587,13 @@ header button:hover {
 }
 
 .folder-header:hover {
-  background: #f0f0ee;
+  background: var(--surface-2);
 }
 
 .folder-header::before {
   content: "▸";
   font-size: 0.7em;
-  color: #9a9a9a;
+  color: var(--text-muted);
 }
 
 .folder-header[aria-expanded="true"]::before {
@@ -527,7 +606,7 @@ header button:hover {
   gap: 2px;
   margin-left: 0.7rem;
   padding-left: 0.4rem;
-  border-left: 1px solid #e7e7e3;
+  border-left: 1px solid var(--border);
 }
 
 /* An author `display` on `.folder-children` overrides the UA `[hidden]` rule, so
@@ -562,10 +641,10 @@ header button:hover {
   flex-direction: column;
   width: min(34rem, 100%);
   max-height: 70vh;
-  background: #fff;
-  border: 1px solid #e4e4e1;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 10px;
-  box-shadow: 0 12px 40px rgb(0 0 0 / 22%);
+  box-shadow: 0 12px 40px var(--shadow);
   overflow: hidden;
 }
 
@@ -576,9 +655,9 @@ header button:hover {
   flex: 0 0 auto;
   padding: 0.7rem 0.9rem;
   border: 0;
-  border-bottom: 1px solid #ececec;
-  background: #fff;
-  color: #1a1a1a;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
 }
 
 #switcher-input:focus,
@@ -591,9 +670,9 @@ header button:hover {
   flex: 0 0 auto;
   padding: 0.4rem 0.9rem;
   font-size: 0.85rem;
-  color: #9a3b2f;
-  background: #fdf3f1;
-  border-bottom: 1px solid #f3ddd8;
+  color: var(--accent-text);
+  background: var(--danger-bg);
+  border-bottom: 1px solid var(--danger-border);
 }
 
 #switcher-error[hidden] {
@@ -626,7 +705,7 @@ header button:hover {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #1a1a1a;
+  color: var(--text);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -634,13 +713,13 @@ header button:hover {
 }
 
 .switch-create {
-  color: #2f6f9a;
+  color: var(--link);
 }
 
 .switch-row.active,
 .switch-create.active,
 .palette-row.active {
-  background: #ececec;
+  background: var(--border);
 }
 
 /* A palette row lays out an optional Lucide icon beside the label (FEAT-0057). The
@@ -692,11 +771,11 @@ header button:hover {
   width: min(60rem, 100%);
   max-height: min(80vh, 100%);
   padding: 1.25rem 1.5rem;
-  background: #fffdf6;
-  border: 1px solid #efe4c4;
+  background: var(--soft-surface);
+  border: 1px solid var(--soft-border);
   border-radius: 10px;
-  box-shadow: 0 12px 40px rgb(0 0 0 / 22%);
-  color: #5a3f13;
+  box-shadow: 0 12px 40px var(--shadow);
+  color: var(--soft-text);
 }
 
 #conflict p {
@@ -720,7 +799,7 @@ header button:hover {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid #efe4c4;
+  border: 1px solid var(--soft-border);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -729,9 +808,9 @@ header button:hover {
   display: flex;
   font-size: 0.8rem;
   font-weight: 600;
-  color: #7a5a1e;
-  background: #f7efd9;
-  border-bottom: 1px solid #efe4c4;
+  color: var(--soft-text);
+  background: var(--soft-bg);
+  border-bottom: 1px solid var(--soft-border);
 }
 
 .conflict-diff-labels span {
@@ -740,7 +819,7 @@ header button:hover {
 }
 
 .conflict-diff-labels span:first-child {
-  border-right: 1px solid #efe4c4;
+  border-right: 1px solid var(--soft-border);
 }
 
 .conflict-diff .cm-mergeView,
@@ -763,15 +842,15 @@ header button:hover {
 #conflict button {
   font: inherit;
   padding: 0.4rem 0.8rem;
-  border: 1px solid #d8c79a;
+  border: 1px solid var(--soft-border);
   border-radius: 6px;
-  background: #fff;
-  color: #1a1a1a;
+  background: var(--surface);
+  color: var(--text);
   cursor: pointer;
 }
 
 #conflict button:hover {
-  background: #fbf3df;
+  background: var(--soft-bg);
 }
 
 /* Settings modal (FEAT-0048): the home for font / text size / editor width / Vim.
@@ -784,11 +863,11 @@ header button:hover {
   max-height: min(85vh, 100%);
   overflow: auto;
   padding: 1.25rem 1.5rem;
-  background: #fffdf6;
-  border: 1px solid #efe4c4;
+  background: var(--soft-surface);
+  border: 1px solid var(--soft-border);
   border-radius: 10px;
-  box-shadow: 0 12px 40px rgb(0 0 0 / 22%);
-  color: #5a3f13;
+  box-shadow: 0 12px 40px var(--shadow);
+  color: var(--soft-text);
 }
 
 .settings-titlebar {
@@ -811,12 +890,12 @@ header button:hover {
   border: 1px solid transparent;
   border-radius: 6px;
   background: none;
-  color: #7a5a1e;
+  color: var(--soft-text);
   cursor: pointer;
 }
 
 .settings-close:hover {
-  background: #f2e9d2;
+  background: var(--soft-bg);
 }
 
 /* One control per row: a label on the left, the control on the right. */
@@ -836,10 +915,10 @@ header button:hover {
   font: inherit;
   max-width: 14rem;
   padding: 0.3rem 0.4rem;
-  border: 1px solid #d8c79a;
+  border: 1px solid var(--soft-border);
   border-radius: 6px;
-  background: #fff;
-  color: #1a1a1a;
+  background: var(--surface);
+  color: var(--text);
 }
 
 /* Text-size stepper: −/readout/+. */
@@ -853,15 +932,15 @@ header button:hover {
   font: inherit;
   width: 1.9rem;
   height: 1.9rem;
-  border: 1px solid #d8c79a;
+  border: 1px solid var(--soft-border);
   border-radius: 6px;
-  background: #fff;
-  color: #1a1a1a;
+  background: var(--surface);
+  color: var(--text);
   cursor: pointer;
 }
 
 .settings-step:hover:not(:disabled) {
-  background: #fbf3df;
+  background: var(--soft-bg);
 }
 
 .settings-step:disabled {
@@ -876,12 +955,14 @@ header button:hover {
 }
 
 /* Width preset radio group. */
-.settings-width {
+.settings-width,
+.settings-theme {
   display: flex;
   gap: 0.9rem;
 }
 
-.settings-width-option {
+.settings-width-option,
+.settings-theme-option {
   display: flex;
   align-items: center;
   gap: 0.3rem;
@@ -900,10 +981,10 @@ header button:hover {
   font: inherit;
   font-size: 0.78rem;
   padding: 0.05rem 0.4rem;
-  border: 1px solid #d8c79a;
+  border: 1px solid var(--soft-border);
   border-radius: 4px;
-  background: #fbf3df;
-  color: #6b5d36;
+  background: var(--soft-bg);
+  color: var(--soft-text);
   white-space: nowrap;
 }
 
@@ -917,7 +998,7 @@ header button:hover {
 
 .settings-folder-name {
   font-size: 0.9rem;
-  color: #555;
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -927,16 +1008,16 @@ header button:hover {
 .settings-switch-folder {
   font: inherit;
   padding: 0.3rem 0.6rem;
-  border: 1px solid #d8c79a;
+  border: 1px solid var(--soft-border);
   border-radius: 6px;
-  background: #fff;
-  color: #1a1a1a;
+  background: var(--surface);
+  color: var(--text);
   cursor: pointer;
   white-space: nowrap;
 }
 
 .settings-switch-folder:hover {
-  background: #fbf3df;
+  background: var(--soft-bg);
 }
 
 /* A distinct settings section (FEAT-0058): set off from the appearance rows above
@@ -946,7 +1027,7 @@ header button:hover {
   flex-direction: column;
   gap: 0.4rem;
   padding-top: 0.85rem;
-  border-top: 1px solid #ececec;
+  border-top: 1px solid var(--border);
 }
 .settings-section-title {
   margin: 0;
@@ -956,7 +1037,7 @@ header button:hover {
 .settings-section-hint {
   margin: 0;
   font-size: 0.8rem;
-  color: #6b6b6b;
+  color: var(--text-muted);
 }
 
 /* Action bar section (FEAT-0058): a scrollable column of action rows (a pin
@@ -982,8 +1063,8 @@ header button:hover {
 }
 /* The drop-target indicator while dragging a pinned row over another. */
 .settings-action-row.drag-over {
-  border-color: #9a3b2f;
-  background: #fbf3df;
+  border-color: var(--accent-text);
+  background: var(--soft-bg);
 }
 .settings-action-label {
   flex: 1;
@@ -1017,20 +1098,20 @@ header button:hover {
 }
 .settings-workspace-open {
   font-size: 0.75rem;
-  color: #6b6b6b;
+  color: var(--text-muted);
 }
 .settings-workspace-forget {
   font: inherit;
   font-size: 0.8rem;
   padding: 0.1rem 0.5rem;
-  border: 1px solid #d8c79a;
+  border: 1px solid var(--soft-border);
   border-radius: 6px;
-  background: #fff;
-  color: #1a1a1a;
+  background: var(--surface);
+  color: var(--text);
   cursor: pointer;
 }
 .settings-workspace-forget:hover {
-  background: #fbf3df;
+  background: var(--soft-bg);
 }
 
 #editor {
@@ -1050,10 +1131,10 @@ header button:hover {
   flex-direction: column;
   min-width: 11rem;
   padding: 0.25rem;
-  background: #fff;
-  border: 1px solid #d4d4d4;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
-  box-shadow: 0 6px 20px rgb(0 0 0 / 12%);
+  box-shadow: 0 6px 20px var(--shadow);
   font-size: 0.9rem;
 }
 
@@ -1064,12 +1145,12 @@ header button:hover {
   border: 0;
   border-radius: 5px;
   background: transparent;
-  color: #1a1a1a;
+  color: var(--text);
   cursor: pointer;
 }
 
 .cm-context-menu button:hover {
-  background: #f2f2f1;
+  background: var(--surface-2);
 }
 
 /* Touch selection formatting toolbar (FEAT-0052): a compact floating pill of format
@@ -1081,10 +1162,10 @@ header button:hover {
   display: flex;
   gap: 0.15rem;
   padding: 0.2rem;
-  background: #fff;
-  border: 1px solid #d4d4d4;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
-  box-shadow: 0 6px 20px rgb(0 0 0 / 16%);
+  box-shadow: 0 6px 20px var(--shadow);
 }
 
 .cm-selection-toolbar button {
@@ -1095,12 +1176,12 @@ header button:hover {
   border: 0;
   border-radius: 5px;
   background: transparent;
-  color: #1a1a1a;
+  color: var(--text);
   cursor: pointer;
 }
 
 .cm-selection-toolbar button:hover {
-  background: #f2f2f1;
+  background: var(--surface-2);
 }
 
 /* Legible glyphs: bold Bold, italic Italic, monospace Code. */
@@ -1129,12 +1210,12 @@ header button:hover {
   gap: 0.6rem;
   max-width: calc(100vw - 2rem);
   padding: 0.45rem 0.5rem 0.45rem 0.9rem;
-  border: 1px solid #d8c79a;
+  border: 1px solid var(--soft-border);
   border-radius: 8px;
-  background: #fffaf0;
+  background: var(--soft-bg);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
   font-size: 0.9rem;
-  color: #1a1a1a;
+  color: var(--text);
 }
 
 .missing-note-banner[hidden] {
@@ -1150,15 +1231,15 @@ header button:hover {
 .missing-note-create {
   font: inherit;
   padding: 0.25rem 0.7rem;
-  border: 1px solid #d8c79a;
+  border: 1px solid var(--soft-border);
   border-radius: 6px;
-  background: #fff;
-  color: #1a1a1a;
+  background: var(--surface);
+  color: var(--text);
   cursor: pointer;
 }
 
 .missing-note-create:hover {
-  background: #fbf3df;
+  background: var(--soft-bg);
 }
 
 .missing-note-dismiss {
@@ -1169,13 +1250,13 @@ header button:hover {
   border: none;
   border-radius: 6px;
   background: none;
-  color: #6b6b6b;
+  color: var(--text-muted);
   cursor: pointer;
 }
 
 .missing-note-dismiss:hover {
-  background: #f0e6cf;
-  color: #1a1a1a;
+  background: var(--soft-bg);
+  color: var(--text);
 }
 
 /* Mermaid diagrams (FEAT-0056): a rendered ```mermaid block. Centered, with room to
@@ -1196,9 +1277,9 @@ header button:hover {
 .cm-mermaid-empty {
   display: block;
   padding: 0.6rem 0.8rem;
-  border: 1px solid #d8c79a;
+  border: 1px solid var(--soft-border);
   border-radius: 6px;
-  background: #fbf3df;
+  background: var(--soft-bg);
   font-size: 0.9rem;
   white-space: pre-wrap;
 }
@@ -1211,18 +1292,18 @@ header button:hover {
 }
 .cm-table th,
 .cm-table td {
-  border: 1px solid #d8d8d4;
+  border: 1px solid var(--border);
   padding: 0.3rem 0.6rem;
   text-align: left; /* default; per-column alignment is set inline from the separator */
 }
 .cm-table th {
-  background: #f2f2f1;
+  background: var(--surface-2);
   font-weight: 600;
 }
 
 .cm-mermaid-error {
-  border-color: #d9a8a0;
-  background: #fbeae7;
-  color: #8a2d22;
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--accent-text);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }

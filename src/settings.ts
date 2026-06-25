@@ -15,6 +15,9 @@ import { setVimMode } from "./editor"
 /** The editor's text column width: a preset, mapped to a CSS measure on apply. */
 export type EditorWidth = "narrow" | "wider" | "full"
 
+/** The color theme (FEAT-0065): explicit light/dark, or follow the OS. */
+export type Theme = "light" | "dark" | "system"
+
 export interface Settings {
   /** Ordered font-family names; empty means "use the built-in default stack". */
   font: string[]
@@ -30,6 +33,8 @@ export interface Settings {
   /** Folder-relative note-path template for the weekly journal (FEAT-0062), with date
    * placeholders (`{mondayOfTheWeek}` etc.); empty (unconfigured) by default. */
   journalPath: string
+  /** Color theme (FEAT-0065): `system` follows the OS via `prefers-color-scheme`. */
+  theme: Theme
 }
 
 /** The on-disk settings file at the folder root. */
@@ -50,6 +55,7 @@ export const DEFAULT_SETTINGS: Settings = {
   vim: false,
   actionBar: [],
   journalPath: "",
+  theme: "system",
 }
 
 /** Each width preset's CSS `max-width` value for the content column. */
@@ -78,7 +84,12 @@ export function normalizeSettings(raw: unknown): Settings {
     vim: Boolean(r.vim),
     actionBar: Array.isArray(r.actionBar) ? dedupeStrings(r.actionBar) : [],
     journalPath: typeof r.journalPath === "string" ? r.journalPath : "",
+    theme: isTheme(r.theme) ? r.theme : "system",
   }
+}
+
+function isTheme(value: unknown): value is Theme {
+  return value === "light" || value === "dark" || value === "system"
 }
 
 /** Keep only string entries, dropping duplicates (first occurrence wins). Pure. */
@@ -155,9 +166,10 @@ export async function saveSettings(
 /**
  * Apply `settings` to the live editor: set the `--editor-font-size`,
  * `--editor-measure`, and `--font-stack` custom properties on `root` (the font
- * override is removed when `font` is empty, so the stylesheet default applies), and
- * toggle Vim via {@link setVimMode}. Idempotent and reversible — applying the
- * defaults restores the built-in look.
+ * override is removed when `font` is empty, so the stylesheet default applies),
+ * apply the color theme via {@link applyTheme}, and toggle Vim via {@link
+ * setVimMode}. Idempotent and reversible — applying the defaults restores the
+ * built-in look.
  */
 export function applySettings(
   view: EditorView,
@@ -171,5 +183,24 @@ export function applySettings(
   } else {
     root.style.removeProperty("--font-stack")
   }
+  applyTheme(settings.theme, root)
   setVimMode(view, settings.vim)
+}
+
+/**
+ * Apply the color theme by toggling the `data-theme` attribute on `root`:
+ * `light`/`dark` force that palette (overriding the OS); `system` removes the
+ * attribute so the `prefers-color-scheme` media query in the stylesheet decides.
+ * The actual colors live in CSS custom properties keyed off this attribute — no
+ * note bytes are touched (the moat). Pure DOM side effect; idempotent.
+ */
+export function applyTheme(
+  theme: Theme,
+  root: HTMLElement = document.documentElement,
+): void {
+  if (theme === "system") {
+    delete root.dataset.theme
+  } else {
+    root.dataset.theme = theme
+  }
 }

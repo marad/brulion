@@ -83,10 +83,19 @@ const fontSelect = (root: HTMLElement) => root.querySelector<HTMLSelectElement>(
 const buttons = (root: HTMLElement) => [...root.querySelectorAll<HTMLButtonElement>("button")]
 
 const widthRadios = (root: HTMLElement) =>
-  [...root.querySelectorAll<HTMLInputElement>('input[type="radio"]')]
+  [...root.querySelectorAll<HTMLInputElement>('input[name="settings-width"]')]
 
 const widthRadio = (root: HTMLElement, value: string) =>
   widthRadios(root).find((r) => r.value === value)!
+
+const themeRadios = (root: HTMLElement) =>
+  [...root.querySelectorAll<HTMLInputElement>('input[name="settings-theme"]')]
+
+const themeRadio = (root: HTMLElement, value: string) =>
+  themeRadios(root).find((r) => r.value === value)!
+
+const selectedTheme = (root: HTMLElement) =>
+  themeRadios(root).find((r) => r.checked)?.value
 
 // True if some leaf element's exact text is `text` (used to assert the folder name
 // and the Vim shortcut chip without pinning their class/tag).
@@ -142,6 +151,7 @@ describe("mountSettingsModal open/seed (FEAT-0048 AC-1)", () => {
       vim: true,
       actionBar: [],
       journalPath: "",
+      theme: "system",
     }
     const { backdrop, handle } = mount(initial)
 
@@ -228,6 +238,32 @@ describe("mountSettingsModal editor width (FEAT-0048 AC-4)", () => {
     full.checked = true
     full.dispatchEvent(new Event("change", { bubbles: true }))
     expect(onChange).toHaveBeenLastCalledWith({ editorWidth: "full" })
+  })
+})
+
+describe("mountSettingsModal theme (FEAT-0065 AC-5)", () => {
+  it("seeds the theme radio from the current settings", async () => {
+    const { backdrop, handle } = mount({ ...DEFAULT_SETTINGS, theme: "dark" })
+    handle.open()
+    await flush()
+    expect(selectedTheme(backdrop)).toBe("dark")
+  })
+
+  it("selecting a theme option emits onChange with that theme", async () => {
+    const { backdrop, handle, onChange } = mount({ ...DEFAULT_SETTINGS, theme: "system" })
+    handle.open()
+    await flush()
+
+    const dark = themeRadio(backdrop, "dark")
+    dark.checked = true
+    dark.dispatchEvent(new Event("change", { bubbles: true }))
+    expect(onChange).toHaveBeenLastCalledWith({ theme: "dark" })
+
+    onChange.mockClear()
+    const light = themeRadio(backdrop, "light")
+    light.checked = true
+    light.dispatchEvent(new Event("change", { bubbles: true }))
+    expect(onChange).toHaveBeenLastCalledWith({ theme: "light" })
   })
 })
 

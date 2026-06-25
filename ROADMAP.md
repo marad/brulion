@@ -16,10 +16,10 @@ Every technical decision defers to that.
 
 > **Execution order (next up), agreed with the user.** M-numbers are **stable
 > identities, not the running order**. M1–M13, **M14**, **M15**, **M16**, **M17**,
-> **M19**–**M23**, **M25**–**M33** are done. Next, in priority:
+> **M18**–**M23**, **M25**–**M33** are done. Next, in priority:
 >
-> the rest as capacity allows: **M18** (light/dark theme), **M24** (scroll/caret
-> preservation on external refresh). Done: **M26** (table rendering), **M29**
+> the rest as capacity allows: **M24** (scroll/caret preservation on external
+> refresh). Done: **M18** (light/dark theme), **M26** (table rendering), **M29**
 > (editable code-fence markers), **M30** (command palette + action bar), **M31**
 > (weekly journal navigation — day-log deferred), **M32** (link section anchors),
 > **M33** (multiple vaults / workspaces).

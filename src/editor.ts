@@ -34,7 +34,17 @@ const typography = EditorView.theme({
   // Base size is settings-driven via `--editor-font-size` (M16/FEAT-0047); the
   // fallback is the historical 16px, used before a folder (hence settings) loads.
   // Headings are `em`-relative, so this one knob scales the whole hierarchy.
-  "&": { height: "100%", fontSize: "var(--editor-font-size, 16px)", color: "#1a1a1a" },
+  // Background + text track the theme tokens (M18/FEAT-0065) so the editing surface
+  // themes with the app chrome.
+  "&": {
+    height: "100%",
+    fontSize: "var(--editor-font-size, 16px)",
+    color: "var(--text)",
+    backgroundColor: "var(--bg)",
+  },
+  // The caret defaults to a black border — invisible on a dark background; track the
+  // text color so it's visible in both themes.
+  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--text)" },
   ".cm-scroller": {
     fontFamily: "var(--font-stack)",
     lineHeight: "1.6",

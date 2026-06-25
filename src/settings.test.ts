@@ -5,6 +5,7 @@ import {
   loadSettings,
   saveSettings,
   applySettings,
+  applyTheme,
   DEFAULT_SETTINGS,
   SETTINGS_FILE,
   type Settings,
@@ -132,6 +133,14 @@ describe("normalizeSettings (AC-3)", () => {
     expect(normalizeSettings({ actionBar: "goto" }).actionBar).toEqual([]) // not an array
   })
 
+  it("FEAT-0065 AC-1: keeps a valid theme, coerces missing/invalid to system", () => {
+    expect(normalizeSettings({ theme: "light" }).theme).toBe("light")
+    expect(normalizeSettings({ theme: "dark" }).theme).toBe("dark")
+    expect(normalizeSettings({ theme: "system" }).theme).toBe("system")
+    expect(normalizeSettings({ theme: "neon" }).theme).toBe("system")
+    expect(normalizeSettings({}).theme).toBe("system")
+  })
+
   it("AC-3: returns the defaults for a non-object input", () => {
     expect(normalizeSettings(null)).toEqual(DEFAULT_SETTINGS)
     expect(normalizeSettings(undefined)).toEqual(DEFAULT_SETTINGS)
@@ -173,6 +182,7 @@ describe("loadSettings / saveSettings round-trip (AC-5, AC-2)", () => {
       editorWidth: "wider",
       vim: true,
       actionBar: ["toggle-vim", "switch-folder"],
+      theme: "dark",
       journalPath: "Journal/Week/{mondayOfTheWeek}",
     }
     await saveSettings(folder.dir, settings)
@@ -207,6 +217,7 @@ describe("loadSettings / saveSettings round-trip (AC-5, AC-2)", () => {
       vim: true,
       actionBar: [],
       journalPath: "",
+      theme: "system",
     })
   })
 })
@@ -218,7 +229,7 @@ describe("applySettings DOM variables", () => {
     try {
       applySettings(
         view,
-        { font: [], textSize: 20, editorWidth: "wider", vim: false, actionBar: [], journalPath: "" },
+        { font: [], textSize: 20, editorWidth: "wider", vim: false, actionBar: [], journalPath: "", theme: "system" },
         root,
       )
       expect(root.style.getPropertyValue("--editor-font-size")).toBe("20px")
@@ -249,7 +260,7 @@ describe("applySettings DOM variables", () => {
     try {
       applySettings(
         view,
-        { font: ["Menlo", "Courier New"], textSize: 16, editorWidth: "narrow", vim: false, actionBar: [], journalPath: "" },
+        { font: ["Menlo", "Courier New"], textSize: 16, editorWidth: "narrow", vim: false, actionBar: [], journalPath: "", theme: "system" },
         root,
       )
       expect(root.style.getPropertyValue("--font-stack")).toBe(
@@ -266,6 +277,41 @@ describe("applySettings DOM variables", () => {
     try {
       applySettings(view, { ...DEFAULT_SETTINGS, font: [] }, root)
       expect(root.style.getPropertyValue("--font-stack")).toBe("")
+    } finally {
+      view.destroy()
+    }
+  })
+
+  it("FEAT-0065: applyTheme is idempotent and toggles cleanly between modes", () => {
+    const root = document.createElement("div")
+    applyTheme("dark", root)
+    applyTheme("dark", root)
+    expect(root.dataset.theme).toBe("dark")
+    applyTheme("system", root)
+    expect(root.hasAttribute("data-theme")).toBe(false)
+  })
+
+  it("FEAT-0065 AC-2/AC-3: light/dark set data-theme on the root", () => {
+    const view = mountEditor(document.createElement("div"))
+    const root = document.createElement("div")
+    try {
+      applySettings(view, { ...DEFAULT_SETTINGS, theme: "dark" }, root)
+      expect(root.dataset.theme).toBe("dark")
+      applySettings(view, { ...DEFAULT_SETTINGS, theme: "light" }, root)
+      expect(root.dataset.theme).toBe("light")
+    } finally {
+      view.destroy()
+    }
+  })
+
+  it("FEAT-0065 AC-4: system removes data-theme so the OS query decides", () => {
+    const view = mountEditor(document.createElement("div"))
+    const root = document.createElement("div")
+    try {
+      applySettings(view, { ...DEFAULT_SETTINGS, theme: "dark" }, root)
+      applySettings(view, { ...DEFAULT_SETTINGS, theme: "system" }, root)
+      expect(root.dataset.theme).toBeUndefined()
+      expect(root.hasAttribute("data-theme")).toBe(false)
     } finally {
       view.destroy()
     }
