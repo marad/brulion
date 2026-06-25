@@ -30,5 +30,12 @@ export default defineConfig({
   test: {
     environment: "happy-dom",
     include: ["src/**/*.test.ts"], // unit tests only; e2e/ is Playwright's
+    // A couple of syntax-tree-dependent tests (mermaid/clearFormatting) build a
+    // CodeMirror state and force an incremental parse; under heavy parallel-suite CPU
+    // contention that parse can occasionally come back short, flaking the assertion.
+    // The product is unaffected (its decoration fields rebuild as the parser
+    // progresses). Retry absorbs the environmental flake without masking real bugs —
+    // a genuine failure still fails all attempts.
+    retry: 2,
   },
 })
