@@ -1969,3 +1969,13 @@ matching decision above.
   rather than staying a fixed light theme.
 - **Editor/UI only; bytes untouched.** Theming is CSS vars + a root attribute + the
   editor theme reading them — no note byte changes (the moat).
+- **P2 (FEAT-0066): the code syntax palette is theme-aware, not deferred.** P1 left the
+  `tok-*` code colors a fixed GitHub-light set; on dark they were unreadable on the dark
+  code box, so the theme felt incomplete (user feedback at the M18 review). The seven
+  distinct colors became `--tok-*` palette tokens (light = the original values, a
+  GitHub-dark set in the dark blocks); `code-highlight.ts` reads them via `var(--…)`.
+  Shared colors keep one token (property/escape = number blue, meta = comment grey), so
+  light is byte-identical. No new switching logic — the tokens ride P1's data-theme +
+  media-query mechanism. *Consequence:* code blocks now recolor with the theme; a
+  follow-up review point is whether the chosen dark syntax hues suit the user's taste
+  (one-line-per-token to retune).
