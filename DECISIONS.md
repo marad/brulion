@@ -1747,3 +1747,35 @@ YAML.
   for a weekend-scale tool — deferred until wanted. Pure list manipulation
   (`togglePinned`, `movePinned`) lives as unit-tested pure helpers beside the existing
   UI glue, consistent with `buildNoteTree`.
+
+### M30 review (live, with the user) — corrections
+
+Walking the deployed app, the user changed several M30 calls. Each supersedes the
+matching decision above.
+
+- **Palette shortcut: `Ctrl/Cmd+Shift+K`, not `+P`.** Grouping it with the note
+  switcher's `Ctrl/Cmd+K` (K = find a note, Shift+K = run a command) puts it under
+  the same finger, and — decisively — removes the failure mode of `Ctrl/Cmd+P`: a
+  user who forgets Shift would otherwise get the browser's **print dialog**. In the
+  Chromium-only target `Ctrl+Shift+K` has no default binding, and our `Ctrl+K`
+  handler already excludes Shift, so the two don't collide.
+- **Reorder pinned actions by drag-and-drop, not ↑/↓ buttons.** The user found the
+  arrow buttons clearly worse than dragging for ordering. Implemented with native
+  HTML5 drag-and-drop (no library — stays lean); desktop pointer drag now, touch
+  refinement deferred to M17. Reverses the earlier "up/down (lean)" call — dragging
+  is the natural gesture for reordering and the arrows were busywork.
+- **Action bar: icon-only buttons + tooltip, not icon+label.** The header stays
+  compact as the pinned set grows; the label moves to `title` (hover tooltip) and
+  `aria-label` (accessible name). Reverses "icon+label buttons".
+- **Settings: the Action bar config is its own distinct section, not another row.**
+  A separate, visually-set-off section with its own heading and a scrollable list,
+  because the action set will grow and shouldn't be crammed into the flat row list
+  beside Font/Text size. (A full tabbed settings redesign — Appearance / Action bar /
+  … — was considered and deferred as a larger M16 follow-up; variant A now.)
+- **Extract a neutral `actions.ts` module.** The pure action helpers
+  (`resolvePinned`/`togglePinned` + the new drag reorder) and the `Action` type move
+  out of `command-palette.ts` into `actions.ts`, so `settings-modal.ts` and `main.ts`
+  depend on the action *model*, not on the palette (the review flagged the modal
+  reaching into the palette for list helpers — the dependency arrow pointed the wrong
+  way). `renderActionBar` (DOM) moves to `ui.ts` beside the other DOM glue. The
+  command palette keeps `rankActions` + the overlay.

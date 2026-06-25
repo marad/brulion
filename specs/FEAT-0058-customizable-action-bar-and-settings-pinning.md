@@ -29,17 +29,21 @@ exactly as it did before this phase (no surprise UI; the palette stays the
 discoverable entry).
 
 **The bar.** A header action-bar group renders the pinned actions, in order, as
-icon+label buttons (the icon from the action's Lucide node, FEAT-0057; label as the
-button text/title). Clicking a button runs that action. An id in `actionBar` that
-does not resolve to a registered action is **ignored** — no button, no error — so a
-stale or hand-typed id is harmless. The bar sits alongside the always-present header
-chrome (the sidebar toggle, settings gear, Install button), which is untouched.
+**icon-only** buttons (the icon from the action's Lucide node, FEAT-0057); the label
+is exposed as the button's tooltip (`title`) and accessible name (`aria-label`), not
+as visible text — keeping the header compact as the pinned set grows. Clicking a
+button runs that action. An id in `actionBar` that does not resolve to a registered
+action is **ignored** — no button, no error — so a stale or hand-typed id is
+harmless. The bar sits alongside the always-present header chrome (the sidebar
+toggle, settings gear, Install button), which is untouched.
 
-**Configuring it.** The settings modal gains an **Action bar** section listing the
-registered actions. The user can pin/unpin each, and reorder the pinned ones. Every
-change reports through the existing settings `onChange` patch, so the host applies +
-persists it (writes `.brulion.json`) and the bar re-renders live. Reopening the app
-on the same vault (or another machine with that folder) restores the same bar.
+**Configuring it.** The settings modal gains a distinct **Action bar** section (its
+own heading, visually separated from the appearance controls, with its own scrollable
+list so a growing action set doesn't crowd the dialog). The user can pin/unpin each
+registered action, and **reorder the pinned ones by dragging** them within the list.
+Every change reports through the existing settings `onChange` patch, so the host
+applies + persists it (writes `.brulion.json`) and the bar re-renders live. Reopening
+the app on the same vault (or another machine with that folder) restores the same bar.
 
 ## Constraints
 
@@ -60,8 +64,8 @@ on the same vault (or another machine with that folder) restores the same bar.
 - **A plugin/extension action API** — the registry is still in-app.
 - **Removing or reordering the always-present chrome** (sidebar toggle / settings
   gear / Install) — the bar is additive, not a replacement for the fixed controls.
-- **Drag-to-reorder** — ordering is via explicit move-up/down controls (lean);
-  drag can come later if it's wanted.
+- **Touch drag-reorder** — the drag-to-reorder is desktop pointer drag (native HTML5);
+  refining it for touch rides with the broader mobile work (M17).
 
 ## Acceptance criteria
 
@@ -72,11 +76,12 @@ Then `.brulion.json` holds them in order; and loading a file whose `actionBar`
 contains non-string entries or duplicates yields a list with those dropped (strings
 only, first occurrence of each id kept).
 
-**AC-2** — Pinned actions render as ordered icon+label buttons that run on click.
+**AC-2** — Pinned actions render as ordered icon-only buttons that run on click.
 Given `actionBar` lists two registered action ids in some order,
 When the workspace is shown,
-Then the header action bar shows those two as icon+label buttons in that order, and
-clicking one runs that action's `run()`.
+Then the header action bar shows those two as icon-only buttons in that order, each
+exposing its action label as tooltip and accessible name, and clicking one runs that
+action's `run()`.
 
 **AC-3** — An unknown pinned id is ignored.
 Given `actionBar` contains an id that no registered action has,
@@ -90,9 +95,9 @@ one),
 Then `actionBar` gains/loses that id (persisted), and the header bar adds/removes
 its button live.
 
-**AC-5** — The settings modal can reorder pinned actions.
+**AC-5** — The settings modal can reorder pinned actions by dragging.
 Given two or more actions are pinned,
-When the user moves a pinned action up or down,
+When the user drags a pinned action to a new position within the pinned list,
 Then `actionBar`'s order changes accordingly (persisted) and the header bar reflects
 the new order.
 

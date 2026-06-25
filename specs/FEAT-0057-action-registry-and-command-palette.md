@@ -42,7 +42,7 @@ Folder-switch and the Vim toggle thereby become registered actions (the M30
 "migrate onto the action model" goal); their existing entry points keep working and
 now route through the same `run()`.
 
-**The palette.** `Ctrl/Cmd+Shift+P` opens a centered modal overlay over the
+**The palette.** `Ctrl/Cmd+Shift+K` opens a centered modal overlay over the
 workspace — a text input with a results list beneath — mirroring the quick
 switcher's structure and styling. It opens regardless of editor focus or Vim
 mode/state, with the input focused. It opens only when a folder is open, the
@@ -96,7 +96,7 @@ toolbar consumer of the icon is P2.)
 
 **AC-1** — The shortcut opens the palette, focused.
 Given a folder is open,
-When the user presses `Ctrl+Shift+P` (or `Cmd+Shift+P`),
+When the user presses `Ctrl+Shift+K` (or `Cmd+Shift+K`),
 Then a modal overlay appears with a text input that has focus and a results list
 showing the registered actions.
 
@@ -136,13 +136,13 @@ label-only.
 
 **AC-8** — The palette opens under Vim.
 Given Vim mode is on (in normal or insert mode),
-When the user presses `Ctrl/Cmd+Shift+P`,
+When the user presses `Ctrl/Cmd+Shift+K`,
 Then the palette opens as usual (the shortcut is not swallowed by Vim).
 
 **AC-9** — The palette is gated and never stacks.
 Given a conflict modal is standing, or the switcher or settings modal is already
 open, or no folder is open,
-When the user presses `Ctrl/Cmd+Shift+P`,
+When the user presses `Ctrl/Cmd+Shift+K`,
 Then the palette does not open.
 
 **AC-10** — No writes from palette use.
