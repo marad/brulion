@@ -1865,3 +1865,34 @@ matching decision above.
   in-note table-of-contents affordance that falls out of the same code.
 - **Moat untouched.** Splitting/resolving/scrolling are read-only; the only write is
   the unchanged M8 create-on-miss when the *note* doesn't exist.
+
+## M31 — Weekly journal navigation (FEAT-0062)
+
+(Scope settled live with the user; deliberately reduced from the ROADMAP sketch.)
+
+- **M31 is scoped to navigation only — the day-log and the week template are
+  deferred.** The ROADMAP sketched two parts (templated week-note navigation + a
+  quick day-log appending to a per-day section). In the live discussion the user cut
+  it back: no week template (so no seeded per-day headings), and therefore no day-log
+  (without a defined structure it would be either inconsistent or crude). M31 ships
+  just the **"open this week's journal"** action; the day-log returns if/when a
+  journal structure is decided.
+- **The action computes a path and reuses the existing open-note path — it does not
+  create.** It expands `journalPath` against today, normalizes to a note path, and
+  hands it to `openNotePath` (FEAT-0025/0057): switch if it exists, else the *existing*
+  create-on-miss prompt creates it. No bespoke creation, no template seeding — so a
+  fresh journal note is just an empty note, made by the same confirmed flow as any
+  other missing-link target.
+- **One setting `journalPath` (string, default empty), placeholders fixed.** Expanded
+  against the current date: `{year}`(2026)/`{month}`(06)/`{day}`(25) and
+  `{mondayOfTheWeek}` (ISO date of the week's Monday; week starts **Monday**, fixed,
+  not locale-configurable — the user is European). Expansion is a pure function of
+  (template, date) so it's unit-tested with fixed dates, no `Date.now()` in the core.
+- **Empty `journalPath` opens settings** rather than no-op'ing — a gentle nudge to
+  configure it (the action is always in the registry).
+- **One registry action, English label "Open this week's journal" (calendar icon),
+  no dedicated chord.** Consistent with the all-English UI; discoverable via the
+  palette and pinnable to the action bar (M30) — we don't add bespoke keyboard
+  shortcuts lightly.
+- **Moat untouched.** Expanding/opening read only; the only writes are the
+  `.brulion.json` preference and the user-confirmed create-on-miss note.
