@@ -37,6 +37,11 @@ capabilities and exposes them to the palette. The initial set:
 - **Toggle note list** — flips the sidebar (FEAT-0020), the same as the header
   toggle and `Ctrl+\`.
 - **Open settings** — opens the settings modal (FEAT-0048).
+- **Open command palette** — opens the palette itself; pinnable to the action bar
+  and tappable on mobile where the `Ctrl/Cmd+Shift+K` chord isn't available.
+
+(The registry grows as later features add capabilities — e.g. "Switch workspace…"
+from FEAT-0060; the palette lists whatever is registered.)
 
 Folder-switch and the Vim toggle thereby become registered actions (the M30
 "migrate onto the action model" goal); their existing entry points keep working and
