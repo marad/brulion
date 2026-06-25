@@ -1203,6 +1203,23 @@ header button:hover {
   white-space: pre-wrap;
 }
 
+/* Rendered markdown table (FEAT-0063): a real aligned table, bordered cells. */
+.cm-table {
+  border-collapse: collapse;
+  margin: 0.4rem 0;
+  font-size: 0.95em;
+}
+.cm-table th,
+.cm-table td {
+  border: 1px solid #d8d8d4;
+  padding: 0.3rem 0.6rem;
+  text-align: left; /* default; per-column alignment is set inline from the separator */
+}
+.cm-table th {
+  background: #f2f2f1;
+  font-weight: 600;
+}
+
 .cm-mermaid-error {
   border-color: #d9a8a0;
   background: #fbeae7;
