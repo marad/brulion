@@ -197,19 +197,19 @@ const frontmatterTheme = EditorView.baseTheme({
     display: "inline-block",
     cursor: "pointer",
     fontSize: "0.8em",
-    color: "rgba(0,0,0,0.55)",
-    background: "rgba(0,0,0,0.04)",
-    border: "1px solid rgba(0,0,0,0.08)",
+    color: "var(--text-muted)",
+    background: "var(--code-bg)",
+    border: "1px solid var(--border)",
     borderRadius: "6px",
     padding: "0.1em 0.6em",
     margin: "0.15em 0",
     userSelect: "none",
   },
-  ".cm-frontmatter-toggle:hover": { background: "rgba(0,0,0,0.07)" },
+  ".cm-frontmatter-toggle:hover": { background: "var(--surface-2)" },
   // The expanded raw lines, set off as a region.
   ".cm-frontmatter-line": {
-    background: "rgba(0,0,0,0.03)",
-    borderLeft: "2px solid rgba(0,0,0,0.12)",
+    background: "var(--code-bg)",
+    borderLeft: "2px solid var(--border-strong)",
   },
 })
 

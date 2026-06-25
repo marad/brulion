@@ -92,6 +92,35 @@ test("Light forces the light palette and System clears the attribute (AC-3, AC-4
   await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.*/)
 })
 
+test("the frontmatter chip is legible in dark mode (AC-6)", async ({ page }) => {
+  const folder = "e2e-theme-frontmatter"
+  await stubPicker(page, folder)
+  await page.goto("/brulion/")
+  await seedNote(page, folder, "meta.md", "---\ntitle: Hello\ntags: [a, b]\n---\n\nBody.\n")
+  await page.locator("#open-folder").click()
+  await expect(page.locator("#note-identity")).toBeVisible()
+
+  await page.locator("#open-settings").click()
+  await page.locator('input[name="settings-theme"][value="dark"]').check()
+  await page.keyboard.press("Escape")
+
+  const chip = page.locator(".cm-frontmatter-toggle").first()
+  await expect(chip).toBeVisible()
+  // The chip text must be light on the dark surface (not the old black rgba), and its
+  // fill must differ from the editor background so it reads as a distinct chip.
+  const { color, chipBg, editorBg } = await chip.evaluate((el) => ({
+    color: getComputedStyle(el).color,
+    chipBg: getComputedStyle(el).backgroundColor,
+    editorBg: getComputedStyle(document.querySelector(".cm-editor")!).backgroundColor,
+  }))
+  const lum = (rgb: string) => {
+    const [r, g, b] = rgb.match(/\d+/g)!.map(Number)
+    return Math.max(r, g, b)
+  }
+  expect(lum(color)).toBeGreaterThan(120) // light text, visible on dark
+  expect(chipBg).not.toBe(editorBg) // the chip stands out from the editor surface
+})
+
 test("switching theme writes no note bytes (AC-7)", async ({ page }) => {
   const folder = "e2e-theme-moat"
   const body = "# Title\n\nUntouched body with trailing spaces.   \n"
