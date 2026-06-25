@@ -1,28 +1,22 @@
-import { get, set } from "idb-keyval"
+import { get, set, del } from "idb-keyval"
 
 /**
- * The chosen folder's lifetime across reloads: persist its handle and check /
- * (re-)acquire permission. Permission is always `readwrite`, matching the pick
- * in FEAT-0002, so one grant covers the writes coming later.
+ * Per-reload session state. Folder handles now live in the vault set (M33/`vaults.ts`),
+ * not here. State here is split: **content-tied** values (recency, expanded folders)
+ * are keyed per vault id (FEAT-0059) so they don't bleed between vaults;
+ * **window-ergonomics** values (sidebar collapse/width) and the active note stay
+ * origin-global. Permission helpers (`readwrite`, matching FEAT-0002) round it out.
  */
 
-const DIR_KEY = "brulion:dir"
 const ACTIVE_KEY = "brulion:active"
 const SIDEBAR_KEY = "brulion:sidebar-collapsed"
-const EXPANDED_FOLDERS_KEY = "brulion:expanded-folders"
 const SIDEBAR_WIDTH_KEY = "brulion:sidebar-width"
-const RECENCY_KEY = "brulion:recency"
+/** The pre-M33 global recency/expanded keys, migrated per-vault then cleared. */
+const LEGACY_RECENCY_KEY = "brulion:recency"
+const LEGACY_EXPANDED_KEY = "brulion:expanded-folders"
+const recencyKey = (vaultId: string) => `brulion:recency:${vaultId}`
+const expandedKey = (vaultId: string) => `brulion:expanded-folders:${vaultId}`
 const MODE = { mode: "readwrite" } as const
-
-/** Persist the directory handle so it survives a reload. */
-export function saveFolder(handle: FileSystemDirectoryHandle): Promise<void> {
-  return set(DIR_KEY, handle)
-}
-
-/** The persisted directory handle, or `undefined` if none was stored. */
-export function loadFolder(): Promise<FileSystemDirectoryHandle | undefined> {
-  return get<FileSystemDirectoryHandle>(DIR_KEY)
-}
 
 /** Remember which note was last active, so a reload returns to it. */
 export function saveActiveNote(name: string): Promise<void> {
@@ -44,17 +38,20 @@ export async function loadSidebarCollapsed(): Promise<boolean> {
   return (await get<boolean>(SIDEBAR_KEY)) === true
 }
 
-/** Remember which folders the user expanded in the tree (FEAT-0043), as an array. */
-export function saveExpandedFolders(paths: ReadonlySet<string>): Promise<void> {
-  return set(EXPANDED_FOLDERS_KEY, [...paths])
+/** Remember which folders the user expanded in `vaultId`'s tree (FEAT-0043/0059). */
+export function saveExpandedFolders(
+  vaultId: string,
+  paths: ReadonlySet<string>,
+): Promise<void> {
+  return set(expandedKey(vaultId), [...paths])
 }
 
 /**
- * The set of expanded folder paths; empty when none was stored — so by default
- * every folder renders collapsed (FEAT-0043). Absence means collapsed.
+ * The set of expanded folder paths for `vaultId`; empty when none was stored — so by
+ * default every folder renders collapsed (FEAT-0043). Absence means collapsed.
  */
-export async function loadExpandedFolders(): Promise<Set<string>> {
-  return new Set((await get<string[]>(EXPANDED_FOLDERS_KEY)) ?? [])
+export async function loadExpandedFolders(vaultId: string): Promise<Set<string>> {
+  return new Set((await get<string[]>(expandedKey(vaultId))) ?? [])
 }
 
 /** Remember the user's chosen sidebar width in pixels (FEAT-0044). */
@@ -72,14 +69,33 @@ export async function loadSidebarWidth(): Promise<number | null> {
   return typeof px === "number" && Number.isFinite(px) ? px : null
 }
 
-/** Persist the most-recently-visited note list, most-recent first (FEAT-0039). */
-export function saveRecency(paths: readonly string[]): Promise<void> {
-  return set(RECENCY_KEY, [...paths])
+/** Persist `vaultId`'s most-recently-visited note list, most-recent first (FEAT-0039/0059). */
+export function saveRecency(vaultId: string, paths: readonly string[]): Promise<void> {
+  return set(recencyKey(vaultId), [...paths])
 }
 
-/** The persisted MRU note list; an empty array when none was stored. */
-export async function loadRecency(): Promise<string[]> {
-  return (await get<string[]>(RECENCY_KEY)) ?? []
+/** `vaultId`'s persisted MRU note list; an empty array when none was stored. */
+export async function loadRecency(vaultId: string): Promise<string[]> {
+  return (await get<string[]>(recencyKey(vaultId))) ?? []
+}
+
+/**
+ * Migrate the pre-M33 *global* recency/expanded values onto `vaultId` (FEAT-0059):
+ * copy each legacy key to the per-vault key only when the per-vault value is absent
+ * (don't clobber), then clear the legacy keys. Idempotent — a second call finds the
+ * legacy keys gone and does nothing.
+ */
+export async function migrateLegacySession(vaultId: string): Promise<void> {
+  const legacyRecency = await get<string[]>(LEGACY_RECENCY_KEY)
+  if (legacyRecency && (await get(recencyKey(vaultId))) === undefined) {
+    await set(recencyKey(vaultId), legacyRecency)
+  }
+  const legacyExpanded = await get<string[]>(LEGACY_EXPANDED_KEY)
+  if (legacyExpanded && (await get(expandedKey(vaultId))) === undefined) {
+    await set(expandedKey(vaultId), legacyExpanded)
+  }
+  await del(LEGACY_RECENCY_KEY)
+  await del(LEGACY_EXPANDED_KEY)
 }
 
 /** Whether the handle already has readwrite permission (no prompt — silent). */

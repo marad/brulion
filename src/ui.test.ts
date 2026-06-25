@@ -3,7 +3,7 @@ import * as fs from "./fs"
 import * as session from "./session"
 import {
   openFolder,
-  restoreFolder,
+  restoreVault,
   wireOpenFolder,
   renderNoteList,
   buildNoteTree,
@@ -24,24 +24,22 @@ const FAKE_ICON = [["path", { d: "M0 0h24v24H0z" }]] as unknown as IconNode
 
 vi.mock("./fs", () => ({ pickFolder: vi.fn() }))
 vi.mock("./session", () => ({
-  saveFolder: vi.fn(),
-  loadFolder: vi.fn(),
   hasPermission: vi.fn(),
   requestAccess: vi.fn(),
 }))
 
 const pickFolder = vi.mocked(fs.pickFolder)
-const saveFolder = vi.mocked(session.saveFolder)
-const loadFolder = vi.mocked(session.loadFolder)
 const hasPermission = vi.mocked(session.hasPermission)
 const requestAccess = vi.mocked(session.requestAccess)
 
 const HANDLE = { kind: "directory", name: "root" } as unknown as FileSystemDirectoryHandle
+const VAULT = { id: "v1", handle: HANDLE, name: "root" }
 
 function fixture() {
   return {
     resume: document.createElement("button"),
     onOpen: vi.fn().mockResolvedValue(undefined),
+    onAttach: vi.fn().mockResolvedValue(undefined),
   }
 }
 
@@ -50,7 +48,7 @@ beforeEach(() => {
 })
 
 describe("openFolder", () => {
-  it("opens and persists the picked folder, hiding the resume button (AC-1)", async () => {
+  it("picks the folder and hands it to onOpen, hiding the resume button (AC-1)", async () => {
     const { resume, onOpen } = fixture()
     resume.hidden = false
     pickFolder.mockResolvedValue(HANDLE)
@@ -58,7 +56,6 @@ describe("openFolder", () => {
     await openFolder(resume, onOpen)
 
     expect(onOpen).toHaveBeenCalledWith(HANDLE)
-    expect(saveFolder).toHaveBeenCalledWith(HANDLE)
     expect(resume.hidden).toBe(true)
   })
 
@@ -69,10 +66,9 @@ describe("openFolder", () => {
     await openFolder(resume, onOpen)
 
     expect(onOpen).not.toHaveBeenCalled()
-    expect(saveFolder).not.toHaveBeenCalled()
   })
 
-  it("does not throw and does not persist when opening fails", async () => {
+  it("does not throw when opening fails", async () => {
     const { resume, onOpen } = fixture()
     resume.hidden = false
     pickFolder.mockResolvedValue(HANDLE)
@@ -81,78 +77,61 @@ describe("openFolder", () => {
 
     await expect(openFolder(resume, onOpen)).resolves.toBeUndefined()
 
-    expect(saveFolder).not.toHaveBeenCalled() // an unusable handle is not persisted
     expect(errorSpy).toHaveBeenCalled()
     errorSpy.mockRestore()
   })
 })
 
-describe("restoreFolder", () => {
-  it("does nothing when no folder is persisted", async () => {
-    const { resume, onOpen } = fixture()
+describe("restoreVault (FEAT-0059)", () => {
+  it("attaches with zero clicks when permission is still granted (AC-2)", async () => {
+    const { resume, onAttach } = fixture()
     resume.hidden = true
-    loadFolder.mockResolvedValue(undefined)
-
-    await restoreFolder(resume, onOpen)
-
-    expect(resume.hidden).toBe(true)
-    expect(onOpen).not.toHaveBeenCalled()
-    expect(hasPermission).not.toHaveBeenCalled()
-  })
-
-  it("opens with zero clicks when permission is still granted", async () => {
-    const { resume, onOpen } = fixture()
-    resume.hidden = true
-    loadFolder.mockResolvedValue(HANDLE)
     hasPermission.mockResolvedValue(true)
 
-    await restoreFolder(resume, onOpen)
+    await restoreVault(VAULT, resume, onAttach)
 
-    expect(onOpen).toHaveBeenCalledWith(HANDLE)
+    expect(onAttach).toHaveBeenCalledWith(VAULT)
     expect(resume.hidden).toBe(true)
     expect(requestAccess).not.toHaveBeenCalled()
   })
 
-  it("reveals the resume button when permission must be re-granted", async () => {
-    const { resume, onOpen } = fixture()
+  it("reveals the resume button when permission must be re-granted (AC-7)", async () => {
+    const { resume, onAttach } = fixture()
     resume.hidden = true
-    loadFolder.mockResolvedValue(HANDLE)
     hasPermission.mockResolvedValue(false)
 
-    await restoreFolder(resume, onOpen)
+    await restoreVault(VAULT, resume, onAttach)
 
     expect(resume.hidden).toBe(false)
-    expect(onOpen).not.toHaveBeenCalled()
+    expect(onAttach).not.toHaveBeenCalled()
   })
 
-  it("opens on a resume click that is granted", async () => {
-    const { resume, onOpen } = fixture()
+  it("attaches on a resume click that is granted (AC-7)", async () => {
+    const { resume, onAttach } = fixture()
     resume.hidden = true
-    loadFolder.mockResolvedValue(HANDLE)
     hasPermission.mockResolvedValue(false)
     requestAccess.mockResolvedValue(true)
 
-    await restoreFolder(resume, onOpen)
-    expect(resume.hidden).toBe(false) // restoreFolder revealed it
+    await restoreVault(VAULT, resume, onAttach)
+    expect(resume.hidden).toBe(false) // restoreVault revealed it
 
     resume.click()
-    await vi.waitFor(() => expect(onOpen).toHaveBeenCalledWith(HANDLE))
+    await vi.waitFor(() => expect(onAttach).toHaveBeenCalledWith(VAULT))
 
     expect(resume.hidden).toBe(true)
   })
 
   it("keeps the resume button when a resume click is declined", async () => {
-    const { resume, onOpen } = fixture()
-    loadFolder.mockResolvedValue(HANDLE)
+    const { resume, onAttach } = fixture()
     hasPermission.mockResolvedValue(false)
     requestAccess.mockResolvedValue(false)
 
-    await restoreFolder(resume, onOpen)
+    await restoreVault(VAULT, resume, onAttach)
     resume.click()
     await vi.waitFor(() => expect(requestAccess).toHaveBeenCalled())
 
     expect(resume.hidden).toBe(false)
-    expect(onOpen).not.toHaveBeenCalled()
+    expect(onAttach).not.toHaveBeenCalled()
   })
 })
 

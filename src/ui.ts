@@ -1,16 +1,20 @@
 import { createElement } from "lucide"
 import { pickFolder } from "./fs"
-import { saveFolder, loadFolder, hasPermission, requestAccess } from "./session"
+import { hasPermission, requestAccess } from "./session"
 import { displayName } from "./note-name"
 import type { AddNoteResult } from "./note-controller"
 import type { Action } from "./actions"
+import type { Vault } from "./vaults"
 
-/** Called once folder access is in hand (fresh pick or restored). */
+/** Called with a freshly-picked folder handle; the host records it as a vault and
+ * attaches the window to it (M33/FEAT-0059). */
 export type OpenHandler = (dir: FileSystemDirectoryHandle) => Promise<void>
+/** Called to attach the window to a known vault (after permission is in hand). */
+export type AttachHandler = (vault: Vault) => Promise<void>
 
 /**
- * Pick a folder, open it, and remember it. A dismissed picker is a no-op.
- * Errors are logged, never thrown (runs from a click handler).
+ * Pick a folder and hand it to the host (which records it as a vault and attaches).
+ * A dismissed picker is a no-op. Errors are logged, never thrown (runs from a click).
  */
 export async function openFolder(
   resumeButton: HTMLButtonElement,
@@ -20,46 +24,45 @@ export async function openFolder(
     const dir = await pickFolder()
     if (!dir) return // dismissed — leave everything as it was
     resumeButton.hidden = true // a fresh pick supersedes the resume-this-folder flow
-    await onOpen(dir) // open first; persist only a folder we could use
-    await saveFolder(dir)
+    await onOpen(dir)
   } catch (err) {
     console.error("Failed to open folder:", err)
   }
 }
 
 /**
- * On load, re-attach to the previously chosen folder: open it with zero clicks
- * when permission is still granted, else reveal the resume button.
+ * Re-attach the window to a specific vault (M33/FEAT-0059): attach with zero clicks
+ * when its handle still has permission, else reveal the resume button which re-grants
+ * (a user gesture) and then attaches. Replaces the old single-folder `restoreFolder`.
  */
-export async function restoreFolder(
+export async function restoreVault(
+  vault: Vault,
   resumeButton: HTMLButtonElement,
-  onOpen: OpenHandler,
+  onAttach: AttachHandler,
 ): Promise<void> {
   try {
-    const handle = await loadFolder()
-    if (!handle) return
-    if (await hasPermission(handle)) {
-      await onOpen(handle)
+    if (await hasPermission(vault.handle)) {
+      await onAttach(vault)
       return
     }
     resumeButton.hidden = false
     resumeButton.addEventListener("click", () => {
-      void resumeAccess(handle, resumeButton, onOpen)
+      void resumeAccess(vault, resumeButton, onAttach)
     })
   } catch (err) {
-    console.error("Failed to restore folder:", err)
+    console.error("Failed to restore vault:", err)
   }
 }
 
 async function resumeAccess(
-  handle: FileSystemDirectoryHandle,
+  vault: Vault,
   resumeButton: HTMLButtonElement,
-  onOpen: OpenHandler,
+  onAttach: AttachHandler,
 ): Promise<void> {
   try {
-    if (!(await requestAccess(handle))) return // declined — keep the button for a retry
+    if (!(await requestAccess(vault.handle))) return // declined — keep the button for a retry
     resumeButton.hidden = true
-    await onOpen(handle)
+    await onAttach(vault)
   } catch (err) {
     console.error("Failed to resume folder access:", err)
   }

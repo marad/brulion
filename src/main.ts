@@ -14,7 +14,7 @@ import { mountConflictDiff, type ConflictDiff } from "./conflict-view"
 import {
   wireOpenFolder,
   openFolder,
-  restoreFolder,
+  restoreVault,
   renderNoteList,
   renderActionBar,
   wireToggle,
@@ -28,6 +28,14 @@ import { mountQuickSwitcher } from "./quick-switcher"
 import { mountCommandPalette } from "./command-palette"
 import { resolvePinned, type Action } from "./actions"
 import {
+  addVault,
+  getVault,
+  touchVault,
+  listVaults,
+  migrateLegacyFolder,
+  type Vault,
+} from "./vaults"
+import {
   saveSidebarCollapsed,
   loadSidebarCollapsed,
   saveExpandedFolders,
@@ -36,6 +44,7 @@ import {
   loadSidebarWidth,
   saveRecency,
   loadRecency,
+  migrateLegacySession,
 } from "./session"
 import {
   loadSettings,
@@ -151,15 +160,14 @@ let controller: NoteController
 // target from one to offer to create.
 let currentActive = ""
 let currentNotes: string[] = []
-// The most-recently-visited note list (FEAT-0039), most-recent first. Fed into the
-// quick switcher's ranking (empty-query order + equal-score tiebreak). Loaded once
-// before the first folder open (openNote awaits `recencyReady`) so the first
-// recorded visit appends to the persisted list instead of racing past it; touched
-// on every genuine active-note change and persisted.
+// The vault the window is attached to (M33/FEAT-0059); the key for per-vault session
+// (recency, expanded folders) and the value stamped into `?ws`. Empty until the first
+// attach.
+let currentVaultId = ""
+// The most-recently-visited note list (FEAT-0039), most-recent first — now per-vault
+// (M33): loaded for the attached vault in attachVault, touched on every genuine
+// active-note change and persisted under the vault's key.
 let recency: string[] = []
-const recencyReady = loadRecency().then((r) => {
-  recency = r
-})
 // The header open-note identity + inline rename (FEAT-0035); assigned right after
 // the controller (it renames via controller.renameActive) and repointed from
 // onListChanged so the header always names the open note.
@@ -302,13 +310,11 @@ const toggleVim = () => {
 
 // The diff view shown while a conflict stands (FEAT-0022); null when none does.
 let conflictDiff: ConflictDiff | null = null
-// The folders the user expanded (FEAT-0043); every other folder renders collapsed
-// by default. Loaded before the first folder open (openNote awaits it), so the
-// tree's first paint matches the saved state instead of flashing fully collapsed.
+// The folders the user expanded (FEAT-0043); every other folder renders collapsed by
+// default. Now per-vault (M33): loaded for the attached vault in attachVault before
+// the tree's first paint, so it matches the saved state instead of flashing fully
+// collapsed.
 let expandedFolders = new Set<string>()
-const expandedFoldersReady = loadExpandedFolders().then((set) => {
-  expandedFolders = set
-})
 // Drag-to-resize the sidebar (FEAT-0044): restore the saved width onto the
 // sidebar's flex-basis var and persist the new width on each drag end. The handle
 // is revealed with the workspace (showWorkspace) and hidden by CSS while the
@@ -360,7 +366,7 @@ controller = createNoteController(view, {
     // redundant re-touch when an external list change fires with the same active.
     if (active && recency[0] !== active) {
       recency = touchRecency(recency, active)
-      void saveRecency(recency)
+      void saveRecency(currentVaultId, recency)
     }
     clearMissingBanner() // the active note changed — drop any stale missing-note notice
     syncRouteToActive(active) // mirror the open note into the URL hash (FEAT-0036)
@@ -387,7 +393,7 @@ controller = createNoteController(view, {
           // collapsing drops the path, expanding adds it.
           if (collapsed) expandedFolders.delete(path)
           else expandedFolders.add(path)
-          void saveExpandedFolders(expandedFolders)
+          void saveExpandedFolders(currentVaultId, expandedFolders)
         },
       },
       expandedFolders,
@@ -458,9 +464,8 @@ window.addEventListener(
 // folder the controller currently holds.
 const poller = createPoller(() => controller.refreshFromDisk(), POLL_MS)
 const openNote = async (dir: FileSystemDirectoryHandle) => {
-  await expandedFoldersReady // first tree paint should match the saved expand state
   await sidebarWidthReady // apply the saved sidebar width before first paint (no flash)
-  await recencyReady // load the MRU list before the first visit is recorded (no race)
+  // (Per-vault recency + expanded folders are loaded in attachVault before openNote.)
   // Settings travel with the vault (M16/FEAT-0047): read this folder's
   // `.brulion.json` and apply font/size/width/Vim before its content paints. The
   // `loadingSettings` guard makes a `Ctrl/Cmd+;` during this window a no-op, so the
@@ -527,14 +532,59 @@ window.addEventListener("hashchange", () => {
 keepButton.addEventListener("click", () => void controller.resolveKeepMine())
 diskButton.addEventListener("click", () => void controller.resolveTakeTheirs())
 
-wireOpenFolder(openButton, resumeButton, openNote)
+// Vault identity in the URL (M33/FEAT-0059): mirror the attached vault's id into
+// `?ws=` with replaceState (never a push — that history belongs to note navigation,
+// FEAT-0036), preserving the path and the `#/note` hash.
+const stampWorkspace = (id: string) => {
+  const url = new URL(location.href)
+  if (url.searchParams.get("ws") === id) return // already stamped — no redundant entry
+  url.searchParams.set("ws", id)
+  // Preserve the note hash byte-for-byte (don't let URL re-encode the fragment) —
+  // only the query changes; the note route (FEAT-0036) owns the hash.
+  history.replaceState(history.state, "", `${url.pathname}${url.search}${location.hash}`)
+}
+// Attach the window to a vault: stamp its `?ws`, load that vault's per-vault session
+// (recency + expanded folders), then open it through the existing note flow. The
+// vault is moved to most-recent so a future no-`?ws` window falls back to it.
+const attachVault = async (vault: Vault) => {
+  // Load the vault's session first, so a transient idb error can't leave `?ws` +
+  // currentVaultId pointing at a vault we never actually opened.
+  recency = await loadRecency(vault.id)
+  expandedFolders = await loadExpandedFolders(vault.id)
+  currentVaultId = vault.id
+  stampWorkspace(vault.id)
+  await touchVault(vault.id)
+  await openNote(vault.handle)
+}
+// A freshly-picked folder (open-folder button / settings switch): record it as a
+// vault (reusing an existing one if it's the same folder) and attach to it.
+const openFreshFolder = async (dir: FileSystemDirectoryHandle) => {
+  await attachVault(await addVault(dir))
+}
+// Which vault this window should open on load: its `?ws` vault if that id is known,
+// else the most-recently-used vault (the set is most-recent-first), else none.
+const resolveStartupVault = async (): Promise<Vault | undefined> => {
+  const ws = new URLSearchParams(location.search).get("ws")
+  if (ws) {
+    const v = await getVault(ws)
+    if (v) return v
+  }
+  return (await listVaults())[0]
+}
+
+wireOpenFolder(openButton, resumeButton, openFreshFolder)
 // Re-picking a different folder once one is open (FEAT-0031) now lives in the
 // settings modal's Folder section (FEAT-0054), wired below via onSwitchFolder.
-// Try to silently re-attach to the last folder, then settle the first-paint
-// state: the loading overlay gives way to the workspace (if a folder restored) or
-// the welcome screen (if not) — so the welcome never flashes before an
-// auto-restored folder loads (FEAT-0031).
-void restoreFolder(resumeButton, openNote).finally(() => {
+// On load: migrate a pre-M33 single handle into the vault set (once), resolve this
+// window's vault (its `?ws`, else the most-recent), and re-attach to it — then settle
+// the first-paint state (loading → workspace if a vault attached, else welcome). So
+// two windows each restore their own `?ws` vault, not a shared global handle.
+void (async () => {
+  const migrated = await migrateLegacyFolder()
+  if (migrated) await migrateLegacySession(migrated.id)
+  const vault = await resolveStartupVault()
+  if (vault) await restoreVault(vault, resumeButton, attachVault)
+})().finally(() => {
   loadingEl.hidden = true
   if (!workspaceShown) welcomeEl.hidden = false
 })
@@ -586,7 +636,7 @@ settingsModal = mountSettingsModal(settingsBackdropEl, {
   // The open folder's name for the modal's Folder section, and the switch action —
   // the same open flow the old header button drove (FEAT-0054).
   getFolderName: () => settingsDir?.name ?? "",
-  onSwitchFolder: () => void openFolder(resumeButton, openNote),
+  onSwitchFolder: () => void openFolder(resumeButton, openFreshFolder),
   // The registry's id/label for the Action bar section (FEAT-0058).
   getActions: () => actions.map((a) => ({ id: a.id, label: a.label })),
 })
@@ -608,7 +658,7 @@ const actions: Action[] = [
     id: "switch-folder",
     label: "Switch folder…",
     icon: FolderOpen,
-    run: () => void openFolder(resumeButton, openNote),
+    run: () => void openFolder(resumeButton, openFreshFolder),
   },
   { id: "toggle-vim", label: "Toggle Vim mode", icon: Keyboard, run: toggleVim },
   // `toggleNoteList` is a reassigned `let` (the real sidebar handle exists only inside

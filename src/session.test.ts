@@ -1,8 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import * as idb from "idb-keyval"
 import {
-  saveFolder,
-  loadFolder,
   hasPermission,
   requestAccess,
   saveActiveNote,
@@ -15,15 +13,18 @@ import {
   loadSidebarWidth,
   saveRecency,
   loadRecency,
+  migrateLegacySession,
 } from "./session"
 
 vi.mock("idb-keyval", () => ({
   get: vi.fn(),
   set: vi.fn(),
+  del: vi.fn(),
 }))
 
 const get = vi.mocked(idb.get)
 const set = vi.mocked(idb.set)
+const del = vi.mocked(idb.del)
 
 function handleWith(perm: {
   query?: PermissionState
@@ -39,25 +40,6 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe("saveFolder / loadFolder", () => {
-  it("saves the handle under a stable key", async () => {
-    const handle = { kind: "directory" } as FileSystemDirectoryHandle
-    await saveFolder(handle)
-    expect(set).toHaveBeenCalledWith("brulion:dir", handle)
-  })
-
-  it("loads from the same key", async () => {
-    const handle = { kind: "directory" } as FileSystemDirectoryHandle
-    get.mockResolvedValue(handle)
-    expect(await loadFolder()).toBe(handle)
-    expect(get).toHaveBeenCalledWith("brulion:dir")
-  })
-
-  it("returns undefined when nothing is stored", async () => {
-    get.mockResolvedValue(undefined)
-    expect(await loadFolder()).toBeUndefined()
-  })
-})
 
 describe("saveActiveNote / loadActiveNote", () => {
   it("saves the active note's filename under its own key", async () => {
@@ -97,21 +79,28 @@ describe("saveSidebarCollapsed / loadSidebarCollapsed", () => {
   })
 })
 
-describe("saveExpandedFolders / loadExpandedFolders (FEAT-0043)", () => {
-  it("saves the set as an array under a stable key", async () => {
-    await saveExpandedFolders(new Set(["a", "a/b"]))
-    expect(set).toHaveBeenCalledWith("brulion:expanded-folders", ["a", "a/b"])
+describe("saveExpandedFolders / loadExpandedFolders (FEAT-0043, per-vault FEAT-0059)", () => {
+  it("saves the set as an array under the vault-scoped key", async () => {
+    await saveExpandedFolders("vault1", new Set(["a", "a/b"]))
+    expect(set).toHaveBeenCalledWith("brulion:expanded-folders:vault1", ["a", "a/b"])
   })
 
-  it("loads the stored paths back into a set", async () => {
+  it("loads the stored paths back into a set from the vault-scoped key", async () => {
     get.mockResolvedValue(["a", "a/b"])
-    expect(await loadExpandedFolders()).toEqual(new Set(["a", "a/b"]))
-    expect(get).toHaveBeenCalledWith("brulion:expanded-folders")
+    expect(await loadExpandedFolders("vault1")).toEqual(new Set(["a", "a/b"]))
+    expect(get).toHaveBeenCalledWith("brulion:expanded-folders:vault1")
   })
 
   it("defaults to an empty set when nothing is stored (folders collapsed by default)", async () => {
     get.mockResolvedValue(undefined)
-    expect(await loadExpandedFolders()).toEqual(new Set())
+    expect(await loadExpandedFolders("vault1")).toEqual(new Set())
+  })
+
+  it("keys distinct vaults separately", async () => {
+    await saveExpandedFolders("vaultA", new Set(["x"]))
+    await saveExpandedFolders("vaultB", new Set(["y"]))
+    expect(set).toHaveBeenCalledWith("brulion:expanded-folders:vaultA", ["x"])
+    expect(set).toHaveBeenCalledWith("brulion:expanded-folders:vaultB", ["y"])
   })
 })
 
@@ -138,21 +127,63 @@ describe("saveSidebarWidth / loadSidebarWidth (FEAT-0044)", () => {
   })
 })
 
-describe("saveRecency / loadRecency (FEAT-0039)", () => {
-  it("saves the MRU list under a stable key", async () => {
-    await saveRecency(["b.md", "a.md"])
-    expect(set).toHaveBeenCalledWith("brulion:recency", ["b.md", "a.md"])
+describe("saveRecency / loadRecency (FEAT-0039, per-vault FEAT-0059)", () => {
+  it("saves the MRU list under the vault-scoped key", async () => {
+    await saveRecency("vault1", ["b.md", "a.md"])
+    expect(set).toHaveBeenCalledWith("brulion:recency:vault1", ["b.md", "a.md"])
   })
 
-  it("loads the stored list from the same key", async () => {
+  it("loads the stored list from the vault-scoped key", async () => {
     get.mockResolvedValue(["b.md", "a.md"])
-    expect(await loadRecency()).toEqual(["b.md", "a.md"])
-    expect(get).toHaveBeenCalledWith("brulion:recency")
+    expect(await loadRecency("vault1")).toEqual(["b.md", "a.md"])
+    expect(get).toHaveBeenCalledWith("brulion:recency:vault1")
   })
 
   it("defaults to an empty list when nothing is stored", async () => {
     get.mockResolvedValue(undefined)
-    expect(await loadRecency()).toEqual([])
+    expect(await loadRecency("vault1")).toEqual([])
+  })
+
+  it("keys distinct vaults separately", async () => {
+    await saveRecency("vaultA", ["x.md"])
+    await saveRecency("vaultB", ["y.md"])
+    expect(set).toHaveBeenCalledWith("brulion:recency:vaultA", ["x.md"])
+    expect(set).toHaveBeenCalledWith("brulion:recency:vaultB", ["y.md"])
+  })
+})
+
+describe("migrateLegacySession (FEAT-0059)", () => {
+  it("copies legacy global recency/expanded onto the vault key, then clears the legacy keys", async () => {
+    // Legacy globals present; per-vault values absent.
+    get.mockImplementation(async (key: IDBValidKey) => {
+      if (key === "brulion:recency") return ["b.md", "a.md"]
+      if (key === "brulion:expanded-folders") return ["a", "a/b"]
+      return undefined // per-vault keys not yet set
+    })
+    await migrateLegacySession("vault1")
+    expect(set).toHaveBeenCalledWith("brulion:recency:vault1", ["b.md", "a.md"])
+    expect(set).toHaveBeenCalledWith("brulion:expanded-folders:vault1", ["a", "a/b"])
+    expect(del).toHaveBeenCalledWith("brulion:recency")
+    expect(del).toHaveBeenCalledWith("brulion:expanded-folders")
+  })
+
+  it("does not clobber an existing per-vault value", async () => {
+    get.mockImplementation(async (key: IDBValidKey) => {
+      if (key === "brulion:recency") return ["legacy.md"]
+      if (key === "brulion:recency:vault1") return ["existing.md"] // already set
+      return undefined
+    })
+    await migrateLegacySession("vault1")
+    expect(set).not.toHaveBeenCalledWith("brulion:recency:vault1", ["legacy.md"])
+    expect(del).toHaveBeenCalledWith("brulion:recency") // legacy still cleared
+  })
+
+  it("is a no-op (only clears) when there are no legacy values", async () => {
+    get.mockResolvedValue(undefined)
+    await migrateLegacySession("vault1")
+    expect(set).not.toHaveBeenCalled()
+    expect(del).toHaveBeenCalledWith("brulion:recency")
+    expect(del).toHaveBeenCalledWith("brulion:expanded-folders")
   })
 })
 
