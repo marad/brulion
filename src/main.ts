@@ -9,6 +9,7 @@ import {
   Keyboard,
   Command,
   CalendarDays,
+  SunMoon,
   type IconNode,
 } from "lucide"
 import { mountEditor, setEditorEditable, setLinkContext, scrollEditorToHeading } from "./editor"
@@ -56,6 +57,7 @@ import {
   loadSettings,
   saveSettings,
   applySettings,
+  nextToggledTheme,
   DEFAULT_SETTINGS,
   type Settings,
 } from "./settings"
@@ -326,6 +328,11 @@ const updateSettings = (patch: Partial<Settings>) => {
 const toggleVim = () => {
   if (loadingSettings) return // mid folder-open: ignore, the loaded value wins
   updateSettings({ vim: !currentSettings.vim })
+}
+const toggleTheme = () => {
+  if (loadingSettings) return // mid folder-open: ignore, the loaded value wins
+  const osPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
+  updateSettings({ theme: nextToggledTheme(currentSettings.theme, osPrefersDark) })
 }
 
 // The diff view shown while a conflict stands (FEAT-0022); null when none does.
@@ -716,6 +723,7 @@ const actions: Action[] = [
     run: () => void openFolder(resumeButton, openFreshFolder),
   },
   { id: "toggle-vim", label: "Toggle Vim mode", icon: Keyboard, run: toggleVim },
+  { id: "toggle-theme", label: "Toggle light/dark theme", icon: SunMoon, run: toggleTheme },
   // `toggleNoteList` is a reassigned `let` (the real sidebar handle exists only inside
   // the async restore callback), so wrap the call — passing it bare would freeze the
   // no-op stub at registry-build time. (toggleVim above is a const, so it's safe bare.)

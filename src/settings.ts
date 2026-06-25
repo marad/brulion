@@ -92,6 +92,17 @@ function isTheme(value: unknown): value is Theme {
   return value === "light" || value === "dark" || value === "system"
 }
 
+/**
+ * The theme a light/dark toggle should switch to (FEAT-0065 AC-8). Flips the
+ * *currently visible* appearance to the opposite explicit mode: a visible dark
+ * surface (`dark`, or `system` on a dark OS) toggles to `light`, anything else to
+ * `dark`. Never returns `system` — a toggle lands on a definite choice. Pure;
+ * `osPrefersDark` is the caller's `prefers-color-scheme: dark` match. */
+export function nextToggledTheme(current: Theme, osPrefersDark: boolean): Theme {
+  const showingDark = current === "dark" || (current === "system" && osPrefersDark)
+  return showingDark ? "light" : "dark"
+}
+
 /** Keep only string entries, dropping duplicates (first occurrence wins). Pure. */
 function dedupeStrings(values: unknown[]): string[] {
   const seen = new Set<string>()

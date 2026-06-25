@@ -6,6 +6,7 @@ import {
   saveSettings,
   applySettings,
   applyTheme,
+  nextToggledTheme,
   DEFAULT_SETTINGS,
   SETTINGS_FILE,
   type Settings,
@@ -280,6 +281,16 @@ describe("applySettings DOM variables", () => {
     } finally {
       view.destroy()
     }
+  })
+
+  it("FEAT-0065 AC-8: nextToggledTheme flips the visible appearance to an explicit mode", () => {
+    expect(nextToggledTheme("dark", false)).toBe("light")
+    expect(nextToggledTheme("dark", true)).toBe("light")
+    expect(nextToggledTheme("light", false)).toBe("dark")
+    expect(nextToggledTheme("light", true)).toBe("dark")
+    // system resolves against the OS, then flips to the opposite explicit mode.
+    expect(nextToggledTheme("system", true)).toBe("light")
+    expect(nextToggledTheme("system", false)).toBe("dark")
   })
 
   it("FEAT-0065: applyTheme is idempotent and toggles cleanly between modes", () => {

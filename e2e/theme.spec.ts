@@ -142,6 +142,31 @@ test("code-block syntax colors are readable in dark mode (FEAT-0066 AC-1)", asyn
   expect(Math.max(r, g, b)).toBeGreaterThan(130) // a light, readable token color
 })
 
+test("the command-palette action toggles light/dark and persists (AC-8)", async ({ page }) => {
+  const folder = "e2e-theme-toggle"
+  await openFolder(page, folder)
+
+  // Pin the theme to light, then run the toggle action from the palette.
+  await page.locator("#open-settings").click()
+  await page.locator('input[name="settings-theme"][value="light"]').check()
+  await page.keyboard.press("Escape")
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light")
+
+  await page.keyboard.press("Control+Shift+K")
+  await page.locator("#palette-input").fill("toggle light")
+  await page.locator(".palette-row").first().click()
+
+  // It flipped to dark, live and persisted.
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark")
+  await expect.poll(async () => (await readSettings(page, folder)).theme).toBe("dark")
+
+  // Running it again flips back to light.
+  await page.keyboard.press("Control+Shift+K")
+  await page.locator("#palette-input").fill("toggle light")
+  await page.locator(".palette-row").first().click()
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light")
+})
+
 test("switching theme writes no note bytes (AC-7)", async ({ page }) => {
   const folder = "e2e-theme-moat"
   const body = "# Title\n\nUntouched body with trailing spaces.   \n"
