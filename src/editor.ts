@@ -46,6 +46,14 @@ const typography = EditorView.theme({
   // The caret defaults to a black border — invisible on a dark background; track the
   // text color so it's visible in both themes.
   ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--text)" },
+  // `drawSelection`'s default fill is a fixed light color — washed-out behind the
+  // light text in dark mode (the selected text becomes unreadable). Track a
+  // theme-aware token so the selection fill has real contrast in both themes; the
+  // text keeps its `--text` color (the fill is drawn behind it). `::selection`
+  // covers native selection over rendered widgets the drawn layer doesn't paint.
+  ".cm-selectionBackground": { backgroundColor: "var(--selection-bg)" },
+  "&.cm-focused .cm-selectionBackground": { backgroundColor: "var(--selection-bg)" },
+  "::selection": { backgroundColor: "var(--selection-bg)" },
   ".cm-scroller": {
     fontFamily: "var(--font-stack)",
     lineHeight: "1.6",

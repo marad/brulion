@@ -23,6 +23,7 @@
   --accent-fg: #fff; /* text on an --accent fill */
   --link: #2f6f9a;
   --code-bg: rgba(0, 0, 0, 0.05); /* inline code background */
+  --selection-bg: #cfe3f5; /* text-selection fill (drawSelection); text stays --text */
 
   /* Code-block syntax palette (M18 P2/FEAT-0066). Light = GitHub-light; the dark
      override sits in the two dark blocks below. code-highlight.ts reads these. */
@@ -61,6 +62,7 @@
   --accent-fg: #fff;
   --link: #7fb0d4;
   --code-bg: rgba(255, 255, 255, 0.09);
+  --selection-bg: #34506b; /* text-selection fill (drawSelection); text stays --text */
   --tok-keyword: #ff7b72;
   --tok-string: #a5d6ff;
   --tok-number: #79c0ff;
@@ -93,6 +95,7 @@
     --accent-fg: #fff;
     --link: #7fb0d4;
     --code-bg: rgba(255, 255, 255, 0.09);
+    --selection-bg: #34506b; /* text-selection fill (drawSelection); text stays --text */
     --tok-keyword: #ff7b72;
     --tok-string: #a5d6ff;
     --tok-number: #79c0ff;
@@ -1330,4 +1333,47 @@ header button:hover {
   background: var(--danger-bg);
   color: var(--accent-text);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Autocomplete / slash-command popup (CodeMirror @codemirror/autocomplete). The
+   built-in base theme is a fixed light style — washed-out and unreadable in dark
+   mode. Track the app theme tokens so it matches the chrome in both themes. The
+   doubled `.cm-tooltip.cm-tooltip-autocomplete` prefix outranks the single-class
+   base-theme rules regardless of stylesheet order. This popup backs both the `[[`
+   note autocomplete and the slash-command menu. */
+.cm-tooltip.cm-tooltip-autocomplete {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px var(--shadow);
+  color: var(--text);
+}
+.cm-tooltip.cm-tooltip-autocomplete > ul {
+  font-family: var(--font-stack);
+}
+.cm-tooltip.cm-tooltip-autocomplete > ul > li {
+  color: var(--text);
+  padding: 0.15rem 0.5rem;
+}
+.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.cm-tooltip.cm-tooltip-autocomplete .cm-completionMatchedText {
+  color: var(--accent-text);
+  text-decoration: none;
+  font-weight: 600;
+}
+.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionMatchedText {
+  color: var(--accent-fg);
+}
+.cm-tooltip.cm-tooltip-autocomplete .cm-completionDetail {
+  color: var(--text-muted);
+}
+.cm-tooltip.cm-completionInfo {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px var(--shadow);
+  color: var(--text);
 }
