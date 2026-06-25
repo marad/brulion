@@ -1816,3 +1816,21 @@ matching decision above.
 - **Moat: untouched, categorically.** Vault handles + the set live in IndexedDB; no
   note file is read or written by any of this. Switching a vault is just opening a
   different already-granted folder through the existing controller path.
+
+(M33 P2, FEAT-0060 — the switching UX)
+
+- **The workspace chooser reuses the command palette, not a third overlay.** With the
+  note switcher (M12) and command palette (M30) already near-identical overlays, a
+  third bespoke one would be the moment to extract a shared base — but the cheaper,
+  cleaner move is to *open the existing palette with a transient action list* (one
+  action per vault, each `run` = switch to it). The palette is literally "a fuzzy list
+  of actions you run"; a vault list is exactly that. So `mountCommandPalette` gains an
+  `open(override?)` — when given a list it shows that instead of the registry — and
+  "Switch workspace…" calls it with the vaults. Zero new overlay, full reuse of fuzzy
+  search / keyboard nav / styling. (This is the "extract at the third instance"
+  resolution: the third instance turned out to *be* the second one parameterized.)
+- **Switching requests permission inline (the click is a gesture);** the open vault is
+  excluded from the list (omit-active, like the switcher). Forgetting lives in a
+  settings **Workspaces** section (reusing `removeVault`); the **currently-open**
+  workspace has no enabled forget control — you can't pull the vault out from under
+  the window. Moat untouched: switching/forgetting touch only the vault set + URL.
