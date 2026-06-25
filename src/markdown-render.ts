@@ -357,6 +357,10 @@ export function blockSyntaxRanges(
   const lines: LineMark[] = []
   const bullets: BulletMark[] = []
   const doc = state.doc
+  // Any selection range overlapping a block reveals it (strict, like the link/Mermaid
+  // reveals); checks all ranges so a multi-cursor reveals each block it touches.
+  const revealed = (a: number, b: number) =>
+    state.selection.ranges.some((r) => r.from < b && r.to > a)
 
   syntaxTree(state).iterate({
     from,
@@ -372,10 +376,14 @@ export function blockSyntaxRanges(
         if (codeMarks.length < 2) return
         const openLine = doc.lineAt(codeMarks[0].from)
         const closeLine = doc.lineAt(codeMarks[codeMarks.length - 1].from)
-        // Hide each fence's text in place (no newline eaten), leaving the fence
-        // lines as empty styled rows — the top/bottom padding of the code box.
-        hidden.push({ from: openLine.from, to: openLine.to })
-        hidden.push({ from: closeLine.from, to: closeLine.to })
+        // Hide each fence's text in place (no newline eaten), leaving the fence lines
+        // as empty styled rows — the top/bottom padding of the code box. But while the
+        // selection is inside the block (FEAT-0064), reveal the fence text so the info
+        // string is editable in place. The code-box line styling below stays either way.
+        if (!revealed(openLine.from, closeLine.to)) {
+          hidden.push({ from: openLine.from, to: openLine.to })
+          hidden.push({ from: closeLine.from, to: closeLine.to })
+        }
         for (let n = openLine.number; n <= closeLine.number; n++) {
           const edge =
             n === openLine.number
@@ -630,7 +638,11 @@ const blockRenderingField = StateField.define<{
 }>({
   create: (state) => buildBlockDecorations(state),
   update(value, tr) {
-    return tr.docChanged ? buildBlockDecorations(tr.state) : value
+    // Rebuild on selection too (FEAT-0064): the fenced-block fence lines reveal/hide
+    // as the caret enters/leaves the block. This is a whole-doc scan per selection
+    // move (unlike the viewport-scoped inline plugin), but block constructs are few so
+    // it's cheap at notepad scale — and the Mermaid field already rebuilds on selection.
+    return tr.docChanged || tr.selection ? buildBlockDecorations(tr.state) : value
   },
   provide: (field) => [
     EditorView.decorations.from(field, (v) => v.all),

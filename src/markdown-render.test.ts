@@ -137,6 +137,26 @@ describe("blockSyntaxRanges", () => {
     expect(blocks("```js\ncode")).toEqual({ hidden: [], lines: [], bullets: [] })
   })
 
+  it("reveals both fence lines while the selection is inside the block (FEAT-0064 AC-1, AC-4)", () => {
+    const doc = "```js\ncode\n```"
+    const s = EditorState.create({ doc, extensions: [markdown()], selection: { anchor: 7 } }) // on "code"
+    const r = blockSyntaxRanges(s)
+    expect(r.hidden.map((h) => doc.slice(h.from, h.to))).toEqual([]) // fence text NOT hidden
+    // the code-box styling still applies to every line
+    expect(r.lines.map((l) => l.cls)).toEqual([
+      "cm-code-block cm-code-top",
+      "cm-code-block",
+      "cm-code-block cm-code-bottom",
+    ])
+  })
+
+  it("hides the fences when the selection is outside the block (FEAT-0064 AC-5)", () => {
+    const doc = "before\n\n```js\ncode\n```"
+    const s = EditorState.create({ doc, extensions: [markdown()], selection: { anchor: 2 } }) // on "before"
+    const r = blockSyntaxRanges(s)
+    expect(r.hidden.map((h) => doc.slice(h.from, h.to))).toEqual(["```js", "```"])
+  })
+
   it("hides the blockquote marker and styles the line as a quote (AC-2)", () => {
     expect(blockHiddenText("> quoted")).toEqual(["> "])
     expect(lineMarks("> quoted")).toEqual([["> quoted", "cm-blockquote"]])
