@@ -27,15 +27,27 @@ const ACTION_META = [
   { id: "toggle-vim", label: "Toggle Vim mode" },
 ]
 
+// The granted workspaces the host hands the modal (FEAT-0060); "alpha" is the open one.
+type WS = { id: string; name: string; open: boolean }
+const WORKSPACES: WS[] = [
+  { id: "v1", name: "alpha", open: true },
+  { id: "v2", name: "beta", open: false },
+  { id: "v3", name: "gamma", open: false },
+]
+
 function makeHandlers(initial: Settings, folderName = "vault") {
-  const state: { current: Settings; folderName: string } = {
+  const state: { current: Settings; folderName: string; workspaces: WS[] } = {
     current: { ...initial },
     folderName,
+    workspaces: WORKSPACES.map((w) => ({ ...w })),
   }
   const onChange = vi.fn((patch: Partial<Settings>) => {
     state.current = { ...state.current, ...patch }
   })
   const onSwitchFolder = vi.fn()
+  const onForgetWorkspace = vi.fn((id: string) => {
+    state.workspaces = state.workspaces.filter((w) => w.id !== id)
+  })
   const handlers: SettingsModalHandlers = {
     getSettings: () => state.current,
     onChange,
@@ -43,17 +55,22 @@ function makeHandlers(initial: Settings, folderName = "vault") {
     getFolderName: () => state.folderName,
     onSwitchFolder,
     getActions: () => ACTION_META,
+    getWorkspaces: () => Promise.resolve(state.workspaces),
+    onForgetWorkspace,
   }
-  return { handlers, onChange, onSwitchFolder, state }
+  return { handlers, onChange, onSwitchFolder, onForgetWorkspace, state }
 }
 
 function mount(initial: Settings = DEFAULT_SETTINGS, folderName = "vault") {
   const backdrop = document.createElement("div")
   backdrop.hidden = true
   document.body.append(backdrop)
-  const { handlers, onChange, onSwitchFolder, state } = makeHandlers(initial, folderName)
+  const { handlers, onChange, onSwitchFolder, onForgetWorkspace, state } = makeHandlers(
+    initial,
+    folderName,
+  )
   const handle = mountSettingsModal(backdrop, handlers)
-  return { backdrop, handle, onChange, onSwitchFolder, state }
+  return { backdrop, handle, onChange, onSwitchFolder, onForgetWorkspace, state }
 }
 
 // --- generic control queries (no class/tag pinning) ---
@@ -431,5 +448,44 @@ describe("Action bar section (FEAT-0058 AC-4, AC-5)", () => {
     const rebuilt = rowCheckbox(backdrop, "goto")
     expect(rebuilt).not.toBe(box) // it really is a fresh node
     expect(document.activeElement).toBe(rebuilt) // …and focus followed it
+  })
+})
+
+describe("Workspaces section (FEAT-0060)", () => {
+  const wsRow = (root: HTMLElement, id: string) =>
+    root.querySelector<HTMLElement>(`[data-workspace-id="${id}"]`)
+  const forgetBtn = (root: HTMLElement, id: string) =>
+    wsRow(root, id)?.querySelector<HTMLButtonElement>(".settings-workspace-forget") ?? null
+
+  it("lists the granted workspaces by name (AC-4)", async () => {
+    const { backdrop, handle } = mount(DEFAULT_SETTINGS)
+    handle.open()
+    await vi.waitFor(() => expect(wsRow(backdrop, "v1")).not.toBeNull())
+
+    expect(wsRow(backdrop, "v1")?.textContent).toContain("alpha")
+    expect(wsRow(backdrop, "v2")?.textContent).toContain("beta")
+    expect(wsRow(backdrop, "v3")?.textContent).toContain("gamma")
+  })
+
+  it("offers no forget control for the open workspace, but does for the others (AC-6)", async () => {
+    const { backdrop, handle } = mount(DEFAULT_SETTINGS)
+    handle.open()
+    await vi.waitFor(() => expect(wsRow(backdrop, "v1")).not.toBeNull())
+
+    expect(forgetBtn(backdrop, "v1")).toBeNull() // v1 is open
+    expect(forgetBtn(backdrop, "v2")).not.toBeNull()
+    expect(forgetBtn(backdrop, "v3")).not.toBeNull()
+  })
+
+  it("forgetting a workspace emits onForgetWorkspace and drops it from the list (AC-5)", async () => {
+    const { backdrop, handle, onForgetWorkspace } = mount(DEFAULT_SETTINGS)
+    handle.open()
+    await vi.waitFor(() => expect(wsRow(backdrop, "v2")).not.toBeNull())
+
+    forgetBtn(backdrop, "v2")!.click()
+
+    expect(onForgetWorkspace).toHaveBeenCalledWith("v2")
+    await vi.waitFor(() => expect(wsRow(backdrop, "v2")).toBeNull()) // re-rendered without it
+    expect(wsRow(backdrop, "v3")).not.toBeNull() // others remain
   })
 })

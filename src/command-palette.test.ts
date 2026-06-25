@@ -304,6 +304,40 @@ describe("mountCommandPalette icons (FEAT-0057 AC-7)", () => {
   })
 })
 
+describe("mountCommandPalette open(override) (FEAT-0060)", () => {
+  it("lists the override actions instead of the registry, then reverts after close", () => {
+    const els = elements()
+    const registry = actions() // 5 registry actions
+    const p = mountCommandPalette(els, deps({ getActions: () => registry }))
+
+    const wsRun = vi.fn()
+    p.open([{ id: "ws:1", label: "Vault One", run: wsRun }])
+    // Only the override row shows, not the registry.
+    expect(rows(els)).toHaveLength(1)
+    expect(rows(els)[0].textContent).toContain("Vault One")
+    rows(els)[0].click()
+    expect(wsRun).toHaveBeenCalledTimes(1)
+    expect(p.isOpen()).toBe(false) // running closed it
+
+    // Next open with no override is back to the registry.
+    p.open()
+    expect(rows(els)).toHaveLength(registry.length)
+  })
+
+  it("reverts to the registry when an override session is closed with Esc", () => {
+    const els = elements()
+    const registry = actions()
+    const p = mountCommandPalette(els, deps({ getActions: () => registry }))
+
+    p.open([{ id: "ws:1", label: "Vault One", run: vi.fn() }])
+    expect(rows(els)).toHaveLength(1)
+    key(els, "Escape")
+
+    p.open()
+    expect(rows(els)).toHaveLength(registry.length)
+  })
+})
+
 describe("mountCommandPalette teardown & no-writes (FEAT-0057 AC-10)", () => {
   it("destroy() detaches listeners: input/keys no longer affect a closed palette", () => {
     const els = elements()

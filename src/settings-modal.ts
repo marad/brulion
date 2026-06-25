@@ -31,6 +31,21 @@ export interface SettingsModalHandlers {
   /** The registered actions (id + label) offered for pinning to the action bar
    * (FEAT-0058); the host maps its FEAT-0057 action registry to this. */
   getActions: () => readonly ActionMeta[]
+  /** The granted workspaces (id + folder name + whether it's the open one), for the
+   * Workspaces section (FEAT-0060). Async — reads the vault set. */
+  getWorkspaces: () => Promise<WorkspaceMeta[]>
+  /** Forget (remove from the set) the workspace with `id`; the host removes the vault.
+   * Awaited before the section re-renders, so the removed row is actually gone. Never
+   * offered for the open workspace. */
+  onForgetWorkspace: (id: string) => void | Promise<void>
+}
+
+/** A workspace row in the settings Workspaces section (FEAT-0060). */
+export interface WorkspaceMeta {
+  id: string
+  name: string
+  /** Whether this is the currently-open workspace (can't be forgotten). */
+  open: boolean
 }
 
 export interface SettingsModalHandle {
@@ -164,7 +179,30 @@ export function mountSettingsModal(
   actionBarHint.textContent = "Pin actions to the header; drag to reorder."
   actionBarSection.append(actionBarTitle, actionBarHint, actionBarControl)
 
-  dialog.append(titleBar, fontRow, sizeRow, widthRow, vimRow, folderRow, actionBarSection)
+  // Workspaces (FEAT-0060) — the granted folders, each forgettable except the open
+  // one. Rendered async on open (and after a forget) from getWorkspaces().
+  const workspacesControl = document.createElement("div")
+  workspacesControl.className = "settings-workspaces"
+  const workspacesSection = document.createElement("section")
+  workspacesSection.className = "settings-section"
+  const workspacesTitle = document.createElement("h3")
+  workspacesTitle.className = "settings-section-title"
+  workspacesTitle.textContent = "Workspaces"
+  const workspacesHint = document.createElement("p")
+  workspacesHint.className = "settings-section-hint"
+  workspacesHint.textContent = "Folders you've opened; forget the ones you no longer use."
+  workspacesSection.append(workspacesTitle, workspacesHint, workspacesControl)
+
+  dialog.append(
+    titleBar,
+    fontRow,
+    sizeRow,
+    widthRow,
+    vimRow,
+    folderRow,
+    actionBarSection,
+    workspacesSection,
+  )
   backdrop.append(dialog)
 
   let isOpen = false
@@ -278,6 +316,42 @@ export function mountSettingsModal(
     renderActionBarSection()
   }
 
+  // Rebuild the Workspaces section (FEAT-0060) from the vault set: each workspace by
+  // name, with a Forget control except the open one. Async (reads the vault set);
+  // bails if the modal closed while awaiting.
+  const renderWorkspaces = async () => {
+    const workspaces = await handlers.getWorkspaces()
+    if (!isOpen) return
+    workspacesControl.replaceChildren()
+    for (const w of workspaces) {
+      const row = document.createElement("div")
+      row.className = "settings-workspace-row"
+      row.dataset.workspaceId = w.id
+      const name = document.createElement("span")
+      name.className = "settings-workspace-name"
+      name.textContent = w.name
+      row.append(name)
+      if (w.open) {
+        const tag = document.createElement("span")
+        tag.className = "settings-workspace-open"
+        tag.textContent = "open"
+        row.append(tag) // the open workspace can't be forgotten
+      } else {
+        const forget = document.createElement("button")
+        forget.type = "button"
+        forget.className = "settings-workspace-forget"
+        forget.setAttribute("aria-label", `Forget ${w.name}`)
+        forget.textContent = "Forget"
+        forget.addEventListener("click", async () => {
+          await handlers.onForgetWorkspace(w.id)
+          await renderWorkspaces()
+        })
+        row.append(forget)
+      }
+      workspacesControl.append(row)
+    }
+  }
+
   const fillFontOptions = (families: string[]) => {
     const current = handlers.getSettings().font[0]
     const names = [...families]
@@ -337,6 +411,7 @@ export function mountSettingsModal(
         fillFontOptions(choices.families)
         if (isOpen) fontSelect.value = handlers.getSettings().font[0] ?? DEFAULT_FONT_VALUE
       })
+      void renderWorkspaces() // async — populates the Workspaces section
     },
     sync() {
       if (isOpen) seed()

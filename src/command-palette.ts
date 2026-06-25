@@ -20,8 +20,10 @@ export interface CommandPaletteElements {
 
 /** Handle returned to the host. */
 export interface CommandPalette {
-  /** Show the overlay (reset + focus). A no-op refocus if already open. */
-  open(): void
+  /** Show the overlay (reset + focus). A no-op refocus if already open. Pass
+   * `override` to list a transient action set (e.g. the workspace switcher,
+   * FEAT-0060) instead of the registry; cleared on close. */
+  open(override?: readonly Action[]): void
   /** Hide the overlay without running anything. */
   close(): void
   isOpen(): boolean
@@ -61,6 +63,9 @@ export function mountCommandPalette(
   /** Each rendered, selectable row paired with the action it triggers. */
   let items: { el: HTMLElement; run: () => void }[] = []
   let highlight = 0
+  /** A transient action list to show instead of the registry (FEAT-0060 workspace
+   * switcher); null = use `deps.getActions()`. Cleared on close. */
+  let override: readonly Action[] | null = null
 
   function applyHighlight(): void {
     items.forEach((it, i) => it.el.classList.toggle("active", i === highlight))
@@ -92,7 +97,7 @@ export function mountCommandPalette(
   function render(): void {
     list.replaceChildren()
     items = []
-    for (const action of rankActions(input.value, deps.getActions())) row(action)
+    for (const action of rankActions(input.value, override ?? deps.getActions())) row(action)
     highlight = 0
     applyHighlight()
   }
@@ -128,12 +133,13 @@ export function mountCommandPalette(
     if (event.target === backdrop) close()
   }
 
-  function openPalette(): void {
+  function openPalette(overrideActions?: readonly Action[]): void {
     if (open) {
       input.focus()
       return
     }
     open = true
+    override = overrideActions ?? null
     restoreFocus = document.activeElement as HTMLElement | null
     input.value = ""
     backdrop.hidden = false
@@ -144,6 +150,7 @@ export function mountCommandPalette(
   function close(): void {
     if (!open) return
     open = false
+    override = null // back to the registry next open
     backdrop.hidden = true
     // Return focus to wherever it was (e.g. the editor when opened via the shortcut),
     // so it isn't stranded on the now-hidden input.

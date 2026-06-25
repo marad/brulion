@@ -5,6 +5,7 @@ import {
   PanelLeft,
   Search,
   FolderOpen,
+  Folders,
   Keyboard,
   type IconNode,
 } from "lucide"
@@ -32,6 +33,7 @@ import {
   getVault,
   touchVault,
   listVaults,
+  removeVault,
   migrateLegacyFolder,
   type Vault,
 } from "./vaults"
@@ -45,6 +47,8 @@ import {
   saveRecency,
   loadRecency,
   migrateLegacySession,
+  hasPermission,
+  requestAccess,
 } from "./session"
 import {
   loadSettings,
@@ -561,6 +565,23 @@ const attachVault = async (vault: Vault) => {
 const openFreshFolder = async (dir: FileSystemDirectoryHandle) => {
   await attachVault(await addVault(dir))
 }
+// Switch the window to an already-granted vault (FEAT-0060): re-grant permission if
+// the handle lost it (the click is a user gesture), then attach. Declined → no-op.
+const switchToVault = async (vault: Vault) => {
+  if (!(await hasPermission(vault.handle)) && !(await requestAccess(vault.handle))) return
+  await attachVault(vault)
+}
+// The workspace switcher (FEAT-0060): open the command palette with a transient list
+// of the *other* granted vaults (omit the open one), each row switching to it.
+const openWorkspaceSwitcher = async () => {
+  const others = (await listVaults()).filter((v) => v.id !== currentVaultId)
+  // With no other workspace, show a guiding non-action instead of a blank dead-end.
+  palette.open(
+    others.length
+      ? others.map((v) => ({ id: `ws:${v.id}`, label: v.name, icon: Folders, run: () => void switchToVault(v) }))
+      : [{ id: "ws-none", label: "No other workspaces — add one with “Switch folder…”", run: () => {} }],
+  )
+}
 // Which vault this window should open on load: its `?ws` vault if that id is known,
 // else the most-recently-used vault (the set is most-recent-first), else none.
 const resolveStartupVault = async (): Promise<Vault | undefined> => {
@@ -639,6 +660,11 @@ settingsModal = mountSettingsModal(settingsBackdropEl, {
   onSwitchFolder: () => void openFolder(resumeButton, openFreshFolder),
   // The registry's id/label for the Action bar section (FEAT-0058).
   getActions: () => actions.map((a) => ({ id: a.id, label: a.label })),
+  // The granted workspaces for the Workspaces section (FEAT-0060); the open one is
+  // marked so it can't be forgotten.
+  getWorkspaces: async () =>
+    (await listVaults()).map((v) => ({ id: v.id, name: v.name, open: v.id === currentVaultId })),
+  onForgetWorkspace: (id: string) => removeVault(id),
 })
 // Two entry points open it: the header gear and `Ctrl/Cmd+,`. The gear replaces the
 // old header Vim button (Vim now lives inside the modal).
@@ -666,6 +692,7 @@ const actions: Action[] = [
   // no-op stub at registry-build time. (toggleVim above is a const, so it's safe bare.)
   { id: "toggle-note-list", label: "Toggle note list", icon: PanelLeft, run: () => toggleNoteList() },
   { id: "open-settings", label: "Open settings", icon: SettingsIcon, run: () => settingsModal?.open() },
+  { id: "switch-workspace", label: "Switch workspace…", icon: Folders, run: () => void openWorkspaceSwitcher() },
 ]
 const palette = mountCommandPalette(
   { backdrop: paletteBackdropEl, input: paletteInputEl, list: paletteListEl },
