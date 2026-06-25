@@ -19,6 +19,12 @@ settings modal could ship on typography + Vim first.)
 `.brulion.json`. Default is **`system`** — follow the OS's `prefers-color-scheme`. A
 settings-modal control picks among the three.
 
+**A quick toggle.** Besides the modal, a registered action (M30 — runnable from the
+command palette, pinnable to the action bar) flips between light and dark in one step.
+It flips the *currently visible* appearance: if the app is showing dark (because
+`theme` is `dark`, or `system` on a dark OS) it sets `light`, otherwise `dark`. The
+toggle always lands on an explicit `light`/`dark` (it does not cycle back to `system`).
+
 **Applying it.** Colors become CSS custom properties (a small semantic palette: page
 background, surfaces, text, muted text, borders, the brand accent, links, code
 background, selection, soft-accent fills, shadows). The light values are the defaults;
@@ -97,3 +103,10 @@ editor theme.
 Given any theme change,
 When applied and persisted,
 Then only `.brulion.json` is written; no `.md` file is touched.
+
+**AC-8** — A registered action toggles light/dark.
+Given the command palette (or action bar),
+When the user runs the "Toggle light/dark theme" action,
+Then the visible appearance flips to the opposite (dark→light, light→dark; and from
+`system` to the explicit opposite of what the OS is currently showing), the choice
+persists, and the app re-themes live.
