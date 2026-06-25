@@ -29,8 +29,15 @@ const state = (doc: string, selection?: { anchor: number; head?: number }) => {
     ...(selection ? { selection } : {}),
     extensions: [markdown()],
   })
-  // Force a complete parse so the tree walk is deterministic over the whole doc.
-  ensureSyntaxTree(s, doc.length, 5000)
+  // Force a COMPLETE parse so the tree walk is deterministic over the whole doc.
+  // `ensureSyntaxTree` returns null when it can't finish within its wall-clock
+  // budget — possible under heavy parallel-test CPU contention — leaving a partial
+  // tree that makes the block scan flaky (a fenced block parsed only halfway isn't
+  // recognized). Loop until it returns a tree, so the parse is complete regardless
+  // of wall-clock; for these tiny docs this is one iteration in the normal case.
+  while (ensureSyntaxTree(s, doc.length, 5000) === null) {
+    /* keep parsing — progress is cached on the state, so each call advances it */
+  }
   return s
 }
 
