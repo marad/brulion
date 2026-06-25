@@ -1923,3 +1923,26 @@ matching decision above.
 - **Reveal raw source on selection overlap.** The active table block shows its raw
   pipe source for editing; moving out re-renders — identical pattern to fenced code
   (FEAT-0016) and Mermaid (FEAT-0056), incl. click-to-place-caret-inside to reveal.
+
+## M29 — Reveal code-fence markers on edit (FEAT-0064)
+
+- **Reveal a closed fenced block's fence lines when the selection overlaps the block;
+  hide them otherwise.** Since FEAT-0016 the fence lines were hidden *always* (empty
+  styled rows), making the info string uneditable in place. Now `blockSyntaxRanges`
+  skips the two fence-hide ranges for a block the selection touches (strict overlap,
+  same rule as links/Mermaid), and `blockRenderingField` rebuilds on selection change
+  (it previously rebuilt only on document change) — consistent with the post-M2
+  reveal-on-selection layers (FEAT-0026 links, FEAT-0056 Mermaid). The whole-doc block
+  scan on each selection move is cheap at notepad scale (the inline plugin already
+  rebuilds on selection).
+- **Keep the code-box styling while revealed.** The reveal un-hides only the fence
+  *text*; every line still carries `cm-code-block` (rounded top/bottom), so the block
+  still reads as a code box with the fence visible — like a link revealing its markup
+  in-context, not dropping out of the rendered look entirely.
+- **Falls out for Mermaid for free.** A Mermaid block already shows its raw source when
+  the selection is inside (FEAT-0056); now that source also shows its ```` ```mermaid ````
+  fence, so the info string is editable there too. The Vim caret guard reads the same
+  `blockSyntaxRanges`, so a revealed fence is no longer "hidden" and the caret rests on
+  it normally.
+- **Editor-only; bytes untouched.** Reveal/hide is purely which decorations are
+  emitted — no document change (the moat).
