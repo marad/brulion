@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { EditorState, type TransactionSpec } from "@codemirror/state"
 import { markdown } from "@codemirror/lang-markdown"
+import { ensureSyntaxTree } from "@codemirror/language"
 import {
   BOLD,
   ITALIC,
@@ -33,11 +34,19 @@ function stateOf(marked: string): EditorState {
     anchor = head = marked.indexOf("|")
     doc = marked.replace("|", "")
   }
-  return EditorState.create({
+  const state = EditorState.create({
     doc,
     selection: { anchor, head },
     extensions: [markdown()],
   })
+  // Force a COMPLETE parse: clearFormatting walks the syntax tree, and a
+  // time-budgeted lazy parse can be incomplete under heavy parallel-test CPU load
+  // (a marker node not yet parsed → a missed strip). Loop until the tree is whole,
+  // so the transforms see the full document deterministically.
+  while (ensureSyntaxTree(state, doc.length, 5000) === null) {
+    /* keep parsing — progress is cached on the state, so each call advances it */
+  }
+  return state
 }
 
 /** Apply a transform and return the resulting document + selection text.
