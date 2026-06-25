@@ -1,13 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import {
-  rankActions,
-  mountCommandPalette,
-  resolvePinned,
-  togglePinned,
-  movePinned,
-  renderActionBar,
-} from "./command-palette"
-import type { Action, CommandPaletteDeps, CommandPaletteElements } from "./command-palette"
+import { rankActions, mountCommandPalette } from "./command-palette"
+import type { CommandPaletteDeps, CommandPaletteElements } from "./command-palette"
+import type { Action } from "./actions"
 import type { IconNode } from "lucide"
 
 // DOM contract (sibling of the quick switcher — see src/quick-switcher.test.ts):
@@ -307,85 +301,6 @@ describe("mountCommandPalette icons (FEAT-0057 AC-7)", () => {
     const row = rows(els)[0]
     expect(row.querySelector("svg")).toBeNull()
     expect(row.textContent).toContain("No icon")
-  })
-})
-
-describe("resolvePinned (FEAT-0058 AC-2, AC-3)", () => {
-  it("resolves ids to actions in id order", () => {
-    const list = actions()
-    const resolved = resolvePinned(["vim", "goto"], list)
-    expect(resolved.map((a) => a.id)).toEqual(["vim", "goto"])
-  })
-
-  it("drops ids that match no registered action (AC-3), keeping resolvable ones", () => {
-    const list = actions()
-    const resolved = resolvePinned(["ghost", "vim", "nope"], list)
-    expect(resolved.map((a) => a.id)).toEqual(["vim"])
-  })
-
-  it("an empty id list resolves to no actions", () => {
-    expect(resolvePinned([], actions())).toEqual([])
-  })
-})
-
-describe("togglePinned (FEAT-0058 AC-4)", () => {
-  it("appends an absent id and removes a present one, without mutating the input", () => {
-    const list = ["a", "b"]
-    expect(togglePinned(list, "c")).toEqual(["a", "b", "c"])
-    expect(togglePinned(list, "a")).toEqual(["b"])
-    expect(list).toEqual(["a", "b"]) // input untouched
-  })
-})
-
-describe("movePinned (FEAT-0058 AC-5)", () => {
-  it("moves an id one slot toward the front or back", () => {
-    expect(movePinned(["a", "b", "c"], "b", -1)).toEqual(["b", "a", "c"])
-    expect(movePinned(["a", "b", "c"], "b", 1)).toEqual(["a", "c", "b"])
-  })
-
-  it("clamps at the ends and leaves an unknown id alone, without mutating the input", () => {
-    const list = ["a", "b", "c"]
-    expect(movePinned(list, "a", -1)).toEqual(["a", "b", "c"]) // already first
-    expect(movePinned(list, "c", 1)).toEqual(["a", "b", "c"]) // already last
-    expect(movePinned(list, "zzz", -1)).toEqual(["a", "b", "c"]) // not present
-    expect(list).toEqual(["a", "b", "c"]) // input untouched
-  })
-})
-
-describe("renderActionBar (FEAT-0058 AC-2)", () => {
-  it("renders one icon+label button per action, wired to run, and clears on re-render", () => {
-    const container = document.createElement("div")
-    const run = vi.fn()
-    const list: Action[] = [
-      { id: "a", label: "Action A", icon: FAKE_ICON, run },
-      { id: "b", label: "Action B", icon: FAKE_ICON, run: vi.fn() },
-    ]
-    renderActionBar(container, list)
-
-    const buttons = [...container.querySelectorAll<HTMLButtonElement>(".action-bar-button")]
-    expect(buttons).toHaveLength(2)
-    expect(buttons[0].textContent).toContain("Action A")
-    expect(buttons[0].querySelector("svg")).not.toBeNull()
-    buttons[0].click()
-    expect(run).toHaveBeenCalledTimes(1)
-
-    // Re-rendering replaces, not appends.
-    renderActionBar(container, [list[1]])
-    expect(container.querySelectorAll(".action-bar-button")).toHaveLength(1)
-  })
-
-  it("renders nothing for an empty action list", () => {
-    const container = document.createElement("div")
-    renderActionBar(container, [])
-    expect(container.querySelectorAll(".action-bar-button")).toHaveLength(0)
-  })
-
-  it("renders a label-only button for an action with no icon", () => {
-    const container = document.createElement("div")
-    renderActionBar(container, [{ id: "x", label: "No icon", run: vi.fn() }])
-    const button = container.querySelector<HTMLButtonElement>(".action-bar-button")
-    expect(button?.querySelector("svg")).toBeNull()
-    expect(button?.textContent).toContain("No icon")
   })
 })
 

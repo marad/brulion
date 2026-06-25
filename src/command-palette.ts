@@ -1,21 +1,6 @@
-import { createElement, type IconNode } from "lucide"
+import { createElement } from "lucide"
 import { fuzzyScore } from "./note-search"
-
-/**
- * A first-class action (FEAT-0057): a named, labelled, optionally-iconed thing the
- * user can invoke from the command palette (and, in P2, pin to the action bar). The
- * host builds the registry; `run` closes over whatever capability it drives.
- */
-export interface Action {
-  /** Stable identity (used by P2's pinned-action list); unique within the registry. */
-  id: string
-  /** Human label shown in the palette row and matched against the query. */
-  label: string
-  /** Optional Lucide icon node rendered beside the label. */
-  icon?: IconNode
-  /** Invoke the action. The palette closes before calling this. */
-  run: () => void
-}
+import type { Action } from "./actions"
 
 /** Callbacks the palette needs from the host; it owns no action state. */
 export interface CommandPaletteDeps {
@@ -60,66 +45,9 @@ export function rankActions(query: string, actions: readonly Action[]): Action[]
 }
 
 /**
- * Resolve an ordered list of pinned action `ids` to their {@link Action}s against
- * the registry, preserving id order and **dropping** ids that match no action
- * (FEAT-0058). Pure & total — a stale/unknown id yields no entry, never a throw.
- */
-export function resolvePinned(ids: readonly string[], actions: readonly Action[]): Action[] {
-  return ids
-    .map((id) => actions.find((a) => a.id === id))
-    .filter((a): a is Action => a !== undefined)
-}
-
-/**
- * Toggle `id` in a pinned-id `list` (FEAT-0058): append it if absent, remove it if
- * present. Pure — returns a new list, input unchanged.
- */
-export function togglePinned(list: readonly string[], id: string): string[] {
-  return list.includes(id) ? list.filter((x) => x !== id) : [...list, id]
-}
-
-/**
- * Move `id` one slot toward the front (`dir === -1`) or back (`dir === 1`) in a
- * pinned-id `list` (FEAT-0058), clamped at the ends. An id not in `list`, or a move
- * past an end, returns an equivalent list. Pure — returns a new list.
- */
-export function movePinned(list: readonly string[], id: string, dir: -1 | 1): string[] {
-  const from = list.indexOf(id)
-  const to = from + dir
-  if (from === -1 || to < 0 || to >= list.length) return [...list] // absent or past an end
-  const next = [...list]
-  ;[next[from], next[to]] = [next[to], next[from]]
-  return next
-}
-
-/**
- * Render `actions` into `container` as the header action bar (FEAT-0058): clear it,
- * then append one icon+label `<button class="action-bar-button">` per action, each
- * wired to that action's `run`. An action with no icon renders label-only.
- */
-export function renderActionBar(container: HTMLElement, actions: readonly Action[]): void {
-  container.replaceChildren()
-  for (const action of actions) {
-    const button = document.createElement("button")
-    button.type = "button"
-    button.className = "action-bar-button"
-    button.title = action.label
-    if (action.icon) {
-      button.append(createElement(action.icon, { class: "action-bar-icon", "aria-hidden": "true" }))
-    }
-    const label = document.createElement("span")
-    label.className = "action-bar-label"
-    label.textContent = action.label
-    button.append(label)
-    button.addEventListener("click", action.run)
-    container.append(button)
-  }
-}
-
-/**
  * Mount the command palette over its (hidden) DOM nodes and wire its internal events
  * (input filtering, arrow/Enter/Esc keys, row clicks, backdrop click). The host adds
- * the `Ctrl/Cmd+Shift+P` shortcut that calls `open()`. Running an action closes the
+ * the `Ctrl/Cmd+Shift+K` shortcut that calls `open()`. Running an action closes the
  * overlay first, then invokes its `run()`.
  */
 export function mountCommandPalette(

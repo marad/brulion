@@ -3,7 +3,7 @@
 ## Goal & non-goals
 
 **Goal**
-- A `Ctrl/Cmd+Shift+P` modal that fuzzy-finds an *action* by label and runs it.
+- A `Ctrl/Cmd+Shift+K` modal that fuzzy-finds an *action* by label and runs it.
 - A first-class `Action { id, label, icon?, run() }` model; the host builds a
   registry of the app's existing capabilities (go to note, switch folder, toggle
   Vim, toggle note list, open settings).
@@ -23,7 +23,7 @@
 
 The host (`main.ts`, existing) is **not** a new module: it owns the action
 **registry** (binding each `Action.run` to an existing capability), supplies the
-DOM nodes and the `Ctrl/Cmd+Shift+P` listener (with the gating), and passes
+DOM nodes and the `Ctrl/Cmd+Shift+K` listener (with the gating), and passes
 `getActions` to the palette.
 
 ### Why action-ranking is not just `searchNotes`
@@ -48,7 +48,7 @@ unit-testable with fake actions. (Same contract the switcher uses with its deps.
 
 ```mermaid
 flowchart TD
-  KB[Ctrl/Cmd+Shift+P keydown - capture phase, gated] -->|open| CP[CommandPalette]
+  KB[Ctrl/Cmd+Shift+K keydown - capture phase, gated] -->|open| CP[CommandPalette]
   CP -->|rank query, actions| AR[action-ranking - pure]
   AR -->|Action[] ordered| CP
   CP -->|getActions| HOST[main.ts host + registry]

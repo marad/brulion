@@ -16,6 +16,7 @@ import {
   openFolder,
   restoreFolder,
   renderNoteList,
+  renderActionBar,
   wireToggle,
   wireSidebarResize,
   showWorkspace,
@@ -24,7 +25,8 @@ import {
   type NoteIdentityHandle,
 } from "./ui"
 import { mountQuickSwitcher } from "./quick-switcher"
-import { mountCommandPalette, renderActionBar, resolvePinned, type Action } from "./command-palette"
+import { mountCommandPalette } from "./command-palette"
+import { resolvePinned, type Action } from "./actions"
 import {
   saveSidebarCollapsed,
   loadSidebarCollapsed,
@@ -625,8 +627,10 @@ const palette = mountCommandPalette(
 // settings change / folder open via the forward-declared refreshActionBar.
 refreshActionBar = () => renderActionBar(actionBarEl, resolvePinned(currentSettings.actionBar, actions))
 refreshActionBar()
-// `Ctrl/Cmd+Shift+P` opens the palette (the VS Code convention; `Ctrl/Cmd+P` is the
-// browser's and `Ctrl/Cmd+K` is the switcher's). Capture-phase + `event.code` so
+// `Ctrl/Cmd+Shift+K` opens the palette — grouped with the note switcher's
+// `Ctrl/Cmd+K` (K = find a note, Shift+K = run a command), and unlike `Ctrl/Cmd+P`
+// it carries no print-dialog risk if Shift is missed. The switcher's own handler
+// requires `!shiftKey`, so the two don't collide. Capture-phase + `event.code` so
 // neither CodeMirror nor the Vim layer swallows it and it's layout-proof. Gated like
 // the other shortcuts: a folder must be open, the conflict modal must be the only
 // forward path, and we never stack over another open modal (switcher/settings).
@@ -637,7 +641,7 @@ window.addEventListener(
       (event.ctrlKey || event.metaKey) &&
       event.shiftKey &&
       !event.altKey &&
-      event.code === "KeyP" &&
+      event.code === "KeyK" &&
       workspaceShown &&
       conflictBackdropEl.hidden &&
       switcherBackdropEl.hidden &&

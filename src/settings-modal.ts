@@ -1,6 +1,6 @@
 import { MIN_SIZE, MAX_SIZE, type Settings, type EditorWidth } from "./settings"
 import type { FontChoices } from "./font-access"
-import { togglePinned, movePinned } from "./command-palette"
+import { togglePinned, reorderPinned } from "./actions"
 
 /** The minimal action metadata the modal needs to list pinnable actions (FEAT-0058);
  * the host maps the full action registry down to this. */
@@ -148,14 +148,23 @@ export function mountSettingsModal(
   folderControl.append(folderName, switchFolder)
   const folderRow = labeledRow("Folder", folderControl)
 
-  // Action bar (FEAT-0058) — pin/unpin + reorder the actions shown in the header.
-  // Rebuilt by seed() from the current settings; placed last so the earlier control
-  // queries (e.g. the Vim checkbox) are unaffected by its inputs.
+  // Action bar (FEAT-0058) — its own distinct section (own heading + scrollable
+  // list), set off from the appearance controls so a growing action set doesn't
+  // crowd the dialog. Rebuilt by seed() from the current settings; placed last so the
+  // earlier control queries (e.g. the Vim checkbox) are unaffected by its inputs.
   const actionBarControl = document.createElement("div")
   actionBarControl.className = "settings-actionbar"
-  const actionBarRow = labeledRow("Action bar", actionBarControl)
+  const actionBarSection = document.createElement("section")
+  actionBarSection.className = "settings-section"
+  const actionBarTitle = document.createElement("h3")
+  actionBarTitle.className = "settings-section-title"
+  actionBarTitle.textContent = "Action bar"
+  const actionBarHint = document.createElement("p")
+  actionBarHint.className = "settings-section-hint"
+  actionBarHint.textContent = "Pin actions to the header; drag to reorder."
+  actionBarSection.append(actionBarTitle, actionBarHint, actionBarControl)
 
-  dialog.append(titleBar, fontRow, sizeRow, widthRow, vimRow, folderRow, actionBarRow)
+  dialog.append(titleBar, fontRow, sizeRow, widthRow, vimRow, folderRow, actionBarSection)
   backdrop.append(dialog)
 
   let isOpen = false
@@ -174,18 +183,22 @@ export function mountSettingsModal(
   // re-seed itself.
   const emit = (patch: Partial<Settings>) => handlers.onChange(patch)
 
+  // The id being dragged within the pinned list (FEAT-0058 reorder); null when no
+  // drag is in flight. Held here (not on the DataTransfer) so the dragover/drop logic
+  // works uniformly across browsers and happy-dom.
+  let draggingId: string | null = null
+
   // Rebuild the Action bar section from the current settings (FEAT-0058): pinned
-  // actions first, in their pinned order with move-up/down controls, then the rest
+  // actions first, in their pinned order (draggable, to reorder), then the rest
   // unpinned (registry order). A pinned id with no matching registered action is
   // skipped (can't show a label) — consistent with the bar ignoring unknown ids.
   const renderActionBarSection = () => {
     const pinned = handlers.getSettings().actionBar
     const all = handlers.getActions()
     // Preserve keyboard focus across the rebuild (replaceChildren detaches the very
-    // control that fired the change): remember which control (action id + kind) was
-    // focused, then restore the equivalent one — so repeated reorder/pin keystrokes
-    // don't drop focus to <body>.
-    const focused = focusKeyWithin(actionBarControl)
+    // checkbox that fired the change): remember which row's pin was focused, then
+    // restore it — so repeated keyboard pinning doesn't drop focus to <body>.
+    const focused = focusedRowId(actionBarControl)
     const ordered: { meta: ActionMeta; isPinned: boolean }[] = [
       ...pinned
         .map((id) => all.find((a) => a.id === id))
@@ -210,23 +223,38 @@ export function mountSettingsModal(
       label.textContent = meta.label
       row.append(pin, label)
 
+      // Pinned rows are draggable to reorder (native HTML5 DnD, no library). Dropping
+      // a dragged pinned action onto another pinned row moves it to that slot; a drop
+      // onto an unpinned row is a no-op (reorderPinned guards the target).
       if (isPinned) {
-        const move = (glyph: string, aria: string, dir: -1 | 1) => {
-          const b = document.createElement("button")
-          b.type = "button"
-          b.className = "settings-action-move"
-          b.setAttribute("aria-label", aria)
-          b.textContent = glyph
-          b.addEventListener("click", () =>
-            emit({ actionBar: movePinned(handlers.getSettings().actionBar, meta.id, dir) }),
-          )
-          return b
-        }
-        row.append(move("↑", "Move up", -1), move("↓", "Move down", 1))
+        row.classList.add("is-pinned")
+        row.draggable = true
+        row.addEventListener("dragstart", (e) => {
+          draggingId = meta.id
+          e.dataTransfer?.setData("text/plain", meta.id)
+          if (e.dataTransfer) e.dataTransfer.effectAllowed = "move"
+        })
+        row.addEventListener("dragover", (e) => {
+          if (draggingId === null || draggingId === meta.id) return
+          e.preventDefault() // allow the drop
+          row.classList.add("drag-over")
+        })
+        row.addEventListener("dragleave", () => row.classList.remove("drag-over"))
+        row.addEventListener("drop", (e) => {
+          e.preventDefault()
+          row.classList.remove("drag-over")
+          if (draggingId !== null && draggingId !== meta.id) {
+            emit({ actionBar: reorderPinned(handlers.getSettings().actionBar, draggingId, meta.id) })
+          }
+          draggingId = null
+        })
+        row.addEventListener("dragend", () => {
+          draggingId = null
+        })
       }
       actionBarControl.append(row)
     }
-    restoreActionFocus(actionBarControl, focused)
+    restoreRowFocus(actionBarControl, focused)
   }
 
   // Reflect the current settings onto every control. Font only sets if a matching
@@ -321,39 +349,21 @@ function clampSize(value: number): number {
   return Math.min(MAX_SIZE, Math.max(MIN_SIZE, Math.round(value)))
 }
 
-/** Which action-bar control currently holds focus, as an `(action id, kind)` key —
- * so the section rebuild can restore the equivalent control. `null` when focus is
- * outside the section. */
-type ActionFocusKind = "pin" | "up" | "down"
-function focusKeyWithin(container: HTMLElement): { id: string; kind: ActionFocusKind } | null {
+/** The action id of the row whose pin checkbox currently holds focus, or `null` when
+ * focus is outside the section — so the section rebuild can restore it. */
+function focusedRowId(container: HTMLElement): string | null {
   const active = document.activeElement as HTMLElement | null
   if (!active || !container.contains(active)) return null
-  const row = active.closest<HTMLElement>("[data-action-id]")
-  const id = row?.dataset.actionId
-  if (!id) return null
-  const kind: ActionFocusKind =
-    active.getAttribute("aria-label") === "Move up"
-      ? "up"
-      : active.getAttribute("aria-label") === "Move down"
-        ? "down"
-        : "pin"
-  return { id, kind }
+  return active.closest<HTMLElement>("[data-action-id]")?.dataset.actionId ?? null
 }
 
-/** Restore focus to the rebuilt control matching `key` (the same kind if it still
- * exists, else that row's pin checkbox); a no-op if the row is gone or `key` null. */
-function restoreActionFocus(
-  container: HTMLElement,
-  key: { id: string; kind: ActionFocusKind } | null,
-): void {
-  if (!key) return
-  const row = container.querySelector<HTMLElement>(`[data-action-id="${key.id}"]`)
-  if (!row) return
-  const byKind =
-    key.kind === "pin"
-      ? row.querySelector<HTMLElement>('input[type="checkbox"]')
-      : row.querySelector<HTMLElement>(`[aria-label="${key.kind === "up" ? "Move up" : "Move down"}"]`)
-  ;(byKind ?? row.querySelector<HTMLElement>('input[type="checkbox"]'))?.focus()
+/** Re-focus the pin checkbox of the row for `id` after a rebuild; a no-op if the row
+ * is gone or `id` is null. */
+function restoreRowFocus(container: HTMLElement, id: string | null): void {
+  if (!id) return
+  container
+    .querySelector<HTMLElement>(`[data-action-id="${id}"] input[type="checkbox"]`)
+    ?.focus()
 }
 
 /** A labeled control row: a `<label>` text beside the control. */

@@ -13,8 +13,14 @@ import {
   mountMissingNoteBanner,
   clampSidebarWidth,
   wireSidebarResize,
+  renderActionBar,
   SIDEBAR_MIN_PX,
 } from "./ui"
+import type { Action } from "./actions"
+import type { IconNode } from "lucide"
+
+// A minimal valid Lucide IconNode (array of [tag, attrs] children) for icon assertions.
+const FAKE_ICON = [["path", { d: "M0 0h24v24H0z" }]] as unknown as IconNode
 
 vi.mock("./fs", () => ({ pickFolder: vi.fn() }))
 vi.mock("./session", () => ({
@@ -417,6 +423,48 @@ describe("showWorkspace (FEAT-0031)", () => {
     expect(identity.hidden).toBe(false)
     expect(resizer.hidden).toBe(false)
     expect(actionBar.hidden).toBe(false)
+  })
+})
+
+describe("renderActionBar (FEAT-0058 AC-2)", () => {
+  it("renders one icon-only button per action, label as tooltip + aria-label, wired to run", () => {
+    const container = document.createElement("div")
+    const run = vi.fn()
+    const list: Action[] = [
+      { id: "a", label: "Action A", icon: FAKE_ICON, run },
+      { id: "b", label: "Action B", icon: FAKE_ICON, run: vi.fn() },
+    ]
+    renderActionBar(container, list)
+
+    const buttons = [...container.querySelectorAll<HTMLButtonElement>(".action-bar-button")]
+    expect(buttons).toHaveLength(2)
+    // Icon-only: an <svg> is present, the label is NOT visible text…
+    expect(buttons[0].querySelector("svg")).not.toBeNull()
+    expect(buttons[0].textContent).toBe("")
+    // …but it is the tooltip and the accessible name.
+    expect(buttons[0].title).toBe("Action A")
+    expect(buttons[0].getAttribute("aria-label")).toBe("Action A")
+    buttons[0].click()
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  it("clears on re-render (replace, not append) and renders nothing for an empty list", () => {
+    const container = document.createElement("div")
+    renderActionBar(container, [
+      { id: "a", label: "A", icon: FAKE_ICON, run: vi.fn() },
+      { id: "b", label: "B", icon: FAKE_ICON, run: vi.fn() },
+    ])
+    expect(container.querySelectorAll(".action-bar-button")).toHaveLength(2)
+    renderActionBar(container, [])
+    expect(container.querySelectorAll(".action-bar-button")).toHaveLength(0)
+  })
+
+  it("falls back to a visible label for an action with no icon (never a blank button)", () => {
+    const container = document.createElement("div")
+    renderActionBar(container, [{ id: "x", label: "No icon", run: vi.fn() }])
+    const button = container.querySelector<HTMLButtonElement>(".action-bar-button")
+    expect(button?.querySelector("svg")).toBeNull()
+    expect(button?.textContent).toContain("No icon")
   })
 })
 

@@ -1,7 +1,9 @@
+import { createElement } from "lucide"
 import { pickFolder } from "./fs"
 import { saveFolder, loadFolder, hasPermission, requestAccess } from "./session"
 import { displayName } from "./note-name"
 import type { AddNoteResult } from "./note-controller"
+import type { Action } from "./actions"
 
 /** Called once folder access is in hand (fresh pick or restored). */
 export type OpenHandler = (dir: FileSystemDirectoryHandle) => Promise<void>
@@ -382,6 +384,31 @@ export function showWorkspace(refs: WorkspaceRefs): void {
   refs.identity.hidden = false
   refs.resizer.hidden = false // the sidebar is on screen now, so the resize handle applies (FEAT-0044)
   refs.actionBar.hidden = false // the header action bar applies once a folder is open (FEAT-0058)
+}
+
+/**
+ * Render `actions` into `container` as the header action bar (FEAT-0058): clear it,
+ * then append one **icon-only** `<button class="action-bar-button">` per action,
+ * wired to that action's `run`. The label is the button's `title` (tooltip) and
+ * `aria-label` (accessible name), not visible text — so the header stays compact.
+ * An action with no icon falls back to a visible label so the button is never blank.
+ */
+export function renderActionBar(container: HTMLElement, actions: readonly Action[]): void {
+  container.replaceChildren()
+  for (const action of actions) {
+    const button = document.createElement("button")
+    button.type = "button"
+    button.className = "action-bar-button"
+    button.title = action.label
+    button.setAttribute("aria-label", action.label)
+    if (action.icon) {
+      button.append(createElement(action.icon, { class: "action-bar-icon", "aria-hidden": "true" }))
+    } else {
+      button.textContent = action.label // no icon — show the label so it isn't blank
+    }
+    button.addEventListener("click", action.run)
+    container.append(button)
+  }
 }
 
 /** Wire `button`'s click (the required user gesture) to {@link openFolder}. */

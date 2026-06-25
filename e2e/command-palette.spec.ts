@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test"
 
-// FEAT-0057 (M30 P1): the command palette (Ctrl/Cmd+Shift+P) — fuzzy-find an action
+// FEAT-0057 (M30 P1): the command palette (Ctrl/Cmd+Shift+K) — fuzzy-find an action
 // and run it. Needs real key handling, the real Lucide icon render, and the live
 // action registry, which happy-dom can't exercise.
 
@@ -44,7 +44,7 @@ const editor = (page: Page) => page.locator(".cm-content")
 const backdrop = (page: Page) => page.locator("#palette-backdrop")
 const input = (page: Page) => page.locator("#palette-input")
 const rows = (page: Page) => page.locator(".palette-row")
-const open = (page: Page) => page.keyboard.press("Control+Shift+P")
+const open = (page: Page) => page.keyboard.press("Control+Shift+K")
 
 test.beforeEach(async ({ page }) => {
   await stubPicker(page)
@@ -55,7 +55,7 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator(".note-row")).toHaveCount(2)
 })
 
-test("Ctrl+Shift+P opens the palette focused, listing the actions (AC-1)", async ({ page }) => {
+test("Ctrl+Shift+K opens the palette focused, listing the actions (AC-1)", async ({ page }) => {
   await editor(page).click() // focus in the editor — the shortcut must still fire
   await open(page)
 

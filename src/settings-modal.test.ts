@@ -365,14 +365,14 @@ describe("mountSettingsModal dismiss (FEAT-0048 AC-1)", () => {
 
 describe("Action bar section (FEAT-0058 AC-4, AC-5)", () => {
   // DOM contract: each registered action is a row identified by `data-action-id`,
-  // with a checkbox (checked === pinned). A pinned row also has "Move up"/"Move
-  // down" controls (queried by aria-label).
+  // with a pin checkbox (checked === pinned). A pinned row is `draggable` and
+  // reorders on a native drag-and-drop (dragstart on the dragged row, drop on the
+  // target). The dragged id is held in the modal's closure, not on the DataTransfer,
+  // so plain Events (no DataTransfer) suffice to drive it.
   const actionRow = (root: HTMLElement, id: string) =>
     root.querySelector<HTMLElement>(`[data-action-id="${id}"]`)!
   const rowCheckbox = (root: HTMLElement, id: string) =>
     actionRow(root, id).querySelector<HTMLInputElement>('input[type="checkbox"]')!
-  const moveButton = (root: HTMLElement, id: string, label: string) =>
-    actionRow(root, id).querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)
 
   it("pins a previously-unpinned action when its checkbox is checked", () => {
     const { backdrop, handle, onChange } = mount(DEFAULT_SETTINGS) // actionBar: []
@@ -398,35 +398,38 @@ describe("Action bar section (FEAT-0058 AC-4, AC-5)", () => {
     expect(onChange).toHaveBeenCalledWith({ actionBar: [] })
   })
 
-  it("reorders pinned actions with the move controls", () => {
+  it("reorders pinned actions by dragging one onto another", () => {
     const { backdrop, handle, onChange } = mount({
       ...DEFAULT_SETTINGS,
       actionBar: ["goto", "toggle-vim"],
     })
     handle.open()
 
-    moveButton(backdrop, "goto", "Move down")!.click()
+    // Drag toggle-vim (2nd) onto goto (1st): toggle-vim lands first.
+    actionRow(backdrop, "toggle-vim").dispatchEvent(new Event("dragstart", { bubbles: true }))
+    actionRow(backdrop, "goto").dispatchEvent(new Event("drop", { bubbles: true }))
+
     expect(onChange).toHaveBeenCalledWith({ actionBar: ["toggle-vim", "goto"] })
   })
 
-  it("shows no move controls for an unpinned action", () => {
-    const { backdrop, handle } = mount(DEFAULT_SETTINGS)
+  it("makes pinned rows draggable and unpinned rows not", () => {
+    const { backdrop, handle } = mount({ ...DEFAULT_SETTINGS, actionBar: ["goto"] })
     handle.open()
-    expect(moveButton(backdrop, "goto", "Move up")).toBeNull()
-    expect(moveButton(backdrop, "goto", "Move down")).toBeNull()
+    expect(actionRow(backdrop, "goto").draggable).toBe(true) // pinned
+    expect(actionRow(backdrop, "toggle-vim").draggable).toBeFalsy() // unpinned (no draggable set)
   })
 
-  it("keeps focus on the same control across a section rebuild (sync)", () => {
+  it("keeps focus on the pinned action's checkbox across a section rebuild (sync)", () => {
     const { backdrop, handle } = mount({ ...DEFAULT_SETTINGS, actionBar: ["goto", "toggle-vim"] })
     handle.open()
-    const down = moveButton(backdrop, "goto", "Move down")!
-    down.focus()
-    expect(document.activeElement).toBe(down)
+    const box = rowCheckbox(backdrop, "goto")
+    box.focus()
+    expect(document.activeElement).toBe(box)
 
     handle.sync() // what updateSettings triggers after a change — rebuilds the section
 
-    const rebuilt = moveButton(backdrop, "goto", "Move down")!
-    expect(rebuilt).not.toBe(down) // it really is a fresh node
+    const rebuilt = rowCheckbox(backdrop, "goto")
+    expect(rebuilt).not.toBe(box) // it really is a fresh node
     expect(document.activeElement).toBe(rebuilt) // …and focus followed it
   })
 })

@@ -46,8 +46,7 @@ const barButtons = (page: Page) => page.locator("#action-bar .action-bar-button"
 const openSettings = (page: Page) => page.locator("#open-settings").click()
 const pinBox = (page: Page, id: string) =>
   page.locator(`[data-action-id="${id}"] input[type="checkbox"]`)
-const moveDown = (page: Page, id: string) =>
-  page.locator(`[data-action-id="${id}"] [aria-label="Move down"]`)
+const actionRow = (page: Page, id: string) => page.locator(`[data-action-id="${id}"]`)
 const closeSettings = (page: Page) => page.locator(".settings-close").click()
 
 test.beforeEach(async ({ page }) => {
@@ -68,7 +67,10 @@ test("pinning an action adds a header button that runs it (AC-2, AC-4)", async (
 
   // The bar updates live (behind the modal) — assert the DOM, then close and click.
   await expect(barButtons(page)).toHaveCount(1)
-  await expect(barButtons(page)).toContainText("Go to note")
+  // Icon-only: an <svg>, no visible label text, label carried by the tooltip/aria.
+  await expect(barButtons(page).first().locator("svg")).toBeVisible()
+  await expect(barButtons(page).first()).toHaveText("")
+  await expect(barButtons(page).first()).toHaveAttribute("aria-label", /Go to note/)
   await closeSettings(page)
 
   await barButtons(page).click()
@@ -88,11 +90,11 @@ test("reordering pinned actions reorders the bar (AC-5)", async ({ page }) => {
   await pinBox(page, "goto").check()
   await pinBox(page, "toggle-vim").check()
   await expect(barButtons(page)).toHaveCount(2)
-  // Pinned order is goto, toggle-vim; move goto down so vim leads.
-  await moveDown(page, "goto").click()
+  // Pinned order is goto, toggle-vim; drag toggle-vim onto goto so vim leads.
+  await actionRow(page, "toggle-vim").dragTo(actionRow(page, "goto"))
 
-  await expect(barButtons(page).nth(0)).toContainText("Toggle Vim mode")
-  await expect(barButtons(page).nth(1)).toContainText("Go to note")
+  await expect(barButtons(page).nth(0)).toHaveAttribute("aria-label", /Toggle Vim mode/)
+  await expect(barButtons(page).nth(1)).toHaveAttribute("aria-label", /Go to note/)
 })
 
 test("the pinned bar persists across a reload (AC-6)", async ({ page }) => {
@@ -104,7 +106,7 @@ test("the pinned bar persists across a reload (AC-6)", async ({ page }) => {
   await page.reload()
   await expect(page.locator(".note-row")).toHaveCount(1) // folder auto-restored
   await expect(barButtons(page)).toHaveCount(1)
-  await expect(barButtons(page)).toContainText("Switch folder")
+  await expect(barButtons(page).first()).toHaveAttribute("aria-label", /Switch folder/)
 })
 
 test("pinning, unpinning and reordering write no note files (AC-8)", async ({ page }) => {
@@ -112,7 +114,7 @@ test("pinning, unpinning and reordering write no note files (AC-8)", async ({ pa
   await openSettings(page)
   await pinBox(page, "goto").check()
   await pinBox(page, "toggle-vim").check()
-  await moveDown(page, "goto").click()
+  await actionRow(page, "toggle-vim").dragTo(actionRow(page, "goto"))
   await pinBox(page, "toggle-vim").uncheck()
 
   expect(await noteCount(page)).toBe(before) // only .brulion.json changed, no note
