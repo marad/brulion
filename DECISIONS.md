@@ -1896,3 +1896,30 @@ matching decision above.
   shortcuts lightly.
 - **Moat untouched.** Expanding/opening read only; the only writes are the
   `.brulion.json` preference and the user-confirmed create-on-miss note.
+
+## M26 — Table rendering (FEAT-0063)
+
+- **Render a pipe table as an aligned `<table>` block widget; never touch the bytes.**
+  Same family/mechanism as Mermaid (FEAT-0056): a whole-doc `StateField` emits a
+  `Decoration.replace({ widget, block: true })` over the table block, registered
+  alongside `markdownRendering`. Visual only — no parse-and-reserialize, consistent
+  with the M23/M28 moat stance.
+- **Detect by a line scan, not the syntax tree.** The base `markdown()` grammar
+  doesn't parse GFM tables (we deliberately never pulled in the GFM table extension —
+  see FEAT-0026, which took only GFM Autolink). So detection is a pure line scan: a
+  **separator row** (cells of optional-colon dashes) with a non-blank **header** line
+  directly above and contiguous **body** lines below (until a blank line). Outer pipes
+  optional (GFM-style). The scan **skips fenced code blocks** (tracks ``` toggles) so a
+  `|`/`---|---` inside code isn't mistaken for a table — the same fence-aware line-scan
+  discipline as the M32 heading scan. Parse-independent, so it's robust right after a
+  note loads.
+- **Alignment from the separator; ragged rows padded/truncated.** `:---`/`:--:`/`---:`
+  → left/center/right, plain `---` → default. Column count is the separator's; a short
+  body row pads with empty cells, a long one truncates (GFM leniency) — never a crash
+  or a stray column.
+- **Cells show plain text (no inline markdown inside cells) for now.** Re-rendering
+  bold/links inside a rendered cell is deferred — out of scope; the user reveals raw to
+  see/edit formatting. Editing-in-place (tab between cells) is also out.
+- **Reveal raw source on selection overlap.** The active table block shows its raw
+  pipe source for editing; moving out re-renders — identical pattern to fenced code
+  (FEAT-0016) and Mermaid (FEAT-0056), incl. click-to-place-caret-inside to reveal.
