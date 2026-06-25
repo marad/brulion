@@ -47,23 +47,28 @@ export function collectCodeMarks(state: EditorState, from: number, to: number): 
 
 /**
  * Token colours for code blocks, keyed on the stable `tok-*` classes
- * `classHighlighter` produces. A GitHub-light-ish palette for the editor's light
- * background. Only code-relevant token classes are styled; the marks only ever land
- * inside fenced blocks, so markdown prose rendering is unaffected regardless.
+ * `classHighlighter` produces. Colours come from the M18 syntax palette tokens
+ * (`--tok-*`, FEAT-0066) so they flip light↔dark with the theme; the light values
+ * are the original GitHub-light-ish palette. Classes that shared a colour keep
+ * sharing one token (property/escape = number's blue, meta = comment grey). Only
+ * code-relevant token classes are styled; the marks only ever land inside fenced
+ * blocks, so markdown prose rendering is unaffected regardless.
  */
 export const codeTokenTheme = EditorView.baseTheme({
   ".tok-keyword, .tok-controlKeyword, .tok-operatorKeyword, .tok-definitionKeyword, .tok-moduleKeyword":
-    { color: "#cf222e" },
-  ".tok-string, .tok-special, .tok-attributeValue": { color: "#0a3069" },
-  ".tok-number, .tok-integer, .tok-float, .tok-bool, .tok-null, .tok-atom": { color: "#0550ae" },
+    { color: "var(--tok-keyword)" },
+  ".tok-string, .tok-special, .tok-attributeValue": { color: "var(--tok-string)" },
+  ".tok-number, .tok-integer, .tok-float, .tok-bool, .tok-null, .tok-atom": {
+    color: "var(--tok-number)",
+  },
   ".tok-comment, .tok-lineComment, .tok-blockComment": {
-    color: "#6e7781",
+    color: "var(--tok-comment)",
     fontStyle: "italic",
   },
-  ".tok-function": { color: "#8250df" },
-  ".tok-propertyName, .tok-attributeName": { color: "#0550ae" },
-  ".tok-typeName, .tok-className, .tok-namespace": { color: "#953800" },
-  ".tok-tagName, .tok-regexp": { color: "#116329" },
-  ".tok-escape": { color: "#0550ae" },
-  ".tok-meta, .tok-annotation": { color: "#6e7781" },
+  ".tok-function": { color: "var(--tok-function)" },
+  ".tok-propertyName, .tok-attributeName": { color: "var(--tok-number)" },
+  ".tok-typeName, .tok-className, .tok-namespace": { color: "var(--tok-type)" },
+  ".tok-tagName, .tok-regexp": { color: "var(--tok-tag)" },
+  ".tok-escape": { color: "var(--tok-number)" },
+  ".tok-meta, .tok-annotation": { color: "var(--tok-comment)" },
 })

@@ -23,6 +23,16 @@
   --accent-fg: #fff; /* text on an --accent fill */
   --link: #2f6f9a;
   --code-bg: rgba(0, 0, 0, 0.05); /* inline code background */
+
+  /* Code-block syntax palette (M18 P2/FEAT-0066). Light = GitHub-light; the dark
+     override sits in the two dark blocks below. code-highlight.ts reads these. */
+  --tok-keyword: #cf222e;
+  --tok-string: #0a3069;
+  --tok-number: #0550ae;
+  --tok-comment: #6e7781;
+  --tok-function: #8250df;
+  --tok-type: #953800;
+  --tok-tag: #116329;
   --soft-surface: #fffdf6; /* warm near-white for large panels (settings/conflict modal) */
   --soft-bg: #fbf3df; /* warm "cream" fills: settings buttons, hints, mermaid error */
   --soft-border: #d8c79a;
@@ -51,6 +61,13 @@
   --accent-fg: #fff;
   --link: #7fb0d4;
   --code-bg: rgba(255, 255, 255, 0.09);
+  --tok-keyword: #ff7b72;
+  --tok-string: #a5d6ff;
+  --tok-number: #79c0ff;
+  --tok-comment: #8b949e;
+  --tok-function: #d2a8ff;
+  --tok-type: #ffa657;
+  --tok-tag: #7ee787;
   --soft-surface: #2b2825;
   --soft-bg: #332b26;
   --soft-border: #574636;
@@ -76,6 +93,13 @@
     --accent-fg: #fff;
     --link: #7fb0d4;
     --code-bg: rgba(255, 255, 255, 0.09);
+    --tok-keyword: #ff7b72;
+    --tok-string: #a5d6ff;
+    --tok-number: #79c0ff;
+    --tok-comment: #8b949e;
+    --tok-function: #d2a8ff;
+    --tok-type: #ffa657;
+    --tok-tag: #7ee787;
     --soft-surface: #2b2825;
     --soft-bg: #332b26;
     --soft-border: #574636;
