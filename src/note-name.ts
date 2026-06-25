@@ -64,6 +64,39 @@ export function displayName(filename: string): string {
   return filename.replace(/\.md$/i, "")
 }
 
+/**
+ * Split an *internal* link target into its note path and section anchor (M32/
+ * FEAT-0061): everything before the first `#` is the path, everything after is the
+ * anchor. `note#sec` → `{ path: "note", anchor: "sec" }`; a bare `#sec` →
+ * `{ path: "", anchor: "sec" }` (a same-note jump); no `#`, or an empty/`#`-only
+ * fragment → `anchor: null`. Pure. Only call on internal targets — an external URL's
+ * `#fragment` is not a note anchor (guard with {@link isExternalLink}).
+ */
+export function splitAnchor(target: string): { path: string; anchor: string | null } {
+  const hash = target.indexOf("#")
+  if (hash === -1) return { path: target, anchor: null }
+  const anchor = target.slice(hash + 1)
+  return { path: target.slice(0, hash), anchor: anchor === "" ? null : anchor }
+}
+
+/**
+ * Slug of a heading's text for anchor matching (M32/FEAT-0061), GitHub-ish and
+ * **Unicode-aware**: lower-cased, punctuation dropped (only letters/numbers/marks
+ * `\p{L}\p{N}`, underscore, whitespace, and hyphens survive — so Polish/non-English
+ * headings slug correctly and `_` is kept like GitHub), whitespace runs collapsed to
+ * single hyphens, leading/trailing hyphens trimmed. `## My Big Heading!` →
+ * `my-big-heading`. Pure.
+ */
+export function headingSlug(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}_\s-]/gu, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+}
+
 /** True when a link `href` points outside the folder — a `scheme:` URL
  * (`https:`, `mailto:`) or a protocol-relative `//host`. Internal note links are
  * plain relative paths with no scheme (FEAT-0025). */

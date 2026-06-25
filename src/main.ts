@@ -10,7 +10,7 @@ import {
   Command,
   type IconNode,
 } from "lucide"
-import { mountEditor, setEditorEditable, setLinkContext } from "./editor"
+import { mountEditor, setEditorEditable, setLinkContext, scrollEditorToHeading } from "./editor"
 import { createNoteController, type NoteController } from "./note-controller"
 import { mountConflictDiff, type ConflictDiff } from "./conflict-view"
 import {
@@ -255,9 +255,17 @@ const showMissingBanner = (target: string) => {
 }
 // Follow a resolved internal note path: switch to it if it exists, else offer to
 // create it (shared by markdown links and wikilinks — FEAT-0026/0027).
-const openNotePath = (path: string) => {
-  if (currentNotes.includes(path)) {
-    void controller.switchTo(path)
+// Follow a resolved internal note path, optionally jumping to a section anchor
+// (FEAT-0061). Same note → just scroll to the heading; another existing note →
+// switch then scroll once it's loaded; a missing note → offer to create (the anchor
+// is moot, the new note has no heading).
+const openNotePath = (path: string, anchor: string | null = null) => {
+  if (path === currentActive) {
+    if (anchor) scrollEditorToHeading(view, anchor)
+  } else if (currentNotes.includes(path)) {
+    void controller.switchTo(path).then(() => {
+      if (anchor) scrollEditorToHeading(view, anchor)
+    })
   } else if (window.confirm(`"${displayName(path)}" doesn't exist yet. Create it?`)) {
     void controller.addNote(path)
   }
@@ -265,22 +273,27 @@ const openNotePath = (path: string) => {
 const view = mountEditor(editorEl, {
   onChange: () => controller.handleChange(),
   onSave: () => controller.flush(),
-  onFollowLink: (href) => {
+  onFollowLink: (href, anchor) => {
     if (isExternalLink(href)) {
       // Open in a new tab via a real anchor click — `window.open(_, _, "noopener")`
       // opens a popup window (not a tab) in some browsers (FEAT-0026).
-      const anchor = document.createElement("a")
-      anchor.href = href
-      anchor.target = "_blank"
-      anchor.rel = "noopener noreferrer"
-      anchor.click()
+      const link = document.createElement("a")
+      link.href = href
+      link.target = "_blank"
+      link.rel = "noopener noreferrer"
+      link.click()
+      return
+    }
+    if (href === "") {
+      // A same-note anchor `[text](#section)` — no note to resolve, just jump.
+      if (anchor) scrollEditorToHeading(view, anchor)
       return
     }
     const target = resolveNotePath(currentActive, href)
-    if (target) openNotePath(target) // null = escapes the root / not a note — inert
+    if (target) openNotePath(target, anchor) // null = escapes the root / not a note — inert
   },
   // A wikilink (FEAT-0027) already carries its resolved absolute note path.
-  onFollowNote: (path) => openNotePath(path),
+  onFollowNote: (path, anchor) => openNotePath(path, anchor),
 })
 // User settings (M16/FEAT-0047): font, text size, editor width, Vim. The single
 // source of truth is `.brulion.json` in the open folder — no idb cache. Before a

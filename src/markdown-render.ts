@@ -21,7 +21,13 @@ import { Autolink } from "@lezer/markdown"
 import { collectCodeMarks, codeTokenTheme } from "./code-highlight"
 import { syntaxTree } from "@codemirror/language"
 import type { SyntaxNode } from "@lezer/common"
-import { isExternalLink, normalizeNoteName, resolveNotePath, resolveWikilink } from "./note-name"
+import {
+  isExternalLink,
+  normalizeNoteName,
+  resolveNotePath,
+  resolveWikilink,
+  splitAnchor,
+} from "./note-name"
 import { WIKILINK_RE } from "./wikilink"
 import { type FrontmatterRange, frontmatterRange } from "./frontmatter"
 
@@ -215,10 +221,11 @@ function collectWikilinks(
     const end = start + m[0].length
     if (sel.from < end && sel.to > start) continue // selection touches it — reveal for editing
     const [, rawTarget, rawAlias] = m
-    // Skip a target that isn't a usable note name — whitespace-only (`[[ ]]`),
-    // a `.`/`..` segment (no root escape), a bare `.md`, a trailing slash, etc.
-    // `normalizeNoteName` is the same validator note creation uses.
-    if (!normalizeNoteName(rawTarget).ok) continue
+    // Split off a section anchor (FEAT-0061); the path part is the note, validated/
+    // resolved as before. A bare `#sec` (empty path) is a same-note jump and skips
+    // note validation. `normalizeNoteName` is the same validator note creation uses.
+    const { path: wlPath, anchor } = splitAnchor(rawTarget.trim())
+    if (wlPath !== "" && !normalizeNoteName(wlPath).ok) continue
     // The label is the alias when present, else the target; it runs after `[[`
     // (or `[[target|`) up to `]]`. Trim its surrounding whitespace into the hidden
     // runs so `[[foo| bar ]]` doesn't render padding inside the styled link.
@@ -227,15 +234,26 @@ function collectWikilinks(
     const labelStart = runStart + (label.length - label.trimStart().length)
     const labelEnd = end - 2 - (label.length - label.trimEnd().length)
     if (labelEnd <= labelStart) continue // label is all whitespace
-    const { resolved, createPath } = resolveWikilink(rawTarget.trim(), links.notePaths)
-    const note = resolved ?? createPath
+    // Empty path → the open note (a same-note `[[#sec]]` jump); else resolve normally.
+    let resolved: string | null
+    let note: string
+    if (wlPath === "") {
+      resolved = links.activeNote || null
+      note = links.activeNote
+    } else {
+      const r = resolveWikilink(wlPath, links.notePaths)
+      resolved = r.resolved
+      note = r.resolved ?? r.createPath
+    }
     hidden.push({ from: start, to: labelStart })
     hidden.push({ from: labelEnd, to: end })
+    const attrs: Record<string, string> = { "data-note": note, title: note }
+    if (anchor) attrs["data-anchor"] = anchor
     marks.push({
       from: labelStart,
       to: labelEnd,
       cls: resolved ? "cm-link" : "cm-link cm-link-broken",
-      attrs: { "data-note": note, title: note },
+      attrs,
     })
   }
 }
@@ -274,10 +292,15 @@ function collectLink(
   if (sel.from < lastMark.to && sel.to > open.from) return
 
   const href = doc.sliceString(url.from, url.to)
-  const { cls, title } = linkInfo(href, links)
+  // Split off a section anchor for internal links only (FEAT-0061); an external
+  // URL's `#fragment` is a real fragment, not a note anchor — leave it whole.
+  const { path, anchor } = isExternalLink(href) ? { path: href, anchor: null } : splitAnchor(href)
+  const { cls, title } = linkInfo(path, links)
   hidden.push({ from: open.from, to: open.to }) // "["
   hidden.push({ from: closeBracket.from, to: lastMark.to }) // "](url)"
-  marks.push({ from: open.to, to: closeBracket.from, cls, attrs: { "data-href": href, title } })
+  const attrs: Record<string, string> = { "data-href": path, title }
+  if (anchor) attrs["data-anchor"] = anchor
+  marks.push({ from: open.to, to: closeBracket.from, cls, attrs })
 }
 
 /**
@@ -307,6 +330,7 @@ function collectAutolink(node: SyntaxNode, doc: Text, marks: MarkRange[]): void 
  */
 function linkInfo(href: string, links: LinkContext): { cls: string; title: string } {
   if (isExternalLink(href)) return { cls: "cm-link", title: href }
+  if (href === "") return { cls: "cm-link", title: "this note" } // same-note anchor (FEAT-0061)
   const target = resolveNotePath(links.activeNote, href)
   const known = !!target && links.notePaths.has(target)
   return { cls: known ? "cm-link" : "cm-link cm-link-broken", title: target ?? href }

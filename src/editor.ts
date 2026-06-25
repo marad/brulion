@@ -6,6 +6,7 @@ import { deleteMarkupBackward } from "@codemirror/lang-markdown"
 import { vim } from "@replit/codemirror-vim"
 import { markdownRendering, linkContext, type LinkContext } from "./markdown-render"
 import { frontmatterRendering } from "./frontmatter"
+import { headingSlug } from "./note-name"
 import { mermaidRendering } from "./mermaid-render"
 import { ProgrammaticLoad } from "./editor-load"
 import {
@@ -72,11 +73,13 @@ export interface EditorOptions {
   /** Called when the user presses Ctrl/Cmd+S. */
   onSave?: () => void
   /** Called when the user follows a link with a raw `href` — a markdown/autolink
-   * (resolved relative to the open note) or an external URL (FEAT-0025/0026). */
-  onFollowLink?: (href: string) => void
+   * (resolved relative to the open note) or an external URL (FEAT-0025/0026). For an
+   * internal link, `anchor` is the section anchor after `#`, if any (FEAT-0061). */
+  onFollowLink?: (href: string, anchor: string | null) => void
   /** Called when the user follows a wikilink, with the already-resolved absolute
-   * note path it points at (or the path to create if missing) (FEAT-0027). */
-  onFollowNote?: (path: string) => void
+   * note path it points at (or the path to create if missing) (FEAT-0027); `anchor`
+   * is the section anchor after `#`, if any (FEAT-0061). */
+  onFollowNote?: (path: string, anchor: string | null) => void
 }
 
 /**
@@ -147,12 +150,13 @@ export function mountEditor(
           event.preventDefault()
           // A wikilink carries an already-resolved note path (data-note); a
           // markdown/autolink/external link carries a raw href (data-href).
+          const anchor = el.getAttribute("data-anchor") // section anchor (FEAT-0061), if any
           const note = el.getAttribute("data-note")
           if (note !== null) {
-            opts.onFollowNote?.(note)
+            opts.onFollowNote?.(note, anchor)
           } else {
             const href = el.getAttribute("data-href")
-            if (href !== null) opts.onFollowLink?.(href)
+            if (href !== null) opts.onFollowLink?.(href, anchor)
           }
           return true
         },
@@ -228,4 +232,37 @@ export function setVimMode(view: EditorView, on: boolean): void {
  * valid-vs-broken correctly (FEAT-0025). */
 export function setLinkContext(view: EditorView, ctx: LinkContext): void {
   view.dispatch({ effects: linkCtx.reconfigure(linkContext.of(ctx)) })
+}
+
+/**
+ * Scroll to the first heading whose slug matches `anchor` (M32/FEAT-0061): bring it
+ * to the top of the view and place the caret there. Scans the document's lines for a
+ * heading prefix (`#`–`######` + space) and compares {@link headingSlug}s — so it
+ * works even for a heading below the just-loaded viewport that the incremental parser
+ * hasn't reached. Lines inside a fenced code block are skipped, so a `# comment` in
+ * code isn't mistaken for a heading. Returns whether a match was found; a miss is a
+ * silent no-op.
+ */
+export function scrollEditorToHeading(view: EditorView, anchor: string): boolean {
+  const wanted = headingSlug(anchor)
+  if (!wanted) return false
+  const doc = view.state.doc
+  let inFence = false
+  for (let i = 1; i <= doc.lines; i++) {
+    const line = doc.line(i)
+    if (/^\s*(```|~~~)/.test(line.text)) {
+      inFence = !inFence // a ``` / ~~~ fence opens or closes a code block
+      continue
+    }
+    if (inFence) continue
+    const m = /^#{1,6}\s+(.+?)\s*$/.exec(line.text)
+    if (m && headingSlug(m[1]) === wanted) {
+      view.dispatch({
+        selection: { anchor: line.from },
+        effects: EditorView.scrollIntoView(line.from, { y: "start" }),
+      })
+      return true
+    }
+  }
+  return false
 }

@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest"
-import { normalizeNoteName, isExternalLink, resolveNotePath, resolveWikilink } from "./note-name"
+import {
+  normalizeNoteName,
+  isExternalLink,
+  resolveNotePath,
+  resolveWikilink,
+  splitAnchor,
+  headingSlug,
+} from "./note-name"
 
 describe("normalizeNoteName bare name (AC-9)", () => {
   it("trims and appends a .md extension when absent", () => {
@@ -149,5 +156,52 @@ describe("resolveWikilink (FEAT-0027 AC-1, AC-2, AC-3)", () => {
 
   it("picks the first by sorted order for an ambiguous bare name", () => {
     expect(resolveWikilink("note", notes(["a/note.md", "b/note.md"])).resolved).toBe("a/note.md")
+  })
+})
+
+describe("splitAnchor (FEAT-0061)", () => {
+  it("splits the path from the section anchor on the first #", () => {
+    expect(splitAnchor("other#section-two")).toEqual({ path: "other", anchor: "section-two" })
+    expect(splitAnchor("sub/note#sec")).toEqual({ path: "sub/note", anchor: "sec" })
+  })
+
+  it("a bare #anchor is a same-note jump (empty path)", () => {
+    expect(splitAnchor("#later")).toEqual({ path: "", anchor: "later" })
+  })
+
+  it("no # (or an empty fragment) yields a null anchor", () => {
+    expect(splitAnchor("other.md")).toEqual({ path: "other.md", anchor: null })
+    expect(splitAnchor("other#")).toEqual({ path: "other", anchor: null })
+  })
+
+  it("splits on the FIRST # only (later #s stay in the anchor)", () => {
+    expect(splitAnchor("note#a#b")).toEqual({ path: "note", anchor: "a#b" })
+  })
+})
+
+describe("headingSlug (FEAT-0061)", () => {
+  it("lower-cases, drops punctuation, hyphenates whitespace", () => {
+    expect(headingSlug("My Big Heading!")).toBe("my-big-heading")
+    expect(headingSlug("Section two")).toBe("section-two")
+  })
+
+  it("collapses whitespace/hyphen runs and trims edge hyphens", () => {
+    expect(headingSlug("  Lots   of    space  ")).toBe("lots-of-space")
+    expect(headingSlug("-- weird -- ")).toBe("weird")
+  })
+
+  it("keeps Unicode letters (non-English headings slug correctly)", () => {
+    expect(headingSlug("Zażółć gęślą jaźń")).toBe("zażółć-gęślą-jaźń")
+    expect(headingSlug("Über cool")).toBe("über-cool")
+  })
+
+  it("keeps underscores (GitHub-compatible) but drops other punctuation", () => {
+    expect(headingSlug("Build_config")).toBe("build_config")
+    expect(headingSlug("C++ tips")).toBe("c-tips")
+  })
+
+  it("matches the same slug regardless of the heading's case/punctuation", () => {
+    expect(headingSlug("## Later")).toBe("later") // (## is stripped as punctuation)
+    expect(headingSlug("LATER")).toBe("later")
   })
 })
