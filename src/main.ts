@@ -26,6 +26,7 @@ import {
   showWorkspace,
   mountNoteIdentity,
   mountMissingNoteBanner,
+  markMotionReady,
   type NoteIdentityHandle,
 } from "./ui"
 import { mountQuickSwitcher } from "./quick-switcher"
@@ -89,6 +90,10 @@ let toggleNoteList = (): void => {}
  * action registry exists. A no-op before then. Called on folder open and after any
  * settings change (FEAT-0058). */
 let refreshActionBar = (): void => {}
+
+// Enable chrome motion (FEAT-0068) only after the first paint has settled, so the
+// load sequence and the async theme apply never animate (no welcome/theme flash).
+markMotionReady()
 
 const editorEl = document.querySelector<HTMLDivElement>("#editor")
 const workspaceEl = document.querySelector<HTMLElement>(".workspace")

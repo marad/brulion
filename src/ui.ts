@@ -510,6 +510,9 @@ export function wireSidebarResize(
     let width = startWidth
     handle.setPointerCapture(event.pointerId)
     document.body.style.userSelect = "none" // no text selection mid-drag
+    // Suppress the collapse/expand `flex-basis` transition (FEAT-0068) for the drag,
+    // so the column tracks the cursor instead of easing a frame behind it each move.
+    sidebar.classList.add("resizing")
 
     const onMove = (ev: PointerEvent) => {
       width = clampSidebarWidth(startWidth + ev.clientX - startX)
@@ -519,11 +522,23 @@ export function wireSidebarResize(
       handle.removeEventListener("pointermove", onMove)
       handle.removeEventListener("lostpointercapture", onEnd)
       document.body.style.userSelect = ""
+      sidebar.classList.remove("resizing")
       opts.onChange(width)
     }
     handle.addEventListener("pointermove", onMove)
     handle.addEventListener("lostpointercapture", onEnd)
   })
+}
+
+/**
+ * Enable motion (FEAT-0068) by adding `motion-ready` to the document root *after* the
+ * first paint — two chained frames, so the initial render (loading → welcome/workspace,
+ * the async theme apply) has fully settled before the motion tokens resolve to non-zero
+ * durations. Without this gate those first state changes would animate, reintroducing
+ * the welcome/theme flash FEAT-0031 fought to remove.
+ */
+export function markMotionReady(root: HTMLElement = document.documentElement): void {
+  requestAnimationFrame(() => requestAnimationFrame(() => root.classList.add("motion-ready")))
 }
 
 /** Controls the missing-note banner (FEAT-0036): show it naming a note, or hide it. */

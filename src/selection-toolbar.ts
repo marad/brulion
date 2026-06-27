@@ -100,6 +100,7 @@ class SelectionToolbar {
   private build(): HTMLElement {
     const bar = document.createElement("div")
     bar.className = "cm-selection-toolbar"
+    bar.hidden = true // shown by place() — toggling `hidden` lets it fade in (FEAT-0068)
     bar.setAttribute("role", "toolbar")
     bar.setAttribute("aria-label", "Format selection")
     for (const item of FORMAT_ITEMS) {
@@ -132,7 +133,7 @@ class SelectionToolbar {
       this.hide()
       return
     }
-    el.style.display = "flex"
+    el.hidden = false
     el.style.visibility = "hidden" // measure the toolbar before placing it
     const rect = el.getBoundingClientRect()
     const above = coords.top - rect.height - 8
@@ -144,7 +145,7 @@ class SelectionToolbar {
   }
 
   private hide() {
-    if (this.el) this.el.style.display = "none"
+    if (this.el) this.el.hidden = true
   }
 }
 

@@ -80,10 +80,14 @@ Then the width tracks the cursor with no transition lag, because `wireSidebarRes
 `resizing` class to `#sidebar` for the duration of the drag and `#sidebar.resizing` sets
 `transition: none`.
 
-**AC-8** — The folder tree reveals children gently.
-Given a collapsed folder in the note tree,
-When it is expanded,
-Then its children fade/rise in rather than appearing instantly.
+**AC-8** — The folder tree reveal is intentionally instant.
+Given the note tree is rebuilt wholesale on every render (`onListChanged` → `renderNoteList`,
+which fires on every note switch to re-expand the active note's ancestors),
+When a folder is expanded,
+Then its children appear instantly — an enter animation is deliberately *not* added,
+because keying it off DOM insertion (`@starting-style`) would re-fire on every list
+re-render and flicker the whole expanded tree on each note switch. (Recorded in
+DECISIONS.md.)
 
 **AC-9** — Hover/active states transition.
 Given buttons, note rows, folder headers, the delete-X, and the active-note highlight,

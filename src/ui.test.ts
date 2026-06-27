@@ -14,6 +14,7 @@ import {
   clampSidebarWidth,
   wireSidebarResize,
   renderActionBar,
+  markMotionReady,
   SIDEBAR_MIN_PX,
 } from "./ui"
 import type { Action } from "./actions"
@@ -489,6 +490,36 @@ describe("wireSidebarResize (FEAT-0044)", () => {
     const sidebar = document.createElement("aside")
     wireSidebarResize(handle, sidebar, { initialWidth: null, onChange: vi.fn() })
     expect(varOf(sidebar)).toBe("")
+  })
+
+  it("flags the sidebar `resizing` for the duration of a drag so the transition is off (FEAT-0068/AC-7)", () => {
+    const handle = document.createElement("div")
+    const sidebar = document.createElement("aside")
+    handle.setPointerCapture = vi.fn() // not implemented in happy-dom
+    wireSidebarResize(handle, sidebar, { initialWidth: 300, onChange: vi.fn() })
+
+    const down = new Event("pointerdown") as Event & { clientX: number; pointerId: number }
+    down.clientX = 0
+    down.pointerId = 1
+    handle.dispatchEvent(down)
+    expect(sidebar.classList.contains("resizing")).toBe(true)
+
+    handle.dispatchEvent(new Event("lostpointercapture"))
+    expect(sidebar.classList.contains("resizing")).toBe(false)
+  })
+})
+
+describe("markMotionReady (FEAT-0068)", () => {
+  it("adds `motion-ready` to the root after the next frames (AC-2)", () => {
+    const root = document.createElement("html")
+    // Run scheduled frames synchronously so the double-rAF resolves in the test.
+    const raf = vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+      cb(0)
+      return 0
+    })
+    markMotionReady(root)
+    expect(root.classList.contains("motion-ready")).toBe(true)
+    raf.mockRestore()
   })
 })
 

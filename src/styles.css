@@ -41,6 +41,54 @@
   --danger-bg: #fdf3f1; /* inline error / conflict surfaces (reddish) */
   --danger-border: #f3ddd8;
   --shadow: rgb(0 0 0 / 22%); /* modal/overlay drop shadow */
+
+  /* Motion system (M34/FEAT-0068). Durations live here so the whole app's tempo is
+     tuned in one place. They default to ~0s and only resolve to real values under
+     `:root.motion-ready` (added after first paint in main.ts) — so nothing animates on
+     load (no welcome/theme flash). `prefers-reduced-motion` (below) forces them back to
+     ~0s even when ready. Every chrome transition reads these, so both gates are one lever. */
+  --motion-fast: 0.001s; /* hover/active colour changes */
+  --motion-medium: 0.001s; /* overlay enter/leave, sidebar collapse */
+  --motion-slow: 0.001s; /* larger/structural moves */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1); /* standard ease-in-out */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1); /* decisive ease-out for enters */
+}
+
+:root.motion-ready {
+  --motion-fast: 120ms;
+  --motion-medium: 190ms;
+  --motion-slow: 260ms;
+}
+
+/* Honour the OS "reduce motion" setting: force the tokens back to ~0s even once
+   ready, so every transition/@starting-style becomes an instant no-op in one place. */
+@media (prefers-reduced-motion: reduce) {
+  :root.motion-ready {
+    --motion-fast: 0.001s;
+    --motion-medium: 0.001s;
+    --motion-slow: 0.001s;
+  }
+}
+
+/* Micro-interactions (M34/FEAT-0068): ease hover / active / selection colour changes on
+   the interactive chrome. A CSS transition never runs on an element's *first* render, so
+   the wholesale note-list rebuild doesn't flicker — only genuine state changes on a
+   living element animate. Colour/border only: no layout properties, nothing that could
+   affect the editor's measurements. */
+button,
+.note-row,
+.note-name,
+.note-delete,
+.folder-header,
+.note-identity-display,
+#sidebar-search,
+.switch-row,
+.switch-create,
+.palette-row {
+  transition:
+    background-color var(--motion-fast) var(--ease),
+    border-color var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease);
 }
 
 /* Dark palette — applied when forced (`data-theme="dark"`) or, in system mode (no
@@ -125,6 +173,12 @@ body {
   font-family: var(--font-stack);
   color: var(--text);
   background: var(--bg);
+  /* Theme cross-fade (FEAT-0068): the chrome eases between light/dark instead of a hard
+     flip. Gated by motion-ready, so the async initial theme apply on load doesn't flash.
+     The editor's own surface snaps (motion is confined to the chrome — out of scope). */
+  transition:
+    background-color var(--motion-medium) var(--ease),
+    color var(--motion-medium) var(--ease);
 }
 
 header {
@@ -133,6 +187,9 @@ header {
   align-items: center;
   padding: 0.6rem 1rem;
   border-bottom: 1px solid var(--border);
+  transition:
+    background-color var(--motion-medium) var(--ease),
+    border-color var(--motion-medium) var(--ease);
 }
 
 header button {
@@ -289,10 +346,25 @@ header button:hover {
   justify-content: center;
   padding: 2rem;
   background: var(--bg);
+  /* Fade the welcome in/out; opening a folder fades it away to reveal the workspace.
+     Gated by motion-ready, so the first-paint reveal is instant — no FEAT-0031 flash. */
+  opacity: 1;
+  transition:
+    opacity var(--motion-medium) var(--ease),
+    display var(--motion-medium) allow-discrete;
 }
+
+@starting-style {
+  #welcome {
+    opacity: 0;
+  }
+}
+
 /* `display: flex` above would otherwise override the `hidden` attribute. */
 #welcome[hidden] {
   display: none;
+  opacity: 0;
+  pointer-events: none; /* let the workspace take clicks while the welcome fades out */
 }
 
 .welcome-card {
@@ -390,6 +462,24 @@ header button:hover {
   flex-direction: column;
   border-right: 1px solid var(--border);
   background: var(--bg);
+  /* Collapse/expand animates the basis (FEAT-0068); `overflow: hidden` clips the rows
+     as the column narrows. `visibility` is in the transition so it can be deferred to
+     the end of a collapse (below) — keeping the hidden sidebar out of the tab order. */
+  overflow: hidden;
+  visibility: visible;
+  transition:
+    flex-basis var(--motion-medium) var(--ease),
+    opacity var(--motion-medium) var(--ease),
+    background-color var(--motion-medium) var(--ease),
+    border-color var(--motion-medium) var(--ease),
+    visibility 0s;
+}
+
+/* No transition while the divider is being dragged (FEAT-0068): the basis updates on
+   every pointer move, and a transition would make the column lag behind the cursor.
+   `wireSidebarResize` toggles this class for the drag's duration. */
+#sidebar.resizing {
+  transition: none;
 }
 
 /* `display: flex` above would otherwise override the `hidden` attribute. */
@@ -397,11 +487,20 @@ header button:hover {
   display: none;
 }
 
-/* Collapsed (FEAT-0020): a user preference, separate from `[hidden]` (folder
-   open). Hiding the sidebar lets the editor (flex: 1) fill the width. The class
-   sits on .workspace so its specificity beats the bare `#sidebar` flex rule. */
+/* Collapsed (FEAT-0020): a user preference, separate from `[hidden]` (folder open).
+   Collapsing to a zero basis (not `display:none`) lets the editor expand smoothly as
+   the column closes (FEAT-0068). `visibility:hidden` lands after the animation (the
+   delayed transition below) so a closed sidebar is also out of the tab order. */
 .workspace.sidebar-collapsed #sidebar {
-  display: none;
+  flex-basis: 0;
+  border-right-width: 0;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition:
+    flex-basis var(--motion-medium) var(--ease),
+    opacity var(--motion-medium) var(--ease),
+    visibility 0s linear var(--motion-medium);
 }
 
 /* Drag-to-resize handle on the sidebar/editor border (FEAT-0044): a thin grab
@@ -425,9 +524,14 @@ header button:hover {
 }
 
 /* The drawer backdrop (FEAT-0051): only ever shown in the narrow layout, when a
-   folder is open and the drawer is open (see the media query below). */
+   folder is open and the drawer is open (see the media query below). It cross-fades
+   with the drawer (FEAT-0068); `allow-discrete` keeps it rendered through the fade-out. */
 #sidebar-backdrop {
   display: none;
+  opacity: 0;
+  transition:
+    opacity var(--motion-medium) var(--ease),
+    display var(--motion-medium) allow-discrete;
 }
 
 /* Narrow viewport (FEAT-0051): the sidebar becomes a slide-over drawer over a
@@ -444,6 +548,24 @@ header button:hover {
     width: min(80vw, 16rem);
     z-index: 50;
     box-shadow: 2px 0 12px var(--shadow);
+    /* As a drawer the sidebar slides (FEAT-0068) rather than collapsing its basis —
+       override the desktop flex-basis transition with a transform one. */
+    transform: translateX(0);
+    transition:
+      transform var(--motion-medium) var(--ease),
+      opacity var(--motion-medium) var(--ease),
+      visibility 0s;
+  }
+
+  /* Closed drawer: slide fully off the left edge (basis is moot when absolute). The
+     opacity/visibility/pointer-events come from the shared collapsed rule above. */
+  .workspace.sidebar-collapsed #sidebar {
+    flex-basis: auto;
+    transform: translateX(-100%);
+    transition:
+      transform var(--motion-medium) var(--ease),
+      opacity var(--motion-medium) var(--ease),
+      visibility 0s linear var(--motion-medium);
   }
 
   /* Drag-to-resize is a pointer-precise desktop affordance — gone on touch. */
@@ -465,6 +587,15 @@ header button:hover {
     inset: 0;
     z-index: 40;
     background: rgb(0 0 0 / 32%);
+    opacity: 1;
+  }
+
+  /* Fade the backdrop in when the drawer opens (FEAT-0068) — without this the
+     display:none → block change would pop to full opacity on the first frame. */
+  @starting-style {
+    .workspace:not(.sidebar-collapsed) #sidebar:not([hidden]) ~ #sidebar-backdrop {
+      opacity: 0;
+    }
   }
 }
 
@@ -655,11 +786,26 @@ header button:hover {
   justify-content: center;
   padding: 10vh 1rem 1rem;
   background: rgb(0 0 0 / 22%);
+  /* Cross-fade the backdrop; `allow-discrete` keeps it rendered through the leave so
+     the inner dialog can animate out before `display:none` lands (FEAT-0068). */
+  opacity: 1;
+  transition:
+    opacity var(--motion-medium) var(--ease),
+    display var(--motion-medium) allow-discrete;
+}
+
+@starting-style {
+  #switcher-backdrop,
+  #palette-backdrop {
+    opacity: 0;
+  }
 }
 
 #switcher-backdrop[hidden],
 #palette-backdrop[hidden] {
   display: none;
+  opacity: 0;
+  pointer-events: none; /* don't block the workspace during the fade-out */
 }
 
 #switcher,
@@ -673,6 +819,26 @@ header button:hover {
   border-radius: 10px;
   box-shadow: 0 12px 40px var(--shadow);
   overflow: hidden;
+  /* Rise + fade in (and out, keyed off the backdrop's [hidden]) — FEAT-0068. */
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--motion-medium) var(--ease-out),
+    transform var(--motion-medium) var(--ease-out);
+}
+
+@starting-style {
+  #switcher,
+  #palette {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+}
+
+#switcher-backdrop[hidden] #switcher,
+#palette-backdrop[hidden] #palette {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.98);
 }
 
 #switcher-input,
@@ -783,11 +949,49 @@ header button:hover {
   justify-content: center;
   padding: 1rem;
   background: rgb(0 0 0 / 28%);
+  /* Same cross-fade pattern as the switcher/palette backdrops (FEAT-0068). */
+  opacity: 1;
+  transition:
+    opacity var(--motion-medium) var(--ease),
+    display var(--motion-medium) allow-discrete;
+}
+
+@starting-style {
+  #conflict-backdrop,
+  #settings-backdrop {
+    opacity: 0;
+  }
 }
 
 #conflict-backdrop[hidden],
 #settings-backdrop[hidden] {
   display: none;
+  opacity: 0;
+  pointer-events: none; /* don't block the workspace during the fade-out */
+}
+
+/* The dialogs rise + fade with the backdrop (out via the backdrop's [hidden]). */
+#conflict,
+.settings-dialog {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--motion-medium) var(--ease-out),
+    transform var(--motion-medium) var(--ease-out);
+}
+
+@starting-style {
+  #conflict,
+  .settings-dialog {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+#conflict-backdrop[hidden] #conflict,
+#settings-backdrop[hidden] .settings-dialog {
+  opacity: 0;
+  transform: translateY(8px) scale(0.98);
 }
 
 /* The dialog itself — visible but calm, a choice and not an error. Wide enough
@@ -1163,6 +1367,22 @@ header button:hover {
   border-radius: 8px;
   box-shadow: 0 6px 20px var(--shadow);
   font-size: 0.9rem;
+  /* Enter only (FEAT-0068): the menu is removed from the DOM on dismiss, so there is
+     no leave to animate. @starting-style fires when it is inserted. The resting values
+     are stated explicitly (like #switcher/#palette) so the animated props have a stable
+     baseline. */
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+@starting-style {
+  .cm-context-menu {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 
 .cm-context-menu button {
@@ -1193,6 +1413,19 @@ header button:hover {
   border: 1px solid var(--border-strong);
   border-radius: 8px;
   box-shadow: 0 6px 20px var(--shadow);
+  /* Fades in on each show (FEAT-0068): it toggles the `hidden` attribute (not inline
+     display), so @starting-style fires on the display:none → flex change. */
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+
+.cm-selection-toolbar[hidden] {
+  display: none;
+}
+
+@starting-style {
+  .cm-selection-toolbar {
+    opacity: 0;
+  }
 }
 
 .cm-selection-toolbar button {
@@ -1347,6 +1580,15 @@ header button:hover {
   border-radius: 8px;
   box-shadow: 0 6px 20px var(--shadow);
   color: var(--text);
+  /* Opacity-only enter (FEAT-0068) — no transform, so CodeMirror's own positioning of
+     the tooltip is never offset mid-animation. */
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+
+@starting-style {
+  .cm-tooltip.cm-tooltip-autocomplete {
+    opacity: 0;
+  }
 }
 .cm-tooltip.cm-tooltip-autocomplete > ul {
   font-family: var(--font-stack);
