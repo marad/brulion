@@ -570,18 +570,70 @@ const stampWorkspace = (id: string) => {
   // only the query changes; the note route (FEAT-0036) owns the hash.
   history.replaceState(history.state, "", `${url.pathname}${url.search}${location.hash}`)
 }
+// Drop the `?ws` stamp (the inverse of {@link stampWorkspace}). Used when an attach
+// fails so a reload doesn't keep re-resolving to a vault we couldn't open.
+const unstampWorkspace = () => {
+  const url = new URL(location.href)
+  if (!url.searchParams.has("ws")) return
+  url.searchParams.delete("ws")
+  history.replaceState(history.state, "", `${url.pathname}${url.search}${location.hash}`)
+}
 // Attach the window to a vault: stamp its `?ws`, load that vault's per-vault session
 // (recency + expanded folders), then open it through the existing note flow. The
 // vault is moved to most-recent so a future no-`?ws` window falls back to it.
-const attachVault = async (vault: Vault) => {
+// Serialize attaches: attachVault mutates module globals (currentVaultId, recency,
+// expandedFolders) across awaits, so two overlapping attaches — a fast double
+// "switch workspace", or a switch fired during the startup restore — would interleave
+// and persist one vault's recency under the other's id. Chaining makes each attach
+// run to completion before the next begins.
+let attachChain: Promise<void> = Promise.resolve()
+const attachVault = (vault: Vault): Promise<void> => {
+  const run = () => attachVaultNow(vault)
+  attachChain = attachChain.then(run, run) // run next even if the prior attach rejected
+  return attachChain
+}
+const attachVaultNow = async (vault: Vault) => {
+  // Snapshot the currently attached vault so a failed attach can fall back to it
+  // instead of leaving the window pinned to a vault it couldn't open. Includes the
+  // settings state openNote mutates (settingsDir/currentSettings) — those are applied
+  // to the editor *before* controller.open can throw, so the rollback must restore
+  // them too, or a failed switch would leave default settings applied and route the
+  // next settings write to the dead folder.
+  const prev = {
+    vaultId: currentVaultId,
+    recency,
+    expandedFolders,
+    settingsDir,
+    currentSettings,
+  }
   // Load the vault's session first, so a transient idb error can't leave `?ws` +
   // currentVaultId pointing at a vault we never actually opened.
   recency = await loadRecency(vault.id)
   expandedFolders = await loadExpandedFolders(vault.id)
   currentVaultId = vault.id
   stampWorkspace(vault.id)
+  try {
+    await openNote(vault.handle)
+  } catch (err) {
+    // The vault's folder is unreachable (deleted/moved on disk). Roll the window
+    // back to the previously attached vault — without this, `?ws` + currentVaultId
+    // stay pinned to the dead vault and every reload re-resolves to it and fails
+    // again (controller.open keeps the prior folder intact on its side). The vault
+    // is left in the set so it can be re-granted if the folder returns.
+    currentVaultId = prev.vaultId
+    recency = prev.recency
+    expandedFolders = prev.expandedFolders
+    settingsDir = prev.settingsDir
+    currentSettings = prev.currentSettings
+    applySettings(view, currentSettings) // undo the dead folder's settings applied in openNote
+    refreshActionBar()
+    settingsModal?.sync()
+    if (prev.vaultId) stampWorkspace(prev.vaultId)
+    else unstampWorkspace()
+    console.error("Failed to attach vault:", err)
+    throw err
+  }
   await touchVault(vault.id)
-  await openNote(vault.handle)
 }
 // A freshly-picked folder (open-folder button / settings switch): record it as a
 // vault (reusing an existing one if it's the same folder) and attach to it.
@@ -592,7 +644,10 @@ const openFreshFolder = async (dir: FileSystemDirectoryHandle) => {
 // the handle lost it (the click is a user gesture), then attach. Declined → no-op.
 const switchToVault = async (vault: Vault) => {
   if (!(await hasPermission(vault.handle)) && !(await requestAccess(vault.handle))) return
-  await attachVault(vault)
+  // attachVault rolls back to the previous vault and logs on failure (e.g. the
+  // folder is gone); swallow here so the `void switchToVault(...)` call sites don't
+  // raise an unhandled rejection.
+  await attachVault(vault).catch(() => {})
 }
 // Open this week's journal (M31/FEAT-0062): expand the configured `journalPath`
 // template against today, normalize to a note path, and open it through the existing

@@ -26,6 +26,12 @@ vi.mock("idb-keyval", () => ({
   del: vi.fn(async (key: unknown) => {
     store.delete(key)
   }),
+  // Models idb-keyval's atomic read-modify-write: the get→apply→put runs to
+  // completion synchronously (no internal await), exactly as a single IDB
+  // readwrite transaction serializes, so two concurrent updates can't interleave.
+  update: vi.fn(async (key: unknown, updater: (old: unknown) => unknown) => {
+    store.set(key, updater(store.has(key) ? store.get(key) : undefined))
+  }),
 }))
 
 import * as idb from "idb-keyval"
@@ -188,6 +194,28 @@ describe("vault store", () => {
       const a = await addVault(fakeHandle("a"))
       await removeVault("missing")
       expect((await listVaults()).map((v) => v.id)).toEqual([a.id])
+    })
+  })
+
+  describe("concurrent writes (FEAT-0059 — no lost update across windows)", () => {
+    it("keeps both vaults when two folders are added at once", async () => {
+      // Two windows picking folders simultaneously: the old get-then-set pattern
+      // let the second set clobber the first vault. The read-modify-write transaction
+      // (idb-keyval update) serializes them, so both survive.
+      const [a, b] = await Promise.all([
+        addVault(fakeHandle("a")),
+        addVault(fakeHandle("b")),
+      ])
+      const ids = (await listVaults()).map((v) => v.id).sort()
+      expect(ids).toEqual([a.id, b.id].sort())
+    })
+
+    it("does not drop a vault when an add and a touch race", async () => {
+      const a = await addVault(fakeHandle("a"))
+      await Promise.all([addVault(fakeHandle("b")), touchVault(a.id)])
+      const ids = (await listVaults()).map((v) => v.id)
+      expect(ids).toContain(a.id)
+      expect(ids).toHaveLength(2)
     })
   })
 

@@ -362,8 +362,14 @@ export function createNoteController(
     open(folder) {
       return serialize(async () => {
         if (dir) await flushAndWait() // re-picking a folder: don't lose the open note
+        // List first, commit `dir`/`notes` only once it succeeds: a folder that's
+        // gone from disk (a dead vault) makes listNotes throw, and committing `dir`
+        // before that would leave the controller half-pointed at the dead folder
+        // (the poller would then probe it). On failure the previously open folder
+        // stays intact, so a failed vault switch falls cleanly back to it.
+        const folderNotes = await listNotes(folder)
         dir = folder
-        notes = await listNotes(folder)
+        notes = folderNotes
         const active = pickActiveNote(notes, await loadActiveNote())
         await activate(folder, active)
       })

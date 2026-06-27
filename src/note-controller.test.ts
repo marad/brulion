@@ -77,6 +77,28 @@ describe("open", () => {
     expect(onListChanged).toHaveBeenCalledWith(["apple.md", "start.md"], "apple.md")
     expect(saveActiveNote).toHaveBeenCalledWith("apple.md")
   })
+
+  it("keeps the previously open note when re-opening a folder whose listing fails", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValueOnce(["apple.md", "start.md"])
+    readNote.mockResolvedValue({ content: "apple body", lastModified: 5 })
+    loadActiveNote.mockResolvedValue("apple.md")
+    const onListChanged = vi.fn()
+    const controller = createNoteController(view, { onListChanged })
+    await controller.open(DIR)
+    expect(view.state.doc.toString()).toBe("apple body")
+    onListChanged.mockClear()
+
+    // A second folder that's gone from disk (a dead vault) → listNotes throws. The
+    // controller must commit nothing, leaving the first folder's note open so a
+    // failed vault switch falls back cleanly instead of half-pointing at the dead one.
+    const DEAD = {} as FileSystemDirectoryHandle
+    listNotes.mockRejectedValueOnce(new Error("NotFoundError"))
+    await expect(controller.open(DEAD)).rejects.toThrow()
+
+    expect(view.state.doc.toString()).toBe("apple body") // editor unchanged
+    expect(onListChanged).not.toHaveBeenCalled() // no list reported for the dead folder
+  })
 })
 
 describe("autosave", () => {

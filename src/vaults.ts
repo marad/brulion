@@ -1,4 +1,4 @@
-import { get, set, del } from "idb-keyval"
+import { get, del, update } from "idb-keyval"
 
 /**
  * The set of granted folders ("vaults") the user works in (M33/FEAT-0059). Replaces
@@ -44,9 +44,9 @@ function mintId(existing: readonly Vault[]): string {
   return id
 }
 
-/** Put `vault` at the front of `rest` (which must not contain it) and persist. */
-function persistFront(vault: Vault, rest: readonly Vault[]): Promise<void> {
-  return set(VAULTS_KEY, [vault, ...rest])
+/** Move `vault` to the front of `list`, dropping any existing entry with its id. */
+function toFront(vault: Vault, list: readonly Vault[]): Vault[] {
+  return [vault, ...list.filter((x) => x.id !== vault.id)]
 }
 
 /**
@@ -54,41 +54,54 @@ function persistFront(vault: Vault, rest: readonly Vault[]): Promise<void> {
  * stored vault already refers to the same folder (`handle.isSameEntry`), that vault
  * is reused (moved to front) rather than duplicated — so re-picking a known folder
  * keeps its id. A fresh vault gets a newly generated opaque id.
+ *
+ * The persist runs through idb-keyval `update` (a single read-modify-write IDB
+ * transaction) so two windows adding folders at once can't clobber each other's
+ * write. `isSameEntry` is async and so must run before the transaction; the matched
+ * vault is then re-resolved by id *inside* the updater against the live set, so a
+ * concurrent change between the scan and the commit is still respected.
  */
 export async function addVault(handle: FileSystemDirectoryHandle): Promise<Vault> {
-  const vaults = await listVaults()
-  for (const v of vaults) {
-    let same = false
+  let matchId: string | null = null
+  for (const v of await listVaults()) {
     try {
-      same = await v.handle.isSameEntry(handle)
+      if (await v.handle.isSameEntry(handle)) {
+        matchId = v.id
+        break
+      }
     } catch {
-      same = false // a stale/invalidated stored handle can't match — skip it, don't abort the add
-    }
-    if (same) {
-      await persistFront(v, vaults.filter((x) => x.id !== v.id))
-      return v
+      // a stale/invalidated stored handle can't match — skip it, don't abort the add
     }
   }
-  const vault: Vault = { id: mintId(vaults), handle, name: handle.name }
-  await persistFront(vault, vaults)
-  return vault
+  let result!: Vault
+  await update<Vault[]>(VAULTS_KEY, (current = []) => {
+    const matched = matchId !== null ? current.find((x) => x.id === matchId) : undefined
+    if (matched) {
+      result = matched // re-pick of a known folder → reuse its id
+      return toFront(matched, current)
+    }
+    // No match (or the matched vault vanished under us) → a fresh vault.
+    result = { id: mintId(current), handle, name: handle.name }
+    return [result, ...current]
+  })
+  return result
 }
 
 /** Move the vault with `id` to the front (most-recent); a no-op if absent. Used on
- * attach so the "most-recent vault" fallback (no `?ws`) reflects real usage. */
+ * attach so the "most-recent vault" fallback (no `?ws`) reflects real usage. A single
+ * read-modify-write transaction, so a concurrent window's write isn't clobbered. */
 export async function touchVault(id: string): Promise<void> {
-  const vaults = await listVaults()
-  const v = vaults.find((x) => x.id === id)
-  if (!v) return
-  await persistFront(v, vaults.filter((x) => x.id !== id))
+  await update<Vault[]>(VAULTS_KEY, (current = []) => {
+    const v = current.find((x) => x.id === id)
+    return v ? toFront(v, current) : current
+  })
 }
 
 /** Remove the vault with `id` from the set (forget it); a no-op if absent. Reserved
- * for the P2 "forget workspace" surface (FEAT-0060) — not yet wired in P1. */
+ * for the P2 "forget workspace" surface (FEAT-0060) — not yet wired in P1. A single
+ * read-modify-write transaction (see {@link touchVault}). */
 export async function removeVault(id: string): Promise<void> {
-  const vaults = await listVaults()
-  if (!vaults.some((v) => v.id === id)) return
-  await set(VAULTS_KEY, vaults.filter((v) => v.id !== id))
+  await update<Vault[]>(VAULTS_KEY, (current = []) => current.filter((v) => v.id !== id))
 }
 
 /**
