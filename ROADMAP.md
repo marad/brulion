@@ -16,7 +16,8 @@ Every technical decision defers to that.
 
 > **Execution order (next up), agreed with the user.** M-numbers are **stable
 > identities, not the running order**. M1–M13, **M14**, **M15**, **M16**, **M17**,
-> **M18**–**M33** are done — the backlog is clear. Recently shipped: **M18**
+> **M18**–**M33** are done; **M34** (motion & fluidity) is the active milestone.
+> Recently shipped: **M18**
 > (light/dark theme + theme-aware syntax palette + a toggle action), **M24**
 > (scroll/caret preservation on external refresh), **M26** (table rendering),
 > **M29** (editable code-fence markers), **M30** (command palette + action bar),
@@ -476,6 +477,31 @@ scroll-to-heading step. Moat-neutral (still plain markdown links).
   vault. Give each window a stable vault identity (e.g. a `?ws=` URL param, à la the
   backlog Workspaces sketch) so a reload re-attaches to the *same* vault and the two
   windows stay independent.
+
+### M34 — Motion & fluidity
+**Goal:** make Brulion *feel* fluid — replace the current hard cuts (overlays pop in,
+the sidebar snaps, theme flips instantly) with a small, cohesive set of tasteful
+transitions, so the app reads as polished and calm. Pure presentation: CSS-only on the
+chrome, with tiny JS hooks where a transition needs help. **Moat-irrelevant** — it
+touches no `.md` bytes and no editor *content*; motion stays on the chrome
+(overlays, sidebar, buttons, tree), never on the CodeMirror text/caret/rendering, which
+is the heart of the product and the easiest place to make things feel janky.
+
+In:
+- **Overlays** (command palette, quick switcher, settings modal, conflict modal,
+  welcome screen, context menu, selection toolbar, autocomplete popup) — fade + a
+  subtle scale/rise on enter, fade on leave; backdrops cross-fade.
+- **Sidebar** — animated collapse/expand on desktop and a slide-over drawer on mobile;
+  the folder tree reveals its children gently.
+- **Micro-interactions** — buttons, note rows, folder headers and the active-note
+  highlight transition their hover/active states; the light/dark theme swaps as a
+  smooth colour cross-fade instead of a hard flip.
+- **A shared motion system** — durations/easings as CSS custom properties (one place to
+  tune the tempo), full **`prefers-reduced-motion: reduce`** support (all motion gates
+  off), and a first-paint gate so nothing animates on load (no welcome/theme flash).
+
+Out (deliberately): animating editor content (text, caret, decorations); spring/physics
+libraries; any motion that touches the file format.
 
 ## Later / backlog (out of MVP, on purpose)
 

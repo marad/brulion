@@ -2001,3 +2001,66 @@ matching decision above.
   call swapped to the minimal reload; `refreshFromDisk`'s conflict handling and the
   initial-load / note-switch path keep `setEditorText`. The `ProgrammaticLoad`
   annotation still rides the reload, so it never trips autosave — no echo-write (moat).
+
+## Motion is token-driven and double-gated; reduced-motion and the load-gate share one lever (M34 → FEAT-0068)
+M34 adds the app's first real motion. Rather than scatter `transition` literals, every
+animation reads CSS custom properties — `--motion-fast/medium/slow`, `--ease`,
+`--ease-out` — defined once on `:root`. Two problems are solved by the *same* mechanism,
+the token values themselves:
+- **No first-paint flash.** The tokens default to `~0s` and only resolve to real
+  durations under `:root.motion-ready`, a class `main.ts` adds after the first paint
+  (two chained `requestAnimationFrame`s). So the load sequence (loading → welcome or
+  workspace, the async theme apply) never animates — directly protecting the FEAT-0031
+  no-flash invariant we fought for, now extended to the theme cross-fade.
+- **`prefers-reduced-motion: reduce` forces the tokens back to `~0s`** even when
+  `motion-ready`. One media query, and *every* transition/`@starting-style` becomes
+  instant — no per-rule reduced-motion handling, no risk of missing one.
+Consequence: tuning the whole app's tempo (the point of the live review) is editing three
+numbers in one place; turning motion fully off is one lever. The pre-existing loading
+spinner keeps its literal `0.7s` spin (it's a progress indicator, not chrome polish) and
+is deliberately left outside the token system. (Rejected: a blanket
+`* { transition: … }` — bleeds into CodeMirror's own layout and the resize drag;
+per-component reduced-motion overrides — N places to forget one.)
+
+## Overlays animate enter *and* leave in pure CSS via `@starting-style` + `allow-discrete` (M34 → FEAT-0068)
+Every modal/overlay toggles the `hidden` attribute (`display:none` ⇄ flex), which
+historically can't transition. M34 animates them with **`@starting-style`** (the
+enter-from state) plus **`transition-behavior: allow-discrete`** on `display` (defer the
+`display:none` until the leave transition finishes) — so the command palette, quick
+switcher, settings modal, conflict modal and welcome screen fade + rise on open and fade
+on close **with zero changes to their show/hide JS** (still just `el.hidden = …`). The
+dynamically-created surfaces (context menu, the CodeMirror autocomplete/slash popup) get
+the enter animation for free, since `@starting-style` fires whenever an element goes from
+`display:none` to shown. This is Chromium-only CSS — fine, because Brulion is Chromium-only
+already (the File System Access API). Consequence: the overlay JS stays untouched and
+testable as before; the motion is entirely in the stylesheet. (Rejected: JS-driven
+enter/leave classes with `setTimeout` removal — choreography in every overlay for what the
+platform now does declaratively; animating only enter — the pop on close is the more
+jarring half.)
+
+## Desktop sidebar collapse animates `flex-basis`, guarded against the resize drag (M34 → FEAT-0068)
+The collapse (FEAT-0020) was `display:none`, which can't tween. M34 animates it by
+transitioning the sidebar's `flex-basis` to `0` (plus opacity), so the editor reflows
+smoothly as the column closes — and the mobile drawer (FEAT-0051) slides via `translateX`
+with the backdrop cross-fading. The catch: the resize drag (FEAT-0044) writes
+`--sidebar-width` on every `pointermove`, and a `flex-basis` transition would make the
+column lag a frame behind the cursor. Fix: `wireSidebarResize` adds a `resizing` class to
+`#sidebar` on `pointerdown` and removes it on drag end; `#sidebar.resizing` sets
+`transition: none`. So collapse/expand animate, but a live drag is pixel-instant.
+Consequence: a small, tested behavioural addition to the resize wiring (the class toggle);
+the collapse rule changes from `display:none` to `flex-basis:0; opacity:0;
+pointer-events:none` with `overflow:hidden` clipping the content as it narrows. (Rejected:
+keeping `display:none` and skipping the desktop animation — it's the most-used toggle
+(Ctrl+\), the one most worth smoothing; transitioning width unconditionally — the drag
+lag.)
+
+## The selection toolbar moves to the `hidden` attribute so it animates like the rest (M34 → FEAT-0068)
+The touch selection toolbar (FEAT-0052) was the one overlay shown/hidden via inline
+`el.style.display`, which an inline style pins and `@starting-style` can't see across
+repeated shows. M34 switches it to the `hidden` attribute (CSS `.cm-selection-toolbar[hidden]
+{ display:none }`), so it joins the same fade-in path as every other overlay — and
+`@starting-style` fires on each show, not just the first mount. Behaviour is otherwise
+identical (it's still shown over a non-empty touch selection). Consequence: one small JS
+change in `selection-toolbar.ts`, covered by the existing e2e (a `hidden` toggle is still
+`toBeVisible`-observable). (Rejected: leaving inline `display` and animating only opacity —
+inline `display:none` defeats the transition; the element would still pop.)
