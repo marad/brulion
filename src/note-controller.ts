@@ -1,6 +1,7 @@
 import type { EditorView } from "codemirror"
 import { setEditorText, reloadEditorText } from "./editor"
 import { readNote, saveNote, listNotes, createNote, deleteNote, statNote, moveNote } from "./note"
+import { track, trackSync, mark } from "./perf"
 import { normalizeNoteName } from "./note-name"
 import { rewriteLinksForRename, rebaseOutboundLinks } from "./link-rewrite"
 import { saveActiveNote, loadActiveNote } from "./session"
@@ -235,10 +236,11 @@ export function createNoteController(
       opts.onConflictResolved?.()
     }
     const cached = contentCache.get(name)
-    const note = cached ?? await readNote(folder, name)
+    if (cached) mark(`cache hit: ${name}`)
+    const note = cached ?? await track(`readNote: ${name}`, () => readNote(folder, name))
     if (!cached) contentCache.set(name, note)
     lastModified = note.lastModified
-    setEditorText(view, note.content)
+    trackSync("setEditorText", () => setEditorText(view, note.content))
     dirty = false // discard any stray edit typed on the old content during the read
   }
 
@@ -382,7 +384,8 @@ export function createNoteController(
     switchTo(name) {
       return serialize(async () => {
         if (!dir || name === activeName || conflict) return // conflict is modal
-        await flushAndWait() // flush the open note before re-pointing the editor
+        mark(`switchTo: ${name}`)
+        await track("flushAndWait", flushAndWait)
         await activate(dir, name)
       })
     },

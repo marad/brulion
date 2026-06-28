@@ -1,4 +1,5 @@
 import "./styles.css"
+import { trackSync } from "./perf"
 import {
   createElement,
   Settings as SettingsIcon,
@@ -404,7 +405,7 @@ controller = createNoteController(view, {
     clearMissingBanner() // the active note changed — drop any stale missing-note notice
     syncRouteToActive(active) // mirror the open note into the URL hash (FEAT-0036)
     identity.update(active) // keep the header naming the open note (FEAT-0035)
-    setLinkContext(view, { activeNote: active, notePaths: new Set(notes) })
+    trackSync("setLinkContext", () => setLinkContext(view, { activeNote: active, notePaths: new Set(notes) }))
     if (listUnchanged) {
       // List unchanged — only active note changed. Toggle the highlighted row
       // instead of tearing down and rebuilding the entire sidebar DOM.
@@ -414,7 +415,7 @@ controller = createNoteController(view, {
         row.toggleAttribute("aria-current", isActive)
       }
     } else {
-      renderNoteList(
+      trackSync("renderNoteList", () => renderNoteList(
         listEl,
         notes,
         active,
@@ -439,7 +440,7 @@ controller = createNoteController(view, {
           },
         },
         expandedFolders,
-      )
+      ))
     }
   },
 })
