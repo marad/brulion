@@ -26,6 +26,7 @@ export function createPoller(
 ): Poller {
   let timer: ReturnType<typeof setInterval> | null = null
   let inFlight = false
+  let onVisibility: (() => void) | null = null
 
   const beat = (): void => {
     if (inFlight) return // a previous tick is still running — skip this beat
@@ -35,18 +36,33 @@ export function createPoller(
     })
   }
 
+  const arm = (): void => {
+    if (timer !== null || document.hidden) return
+    timer = setInterval(beat, intervalMs)
+  }
+
+  const disarm = (): void => {
+    if (timer === null) return
+    clearInterval(timer)
+    timer = null
+    // Forget any in-flight tick so a later start() isn't wedged by a beat
+    // that was still running (or never settles) when we stopped.
+    inFlight = false
+  }
+
   return {
     start() {
-      if (timer !== null) return // already armed
-      timer = setInterval(beat, intervalMs)
+      if (onVisibility !== null) return // already armed
+      onVisibility = () => (document.hidden ? disarm() : arm())
+      document.addEventListener("visibilitychange", onVisibility)
+      arm()
     },
     stop() {
-      if (timer === null) return
-      clearInterval(timer)
-      timer = null
-      // Forget any in-flight tick so a later start() isn't wedged by a beat
-      // that was still running (or never settles) when we stopped.
-      inFlight = false
+      if (onVisibility !== null) {
+        document.removeEventListener("visibilitychange", onVisibility)
+        onVisibility = null
+      }
+      disarm()
     },
   }
 }

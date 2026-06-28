@@ -179,6 +179,8 @@ export function createNoteController(
   let dirty = false
   let conflict = false
   let savePromise: Promise<void> | null = null
+  // ponytail: in-memory cache keyed by path; stale-write guard still catches external edits on save
+  const contentCache = new Map<string, { content: string; lastModified: number | null }>()
 
   // Serialize saves: at most one save loop runs at a time. A concurrent caller
   // (a fired debounce, a flush, a switch) joins the in-flight promise rather
@@ -199,6 +201,7 @@ export function createNoteController(
             return
           }
           lastModified = result.lastModified
+          contentCache.set(activeName, { content: view.state.doc.toString(), lastModified: result.lastModified })
           // A first save can materialize a note that wasn't listed yet (the
           // lazy seed). Surface it in the list.
           if (!notes.includes(activeName)) {
@@ -231,7 +234,9 @@ export function createNoteController(
       conflict = false
       opts.onConflictResolved?.()
     }
-    const note = await readNote(folder, name)
+    const cached = contentCache.get(name)
+    const note = cached ?? await readNote(folder, name)
+    if (!cached) contentCache.set(name, note)
     lastModified = note.lastModified
     setEditorText(view, note.content)
     dirty = false // discard any stray edit typed on the old content during the read
@@ -409,6 +414,7 @@ export function createNoteController(
         if (name === activeName) dirty = false
         await flushAndWait()
         await deleteNote(dir, name)
+        contentCache.delete(name)
         notes = await listNotes(dir)
         if (name === activeName) {
           await activate(dir, pickActiveNote(notes, null))
@@ -452,6 +458,7 @@ export function createNoteController(
         // path. `activate` → `load` re-reads it (adopting the new lastModified),
         // persists it as active, and announces so the UI tracks the new identity.
         const pathsBefore = new Set(notes) // pre-move listing — still names `from`
+        contentCache.delete(from)
         notes = await listNotes(dir)
         // Follow-on link maintenance (FEAT-0040/0041). Both passes are best-effort:
         // the move already succeeded, so a failure here (an I/O error part-way) must
@@ -499,7 +506,13 @@ export function createNoteController(
 
         // Adopt an external list change first, so a follow-on switch (below)
         // picks the next note from the up-to-date listing.
-        if (check.listChanged) notes = check.listChanged
+        if (check.listChanged) {
+          const newSet = new Set(check.listChanged)
+          for (const path of contentCache.keys()) {
+            if (!newSet.has(path)) contentCache.delete(path)
+          }
+          notes = check.listChanged
+        }
 
         // The open note changed or was deleted on disk. With no unsaved local
         // edits it's safe to track the disk; with edits in flight it's a
@@ -528,6 +541,7 @@ export function createNoteController(
               // caret and scroll survive — not a wholesale set that jumps the view.
               reloadEditorText(view, note.content)
               dirty = false
+              contentCache.set(activeName, note)
             } else {
               await raiseConflict()
             }
@@ -547,6 +561,7 @@ export function createNoteController(
         const result = await saveNote(folder, activeName, view.state.doc.toString(), current)
         if (result.status !== "saved") return // raced again — leave the conflict standing
         lastModified = result.lastModified
+        contentCache.set(activeName, { content: view.state.doc.toString(), lastModified: result.lastModified })
         conflict = false
         dirty = false
         if (!notes.includes(activeName)) notes = await listNotes(folder) // re-created note
@@ -567,6 +582,7 @@ export function createNoteController(
         } else {
           // Changed on disk — adopt its content and mtime, dropping local edits.
           // `load` clears the conflict and fires onConflictResolved.
+          contentCache.delete(activeName) // bypass cache — disk has newer content
           await load(folder, activeName)
           opts.onListChanged?.(notes, activeName)
         }

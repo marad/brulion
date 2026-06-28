@@ -200,6 +200,7 @@ function renderNode(
 function renderNoteRow(node: NoteLeaf, active: string, handlers: NoteListHandlers): HTMLElement {
   const row = document.createElement("div")
   row.className = "note-row"
+  row.dataset.path = node.path
   if (node.path === active) {
     row.classList.add("active")
     row.setAttribute("aria-current", "true")

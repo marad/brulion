@@ -404,32 +404,42 @@ controller = createNoteController(view, {
     syncRouteToActive(active) // mirror the open note into the URL hash (FEAT-0036)
     identity.update(active) // keep the header naming the open note (FEAT-0035)
     setLinkContext(view, { activeNote: active, notePaths: new Set(notes) })
-    renderNoteList(
-      listEl,
-      notes,
-      active,
-      {
-        onSelect: (name) => {
-          void controller.switchTo(name)
-          dismissDrawerIfMobile() // narrow layout: close the drawer to reveal the note (FEAT-0051)
+    if (notes === currentNotes) {
+      // List unchanged — only active note changed. Toggle the highlighted row
+      // instead of tearing down and rebuilding the entire sidebar DOM.
+      for (const row of listEl.querySelectorAll<HTMLElement>(".note-row")) {
+        const isActive = row.dataset.path === active
+        row.classList.toggle("active", isActive)
+        row.toggleAttribute("aria-current", isActive)
+      }
+    } else {
+      renderNoteList(
+        listEl,
+        notes,
+        active,
+        {
+          onSelect: (name) => {
+            void controller.switchTo(name)
+            dismissDrawerIfMobile() // narrow layout: close the drawer to reveal the note (FEAT-0051)
+          },
+          onDelete: (name) => {
+            if (
+              window.confirm(`Delete "${displayName(name)}"? This removes the file from your folder.`)
+            ) {
+              void controller.removeNote(name)
+            }
+          },
+          onToggleFolder: (path, collapsed) => {
+            // The persisted set holds expanded folders (FEAT-0043), so invert:
+            // collapsing drops the path, expanding adds it.
+            if (collapsed) expandedFolders.delete(path)
+            else expandedFolders.add(path)
+            void saveExpandedFolders(currentVaultId, expandedFolders)
+          },
         },
-        onDelete: (name) => {
-          if (
-            window.confirm(`Delete "${displayName(name)}"? This removes the file from your folder.`)
-          ) {
-            void controller.removeNote(name)
-          }
-        },
-        onToggleFolder: (path, collapsed) => {
-          // The persisted set holds expanded folders (FEAT-0043), so invert:
-          // collapsing drops the path, expanding adds it.
-          if (collapsed) expandedFolders.delete(path)
-          else expandedFolders.add(path)
-          void saveExpandedFolders(currentVaultId, expandedFolders)
-        },
-      },
-      expandedFolders,
-    )
+        expandedFolders,
+      )
+    }
   },
 })
 
