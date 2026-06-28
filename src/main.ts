@@ -393,6 +393,7 @@ controller = createNoteController(view, {
     // Feed the editor the open note + known paths so links render valid-vs-broken
     // and a follow resolves relative to the right note (FEAT-0025).
     currentActive = active
+    const listUnchanged = notes === currentNotes
     currentNotes = notes
     // Record the visit (FEAT-0039) on a genuine active-note change only — skip the
     // redundant re-touch when an external list change fires with the same active.
@@ -404,7 +405,7 @@ controller = createNoteController(view, {
     syncRouteToActive(active) // mirror the open note into the URL hash (FEAT-0036)
     identity.update(active) // keep the header naming the open note (FEAT-0035)
     setLinkContext(view, { activeNote: active, notePaths: new Set(notes) })
-    if (notes === currentNotes) {
+    if (listUnchanged) {
       // List unchanged — only active note changed. Toggle the highlighted row
       // instead of tearing down and rebuilding the entire sidebar DOM.
       for (const row of listEl.querySelectorAll<HTMLElement>(".note-row")) {
