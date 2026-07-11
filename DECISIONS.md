@@ -2179,3 +2179,34 @@ unchanged). Two new tests: one proves the read is issued while the listing is st
 the real note's content, not the guessed one's. Measured on the 2018-note benchmark vault:
 `listNotes` (~116ms) and the speculative `readNote` (~124ms) now overlap, so `open()` pays
 ~124ms for both instead of ~240ms.
+
+## The poll's relist no longer blocks switchTo/addNote/etc. behind it in the serialize queue
+User noticed real intermittent slowness switching notes in an already-open vault ("czasem
+szybko, czasem długo") and correctly guessed it tracked the poll's periodic rescan. Confirmed
+with a controllable-promise unit test: with the old code, `switchTo`'s `readNote` genuinely did
+not fire until an in-flight `refreshFromDisk`'s `listNotes` resolved — every one of `open`,
+`switchTo`, `addNote`, `removeNote`, `renameActive`, `checkDisk`, `refreshFromDisk`,
+`resolveKeepMine`, `resolveTakeTheirs` shares one FIFO `serialize()` queue, so a poll tick that
+happened to land on the (now 15s-throttled, but still real) full relist held that queue for the
+whole scan — any user action queued behind it waited out the entire thing just to, say, switch
+notes.
+Fix: `refreshFromDisk` now spans two short `serialize()` slots with the slow `listNotes` call
+running *between* them, not inside either — a snapshot slot (grabs `dir`/`notes`/whether a
+relist is due) and an apply slot (re-validates against **live** state, not the snapshot, before
+mutating). Anything queued behind the snapshot slot — a switchTo, an addNote — now runs while
+the relist is still in flight, instead of waiting on it.
+The one new risk this opens — some other operation changes `notes` while the relist is
+in-flight and the poll's apply step later clobbers that newer state with its now-stale listing
+— is guarded explicitly: the apply slot compares live `notes` against the reference captured at
+snapshot time; if they differ, the fetched listing is dropped (not applied) rather than trusted,
+and the next tick (15s later) re-verifies for real. `checkDisk`/`probeDisk` (the test-only
+detection seam, unused by the app itself) were deliberately left untouched — this is a
+production-behavior fix, not a rewrite of an already-sealed, heavily-tested contract nothing
+in the app actually calls.
+Three new tests: switchTo settling without waiting for an in-flight relist (a controllable
+`listNotes` promise + `readNote` call assertion), the stale-relist-gets-dropped race (an
+`addNote` completing mid-relist, verified via `vi.waitFor` on call count rather than assumed
+microtask ordering — a naive synchronous mock setup raced the two `listNotes` calls and timed
+out), and all ~30 existing `refreshFromDisk`/`checkDisk` tests pass unchanged. Measured on the
+2018-note vault: switches timed to land on a poll tick stayed at ~180–270ms, no spike, vs. the
+old code's queuing behind the full relist.

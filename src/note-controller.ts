@@ -560,57 +560,98 @@ export function createNoteController(
       })
     },
     refreshFromDisk() {
-      return serialize(async () => {
-        const folder = dir
-        if (!folder || savePromise) return // same skip rationale as checkDisk
-        const check = await probeDisk(folder)
-
-        // Adopt an external list change first, so a follow-on switch (below)
-        // picks the next note from the up-to-date listing.
-        if (check.listChanged) {
-          const newSet = new Set(check.listChanged)
-          for (const path of contentCache.keys()) {
-            if (!newSet.has(path)) contentCache.delete(path)
+      // The expensive part — a full recursive relist, throttled to
+      // FULL_RELIST_MS — must never sit inside the serialize queue: a
+      // user-initiated action (switchTo, addNote, …) queued behind it would
+      // otherwise wait out the *whole* relist just to, say, switch notes. So
+      // this runs across two short serialize() slots with the slow listing in
+      // between them, not inside either — anything else queued can run while
+      // it's in flight. The apply slot re-validates against *live* state
+      // (not the snapshot), the same "recheck right before mutating"
+      // discipline the rest of this file already uses for its other awaits
+      // (see `safeToReplaceBuffer`).
+      return (async () => {
+        const snapshot = await serialize(async () => {
+          if (!dir || savePromise) return null // same skip rationale as checkDisk
+          return {
+            folder: dir,
+            notesAtSnapshot: notes,
+            dueForRelist: Date.now() - lastFullListAt >= FULL_RELIST_MS,
           }
-          notes = check.listChanged
-        }
+        })
+        if (!snapshot) return
 
-        // The open note changed or was deleted on disk. With no unsaved local
-        // edits it's safe to track the disk; with edits in flight it's a
-        // conflict the user must resolve (keep mine / take theirs).
-        const active = check.active
-        if (active && !conflict) {
-          if (!safeToReplaceBuffer()) {
-            // Unsaved edits (or a save in flight) collide with the external
-            // change — surface the conflict proactively, before autosave hits
-            // the save-time guard. Both paths converge on the same state.
-            await raiseConflict()
-          } else if (active.kind === "deleted") {
-            // The open note vanished and we have nothing to lose — switch off it.
-            // `activate` loads, persists, and announces with the updated list.
-            await activate(folder, pickActiveNote(notes, null))
-            return
-          } else {
-            // Changed on disk: catch the buffer up and adopt the new mtime so
-            // the next save bases off the absorbed version. Re-check live state
-            // after the read — a keystroke landing during it turns this into a
-            // conflict rather than a silent clobber.
-            const note = await readNote(folder, activeName)
-            if (safeToReplaceBuffer()) {
-              lastModified = note.lastModified
-              // Minimal-diff reload (FEAT-0067): replace only the differing span so the
-              // caret and scroll survive — not a wholesale set that jumps the view.
-              reloadEditorText(view, note.content)
-              dirty = false
-              contentCache.set(activeName, note)
-            } else {
+        const diskNotes = snapshot.dueForRelist
+          ? await track("poll: listNotes", () => listNotes(snapshot.folder))
+          : null
+
+        return serialize(async () => {
+          // The folder changed (a vault switch) or our own save started while
+          // the listing was in flight — this probe no longer applies to
+          // anything live.
+          if (dir !== snapshot.folder || savePromise) return
+          if (snapshot.dueForRelist) lastFullListAt = Date.now()
+          // Something else (an addNote/removeNote/renameActive, or an earlier
+          // tick) already updated `notes` while our relist was in flight —
+          // our fetched listing is stale now; drop it rather than risk
+          // clobbering a newer state with it. The next tick re-verifies.
+          const listStale = snapshot.dueForRelist && notes !== snapshot.notesAtSnapshot
+          const diskActiveLastModified = await statNote(snapshot.folder, activeName)
+          const check = classifyDiskCheck({
+            knownNotes: notes,
+            diskNotes: diskNotes && !listStale ? diskNotes : notes,
+            knownLastModified: lastModified,
+            diskActiveLastModified,
+            dirty,
+          })
+
+          // Adopt an external list change first, so a follow-on switch (below)
+          // picks the next note from the up-to-date listing.
+          if (check.listChanged) {
+            const newSet = new Set(check.listChanged)
+            for (const path of contentCache.keys()) {
+              if (!newSet.has(path)) contentCache.delete(path)
+            }
+            notes = check.listChanged
+          }
+
+          // The open note changed or was deleted on disk. With no unsaved local
+          // edits it's safe to track the disk; with edits in flight it's a
+          // conflict the user must resolve (keep mine / take theirs).
+          const active = check.active
+          if (active && !conflict) {
+            if (!safeToReplaceBuffer()) {
+              // Unsaved edits (or a save in flight) collide with the external
+              // change — surface the conflict proactively, before autosave hits
+              // the save-time guard. Both paths converge on the same state.
               await raiseConflict()
+            } else if (active.kind === "deleted") {
+              // The open note vanished and we have nothing to lose — switch off it.
+              // `activate` loads, persists, and announces with the updated list.
+              await activate(snapshot.folder, pickActiveNote(notes, null))
+              return
+            } else {
+              // Changed on disk: catch the buffer up and adopt the new mtime so
+              // the next save bases off the absorbed version. Re-check live state
+              // after the read — a keystroke landing during it turns this into a
+              // conflict rather than a silent clobber.
+              const note = await readNote(snapshot.folder, activeName)
+              if (safeToReplaceBuffer()) {
+                lastModified = note.lastModified
+                // Minimal-diff reload (FEAT-0067): replace only the differing span so the
+                // caret and scroll survive — not a wholesale set that jumps the view.
+                reloadEditorText(view, note.content)
+                dirty = false
+                contentCache.set(activeName, note)
+              } else {
+                await raiseConflict()
+              }
             }
           }
-        }
 
-        if (check.listChanged) opts.onListChanged?.(notes, activeName)
-      })
+          if (check.listChanged) opts.onListChanged?.(notes, activeName)
+        })
+      })()
     },
     resolveKeepMine() {
       return serialize(async () => {

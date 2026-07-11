@@ -1161,6 +1161,66 @@ describe("refreshFromDisk (FEAT-0014)", () => {
     expect(listNotes).not.toHaveBeenCalled()
     expect(statNote).not.toHaveBeenCalled()
   })
+
+  it("doesn't block switchTo behind an in-flight relist", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["a.md", "start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, { debounceMs: 10_000 })
+    await controller.open(DIR) // resets lastFullListAt, so the next relist is due
+
+    let resolvePollList: (names: string[]) => void = () => {}
+    listNotes.mockReturnValue(new Promise((resolve) => (resolvePollList = resolve)))
+    const refreshing = controller.refreshFromDisk() // the relist is now in flight, slow
+
+    readNote.mockClear()
+    const switching = controller.switchTo("a.md")
+    await switching // must settle without waiting for the relist
+
+    expect(readNote).toHaveBeenCalledWith(DIR, "a.md")
+    expect(view.state.doc.toString()).toBe("body")
+
+    resolvePollList(["a.md", "start.md"]) // let the poll tick finish cleanly
+    await refreshing
+  })
+
+  it("drops a stale relist instead of clobbering a newer list set while it was in flight", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const onListChanged = vi.fn()
+    const controller = createNoteController(view, { onListChanged, debounceMs: 10_000 })
+    await controller.open(DIR)
+    onListChanged.mockClear()
+
+    // The relist is slow and, unbeknownst to it, about to become stale.
+    let resolvePollList: (names: string[]) => void = () => {}
+    listNotes.mockImplementationOnce(() => new Promise((resolve) => (resolvePollList = resolve)))
+    const refreshing = controller.refreshFromDisk()
+
+    // Wait until the relist's own listNotes call has genuinely fired (open's
+    // call plus this one) before queuing the next mock value — otherwise it's
+    // a race over which call consumes which mocked value.
+    await vi.waitFor(() => expect(listNotes).toHaveBeenCalledTimes(2))
+
+    // A user create lands and completes entirely while the relist is still
+    // in flight — its own listNotes call resolves with the up-to-date list.
+    listNotes.mockResolvedValueOnce(["fresh.md", "start.md"])
+    const created = await controller.addNote("fresh")
+    expect(created).toEqual({ ok: true })
+
+    // The relist's own (now-stale) listing finally resolves — missing the
+    // note the addNote just created.
+    resolvePollList(["start.md"])
+    await refreshing
+
+    // The stale relist must not have clobbered the newer list.
+    expect(onListChanged).not.toHaveBeenCalledWith(["start.md"], expect.anything())
+  })
 })
 
 describe("conflict resolution (FEAT-0015)", () => {
