@@ -5,10 +5,12 @@
  * Also self-instruments two things no call site has to opt into: any main-thread
  * stall over 50ms (`longtask`, whatever caused it — GC, a background poll tick,
  * decoration building) and tab visibility transitions (background/foreground,
- * where Chrome's own throttling can cause a stutter on return). Press
- * Ctrl+Shift+L to copy the full rolling log to the clipboard — meant for
- * capturing a slow moment on a real device right after it happens, to paste
- * back for analysis instead of it being lost the moment the overlay scrolls by.
+ * where Chrome's own throttling can cause a stutter on return). Ctrl+Shift+L,
+ * or the "Copy log" button in the overlay itself (for a phone with no
+ * keyboard attached), copies the full rolling log to the clipboard — meant
+ * for capturing a slow moment on a real device right after it happens, to
+ * paste back for analysis instead of it being lost the moment the overlay
+ * scrolls by.
  */
 
 export const DEBUG = new URLSearchParams(location.search).has("debug")
@@ -98,6 +100,8 @@ if (DEBUG) {
   })
 }
 
+const COPY_BUTTON_ID = "_perf-copy"
+
 function render(): void {
   let el = document.getElementById("_perf")
   if (!el) {
@@ -111,9 +115,21 @@ function render(): void {
       "z-index:99999", "pointer-events:none",
       "border-top:1px solid #333",
     ].join(";")
+    // Delegated on the container (not the button) so it survives the
+    // innerHTML rebuild every render() does below.
+    el.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement).closest(`#${COPY_BUTTON_ID}`)) copyExportToClipboard()
+    })
     document.body.append(el)
   }
-  el.innerHTML = entries
+  const copyButtonStyle = [
+    "position:sticky", "top:0", "display:block", "width:100%",
+    "margin-bottom:4px", "padding:6px", "font:11px/1.5 monospace",
+    "background:#2a2a2a", "color:#7fff7f", "border:1px solid #555", "border-radius:3px",
+    "pointer-events:auto", // overrides the container's pointer-events:none
+  ].join(";")
+  const copyButton = `<button id="${COPY_BUTTON_ID}" style="${copyButtonStyle}">Copy log (${entries.length})</button>`
+  el.innerHTML = copyButton + entries
     .slice(-VISIBLE_ENTRIES)
     .reverse()
     .map(e =>

@@ -2281,9 +2281,16 @@ moment live:
 - The rolling log now holds 500 entries (was 15, all that ever rendered) and can be copied to the
   clipboard with Ctrl+Shift+L — including a `performance.memory` snapshot — so a slow moment on the
   actual phone becomes a pasteable artifact instead of a vague report.
+- Added a "Copy log" button in the overlay itself, since a phone has no Ctrl+Shift+L without a
+  physical keyboard attached. It's `position:sticky` at the top of the (scrollable) overlay and
+  `pointer-events:auto`, overriding the overlay container's `pointer-events:none` (which exists so
+  the overlay never intercepts clicks meant for the editor beneath it) — a targeted, standard CSS
+  override, not a blanket change. Its click listener is delegated on the container rather than
+  attached to the button directly, since `render()` rebuilds the whole overlay's `innerHTML` on
+  every entry (a listener on the button itself would be discarded each time).
 No dedicated test file: `perf.ts` has never had one (its `DEBUG` gate is fixed at module-import
 time from `location.search`, which isn't practically fakeable per-test in vitest) — consistent
-with that established precedent for this dev-only file. Verified manually via a throwaway e2e
-check (Ctrl+Shift+L → clipboard JSON parses, has `exportedAt`/`memory`/`entries`) before removing
-it. Real next step: USB remote debugging (chrome://inspect) against the actual phone is still the
-gold-standard fallback if this log doesn't point anywhere on its own.
+with that established precedent for this dev-only file. Verified manually via throwaway e2e checks
+(both Ctrl+Shift+L and a button click → clipboard JSON parses, has `exportedAt`/`memory`/`entries`)
+before removing them. Real next step: USB remote debugging (chrome://inspect) against the actual
+phone is still the gold-standard fallback if this log doesn't point anywhere on its own.
