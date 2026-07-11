@@ -99,6 +99,39 @@ describe("open", () => {
     expect(view.state.doc.toString()).toBe("apple body") // editor unchanged
     expect(onListChanged).not.toHaveBeenCalled() // no list reported for the dead folder
   })
+
+  it("reads the likely active note concurrently with the listing, not after it", async () => {
+    const view = mountView()
+    loadActiveNote.mockResolvedValue("apple.md")
+    readNote.mockResolvedValue({ content: "apple body", lastModified: 5 })
+    let resolveListing: (names: string[]) => void = () => {}
+    listNotes.mockReturnValue(new Promise((resolve) => (resolveListing = resolve)))
+    const controller = createNoteController(view)
+
+    const opening = controller.open(DIR)
+    // The listing is still pending, but the guessed active note's read should
+    // already have been kicked off — not queued behind the listing.
+    await vi.waitFor(() => expect(readNote).toHaveBeenCalledWith(DIR, "apple.md"))
+
+    resolveListing(["apple.md", "start.md"])
+    await opening
+
+    expect(view.state.doc.toString()).toBe("apple body")
+  })
+
+  it("falls back to the real active note when the speculative guess no longer exists", async () => {
+    const view = mountView()
+    loadActiveNote.mockResolvedValue("gone.md") // persisted, but deleted since last session
+    listNotes.mockResolvedValue(["start.md"])
+    readNote.mockImplementation(async (_dir, name) =>
+      name === "gone.md" ? { content: "stale guess", lastModified: 1 } : { content: "real start", lastModified: 2 },
+    )
+    const controller = createNoteController(view)
+
+    await controller.open(DIR)
+
+    expect(view.state.doc.toString()).toBe("real start") // not the wrongly-guessed content
+  })
 })
 
 describe("autosave", () => {

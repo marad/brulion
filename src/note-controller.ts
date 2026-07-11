@@ -1,6 +1,6 @@
 import type { EditorView } from "codemirror"
 import { setEditorText, reloadEditorText } from "./editor"
-import { readNote, saveNote, listNotes, createNote, deleteNote, statNote, moveNote } from "./note"
+import { readNote, saveNote, listNotes, createNote, deleteNote, statNote, moveNote, type NoteContent } from "./note"
 import { track, trackSync, mark } from "./perf"
 import { normalizeNoteName } from "./note-name"
 import { rewriteLinksForRename, rebaseOutboundLinks } from "./link-rewrite"
@@ -244,7 +244,14 @@ export function createNoteController(
   // Re-pointing the editor also resolves any standing conflict (the conflicted
   // buffer is left behind — an implicit "take theirs" when the user navigates
   // away instead of choosing), so tell the UI to drop the banner.
-  const load = async (folder: FileSystemDirectoryHandle, name: string): Promise<void> => {
+  // `prefetched`, when given, is a read of `name` already in flight/settled
+  // before `load` was called (see `open`'s speculative read below) — skips a
+  // redundant disk read when the guess it came from turns out right.
+  const load = async (
+    folder: FileSystemDirectoryHandle,
+    name: string,
+    prefetched?: NoteContent,
+  ): Promise<void> => {
     activeName = name
     if (conflict) {
       conflict = false
@@ -252,7 +259,7 @@ export function createNoteController(
     }
     const cached = contentCache.get(name)
     if (cached) mark(`cache hit: ${name}`)
-    const note = cached ?? await track(`readNote: ${name}`, () => readNote(folder, name))
+    const note = cached ?? prefetched ?? (await track(`readNote: ${name}`, () => readNote(folder, name)))
     if (!cached) contentCache.set(name, note)
     lastModified = note.lastModified
     trackSync("setEditorText", () => setEditorText(view, note.content))
@@ -261,8 +268,12 @@ export function createNoteController(
 
   // Make `name` the active note and announce it. The caller has already flushed
   // (or deliberately dropped) the previously open note's edits.
-  const activate = async (folder: FileSystemDirectoryHandle, name: string): Promise<void> => {
-    await load(folder, name)
+  const activate = async (
+    folder: FileSystemDirectoryHandle,
+    name: string,
+    prefetched?: NoteContent,
+  ): Promise<void> => {
+    await load(folder, name, prefetched)
     await saveActiveNote(name)
     opts.onListChanged?.(notes, name)
   }
@@ -390,20 +401,42 @@ export function createNoteController(
     open(folder) {
       return serialize(async () => {
         if (dir) await flushAndWait() // re-picking a folder: don't lose the open note
-        // List first, commit `dir`/`notes` only once it succeeds: a folder that's
-        // gone from disk (a dead vault) makes listNotes throw, and committing `dir`
-        // before that would leave the controller half-pointed at the dead folder
-        // (the poller would then probe it). On failure the previously open folder
-        // stays intact, so a failed vault switch falls cleanly back to it.
-        const folderNotes = await track("open: listNotes", () => listNotes(folder))
+
+        // The full recursive listing is the slow, vault-size-proportional part;
+        // reading one guessed-at file is not. Start both at once instead of
+        // reading only after the listing settles — by the time the listing
+        // confirms the folder is valid, the guessed note's content is usually
+        // already in hand. Purely I/O: nothing here touches `dir`/`notes` or the
+        // editor, so a listNotes failure below still leaves everything exactly as
+        // it was (see the safety comment kept on that await).
+        const notesPromise = track("open: listNotes", () => listNotes(folder))
+        const persisted = await loadActiveNote()
+        const guess = persisted ?? SEED_NOTE
+        const speculativeRead = track(`readNote (speculative): ${guess}`, () => readNote(folder, guess)).catch(
+          () => null,
+        )
+
+        // Commit `dir`/`notes` only once the listing succeeds: a folder that's
+        // gone from disk (a dead vault) makes listNotes throw, and committing
+        // `dir` before that would leave the controller half-pointed at the dead
+        // folder (the poller would then probe it). On failure the previously
+        // open folder stays intact, so a failed vault switch falls cleanly back
+        // to it — the speculative read above never touched that state, so there
+        // is nothing to unwind.
+        const folderNotes = await notesPromise
         dir = folder
         notes = folderNotes
         // Force the *next* probe to relist for real regardless of any previous
         // vault's throttle state — a freshly attached folder always gets one
         // verified listing before FULL_RELIST_MS throttling kicks in.
         lastFullListAt = -Infinity
-        const active = pickActiveNote(notes, await loadActiveNote())
-        await activate(folder, active)
+        const active = pickActiveNote(notes, persisted)
+        // Only worth adopting the speculative read if the guess it was based on
+        // is the note we're actually activating — otherwise (a fresh vault, or
+        // the persisted note vanished since last session) `activate` falls back
+        // to its own normal read.
+        const prefetched = active === guess ? await speculativeRead : null
+        await activate(folder, active, prefetched ?? undefined)
       })
     },
     switchTo(name) {

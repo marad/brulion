@@ -2159,3 +2159,23 @@ A/B'd against a fresh dev-server spawn on both this change and the pre-change co
 10s budget for the *first-ever* Mermaid dynamic import + init + render was already thin before
 this change, which is exactly the category `playwright.config.ts`'s existing `retries: 1` is
 there to absorb. Not a regression from more, smaller chunks; left as-is.
+
+## `open()` reads the guessed active note concurrently with the folder listing
+User-requested: opening a note shouldn't serialize behind the full `listNotes` scan. Before,
+`open()` awaited the whole recursive listing, *then* read the active note's content — total
+wait was list-time + read-time. Now it kicks off both at once: `listNotes(folder)` and a
+speculative `readNote(folder, guess)` for the likely active note (the persisted one, or
+`start.md`), so the wait is `max(list-time, read-time)` instead of their sum.
+The speculative read is pure I/O — it doesn't touch `dir`/`notes`/`activeName`/the editor.
+Those are only committed once `listNotes` actually succeeds, preserving the existing dead-vault
+guarantee ("a folder that's gone from disk leaves the previous folder's note open, untouched" —
+still covered by its original test, unchanged). Once the listing confirms the real active note
+(`pickActiveNote`), the speculative read is adopted only if the guess was right; if the
+persisted note vanished since last session, `activate` falls back to a normal read for the
+actual one — a rare, no-worse-than-before path. `load`/`activate` gained an optional
+`prefetched: NoteContent` parameter for this; every other caller is unaffected (2-arg calls
+unchanged). Two new tests: one proves the read is issued while the listing is still pending
+(a controllable deferred promise for `listNotes`), one proves the wrong-guess fallback loads
+the real note's content, not the guessed one's. Measured on the 2018-note benchmark vault:
+`listNotes` (~116ms) and the speculative `readNote` (~124ms) now overlap, so `open()` pays
+~124ms for both instead of ~240ms.
