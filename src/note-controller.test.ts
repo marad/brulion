@@ -132,6 +132,26 @@ describe("open", () => {
 
     expect(view.state.doc.toString()).toBe("real start") // not the wrongly-guessed content
   })
+
+  it("doesn't serve a different vault's cached content for a same-named note (M33 multi-vault)", async () => {
+    const view = mountView()
+    const VAULT_A = {} as FileSystemDirectoryHandle
+    const VAULT_B = {} as FileSystemDirectoryHandle
+    loadActiveNote.mockResolvedValue("start.md")
+    listNotes.mockResolvedValue(["start.md"])
+    readNote.mockImplementation(async (dir) =>
+      dir === VAULT_A ? { content: "vault A's start", lastModified: 1 } : { content: "vault B's start", lastModified: 1 },
+    )
+    const controller = createNoteController(view)
+
+    await controller.open(VAULT_A)
+    expect(view.state.doc.toString()).toBe("vault A's start")
+
+    // Same relative path, different vault — the cache is keyed on path only,
+    // so without a clear this would wrongly serve vault A's cached content.
+    await controller.open(VAULT_B)
+    expect(view.state.doc.toString()).toBe("vault B's start")
+  })
 })
 
 describe("autosave", () => {
@@ -1220,6 +1240,13 @@ describe("refreshFromDisk (FEAT-0014)", () => {
 
     // The stale relist must not have clobbered the newer list.
     expect(onListChanged).not.toHaveBeenCalledWith(["start.md"], expect.anything())
+
+    // A dropped, stale relist must not have spent the throttle window either —
+    // the very next tick should retry for real (not wait out FULL_RELIST_MS).
+    listNotes.mockClear()
+    listNotes.mockResolvedValue(["fresh.md", "start.md"])
+    await controller.refreshFromDisk()
+    expect(listNotes).toHaveBeenCalledTimes(1)
   })
 })
 

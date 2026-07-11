@@ -278,16 +278,19 @@ export function createNoteController(
     opts.onListChanged?.(notes, name)
   }
 
+  // Whether a full relist is due (shared by probeDisk and refreshFromDisk's
+  // snapshot slot, so the throttle policy lives in exactly one place).
+  const isDueForRelist = (): boolean => Date.now() - lastFullListAt >= FULL_RELIST_MS
+
   // Probe the disk and classify it against the controller's current view. No
   // state is adopted — detection only. Callers run this inside a serialize slot
   // so `notes`/`activeName`/`lastModified` stay stable across its awaits.
   const probeDisk = async (folder: FileSystemDirectoryHandle): Promise<DiskCheck> => {
-    const now = Date.now()
-    const dueForRelist = now - lastFullListAt >= FULL_RELIST_MS
+    const dueForRelist = isDueForRelist()
     let diskNotes = notes
     if (dueForRelist) {
       diskNotes = await track("poll: listNotes", () => listNotes(folder))
-      lastFullListAt = now
+      lastFullListAt = Date.now()
     }
     const diskActiveLastModified = await statNote(folder, activeName)
     return classifyDiskCheck({
@@ -426,6 +429,13 @@ export function createNoteController(
         const folderNotes = await notesPromise
         dir = folder
         notes = folderNotes
+        // The cache is keyed by relative path only, not by folder — reused
+        // across every vault this one controller instance ever attaches to
+        // (M33 multi-vault). Every vault's seed note shares the name
+        // `start.md`, so a stale entry from a previous vault would otherwise
+        // silently outrank this vault's real content in `load()`. Clearing on
+        // every (re-)open is always safe, just an occasional cache miss.
+        contentCache.clear()
         // Force the *next* probe to relist for real regardless of any previous
         // vault's throttle state — a freshly attached folder always gets one
         // verified listing before FULL_RELIST_MS throttling kicks in.
@@ -576,7 +586,7 @@ export function createNoteController(
           return {
             folder: dir,
             notesAtSnapshot: notes,
-            dueForRelist: Date.now() - lastFullListAt >= FULL_RELIST_MS,
+            dueForRelist: isDueForRelist(),
           }
         })
         if (!snapshot) return
@@ -590,12 +600,15 @@ export function createNoteController(
           // the listing was in flight — this probe no longer applies to
           // anything live.
           if (dir !== snapshot.folder || savePromise) return
-          if (snapshot.dueForRelist) lastFullListAt = Date.now()
           // Something else (an addNote/removeNote/renameActive, or an earlier
           // tick) already updated `notes` while our relist was in flight —
           // our fetched listing is stale now; drop it rather than risk
-          // clobbering a newer state with it. The next tick re-verifies.
+          // clobbering a newer state with it. Crucially, don't bump the
+          // throttle clock for a dropped result either — that would extend
+          // the "next real check" wait past FULL_RELIST_MS on every collision
+          // instead of retrying on the very next (2s) tick as intended.
           const listStale = snapshot.dueForRelist && notes !== snapshot.notesAtSnapshot
+          if (snapshot.dueForRelist && !listStale) lastFullListAt = Date.now()
           const diskActiveLastModified = await statNote(snapshot.folder, activeName)
           const check = classifyDiskCheck({
             knownNotes: notes,

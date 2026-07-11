@@ -2210,3 +2210,56 @@ microtask ordering — a naive synchronous mock setup raced the two `listNotes` 
 out), and all ~30 existing `refreshFromDisk`/`checkDisk` tests pass unchanged. Measured on the
 2018-note vault: switches timed to land on a poll tick stayed at ~180–270ms, no spike, vs. the
 old code's queuing behind the full relist.
+
+## Code-review pass on the above (high effort, `/code-review --fix`)
+Ran the workflow-backed review on this session's three commits. 7 findings survived independent
+verification; fixed 4, skipped 2 deliberately (documented below), and one is process-only (also
+skipped, see below).
+
+**Fixed:**
+- **Stale cross-vault cache** (CONFIRMED, correctness): `contentCache` is keyed by relative path
+  only and lives for the lifetime of one `createNoteController` instance — which `main.ts` reuses
+  across every vault a window ever attaches to (M33). Every vault's seed note shares the name
+  `start.md`, so switching vaults could silently serve a *previous* vault's cached `start.md`
+  content under the newly-opened vault's identity — a real file-fidelity violation, pre-existing
+  (from the earlier ad-hoc perf commit that added the cache) but only now caught because this
+  diff's speculative-read path made it independently reachable. Fix: `contentCache.clear()` on
+  every `open()`, right where `dir`/`notes` get committed. Always safe (worst case: an occasional
+  extra disk read on a same-vault reopen). New test simulates two vaults sharing a `start.md` name
+  with different content; confirmed it fails without the fix.
+- **Relist throttle bumped even when the result was dropped as stale**: `lastFullListAt` was
+  updated unconditionally whenever a relist was *attempted*, even in the branch that discards the
+  result as stale (see the entry above) — so a collision didn't just lose that one check, it reset
+  the 15s clock, meaning repeated collisions (e.g. a user filing several quick-capture notes within
+  15s of each other) could push the "next real check" out indefinitely, contradicting the "next
+  tick re-verifies" comment already in the code. Fix: only bump the timestamp when the fetched list
+  is actually kept, not when dropped. New test confirms the very next tick retries the relist
+  (not throttled) after a dropped/stale one; confirmed it fails without the fix.
+- **Duplicated throttle-decision logic** (cleanup): `probeDisk` and `refreshFromDisk`'s snapshot
+  slot each computed `now - lastFullListAt >= FULL_RELIST_MS` independently — two copies of the
+  same policy that could silently drift if one were changed and not the other. Factored into one
+  `isDueForRelist()` closure both call.
+- **Bundle-size regression backstop** (robustness): the `modulePreload.resolveDependencies` filter
+  in `vite.config.ts` matches heavy deps by package-name substring in the chunk filename —
+  `experimentalMinChunkSize` groups chunks by byte size, so a future dependency bump could fold one
+  of those same packages into a generically hash-named chunk the regex doesn't recognize, silently
+  reproducing the exact eager-load regression this diff fixed, with nothing in the test suite that
+  would catch it (vitest doesn't build the app). Added `e2e/bundle-size.spec.ts`: a permanent,
+  filename-agnostic backstop — asserts a folder-less cold load against the production preview
+  build downloads under 1.5MB of JS. Confirmed it fails loudly (3.6MB) when checked out against the
+  pre-fix `vite.config.ts`.
+
+**Skipped, deliberately:**
+- **A narrow, timing-dependent spurious-conflict race** (PLAUSIBLE): the apply slot's `statNote`
+  read can in principle land in the brief window between `doSave` physically writing a file and
+  assigning the new `lastModified` to the closure — `doSave` isn't gated by `serialize()` at all
+  (by design, its own separate mutex), so this race already existed before this diff in some form;
+  the two-slot split widens the window (an extra out-of-lock `listNotes` await ahead of the
+  `statNote` check) rather than introducing the race. A real fix means coordinating `doSave` and
+  the poll's read, which is a bigger, separate piece of work than this diff's scope — flagged here
+  rather than patched under time pressure.
+- **Missing `Spec: FEAT-000N/AC-M` trailer** (a process-compliance finding, not a code issue): this
+  was already explicitly decided during the M34 milestone review earlier in this session — ad-hoc
+  performance work stays informal, outside the specman spec/seal pipeline. The finder is correct
+  that CLAUDE.md's general process calls for one; the user already opted this category of work out
+  of it.
