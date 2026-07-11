@@ -16,13 +16,15 @@ Every technical decision defers to that.
 
 > **Execution order (next up), agreed with the user.** M-numbers are **stable
 > identities, not the running order**. M1–M13, **M14**, **M15**, **M16**, **M17**,
-> **M18**–**M33** are done; **M34** (motion & fluidity) is the active milestone.
+> **M18**–**M34** are done; no milestone is currently active.
 > Recently shipped: **M18**
 > (light/dark theme + theme-aware syntax palette + a toggle action), **M24**
 > (scroll/caret preservation on external refresh), **M26** (table rendering),
 > **M29** (editable code-fence markers), **M30** (command palette + action bar),
 > **M31** (weekly journal navigation — day-log deferred), **M32** (link section
-> anchors), **M33** (multiple vaults / workspaces).
+> anchors), **M33** (multiple vaults / workspaces), **M34** (motion & fluidity —
+> reviewed live; selection-toolbar touch animation confirmed implemented but not
+> verified on a physical touch device).
 >
 > (The user's own pain-ranking: rename + note-URLs + link-autocomplete first, then
 > the search-ranking and frontmatter/copy irritants; settings, sidebar comfort,

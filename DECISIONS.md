@@ -2064,3 +2064,98 @@ identical (it's still shown over a non-empty touch selection). Consequence: one 
 change in `selection-toolbar.ts`, covered by the existing e2e (a `hidden` toggle is still
 `toBeVisible`-observable). (Rejected: leaving inline `display` and animating only opacity —
 inline `display:none` defeats the transition; the element would still pop.)
+
+## The `?debug` performance overlay stays permanently (post-M34)
+A mobile performance regression surfaced during M34's live review (sluggish note
+switching) got fixed with an in-memory note cache, a sidebar re-render short-circuit, and
+a poll pause — plus a `?debug` query-param overlay for profiling on-device. Confirmed at
+the M34 milestone review: the overlay is a keeper, not a one-off diagnostic to delete.
+Consequence: it's a permanent dev tool gated behind the query param, not dead code to prune
+later.
+
+## `listNotes` walks sibling subfolders concurrently (large-vault perf pass)
+Prompted by real use: at ~2018 notes the app "works fine but lacks fluidity," even on
+desktop. Benchmarked with a Playwright + OPFS harness seeding a 2018-note/40-folder vault:
+`listNotes`'s recursive walk (`note.ts` → `collect`) awaited each subfolder's full listing
+one at a time before moving to the next sibling — for 40 folders, 40 sequential recursive
+listings. It runs twice over: once on folder open, and again every 2s poll tick
+(`refreshFromDisk` → FEAT-0014's external-edit detection) for as long as the tab is
+visible, so its cost is paid continuously, not just once.
+Fix: fire off sibling subdirectory recursion concurrently (`Promise.all`) instead of
+awaiting each before the next — `listNotes` already sorts the flattened result, so the
+arrival order into the accumulator never mattered. No behavior or timing-contract change:
+same inputs, same output, same poll cadence — purely how fast the existing walk completes.
+Measured on the benchmark vault: the poll tick's `listNotes` cost dropped from ~150–230ms to
+~60–95ms (roughly a 60–70% cut); the initial folder-open listing from ~228ms to ~85ms.
+`renderNoteList`'s DOM rebuild was checked too and is not a bottleneck (~25ms for 2018 rows) —
+left alone; virtualizing it would be solving a problem the numbers don't show.
+Consequence: `note.ts`'s `collect` is the only touched function; `note-controller.ts` gained
+permanent `track("open: listNotes", …)` / `track("poll: listNotes", …)` timing (visible only
+under `?debug`) so this cost stays observable for future large-vault work.
+Left on the table, deliberately not pursued without a product call: cutting the poll's full
+relist frequency (e.g. every Nth tick instead of every 2s, keeping a cheap per-tick stat on
+just the active note for conflict detection) would cut the remaining background cost further
+— plausibly getting close to eliminating it — but it changes FEAT-0014's external-add/remove
+detection latency from ~2s to considerably more, which two dozen existing tests currently
+assert as immediate. That's a UX trade-off, not an implementation detail, so it wasn't made
+silently; flagged for the user to decide whether it's worth the latency it gives up.
+
+## Poll cadence split: full relist throttled to 15s, active-note mtime stays at 2s
+The trade-off flagged above — user directed it. `note-controller.ts`'s `probeDisk` now only
+re-walks the whole tree (`listNotes`, the expensive part) when `FULL_RELIST_MS` (15s) has
+elapsed since the last one; every 2s tick still cheaply `statNote`s just the active file, so
+the never-silently-clobber guarantee (the actual data-loss risk FEAT-0014 exists to prevent)
+is untouched — only the *notice-an-external-add/remove* latency moves from ~2s to up to 15s.
+`lastFullListAt` starts at `-Infinity` and is reset to it on every `open()`, so a freshly
+attached vault's first poll always verifies for real before the throttle engages — this is
+also why all ~25 existing checkDisk/refreshFromDisk tests (each calling it once, right after
+open()) needed zero changes: the case they exercise is exactly the always-relist first tick.
+A dedicated test (`note-controller.test.ts`) covers the throttled second tick with
+`vi.useFakeTimers()`. Considered instead: a tick-counter (every Nth call) — rejected in favor
+of wall-clock time, since it doesn't couple to `POLL_MS` and reads directly as "at most every
+15 real seconds," not "every 7.5 polls."
+Considered and rejected outright: `FileSystemObserver` (a real, non-standard WHATWG API,
+stable in desktop Chrome/Edge 133+ on both real FSA handles and OPFS) as a push-based
+replacement for polling. Mobile/Android support is unclear and plausibly absent per current
+caniuse data — exactly the platform this perf work is chasing — so adopting it now risks real
+effort for uncertain payoff on the platform that matters, plus it would still need a polling
+fallback for Firefox/Safari/unsupported Chrome. Left as a possible future desktop-only
+enhancement, not attempted here.
+
+## Mermaid's 764kB-gzip chunk was loading on every page view — fixed at the bundle level
+Prompted by the user pushing back that the `listNotes` fixes didn't explain the reported
+mobile slowness, and to "measure more broadly" rather than stay anchored to the `?debug`
+overlay's existing metrics. Inspected the actual production bundle (`npm run build` +
+`dist/index.html`) rather than only the app's own runtime timings, and found a
+`<link rel=modulepreload>` for the `mermaid` chunk fetched unconditionally on cold load —
+confirmed live with a CDP `Network.requestWillBeSent` initiator trace on a folder-less visit
+(no note ever opened): the chunk was fetched from a **static top-level import inside the main
+entry bundle itself**, not the modulepreload link (which was a real but secondary issue, fixed
+first via `build.modulePreload.resolveDependencies`, then found insufficient on its own).
+Root cause: `vite.config.ts`'s `manualChunks` grouped *anything* matching `id.includes("mermaid")`
+into one chunk (M28's fix for ~160 tiny per-diagram chunks blowing up GitHub Pages deploy
+time). Bundling Mermaid's core + every diagram-type chunk that tightly made Rollup hoist a
+shared binding out of that bucket into a forced, eager, static cross-chunk import in the main
+entry — so the whole 2.8MB (764kB gzip) chunk downloaded and parsed on *every single page
+load*, diagram or not. This was invisible to the `?debug` timing overlay entirely, since it's
+network/parse cost that happens before any app code runs — exactly the kind of thing narrow,
+in-app instrumentation can't surface, which is why the user was right to ask for broader
+measurement.
+Fix: replaced the manual `id.includes("mermaid")` bucket with Rollup's
+`experimentalMinChunkSize: 20_000` (merges genuinely small chunks by size instead of forcing
+unrelated modules to share one chunk, so it can't manufacture a cross-chunk static dependency).
+Verified with the same CDP trace (now empty on a folder-less cold load) and the existing
+`mermaid.spec.ts` AC-6 ("the Mermaid engine is loaded lazily") plus the offline PWA e2e, both
+still green. Chunk count: 123 (vs. ~160 pre-M28, vs. 1 with the removed manual bucket); main
+entry: 858.69kB (vs. 830.19kB before this change — a small, accepted growth from merging a few
+shared fragments; a `100_000`-byte threshold was tried and rejected — it grew the main entry to
+969kB by pulling in more than intended). Deploy-file-count is a secondary, non-user-facing
+concern (borne once per deploy, not by every visitor); left for a future look if it regresses
+again — not blocking, since the eager-load bug it was masking is the one that actually hurt
+users.
+Investigated before landing: a full-suite run surfaced `mermaid.spec.ts`'s AC-3 as "1 flaky."
+A/B'd against a fresh dev-server spawn on both this change and the pre-change config
+(`--repeat-each=8` each side): both flake at the same order of magnitude (1–2/8) — this test's
+10s budget for the *first-ever* Mermaid dynamic import + init + render was already thin before
+this change, which is exactly the category `playwright.config.ts`'s existing `retries: 1` is
+there to absorb. Not a regression from more, smaller chunks; left as-is.

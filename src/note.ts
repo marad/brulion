@@ -98,19 +98,24 @@ export async function listNotes(
 }
 
 /** Recurse `dir`, pushing `prefix`-qualified relative paths of `.md` files. The
- * async iterator yields the sub-directory handle itself, so we recurse directly. */
+ * async iterator yields the sub-directory handle itself, so we recurse directly.
+ * Sibling subdirectories are walked concurrently (fired off, not awaited inline)
+ * so a vault with many folders doesn't pay for them one at a time — `listNotes`
+ * sorts the result anyway, so the arrival order into `out` doesn't matter. */
 async function collect(
   dir: FileSystemDirectoryHandle,
   prefix: string,
   out: string[],
 ): Promise<void> {
+  const subdirs: Promise<void>[] = []
   for await (const entry of dir.values()) {
     if (entry.kind === "file") {
       if (MD_EXT.test(entry.name)) out.push(prefix + entry.name)
     } else {
-      await collect(entry, prefix + entry.name + "/", out)
+      subdirs.push(collect(entry, prefix + entry.name + "/", out))
     }
   }
+  await Promise.all(subdirs)
 }
 
 /**

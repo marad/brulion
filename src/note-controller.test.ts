@@ -908,6 +908,38 @@ describe("checkDisk (AC-4..AC-7)", () => {
     expect(result).toEqual({ listChanged: null, active: null })
     expect(statNote).not.toHaveBeenCalled() // bailed before probing the disk
   })
+
+  it("throttles the full relist to FULL_RELIST_MS, but stats the active note every call", async () => {
+    vi.useFakeTimers()
+    try {
+      const view = mountView()
+      listNotes.mockResolvedValue(["start.md"])
+      loadActiveNote.mockResolvedValue("start.md")
+      readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+      statNote.mockResolvedValue(1)
+      const controller = createNoteController(view, { debounceMs: 10_000 })
+      await controller.open(DIR)
+
+      // The first check after open() always relists (verified above by every other
+      // test in this block, which rely on exactly that) — spend it here so the
+      // throttle window starts from a known point.
+      await controller.checkDisk()
+
+      listNotes.mockResolvedValue(["new.md", "start.md"]) // a file appears externally
+      statNote.mockResolvedValue(2) // the active note also changes externally
+
+      vi.advanceTimersByTime(1_000) // well inside the throttle window
+      const soon = await controller.checkDisk()
+      expect(soon.active).toEqual({ kind: "changed", lastModified: 2, dirty: false }) // checked every time
+      expect(soon.listChanged).toBeNull() // relist throttled — not yet re-walked
+
+      vi.advanceTimersByTime(15_000) // past FULL_RELIST_MS since the first check
+      const later = await controller.checkDisk()
+      expect(later.listChanged).toEqual(["new.md", "start.md"]) // now it re-walks and catches up
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe("refreshFromDisk (FEAT-0014)", () => {

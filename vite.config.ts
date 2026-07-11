@@ -5,24 +5,38 @@ import { defineConfig } from "vitest/config"
 export default defineConfig({
   base: "/brulion/",
   build: {
+    modulePreload: {
+      // Vite's default modulePreload polyfill eagerly fetches the direct
+      // dynamic-import dependencies of the entry graph — which included the
+      // "mermaid" chunk below (764kB gzip) on *every* cold load, diagram or not,
+      // silently undoing the on-demand intent the manualChunks split below states.
+      // Only strip the chunks meant to stay on-demand; anything else keeps Vite's
+      // default preloading.
+      resolveDependencies: (_filename, deps) =>
+        deps.filter((dep) => !/[\\/](mermaid|cytoscape|cose-|layout-base|katex|elkjs|dagre|wardley)/.test(dep)),
+    },
     rollupOptions: {
       output: {
-        // Mermaid (lazy-loaded, M28) otherwise splits into ~160 tiny per-diagram
-        // chunks — and GitHub Pages' publish step has per-file overhead, so the
-        // deploy ballooned from ~30s to ~6min. Collapse Mermaid's core + its many
-        // light diagram definitions into one lazy `mermaid` chunk to cut the file
-        // count, while leaving the genuinely-heavy, rarely-used deps as their own
-        // on-demand chunks so a simple flowchart never downloads them.
+        // Heavy diagram deps stay separate-lazy chunks (only fetched when their
+        // diagram type is actually used): cytoscape (mindmap/architecture) + its
+        // layouts, katex (math), the Wardley map, ELK/dagre layout engines. A prior
+        // version of this also forced Mermaid's ~160 tiny internal per-diagram
+        // chunks into one big manual "mermaid" bucket to cut GitHub Pages' per-file
+        // deploy overhead (~30s → ~6min) — but that grouping made Rollup hoist a
+        // shared binding out of Mermaid's own code into a STATIC top-level import
+        // in the main entry chunk, so the whole 764kB-gzip bundle loaded on every
+        // page view regardless of whether any note used a diagram (found via a CDP
+        // initiator trace on a folder-less cold load). `experimentalMinChunkSize`
+        // gets the same few-small-files win by merging small chunks by size, not by
+        // forcing unrelated modules to share one chunk — so it can't manufacture
+        // that kind of cross-chunk static dependency.
+        experimentalMinChunkSize: 20_000,
         manualChunks(id) {
           if (!id.includes("node_modules")) return
-          // Heavy diagram deps stay separate-lazy (only fetched when their diagram
-          // type is actually used): cytoscape (mindmap/architecture) + its layouts,
-          // katex (math), the Wardley map, ELK/dagre layout engines.
           if (/[\\/](cytoscape|cose-base|cose-bilkent|layout-base|katex|elkjs|@?dagre)/.test(id)) {
             return
           }
           if (/[\\/]wardley/.test(id)) return
-          if (id.includes("mermaid")) return "mermaid"
         },
       },
     },

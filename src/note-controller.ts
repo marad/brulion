@@ -9,6 +9,17 @@ import { debounce } from "./debounce"
 
 const SEED_NOTE = "start.md"
 
+/**
+ * How often {@link NoteController.checkDisk}/`refreshFromDisk` actually re-walk the
+ * whole tree (FEAT-0014's external add/remove detection), vs. every poll tick (2s):
+ * a full recursive `listNotes` is real work — proportional to vault size — while the
+ * active note's own mtime (checked every tick regardless, see `probeDisk`) is one
+ * cheap file stat. Detecting a file added/removed *elsewhere* by another tool can
+ * afford to lag; silently clobbering the note you're actively editing cannot, so
+ * that guarantee stays at the full 2s cadence.
+ */
+const FULL_RELIST_MS = 15_000
+
 /** The outcome of {@link NoteController.addNote}. */
 export type AddNoteResult = { ok: true } | { ok: false; reason: string }
 
@@ -182,6 +193,10 @@ export function createNoteController(
   let savePromise: Promise<void> | null = null
   // ponytail: in-memory cache keyed by path; stale-write guard still catches external edits on save
   const contentCache = new Map<string, { content: string; lastModified: number | null }>()
+  // The last time probeDisk actually re-walked the whole tree (see FULL_RELIST_MS
+  // below). -Infinity forces a relist on the first poll after each open(), so a
+  // freshly attached folder's list is always verified once before throttling kicks in.
+  let lastFullListAt = -Infinity
 
   // Serialize saves: at most one save loop runs at a time. A concurrent caller
   // (a fired debounce, a flush, a switch) joins the in-flight promise rather
@@ -256,7 +271,13 @@ export function createNoteController(
   // state is adopted — detection only. Callers run this inside a serialize slot
   // so `notes`/`activeName`/`lastModified` stay stable across its awaits.
   const probeDisk = async (folder: FileSystemDirectoryHandle): Promise<DiskCheck> => {
-    const diskNotes = await listNotes(folder)
+    const now = Date.now()
+    const dueForRelist = now - lastFullListAt >= FULL_RELIST_MS
+    let diskNotes = notes
+    if (dueForRelist) {
+      diskNotes = await track("poll: listNotes", () => listNotes(folder))
+      lastFullListAt = now
+    }
     const diskActiveLastModified = await statNote(folder, activeName)
     return classifyDiskCheck({
       knownNotes: notes,
@@ -374,9 +395,13 @@ export function createNoteController(
         // before that would leave the controller half-pointed at the dead folder
         // (the poller would then probe it). On failure the previously open folder
         // stays intact, so a failed vault switch falls cleanly back to it.
-        const folderNotes = await listNotes(folder)
+        const folderNotes = await track("open: listNotes", () => listNotes(folder))
         dir = folder
         notes = folderNotes
+        // Force the *next* probe to relist for real regardless of any previous
+        // vault's throttle state — a freshly attached folder always gets one
+        // verified listing before FULL_RELIST_MS throttling kicks in.
+        lastFullListAt = -Infinity
         const active = pickActiveNote(notes, await loadActiveNote())
         await activate(folder, active)
       })
