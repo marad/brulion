@@ -87,35 +87,77 @@ export async function statNote(
   return (await handle.getFile()).lastModified
 }
 
+/** How many folders `collect` scans at once, across the *whole* tree — not per
+ * level, and not unbounded. See the comment on `collect` for why. */
+const MAX_CONCURRENT_WALKS = 4
+
+/** Limits how many callers hold a "slot" at once; anyone past the limit awaits
+ * `acquire()` until someone else `release()`s. Used to cap {@link collect}'s
+ * total in-flight directory scans regardless of the tree's shape (a per-level
+ * cap, or a worker pool that only pulls from an initially-empty queue, both
+ * fail to bound *total* concurrency for a narrow-then-wide, or deep, tree). */
+class Semaphore {
+  private slots: number
+  private waiting: Array<() => void> = []
+  constructor(slots: number) {
+    this.slots = slots
+  }
+  async acquire(): Promise<void> {
+    if (this.slots > 0) {
+      this.slots--
+      return
+    }
+    await new Promise<void>((resolve) => this.waiting.push(resolve))
+  }
+  release(): void {
+    const next = this.waiting.shift()
+    if (next) next()
+    else this.slots++
+  }
+}
+
 /** Every `.md` file in the tree as a `/`-separated relative path, sorted
  * case-insensitively by full path. Directories are descended into, not listed. */
 export async function listNotes(
   dir: FileSystemDirectoryHandle,
 ): Promise<string[]> {
   const paths: string[] = []
-  await collect(dir, "", paths)
+  await collect(dir, "", paths, new Semaphore(MAX_CONCURRENT_WALKS))
   return paths.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
 }
 
-/** Recurse `dir`, pushing `prefix`-qualified relative paths of `.md` files. The
- * async iterator yields the sub-directory handle itself, so we recurse directly.
- * Sibling subdirectories are walked concurrently (fired off, not awaited inline)
- * so a vault with many folders doesn't pay for them one at a time — `listNotes`
- * sorts the result anyway, so the arrival order into `out` doesn't matter. */
+/** Recurse `dir`, pushing `prefix`-qualified relative paths of `.md` files.
+ * Each call acquires a semaphore slot before its own single-level `values()`
+ * scan and releases it right after — before recursing into subfolders — so at
+ * most `MAX_CONCURRENT_WALKS` directory scans are ever active at once, across
+ * the whole recursion, not per level. An earlier version fired every
+ * subfolder's scan via one unbounded `Promise.all`, which measurably starved
+ * an unrelated concurrent single-file `readNote` on at least one real phone
+ * (a ~70ms read ballooned to ~1.5s while a many-folder relist was in flight):
+ * flooding the device's file-system API with a burst of simultaneous calls
+ * costs more elsewhere than the relist itself gains from parallelism.
+ * `listNotes` sorts the result anyway, so arrival order into `out` never
+ * matters — only the total concurrency does. */
 async function collect(
   dir: FileSystemDirectoryHandle,
   prefix: string,
   out: string[],
+  sem: Semaphore,
 ): Promise<void> {
-  const subdirs: Promise<void>[] = []
-  for await (const entry of dir.values()) {
-    if (entry.kind === "file") {
-      if (MD_EXT.test(entry.name)) out.push(prefix + entry.name)
-    } else {
-      subdirs.push(collect(entry, prefix + entry.name + "/", out))
+  await sem.acquire()
+  const subdirs: FileSystemDirectoryHandle[] = []
+  try {
+    for await (const entry of dir.values()) {
+      if (entry.kind === "file") {
+        if (MD_EXT.test(entry.name)) out.push(prefix + entry.name)
+      } else {
+        subdirs.push(entry)
+      }
     }
+  } finally {
+    sem.release()
   }
-  await Promise.all(subdirs)
+  await Promise.all(subdirs.map((entry) => collect(entry, prefix + entry.name + "/", out, sem)))
 }
 
 /**

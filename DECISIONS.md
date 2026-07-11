@@ -2294,3 +2294,31 @@ with that established precedent for this dev-only file. Verified manually via th
 (both Ctrl+Shift+L and a button click → clipboard JSON parses, has `exportedAt`/`memory`/`entries`)
 before removing them. Real next step: USB remote debugging (chrome://inspect) against the actual
 phone is still the gold-standard fallback if this log doesn't point anywhere on its own.
+
+## `listNotes`'s concurrency is capped at 4, not unbounded — a real phone's `?debug` log found this
+The `?debug` log paid off immediately: a captured log from the user's actual phone showed
+`readNote: Apteka.md` (a single-file read) taking **1499.9ms**, versus **69.8ms** for the same kind
+of read (`readNote: Allegro.md`) moments later when nothing else was going on. The difference: the
+slow one ran concurrently with a `poll: listNotes` relist (2100.2ms) that happened to land at the
+same moment — a ~20x slowdown for an unrelated single-file read, purely from something else doing
+disk I/O on the folder tree at the same time. This is very likely the device's File System Access
+implementation serializing/contending on a shared native I/O channel — not something visible from
+desktop CPU throttling, which doesn't model real storage-layer contention.
+`collect()`'s subfolder walk (parallelized via one unbounded `Promise.all` in an earlier round of
+this same perf work) was very likely the thing generating that concurrent I/O burst. Fix: capped
+total concurrent directory scans to `MAX_CONCURRENT_WALKS = 4`, via a small `Semaphore` each
+recursive `collect()` call acquires before its own single-level `values()` scan and releases right
+after (before recursing into children) — so at most 4 scans are ever active *across the whole
+tree*, not per level. Two designs were tried and rejected first: a per-level cap (doesn't bound
+total concurrency for a narrow-then-wide tree) and a worker-pool pulling from a shared queue seeded
+only with the root (a genuine bug: workers spawned before the queue has more than one item exit
+immediately and never come back, collapsing to single-threaded traversal for a narrow/deep tree —
+caught by writing the concurrency test *before* trusting the implementation, per usual practice).
+Verified with a controllable-delay fake directory handle asserting peak concurrency is `>1` and
+`<=4`; confirmed it fails (peak reaches whatever the tree's fan-out is) if the cap is raised, and
+would have shown peak=1 against the buggy worker-pool version. Cost on the 2018-note desktop
+benchmark: `open: listNotes` back up from ~85ms to ~144ms — a real, accepted trade against real
+mobile robustness, since the whole point of parallelizing this in the first place was speed that a
+real device's contention apparently doesn't reward past a point. `4` is a first, reasonable guess,
+not derived from more device data than this one log — worth revisiting if further `?debug` captures
+say otherwise.

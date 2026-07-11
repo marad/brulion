@@ -258,6 +258,41 @@ describe("listNotes (AC-5, AC-6)", () => {
     const folder = fakeFolder({ "readme.txt": { kind: "file", content: "" } })
     expect(await listNotes(folder.dir)).toEqual([])
   })
+
+  it("caps concurrent directory scans instead of firing every subfolder at once", async () => {
+    const FOLDER_COUNT = 12
+    let active = 0
+    let peak = 0
+
+    // A directory handle whose values() stays "in flight" for a fixed short
+    // delay (tracked via active/peak), so the true peak concurrency across
+    // the whole run is observable regardless of scheduling order.
+    function makeControlledSubdir(name: string): FileSystemDirectoryHandle {
+      return {
+        kind: "directory",
+        name,
+        async *values() {
+          active++
+          peak = Math.max(peak, active)
+          await new Promise<void>((resolve) => setTimeout(resolve, 10))
+          active--
+        },
+      } as unknown as FileSystemDirectoryHandle
+    }
+
+    const root = {
+      kind: "directory",
+      name: "",
+      async *values() {
+        for (let i = 0; i < FOLDER_COUNT; i++) yield makeControlledSubdir(`folder-${i}`)
+      },
+    } as unknown as FileSystemDirectoryHandle
+
+    await listNotes(root)
+
+    expect(peak).toBeLessThanOrEqual(4)
+    expect(peak).toBeGreaterThan(1) // genuinely concurrent, not accidentally serialized to 1
+  })
 })
 
 describe("createNote (AC-6, AC-7, AC-8)", () => {
