@@ -1,16 +1,29 @@
 /**
  * Lightweight performance overlay, active only when `?debug` is in the URL.
  * Usage: track("label", () => someAsyncOp()) or trackSync("label", () => syncOp())
+ *
+ * Also self-instruments two things no call site has to opt into: any main-thread
+ * stall over 50ms (`longtask`, whatever caused it — GC, a background poll tick,
+ * decoration building) and tab visibility transitions (background/foreground,
+ * where Chrome's own throttling can cause a stutter on return). Press
+ * Ctrl+Shift+L to copy the full rolling log to the clipboard — meant for
+ * capturing a slow moment on a real device right after it happens, to paste
+ * back for analysis instead of it being lost the moment the overlay scrolls by.
  */
 
 export const DEBUG = new URLSearchParams(location.search).has("debug")
 
-type Entry = { label: string; ms: number }
+type Entry = { label: string; ms: number; t: number }
 const entries: Entry[] = []
+// Enough history to catch a slow moment after the fact (not just the visible
+// slice) without growing unbounded over a long session.
+const MAX_ENTRIES = 500
+// Only the most recent of these render live, so the overlay stays scannable.
+const VISIBLE_ENTRIES = 15
 
 function push(label: string, ms: number): void {
-  entries.push({ label, ms })
-  if (entries.length > 30) entries.shift()
+  entries.push({ label, ms, t: performance.now() })
+  if (entries.length > MAX_ENTRIES) entries.shift()
   render()
 }
 
@@ -31,6 +44,60 @@ export function mark(label: string): void {
   push(label, 0)
 }
 
+/** The full rolling log as pretty JSON, for pasting elsewhere. Chrome-only
+ * `performance.memory` (absent on other engines) is included when available —
+ * this app is Chromium-only already (the File System Access API). */
+export function exportLog(): string {
+  const memory = (performance as { memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number } }).memory
+  return JSON.stringify(
+    {
+      exportedAt: new Date().toISOString(),
+      memory: memory ? { usedMB: Math.round(memory.usedJSHeapSize / 1e6), limitMB: Math.round(memory.jsHeapSizeLimit / 1e6) } : null,
+      entries,
+    },
+    null,
+    2,
+  )
+}
+
+function copyExportToClipboard(): void {
+  void navigator.clipboard.writeText(exportLog()).then(
+    () => mark(`log copied (${entries.length} entries)`),
+    () => mark("log copy failed"),
+  )
+}
+
+if (DEBUG) {
+  // Any main-thread stall over 50ms, regardless of cause — a GC pause, a
+  // background poll tick's actual CPU work, decoration building — without
+  // having to guess which subsystem to instrument next. Chrome-only API;
+  // degrades silently where unsupported.
+  try {
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        push(`long task`, entry.duration)
+      }
+    }).observe({ type: "longtask", buffered: true })
+  } catch {
+    // longtask not supported in this engine — nothing to observe
+  }
+
+  // Chrome throttles/deprioritizes a backgrounded tab; the first interaction
+  // after returning to the foreground can stutter as it catches up. Surfacing
+  // the transition makes that pattern visible in the log instead of looking
+  // like random jank.
+  document.addEventListener("visibilitychange", () => {
+    mark(`visibility: ${document.visibilityState}`)
+  })
+
+  window.addEventListener("keydown", (event) => {
+    if (event.ctrlKey && event.shiftKey && event.code === "KeyL") {
+      event.preventDefault()
+      copyExportToClipboard()
+    }
+  })
+}
+
 function render(): void {
   let el = document.getElementById("_perf")
   if (!el) {
@@ -47,7 +114,7 @@ function render(): void {
     document.body.append(el)
   }
   el.innerHTML = entries
-    .slice(-15)
+    .slice(-VISIBLE_ENTRIES)
     .reverse()
     .map(e =>
       e.ms === 0

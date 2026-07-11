@@ -2263,3 +2263,27 @@ skipped, see below).
   performance work stays informal, outside the specman spec/seal pipeline. The finder is correct
   that CLAUDE.md's general process calls for one; the user already opted this category of work out
   of it.
+
+## `?debug` overlay: long-task observer, visibility log, exportable history
+User reports the phone still occasionally lags switching notes, despite all of the above — and
+confirmed it doesn't correlate with heavier notes (rules out decoration-building cost as the cause)
+and the vault isn't inside a synced folder (rules out a sync client hooking every file I/O). That
+leaves something environmental — a GC pause, the poll's actual CPU work competing for the one JS
+thread even though it's no longer queue-blocking, Chrome deprioritizing a backgrounded tab — none
+of which desktop CPU-throttle emulation can surface, since they depend on the real device's memory
+pressure and OS scheduling. Rather than guess further, extended `perf.ts` (already a permanent dev
+tool per an earlier decision) to capture evidence automatically instead of needing to catch a slow
+moment live:
+- A `PerformanceObserver` for `longtask` entries — any main-thread stall over 50ms, whatever causes
+  it, without instrumenting each suspect subsystem by hand.
+- `visibilitychange` logging, since a stutter right after returning from the background reads
+  identically to random jank without this.
+- The rolling log now holds 500 entries (was 15, all that ever rendered) and can be copied to the
+  clipboard with Ctrl+Shift+L — including a `performance.memory` snapshot — so a slow moment on the
+  actual phone becomes a pasteable artifact instead of a vague report.
+No dedicated test file: `perf.ts` has never had one (its `DEBUG` gate is fixed at module-import
+time from `location.search`, which isn't practically fakeable per-test in vitest) — consistent
+with that established precedent for this dev-only file. Verified manually via a throwaway e2e
+check (Ctrl+Shift+L → clipboard JSON parses, has `exportedAt`/`memory`/`entries`) before removing
+it. Real next step: USB remote debugging (chrome://inspect) against the actual phone is still the
+gold-standard fallback if this log doesn't point anywhere on its own.
