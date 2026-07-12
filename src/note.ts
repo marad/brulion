@@ -125,13 +125,21 @@ class Semaphore {
  * case-insensitively by full path. Directories are descended into, not listed.
  * `maxConcurrent` (default {@link MAX_CONCURRENT_WALKS}) bounds how many
  * directory scans run at once — lower it for background/best-effort callers
- * that shouldn't compete hard for I/O with whatever the user is doing. */
+ * that shouldn't compete hard for I/O with whatever the user is doing.
+ *
+ * `signal`, when given, lets a caller abandon an in-flight call — see
+ * {@link collect} for what "abandon" actually means here (there is no way to
+ * abort a `values()` scan already running; this only stops *starting new
+ * ones*). Rejects with a `DOMException("AbortError")` if aborted, same
+ * convention as `fetch()` — never returns a silently-incomplete listing that
+ * could be mistaken for the real disk state. */
 export async function listNotes(
   dir: FileSystemDirectoryHandle,
   maxConcurrent: number = MAX_CONCURRENT_WALKS,
+  signal?: AbortSignal,
 ): Promise<string[]> {
   const paths: string[] = []
-  await collect(dir, "", paths, new Semaphore(maxConcurrent))
+  await collect(dir, "", paths, new Semaphore(maxConcurrent), signal)
   return paths.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
 }
 
@@ -146,14 +154,27 @@ export async function listNotes(
  * flooding the device's file-system API with a burst of simultaneous calls
  * costs more elsewhere than the relist itself gains from parallelism.
  * `listNotes` sorts the result anyway, so arrival order into `out` never
- * matters — only the total concurrency does. */
+ * matters — only the total concurrency does.
+ *
+ * `signal` is checked before every single-level scan starts (both before and
+ * after waiting for a semaphore slot, since it may go stale while queued) and
+ * throws if already aborted — there is no `AbortSignal` on the platform's own
+ * `values()` iteration, so a scan already running keeps running regardless;
+ * this only stops *new* scans from starting, shrinking the contention window
+ * from "the rest of the whole tree" down to "whatever's already in flight". */
 async function collect(
   dir: FileSystemDirectoryHandle,
   prefix: string,
   out: string[],
   sem: Semaphore,
+  signal?: AbortSignal,
 ): Promise<void> {
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError")
   await sem.acquire()
+  if (signal?.aborted) {
+    sem.release()
+    throw new DOMException("Aborted", "AbortError")
+  }
   const subdirs: FileSystemDirectoryHandle[] = []
   try {
     for await (const entry of dir.values()) {
@@ -166,7 +187,7 @@ async function collect(
   } finally {
     sem.release()
   }
-  await Promise.all(subdirs.map((entry) => collect(entry, prefix + entry.name + "/", out, sem)))
+  await Promise.all(subdirs.map((entry) => collect(entry, prefix + entry.name + "/", out, sem, signal)))
 }
 
 /**

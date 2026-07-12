@@ -883,7 +883,9 @@ describe("checkDisk (AC-4..AC-7)", () => {
     listNotes.mockClear()
     await controller.checkDisk()
 
-    expect(listNotes).toHaveBeenCalledWith(DIR, 1) // the poll's relist: sequential
+    // checkDisk (probeDisk) is a test-only detection seam, not the real
+    // poller's own path — see the next test for that, where abort applies.
+    expect(listNotes).toHaveBeenCalledWith(DIR, 1)
   })
 
   it("reports a note removed from the folder", async () => {
@@ -1027,7 +1029,7 @@ describe("refreshFromDisk (FEAT-0014)", () => {
     listNotes.mockClear()
     await controller.refreshFromDisk()
 
-    expect(listNotes).toHaveBeenCalledWith(DIR, 1) // the poll's relist: sequential
+    expect(listNotes).toHaveBeenCalledWith(DIR, 1, expect.any(AbortSignal)) // the poll's relist: sequential, abortable
   })
 
   it("adopts an externally added note into the list, leaving the editor (AC-1)", async () => {
@@ -1238,6 +1240,36 @@ describe("refreshFromDisk (FEAT-0014)", () => {
 
     resolvePollList(["a.md", "start.md"]) // let the poll tick finish cleanly
     await refreshing
+  })
+
+  it("aborts an in-flight relist as soon as a user action starts, instead of letting it run to completion", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["a.md", "start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, { debounceMs: 10_000 })
+    await controller.open(DIR) // resets lastFullListAt, so the next relist is due
+
+    let capturedSignal: AbortSignal | undefined
+    listNotes.mockImplementationOnce(
+      (_dir, _concurrency, signal?: AbortSignal) =>
+        new Promise<string[]>((_resolve, reject) => {
+          capturedSignal = signal
+          // Mirrors what the real collect() eventually does once it notices
+          // the signal — without this, the mock would hang forever instead
+          // of settling once aborted.
+          signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")))
+        }),
+    )
+    const refreshing = controller.refreshFromDisk()
+    await vi.waitFor(() => expect(capturedSignal).toBeDefined())
+    expect(capturedSignal?.aborted).toBe(false)
+
+    void controller.switchTo("a.md")
+
+    expect(capturedSignal?.aborted).toBe(true) // aborted synchronously, on the very next action
+    await refreshing // settles cleanly (refreshFromDisk swallows its own AbortError)
   })
 
   it("drops a stale relist instead of clobbering a newer list set while it was in flight", async () => {

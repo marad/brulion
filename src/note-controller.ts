@@ -211,6 +211,20 @@ export function createNoteController(
   // below). -Infinity forces a relist on the first poll after each open(), so a
   // freshly attached folder's list is always verified once before throttling kicks in.
   let lastFullListAt = -Infinity
+  // The poll's currently in-flight relist, if any — so a foreground action can
+  // tell it to stop starting new directory scans (see `abortPendingRelist`).
+  // There is no way to abort a `values()` scan already running, so this only
+  // shrinks the contention window down to "whatever's already in flight",
+  // rather than "the rest of the whole tree" — see DECISIONS.md.
+  let pollAbortController: AbortController | null = null
+
+  // A user-initiated action is about to run — if a background relist is
+  // currently walking the tree, tell it to stop making further progress. Safe
+  // to call unconditionally (a no-op when nothing is in flight, and aborting
+  // an already-settled/already-aborted controller is a no-op too).
+  const abortPendingRelist = (): void => {
+    pollAbortController?.abort()
+  }
 
   // Serialize saves: at most one save loop runs at a time. A concurrent caller
   // (a fired debounce, a flush, a switch) joins the in-flight promise rather
@@ -416,6 +430,7 @@ export function createNoteController(
 
   return {
     open(folder) {
+      abortPendingRelist() // a whole vault switch makes any in-flight relist moot
       return serialize(async () => {
         if (dir) await flushAndWait() // re-picking a folder: don't lose the open note
 
@@ -464,6 +479,7 @@ export function createNoteController(
       })
     },
     switchTo(name) {
+      abortPendingRelist() // don't make the user's switch wait behind our own background scan
       return serialize(async () => {
         if (!dir || name === activeName || conflict) return // conflict is modal
         mark(`switchTo: ${name}`)
@@ -472,6 +488,7 @@ export function createNoteController(
       })
     },
     addNote(name) {
+      abortPendingRelist()
       return serialize<AddNoteResult>(async () => {
         if (!dir) return { ok: false, reason: "Open a folder first." }
         if (conflict) return { ok: false, reason: "Resolve the conflict first." }
@@ -488,6 +505,7 @@ export function createNoteController(
       })
     },
     removeNote(name) {
+      abortPendingRelist()
       return serialize(async () => {
         if (!dir || conflict) return // conflict is modal — resolve it first
         // Drop the deleted note's unsaved edits so the flush below won't write
@@ -509,6 +527,7 @@ export function createNoteController(
       })
     },
     renameActive(name) {
+      abortPendingRelist()
       return serialize<AddNoteResult>(async () => {
         if (!dir) return { ok: false, reason: "Open a folder first." }
         if (conflict) return { ok: false, reason: "Resolve the conflict first." }
@@ -605,9 +624,23 @@ export function createNoteController(
         })
         if (!snapshot) return
 
-        const diskNotes = snapshot.dueForRelist
-          ? await track("poll: listNotes", () => listNotes(snapshot.folder, POLL_RELIST_CONCURRENCY))
-          : null
+        let diskNotes: string[] | null = null
+        if (snapshot.dueForRelist) {
+          const abortController = new AbortController()
+          pollAbortController = abortController
+          try {
+            diskNotes = await track("poll: listNotes", () =>
+              listNotes(snapshot.folder, POLL_RELIST_CONCURRENCY, abortController.signal),
+            )
+          } catch (err) {
+            // Aborted by a foreground action (see `abortPendingRelist`) — fall
+            // through with `diskNotes` still null, handled exactly like the
+            // stale-relist case below: dropped, not applied, next tick retries.
+            if (!(err instanceof DOMException && err.name === "AbortError")) throw err
+          } finally {
+            pollAbortController = null
+          }
+        }
 
         return serialize(async () => {
           // The folder changed (a vault switch) or our own save started while
@@ -617,16 +650,18 @@ export function createNoteController(
           // Something else (an addNote/removeNote/renameActive, or an earlier
           // tick) already updated `notes` while our relist was in flight —
           // our fetched listing is stale now; drop it rather than risk
-          // clobbering a newer state with it. Crucially, don't bump the
-          // throttle clock for a dropped result either — that would extend
-          // the "next real check" wait past FULL_RELIST_MS on every collision
-          // instead of retrying on the very next (2s) tick as intended.
-          const listStale = snapshot.dueForRelist && notes !== snapshot.notesAtSnapshot
-          if (snapshot.dueForRelist && !listStale) lastFullListAt = Date.now()
+          // clobbering a newer state with it. Also true whenever the relist
+          // was aborted or skipped (`diskNotes` is null). Crucially, don't
+          // bump the throttle clock in any of these cases either — that would
+          // extend the "next real check" wait past FULL_RELIST_MS instead of
+          // retrying on the very next (2s) tick as intended.
+          const listStale = snapshot.dueForRelist && diskNotes !== null && notes !== snapshot.notesAtSnapshot
+          const gotFreshList = snapshot.dueForRelist && diskNotes !== null && !listStale
+          if (gotFreshList) lastFullListAt = Date.now()
           const diskActiveLastModified = await statNote(snapshot.folder, activeName)
           const check = classifyDiskCheck({
             knownNotes: notes,
-            diskNotes: diskNotes && !listStale ? diskNotes : notes,
+            diskNotes: gotFreshList ? (diskNotes as string[]) : notes,
             knownLastModified: lastModified,
             diskActiveLastModified,
             dirty,

@@ -295,6 +295,37 @@ describe("listNotes (AC-5, AC-6)", () => {
     expect(probe.peak()).toBeGreaterThan(1) // genuinely concurrent, not accidentally serialized to 1
   })
 
+  it("aborts with AbortError and stops starting new scans, instead of finishing the whole tree first", async () => {
+    const FOLDER_COUNT = 20
+    let visited = 0
+    const controller = new AbortController()
+
+    function makeSlowSubdir(name: string): FileSystemDirectoryHandle {
+      return {
+        kind: "directory",
+        name,
+        async *values() {
+          visited++
+          if (visited === 2) controller.abort() // abort partway through, not before starting
+          await new Promise<void>((resolve) => setTimeout(resolve, 10))
+        },
+      } as unknown as FileSystemDirectoryHandle
+    }
+    const root = {
+      kind: "directory",
+      name: "",
+      async *values() {
+        for (let i = 0; i < FOLDER_COUNT; i++) yield makeSlowSubdir(`folder-${i}`)
+      },
+    } as unknown as FileSystemDirectoryHandle
+
+    // Sequential (maxConcurrent: 1) so "stops starting new scans" is
+    // unambiguous — at most one more scan (already queued) completes after
+    // the abort, never the rest of the tree.
+    await expect(listNotes(root, 1, controller.signal)).rejects.toMatchObject({ name: "AbortError" })
+    expect(visited).toBeLessThan(FOLDER_COUNT)
+  })
+
   it("honors an explicit maxConcurrent — 1 means fully sequential", async () => {
     const probe = makeConcurrencyProbe(12)
     await listNotes(probe.root, 1)

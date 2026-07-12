@@ -2349,3 +2349,33 @@ Not yet re-measured on a real device (no new `?debug` capture since this landed)
 is what confirms whether this closes the remaining gap or whether the contention is dominated by
 something concurrency alone can't fix (e.g. the read itself, or `open()`'s own internal contention
 between its listing and its speculative read, which this change doesn't touch).
+
+## Abandon an in-flight relist as soon as a foreground action starts (cooperative, not a true cancel)
+A second real-device `?debug` capture (concurrency=1 landed but not yet re-tested) prompted the
+user to ask directly: since the poll's relist is cyclical anyway, why not cancel it? Worth being
+precise about what's actually possible here: the File System Access API's directory iteration
+(`values()`) has no `AbortSignal` — there is no way to truly abort a scan already running at the
+platform level. A scan that's *in flight right now* keeps running (and keeps contending for
+whatever the phone's storage layer is bottlenecked on) no matter what our own JS does.
+What *is* possible, and does help: stop starting *new* scans the moment something more important
+shows up. With `POLL_RELIST_CONCURRENCY = 1`, at most one folder's scan is ever active during a
+poll relist — so "stop starting new ones" shrinks the contention window from "the rest of the whole
+tree" down to "whatever's already in flight for this one folder," which is the best available
+without platform support.
+Implementation: `listNotes` takes an optional `AbortSignal`; `collect` checks it before acquiring a
+semaphore slot and again right after (in case it went stale while queued), rejecting with a
+`DOMException("AbortError")` — same convention as `fetch()` — rather than ever returning a
+silently-truncated listing that could be mistaken for the real disk state. `refreshFromDisk` creates
+an `AbortController` for its relist and catches that specific error, folding "aborted" into the same
+bucket as the existing "stale, dropped" case (no apply, no throttle-clock bump, next tick retries).
+Every foreground, user-initiated operation (`open`, `switchTo`, `addNote`, `removeNote`,
+`renameActive`) calls `abortPendingRelist()` — a no-op if nothing is in flight — right when it's
+invoked, before even entering the `serialize()` queue, so the signal fires the instant the user
+acts, not after the poll's own bookkeeping gets around to noticing. Deliberately *not* added to
+`checkDisk`/`probeDisk` — that path is a test-only detection seam the app itself never calls (see
+several earlier entries in this log); extending it would add surface with no real behavior to
+protect.
+Two new tests: `note.test.ts` proves an abort mid-walk actually stops starting new scans (visited
+count stays well short of the full tree, confirmed with a naive "check once at the top" mutation
+that this catches); `note-controller.test.ts` proves `switchTo` aborts an in-flight relist's signal
+synchronously — confirmed failing without the `abortPendingRelist()` call.
