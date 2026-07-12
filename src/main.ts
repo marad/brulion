@@ -375,6 +375,27 @@ controller = createNoteController(view, {
     conflictDiff?.destroy()
     conflictDiff = null
   },
+  onPreviewReady: (path) => {
+    // The guessed active note's content is already showing (see
+    // note-controller.ts) — on a large vault the full listing behind it can
+    // still take several seconds, and none of that gates *this*. Reveal the
+    // workspace now instead of holding the loading screen over an
+    // already-known answer; the sidebar stays whatever it was until the real
+    // onListChanged below populates it (a few seconds later, at most).
+    if (workspaceShown) return // already showing (e.g. this is a vault switch, not first paint)
+    workspaceShown = true
+    loadingEl.hidden = true
+    showWorkspace({
+      welcome: welcomeEl,
+      sidebar: sidebarEl,
+      toggleSidebar: toggleSidebarEl,
+      settings: openSettingsEl,
+      identity: noteIdentityEl,
+      resizer: sidebarResizerEl,
+      actionBar: actionBarEl,
+    })
+    identity.update(path)
+  },
   onListChanged: (notes, active) => {
     // A folder is open — swap the welcome hero for the workspace and reveal the
     // in-note header controls (FEAT-0031). The collapse preference (a CSS class on

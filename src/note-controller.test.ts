@@ -147,6 +147,84 @@ describe("open", () => {
     expect(view.state.doc.toString()).toBe("real start") // not the wrongly-guessed content
   })
 
+  it("shows the guessed note's content and fires onPreviewReady before the listing completes", async () => {
+    const view = mountView()
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "preview body", lastModified: 1 })
+    let resolveListing: (names: string[]) => void = () => {}
+    listNotes.mockReturnValue(new Promise((resolve) => (resolveListing = resolve)))
+    const onPreviewReady = vi.fn()
+    const controller = createNoteController(view, { onPreviewReady })
+
+    const opening = controller.open(DIR)
+    await vi.waitFor(() => expect(onPreviewReady).toHaveBeenCalledWith("start.md"))
+    // Showing already, well before the listing (and thus the folder's
+    // validity) is confirmed.
+    expect(view.state.doc.toString()).toBe("preview body")
+
+    resolveListing(["start.md"])
+    await opening
+  })
+
+  it("reverts the preview if the listing then fails (a dead vault)", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["apple.md", "start.md"])
+    readNote.mockResolvedValue({ content: "apple body", lastModified: 5 })
+    loadActiveNote.mockResolvedValue("apple.md")
+    const controller = createNoteController(view)
+    await controller.open(DIR) // a real, previously-open folder
+    expect(view.state.doc.toString()).toBe("apple body")
+
+    // A second, dead folder: the guess reads fine, but the listing fails.
+    const DEAD = {} as FileSystemDirectoryHandle
+    readNote.mockResolvedValue({ content: "dead vault's stale guess", lastModified: 1 })
+    let rejectListing: (err: Error) => void = () => {}
+    listNotes.mockReturnValue(new Promise((_resolve, reject) => (rejectListing = reject)))
+
+    const opening = controller.open(DEAD)
+    await vi.waitFor(() => expect(view.state.doc.toString()).toBe("dead vault's stale guess"))
+
+    rejectListing(new Error("NotFoundError"))
+    await expect(opening).rejects.toThrow()
+
+    // Back to exactly what was open before — the guarantee an existing test
+    // already covers for the non-preview path, now also true with a preview
+    // that had already painted over it.
+    expect(view.state.doc.toString()).toBe("apple body")
+  })
+
+  it("does not fire onPreviewReady when the speculative read itself fails", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    // Only the speculative attempt fails (a transient blip); the real read
+    // `load()` falls back to once the listing confirms the guess succeeds.
+    readNote.mockRejectedValueOnce(new Error("boom")).mockResolvedValue({ content: "body", lastModified: 1 })
+    const onPreviewReady = vi.fn()
+    const controller = createNoteController(view, { onPreviewReady })
+
+    await controller.open(DIR)
+
+    expect(onPreviewReady).not.toHaveBeenCalled()
+  })
+
+  it("skips a redundant editor redraw once the listing confirms an already-previewed guess", async () => {
+    const view = mountView()
+    loadActiveNote.mockResolvedValue("start.md")
+    listNotes.mockResolvedValue(["start.md"])
+    readNote.mockResolvedValue({ content: "settled body", lastModified: 1 })
+    const dispatchSpy = vi.spyOn(view, "dispatch")
+    const controller = createNoteController(view)
+
+    await controller.open(DIR)
+
+    expect(view.state.doc.toString()).toBe("settled body")
+    // The preview and the confirming activate() both wanted to show the same
+    // content — only one dispatch should have actually replaced the buffer.
+    const bufferReplacements = dispatchSpy.mock.calls.filter(([spec]) => "changes" in spec)
+    expect(bufferReplacements).toHaveLength(1)
+  })
+
   it("doesn't serve a different vault's cached content for a same-named note (M33 multi-vault)", async () => {
     const view = mountView()
     const VAULT_A = {} as FileSystemDirectoryHandle

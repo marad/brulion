@@ -151,6 +151,17 @@ export interface NoteControllerOptions {
   onConflictResolved?: () => void
   /** Called whenever the note list or the active note changes. */
   onListChanged?: (notes: string[], active: string) => void
+  /**
+   * Called from `open()` as soon as the *guessed* active note's content is
+   * ready to show — before the full folder listing (and thus `notes`/the
+   * sidebar) is confirmed. On a large vault the listing alone can take
+   * several seconds; nothing about showing this one note's content depends
+   * on it. Lets the UI reveal the workspace and the editor immediately
+   * instead of holding a loading screen over an already-known answer. Not
+   * fired if the guess fails to read, and reverted automatically (the editor
+   * text only, nothing else) if the listing itself then fails.
+   */
+  onPreviewReady?: (path: string) => void
   /** Autosave debounce in ms (default 600). */
   debounceMs?: number
 }
@@ -333,7 +344,14 @@ export function createNoteController(
     const note = cached ?? prefetched ?? (await track(`readNote: ${name}`, () => readNote(folder, name)))
     if (!cached) contentCache.set(name, note)
     lastModified = note.lastModified
-    trackSync("setEditorText", () => setEditorText(view, note.content))
+    // Skip the redraw if the buffer already shows this exact content — e.g.
+    // open()'s speculative preview already rendered it correctly, and this is
+    // just the confirming call once the listing succeeds. Avoids a redundant
+    // full-document replace (a stray undo-history entry, a wasted decoration
+    // rebuild) for what amounts to a no-op.
+    if (view.state.doc.toString() !== note.content) {
+      trackSync("setEditorText", () => setEditorText(view, note.content))
+    }
     dirty = false // discard any stray edit typed on the old content during the read
   }
 
@@ -477,13 +495,14 @@ export function createNoteController(
       return serialize(async () => {
         if (dir) await flushAndWait() // re-picking a folder: don't lose the open note
 
-        // The full recursive listing is the slow, vault-size-proportional part;
-        // reading one guessed-at file is not. Start both at once instead of
-        // reading only after the listing settles — by the time the listing
-        // confirms the folder is valid, the guessed note's content is usually
-        // already in hand. Purely I/O: nothing here touches `dir`/`notes` or the
-        // editor, so a listNotes failure below still leaves everything exactly as
-        // it was (see the safety comment kept on that await).
+        // The full recursive listing is the slow, vault-size-proportional part
+        // (several seconds on a large real-device vault); reading one
+        // guessed-at file is not. Start both at once instead of reading only
+        // after the listing settles — by the time the listing confirms the
+        // folder is valid, the guessed note's content is usually already in
+        // hand. Purely I/O: nothing here touches `dir`/`notes` or the editor,
+        // so a listNotes failure below still leaves everything exactly as it
+        // was (see the safety comment kept on that await).
         const notesPromise = track("open: listNotes", () => listNotes(folder))
         const persisted = await loadActiveNote()
         const guess = persisted ?? SEED_NOTE
@@ -491,14 +510,39 @@ export function createNoteController(
           () => null,
         )
 
+        // Preview the guess as soon as it's ready, instead of making the user
+        // watch a loading screen for however long the listing takes on top of
+        // that. Pure UI: `setEditorText` never marks the buffer dirty or
+        // touches saved state, so there is nothing to unwind if the guess
+        // later turns out wrong — `activate` below corrects the display to
+        // the real note once the listing confirms it either way. `openFailed`
+        // guards against the read resolving *after* the listing has already
+        // failed (rare, but otherwise this would paint over the revert below).
+        const previousDocText = view.state.doc.toString()
+        let openFailed = false
+        void speculativeRead.then((note) => {
+          if (note && !openFailed) {
+            trackSync("setEditorText (preview)", () => setEditorText(view, note.content))
+            opts.onPreviewReady?.(guess)
+          }
+        })
+
         // Commit `dir`/`notes` only once the listing succeeds: a folder that's
         // gone from disk (a dead vault) makes listNotes throw, and committing
         // `dir` before that would leave the controller half-pointed at the dead
         // folder (the poller would then probe it). On failure the previously
         // open folder stays intact, so a failed vault switch falls cleanly back
-        // to it — the speculative read above never touched that state, so there
-        // is nothing to unwind.
-        const folderNotes = await notesPromise
+        // to it — undo the preview above if it already painted over that.
+        let folderNotes: string[]
+        try {
+          folderNotes = await notesPromise
+        } catch (err) {
+          openFailed = true
+          if (view.state.doc.toString() !== previousDocText) {
+            trackSync("setEditorText (revert)", () => setEditorText(view, previousDocText))
+          }
+          throw err
+        }
         dir = folder
         notes = folderNotes
         // The cache is keyed by relative path only, not by folder — reused

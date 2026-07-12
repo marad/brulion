@@ -2451,3 +2451,42 @@ Not yet re-measured on the real device — the next `?debug` capture is what tel
 was the actual remaining lever, or whether something else (the single in-flight scan itself, on
 this particular phone, being inherently slow regardless of how little of the tree it covers) is the
 true floor.
+
+## The sweep confirmed itself on a real device — the next bottleneck was the loading screen, not I/O
+A fresh `?debug` capture (after reloading — the first capture that day was accidentally against a
+stale, un-reloaded tab still running pre-sweep code, a reminder that a deploy doesn't reach an
+already-open tab) showed the sweep working as designed: `poll: sweep tick` entries at ~400-440ms
+each, and every `readNote` for a note switch back in the ~65-140ms range with none of the
+400-650ms outliers the last two rounds kept hitting. The remaining, *different* complaint the user
+raised: first load of a large vault still feels slow, because the loading screen (and everything
+behind it) doesn't lift until the *entire* listing finishes — 2.8-4.4s on this vault — even though
+the guessed active note's own content is usually ready in under a second.
+Root cause: `onListChanged` is the single callback that both (a) reveals the workspace / hides the
+loading screen and (b) reports the confirmed note list — so revealing the UI was accidentally
+coupled to the slowest part of `open()`, the part the speculative-read optimization was already
+racing past.
+Fix: added `onPreviewReady(path)` — fired from `open()` as soon as the speculative read settles,
+strictly *before* the listing is known to have succeeded. `main.ts`'s handler reveals the workspace
+and updates the header's note-name display, nothing else (no sidebar render, no route sync, no
+recency tracking — those still wait for the real, confirmed `onListChanged`, since they depend on
+the full `notes` list). Guarded with `if (workspaceShown) return` so this only fires the very first
+time (page load) — a vault *switch* still waits for the real confirmation before touching anything
+visible, since switching away from an already-working vault has more to lose than first paint does.
+Two follow-on concerns, both handled:
+- **Failure**: if the listing then fails (a dead vault), the previewed content must revert — the
+  existing "editor unchanged on a failed open" guarantee, now also covering the case where a
+  preview already painted over it. An `openFailed` flag guards against the speculative read
+  resolving *after* the failure was already handled (it would otherwise paint over the revert).
+- **Double-render**: when the guess turns out right (the common case), `activate()` would otherwise
+  call `setEditorText` a second time with identical content — a redundant full-document replace
+  (a stray undo-history entry, a wasted decoration rebuild). `load()` now skips the redraw when the
+  buffer already shows the exact content about to be set — a small, generally-useful guard, not
+  specific to previewing.
+Four new tests cover: the preview firing (and the editor showing content) before the listing
+settles; the revert on a failed listing; that a failed *speculative read* alone doesn't fire the
+preview; and (via `vi.spyOn(view, "dispatch")`) that the right-guess case dispatches exactly one
+buffer replacement, not two. Each confirmed failing against the specific behavior it protects
+before being fixed. Measured on the 2018-note desktop benchmark: editor content visible at 218ms,
+essentially tied with the 265ms full listing on desktop (where the listing itself is already fast)
+— the real payoff is on the phone, where that listing was measured at 2.8-4.4s and the guessed
+note's read alone takes well under a second.
