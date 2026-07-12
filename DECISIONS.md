@@ -2322,3 +2322,30 @@ mobile robustness, since the whole point of parallelizing this in the first plac
 real device's contention apparently doesn't reward past a point. `4` is a first, reasonable guess,
 not derived from more device data than this one log — worth revisiting if further `?debug` captures
 say otherwise.
+
+## The poll's relist runs at concurrency 1 — the foreground default (4) still contended
+A second real `?debug` capture, after the concurrency cap above shipped: contention dropped a lot
+(20x → ~6-7x — `readNote` for an unrelated note went from a clean ~75ms baseline to ~490ms, not the
+earlier 1.5-2s) but didn't disappear. The user's own instinct: since the poll's relist is cyclical
+and best-effort anyway, why not "cancel" it around a user action? Literal cancellation isn't a real
+primitive here — the File System Access API's directory iteration (`values()`) has no `AbortSignal`,
+so there's nothing to actually abort mid-scan; a cooperative "stop scheduling more work" flag
+wouldn't help either, since whatever native I/O is *already* in flight keeps running (and
+contending) regardless of whether our own JS stops reacting to it.
+What actually fits: the poll's relist is the *only* `listNotes` caller nothing ever waits on — it
+never blocks anything (that's the whole point of the two-slot `refreshFromDisk` split from earlier
+in this session) and is inherently best-effort (external add/remove detection already tolerates up
+to 15s of lag). A foreground `open()`/`addNote()`/etc., by contrast, has a real user waiting, so
+some concurrency is worth its contention cost. Gave `listNotes` an optional `maxConcurrent` param
+(default `MAX_CONCURRENT_WALKS`, i.e. unchanged for every foreground caller) and had the poll's two
+call sites (`probeDisk`, `refreshFromDisk`'s snapshot slot) pass `POLL_RELIST_CONCURRENCY = 1` —
+fully sequential, the smallest possible footprint, since nothing is watching it finish faster.
+Two new tests: `note.test.ts` confirms `maxConcurrent: 1` genuinely serializes (peak concurrency
+observed = 1, not just "≤1" — proves the parameter is honored, not just accepted and ignored);
+`note-controller.test.ts` asserts the poll's `listNotes` call (both via `checkDisk` and, since
+`checkDisk` itself is a test-only seam nothing in the app calls, via `refreshFromDisk` — the actual
+path the production poller drives) passes `(dir, 1)` while `open()`'s call passes just `(dir)`.
+Not yet re-measured on a real device (no new `?debug` capture since this landed) — the next capture
+is what confirms whether this closes the remaining gap or whether the contention is dominated by
+something concurrency alone can't fix (e.g. the read itself, or `open()`'s own internal contention
+between its listing and its speculative read, which this change doesn't touch).

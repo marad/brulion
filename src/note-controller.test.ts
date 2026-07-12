@@ -869,6 +869,23 @@ describe("checkDisk (AC-4..AC-7)", () => {
     expect(result.listChanged).toEqual(["new.md", "start.md"])
   })
 
+  it("relists at a lower concurrency than a foreground open — nothing waits on the poll's own scan", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, { debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    expect(listNotes).toHaveBeenCalledWith(DIR) // open(): default (foreground) concurrency
+
+    listNotes.mockClear()
+    await controller.checkDisk()
+
+    expect(listNotes).toHaveBeenCalledWith(DIR, 1) // the poll's relist: sequential
+  })
+
   it("reports a note removed from the folder", async () => {
     const view = mountView()
     listNotes.mockResolvedValue(["a.md", "start.md"])
@@ -996,6 +1013,23 @@ describe("checkDisk (AC-4..AC-7)", () => {
 })
 
 describe("refreshFromDisk (FEAT-0014)", () => {
+  it("relists at a lower concurrency than a foreground open (the real poller's own path)", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, { debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    expect(listNotes).toHaveBeenCalledWith(DIR) // open(): default (foreground) concurrency
+
+    listNotes.mockClear()
+    await controller.refreshFromDisk()
+
+    expect(listNotes).toHaveBeenCalledWith(DIR, 1) // the poll's relist: sequential
+  })
+
   it("adopts an externally added note into the list, leaving the editor (AC-1)", async () => {
     const view = mountView()
     const onListChanged = vi.fn()

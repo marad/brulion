@@ -20,6 +20,20 @@ const SEED_NOTE = "start.md"
  */
 const FULL_RELIST_MS = 15_000
 
+/**
+ * `listNotes` concurrency for the poll's relist specifically: fully sequential.
+ * A real-device `?debug` capture showed an unrelated foreground `readNote`
+ * ballooning from ~75ms to ~490ms when it happened to run alongside a poll
+ * relist even at the foreground default (4) — the device's File System Access
+ * implementation appears to serialize/contend on concurrent I/O at a lower
+ * level than our own queue. Nothing is waiting on the poll's own listing (it's
+ * best-effort, cyclical, and never blocks anything — see the two-slot split in
+ * `refreshFromDisk`), so there is no reason for it to compete for I/O as hard
+ * as a foreground open() does; running it one folder at a time makes it the
+ * gentlest possible neighbor to whatever the user is doing at the same moment.
+ */
+const POLL_RELIST_CONCURRENCY = 1
+
 /** The outcome of {@link NoteController.addNote}. */
 export type AddNoteResult = { ok: true } | { ok: false; reason: string }
 
@@ -289,7 +303,7 @@ export function createNoteController(
     const dueForRelist = isDueForRelist()
     let diskNotes = notes
     if (dueForRelist) {
-      diskNotes = await track("poll: listNotes", () => listNotes(folder))
+      diskNotes = await track("poll: listNotes", () => listNotes(folder, POLL_RELIST_CONCURRENCY))
       lastFullListAt = Date.now()
     }
     const diskActiveLastModified = await statNote(folder, activeName)
@@ -592,7 +606,7 @@ export function createNoteController(
         if (!snapshot) return
 
         const diskNotes = snapshot.dueForRelist
-          ? await track("poll: listNotes", () => listNotes(snapshot.folder))
+          ? await track("poll: listNotes", () => listNotes(snapshot.folder, POLL_RELIST_CONCURRENCY))
           : null
 
         return serialize(async () => {

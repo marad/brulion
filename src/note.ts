@@ -87,8 +87,13 @@ export async function statNote(
   return (await handle.getFile()).lastModified
 }
 
-/** How many folders `collect` scans at once, across the *whole* tree — not per
- * level, and not unbounded. See the comment on `collect` for why. */
+/** Default concurrency for a foreground `listNotes` call (folder open, a
+ * create/delete/rename refreshing the list) — someone is waiting on it, so
+ * some parallelism is worth the contention it costs. See the comment on
+ * `collect` for why it's capped at all. The background poll's periodic
+ * relist passes its own, lower `maxConcurrent` (see `note-controller.ts`):
+ * nothing is waiting on *that* one, so it can afford to be the gentlest
+ * possible neighbor to whatever the user is doing at the same moment. */
 const MAX_CONCURRENT_WALKS = 4
 
 /** Limits how many callers hold a "slot" at once; anyone past the limit awaits
@@ -117,12 +122,16 @@ class Semaphore {
 }
 
 /** Every `.md` file in the tree as a `/`-separated relative path, sorted
- * case-insensitively by full path. Directories are descended into, not listed. */
+ * case-insensitively by full path. Directories are descended into, not listed.
+ * `maxConcurrent` (default {@link MAX_CONCURRENT_WALKS}) bounds how many
+ * directory scans run at once — lower it for background/best-effort callers
+ * that shouldn't compete hard for I/O with whatever the user is doing. */
 export async function listNotes(
   dir: FileSystemDirectoryHandle,
+  maxConcurrent: number = MAX_CONCURRENT_WALKS,
 ): Promise<string[]> {
   const paths: string[] = []
-  await collect(dir, "", paths, new Semaphore(MAX_CONCURRENT_WALKS))
+  await collect(dir, "", paths, new Semaphore(maxConcurrent))
   return paths.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
 }
 

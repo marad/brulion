@@ -259,14 +259,13 @@ describe("listNotes (AC-5, AC-6)", () => {
     expect(await listNotes(folder.dir)).toEqual([])
   })
 
-  it("caps concurrent directory scans instead of firing every subfolder at once", async () => {
-    const FOLDER_COUNT = 12
+  // Builds a tree of `folderCount` sibling folders whose values() stays "in
+  // flight" for a fixed short delay — tracks concurrent/peak scans so the
+  // true peak concurrency across a listNotes() run is observable regardless
+  // of scheduling order.
+  function makeConcurrencyProbe(folderCount: number): { root: FileSystemDirectoryHandle; peak: () => number } {
     let active = 0
     let peak = 0
-
-    // A directory handle whose values() stays "in flight" for a fixed short
-    // delay (tracked via active/peak), so the true peak concurrency across
-    // the whole run is observable regardless of scheduling order.
     function makeControlledSubdir(name: string): FileSystemDirectoryHandle {
       return {
         kind: "directory",
@@ -279,19 +278,27 @@ describe("listNotes (AC-5, AC-6)", () => {
         },
       } as unknown as FileSystemDirectoryHandle
     }
-
     const root = {
       kind: "directory",
       name: "",
       async *values() {
-        for (let i = 0; i < FOLDER_COUNT; i++) yield makeControlledSubdir(`folder-${i}`)
+        for (let i = 0; i < folderCount; i++) yield makeControlledSubdir(`folder-${i}`)
       },
     } as unknown as FileSystemDirectoryHandle
+    return { root, peak: () => peak }
+  }
 
-    await listNotes(root)
+  it("caps concurrent directory scans instead of firing every subfolder at once", async () => {
+    const probe = makeConcurrencyProbe(12)
+    await listNotes(probe.root)
+    expect(probe.peak()).toBeLessThanOrEqual(4)
+    expect(probe.peak()).toBeGreaterThan(1) // genuinely concurrent, not accidentally serialized to 1
+  })
 
-    expect(peak).toBeLessThanOrEqual(4)
-    expect(peak).toBeGreaterThan(1) // genuinely concurrent, not accidentally serialized to 1
+  it("honors an explicit maxConcurrent — 1 means fully sequential", async () => {
+    const probe = makeConcurrencyProbe(12)
+    await listNotes(probe.root, 1)
+    expect(probe.peak()).toBe(1)
   })
 })
 
