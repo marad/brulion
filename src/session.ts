@@ -16,6 +16,7 @@ const LEGACY_RECENCY_KEY = "brulion:recency"
 const LEGACY_EXPANDED_KEY = "brulion:expanded-folders"
 const recencyKey = (vaultId: string) => `brulion:recency:${vaultId}`
 const expandedKey = (vaultId: string) => `brulion:expanded-folders:${vaultId}`
+const noteListKey = (vaultId: string) => `brulion:note-list:${vaultId}`
 const MODE = { mode: "readwrite" } as const
 
 /** Remember which note was last active, so a reload returns to it. */
@@ -77,6 +78,22 @@ export function saveRecency(vaultId: string, paths: readonly string[]): Promise<
 /** `vaultId`'s persisted MRU note list; an empty array when none was stored. */
 export async function loadRecency(vaultId: string): Promise<string[]> {
   return (await get<string[]>(recencyKey(vaultId))) ?? []
+}
+
+/**
+ * Persist `vaultId`'s last-known complete note list, so a returning vault can paint
+ * a plausible sidebar immediately on attach instead of an empty (or stale, previous
+ * vault's) one while the real listing is still in flight. A paint hint only — never
+ * treated as authoritative; the real listing (partial or complete) always supersedes
+ * it once it lands.
+ */
+export function saveNoteList(vaultId: string, notes: readonly string[]): Promise<void> {
+  return set(noteListKey(vaultId), [...notes])
+}
+
+/** `vaultId`'s cached note list, or `[]` when none was stored (never opened before). */
+export async function loadNoteList(vaultId: string): Promise<string[]> {
+  return (await get<string[]>(noteListKey(vaultId))) ?? []
 }
 
 /**

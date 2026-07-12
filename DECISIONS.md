@@ -2533,3 +2533,44 @@ Test suite: every test that configured `listNotes.mockResolvedValue([...])` pure
 still-real, unchanged `listNotes` calls — those were left as-is). Not yet re-measured on the real
 device — the next `?debug` capture is what confirms the sidebar now populates progressively there,
 the way the 2018-note desktop benchmark already showed it doing.
+
+## The sidebar paints from a per-vault cached note list on attach — a hint, never authoritative
+The follow-up real-device capture confirmed the sweep migration worked (`renderNoteList` at 1129ms
+instead of ~3216ms, `setEditorText (preview)` at 480ms). The user's next question: since
+`saveRecency`/`loadRecency` already cache a per-vault note list (its MRU order) in IndexedDB via
+`session.ts`, why not cache the *whole* list too, paint the sidebar from it immediately on attach,
+and let the real listing (via the sweep this session already built) correct it — same principle as
+letting the automatic poll catch up on any external change, just applied to "we haven't looked yet
+this session" instead of "something changed since we last looked."
+Added `saveNoteList`/`loadNoteList` to `session.ts`, mirroring `saveRecency`/`loadRecency` exactly
+(same per-vault key shape, same `[]` default). Deliberately kept out of `note-controller.ts`: the
+controller already owns exactly one piece of cross-reload persistence (the active note, global, via
+`saveActiveNote`/`loadActiveNote`) and has no notion of "vault id" at all — recency and expanded
+folders are already main.ts-level, per-vault session concerns for the same reason, so this fits the
+same seam rather than growing the controller's responsibilities or its public `open()` signature.
+Wired into `main.ts`: `attachVaultNow` loads `cachedNoteList` for the vault being attached (alongside
+`recency`/`expandedFolders`, including the same rollback-on-failed-attach snapshot). `onPreviewReady`
+paints the sidebar from it — using the *guessed* active note (the `path` it's already given) as the
+highlighted row — before the real listing is known to have found anything. `onListChanged` persists
+the fresh, authoritative list back to the cache whenever it actually changes (`!listUnchanged`, same
+gate already used for the recency touch).
+Deliberately did **not** move the workspace-reveal gate to fire from cache alone (i.e., still gated on
+`onPreviewReady`, which only fires once a real disk read has already succeeded): a dead vault (folder
+deleted/moved since last visit) must never flash a stale sidebar with nothing live behind it, and
+`open()` would then need new revert plumbing (undoing an already-shown workspace) that doesn't exist
+today — the existing dead-vault guarantee only ever had to revert *editor text*, not *sidebar
+visibility*. Painting the sidebar strictly inside the already-gated `onPreviewReady` callback keeps
+that invariant: cache paints only happen once we know the vault is genuinely reachable.
+Also fixed a related bug in passing: `onPreviewReady`'s early-`return` — meant only to skip
+re-*revealing* an already-visible workspace — was gating the whole callback body, so a vault *switch*
+(not just first load) never got any of this: the sidebar kept showing the *previous* vault's list
+until the new vault's real listing landed. Split the cache-paint step out from under that guard so it
+runs on every attach (first load and switches alike); only the reveal/`showWorkspace` call stays gated
+on first-paint-only.
+Refactored the three `renderNoteList` row handlers (`onSelect`/`onDelete`/`onToggleFolder`) out of the
+inline object literal in `onListChanged` into a shared `noteListHandlers` const, since the cache-paint
+call site now needs the identical handlers — one definition, not two copies to keep in sync.
+Four new tests in `session.test.ts` mirror the `saveRecency`/`loadRecency` suite exactly (save under
+the vault-scoped key, load it back, default to `[]`, keyed per vault) — confirmed each fails against a
+deliberately mistyped key before being fixed. `main.ts` itself stays outside the unit test net (as
+every other wiring change here has been) — verified via the full e2e suite instead.

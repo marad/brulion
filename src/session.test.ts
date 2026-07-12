@@ -13,6 +13,8 @@ import {
   loadSidebarWidth,
   saveRecency,
   loadRecency,
+  saveNoteList,
+  loadNoteList,
   migrateLegacySession,
 } from "./session"
 
@@ -149,6 +151,31 @@ describe("saveRecency / loadRecency (FEAT-0039, per-vault FEAT-0059)", () => {
     await saveRecency("vaultB", ["y.md"])
     expect(set).toHaveBeenCalledWith("brulion:recency:vaultA", ["x.md"])
     expect(set).toHaveBeenCalledWith("brulion:recency:vaultB", ["y.md"])
+  })
+})
+
+describe("saveNoteList / loadNoteList (instant-sidebar paint hint)", () => {
+  it("saves the list under the vault-scoped key", async () => {
+    await saveNoteList("vault1", ["b.md", "a.md"])
+    expect(set).toHaveBeenCalledWith("brulion:note-list:vault1", ["b.md", "a.md"])
+  })
+
+  it("loads the stored list from the vault-scoped key", async () => {
+    get.mockResolvedValue(["b.md", "a.md"])
+    expect(await loadNoteList("vault1")).toEqual(["b.md", "a.md"])
+    expect(get).toHaveBeenCalledWith("brulion:note-list:vault1")
+  })
+
+  it("defaults to an empty list when nothing is stored", async () => {
+    get.mockResolvedValue(undefined)
+    expect(await loadNoteList("vault1")).toEqual([])
+  })
+
+  it("keys distinct vaults separately", async () => {
+    await saveNoteList("vaultA", ["x.md"])
+    await saveNoteList("vaultB", ["y.md"])
+    expect(set).toHaveBeenCalledWith("brulion:note-list:vaultA", ["x.md"])
+    expect(set).toHaveBeenCalledWith("brulion:note-list:vaultB", ["y.md"])
   })
 })
 

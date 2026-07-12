@@ -51,6 +51,8 @@ import {
   loadSidebarWidth,
   saveRecency,
   loadRecency,
+  saveNoteList,
+  loadNoteList,
   migrateLegacySession,
   hasPermission,
   requestAccess,
@@ -348,6 +350,12 @@ let conflictDiff: ConflictDiff | null = null
 // the tree's first paint, so it matches the saved state instead of flashing fully
 // collapsed.
 let expandedFolders = new Set<string>()
+// This vault's last-known complete note list (session.ts), loaded in attachVault
+// before the first paint — a paint hint only, used to render a plausible sidebar
+// immediately on attach (see onPreviewReady) instead of an empty or stale one while
+// the real listing is still in flight. Never treated as authoritative: the real
+// onListChanged below always supersedes it, whether it lands complete or partial.
+let cachedNoteList: string[] = []
 // Drag-to-resize the sidebar (FEAT-0044): restore the saved width onto the
 // sidebar's flex-basis var and persist the new width on each drag end. The handle
 // is revealed with the workspace (showWorkspace) and hidden by CSS while the
@@ -359,6 +367,27 @@ const sidebarWidthReady = loadSidebarWidth().then((px) => {
     onChange: (width) => void saveSidebarWidth(width),
   })
 })
+// Shared row handlers for every renderNoteList call (the real onListChanged render
+// and the cache-paint hint in onPreviewReady below) — kept in one place so both
+// stay in sync.
+const noteListHandlers = {
+  onSelect: (name: string) => {
+    void controller.switchTo(name)
+    dismissDrawerIfMobile() // narrow layout: close the drawer to reveal the note (FEAT-0051)
+  },
+  onDelete: (name: string) => {
+    if (window.confirm(`Delete "${displayName(name)}"? This removes the file from your folder.`)) {
+      void controller.removeNote(name)
+    }
+  },
+  onToggleFolder: (path: string, collapsed: boolean) => {
+    // The persisted set holds expanded folders (FEAT-0043), so invert:
+    // collapsing drops the path, expanding adds it.
+    if (collapsed) expandedFolders.delete(path)
+    else expandedFolders.add(path)
+    void saveExpandedFolders(currentVaultId, expandedFolders)
+  },
+}
 controller = createNoteController(view, {
   onConflict: (versions) => {
     // Modal: show the choice and lock the editor; navigation is blocked in the
@@ -380,8 +409,19 @@ controller = createNoteController(view, {
     // note-controller.ts) — on a large vault the full listing behind it can
     // still take several seconds, and none of that gates *this*. Reveal the
     // workspace now instead of holding the loading screen over an
-    // already-known answer; the sidebar stays whatever it was until the real
-    // onListChanged below populates it (a few seconds later, at most).
+    // already-known answer.
+    //
+    // Paint the sidebar from this vault's last-known list (session.ts) rather
+    // than leaving it empty (first load) or showing the *previous* vault's
+    // list (a switch) for however long the real listing takes — a paint hint
+    // only, always superseded by the real onListChanged below once the fresh
+    // listing (complete or partial) lands. Runs on every attach, not just
+    // first paint, since a vault switch has the same stale-sidebar problem.
+    if (cachedNoteList.length > 0) {
+      trackSync("renderNoteList (cache)", () =>
+        renderNoteList(listEl, cachedNoteList, path, noteListHandlers, expandedFolders),
+      )
+    }
     if (workspaceShown) return // already showing (e.g. this is a vault switch, not first paint)
     workspaceShown = true
     loadingEl.hidden = true
@@ -436,32 +476,9 @@ controller = createNoteController(view, {
         row.toggleAttribute("aria-current", isActive)
       }
     } else {
-      trackSync("renderNoteList", () => renderNoteList(
-        listEl,
-        notes,
-        active,
-        {
-          onSelect: (name) => {
-            void controller.switchTo(name)
-            dismissDrawerIfMobile() // narrow layout: close the drawer to reveal the note (FEAT-0051)
-          },
-          onDelete: (name) => {
-            if (
-              window.confirm(`Delete "${displayName(name)}"? This removes the file from your folder.`)
-            ) {
-              void controller.removeNote(name)
-            }
-          },
-          onToggleFolder: (path, collapsed) => {
-            // The persisted set holds expanded folders (FEAT-0043), so invert:
-            // collapsing drops the path, expanding adds it.
-            if (collapsed) expandedFolders.delete(path)
-            else expandedFolders.add(path)
-            void saveExpandedFolders(currentVaultId, expandedFolders)
-          },
-        },
-        expandedFolders,
-      ))
+      trackSync("renderNoteList", () => renderNoteList(listEl, notes, active, noteListHandlers, expandedFolders))
+      cachedNoteList = notes
+      void saveNoteList(currentVaultId, notes) // the fresh, authoritative list — this vault's next attach paints from it
     }
   },
 })
@@ -641,6 +658,7 @@ const attachVaultNow = async (vault: Vault) => {
     vaultId: currentVaultId,
     recency,
     expandedFolders,
+    cachedNoteList,
     settingsDir,
     currentSettings,
   }
@@ -648,6 +666,7 @@ const attachVaultNow = async (vault: Vault) => {
   // currentVaultId pointing at a vault we never actually opened.
   recency = await loadRecency(vault.id)
   expandedFolders = await loadExpandedFolders(vault.id)
+  cachedNoteList = await loadNoteList(vault.id)
   currentVaultId = vault.id
   stampWorkspace(vault.id)
   try {
@@ -661,6 +680,7 @@ const attachVaultNow = async (vault: Vault) => {
     currentVaultId = prev.vaultId
     recency = prev.recency
     expandedFolders = prev.expandedFolders
+    cachedNoteList = prev.cachedNoteList
     settingsDir = prev.settingsDir
     currentSettings = prev.currentSettings
     applySettings(view, currentSettings) // undo the dead folder's settings applied in openNote
