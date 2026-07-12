@@ -2401,3 +2401,53 @@ Not yet re-measured on a real device. This closes the only known remaining gap i
 starting new work" approach; anything still left after this is the truly irreducible cost of
 whichever single `next()` call happens to be in flight the instant the user acts — which cannot be
 closed further without the platform shipping cancellation support for directory iteration.
+
+## The poll's relist is a resumable, budgeted sweep — not one walk of the whole tree
+Two more real-device `?debug` captures after the abort mechanism (both checkpoints) landed: 444ms
+and 629ms — in the same ballpark as before, not shrinking further. Traced the second one: the poll
+had already been running for ~965ms before the click landed, meaning whatever single directory scan
+was in flight at that moment had a long head start — and per the design above, nothing can touch a
+scan already in flight. The remaining lever isn't severity (already minimized) but *how much can be
+"in flight" at any given moment* — which is a direct function of how long a relist attempt runs at
+all. The user asked the right question: do we need to walk the *entire* tree every time?
+Answer: no. `note.ts` gained a resumable primitive — `Sweep` / `startSweep` / `continueSweep` /
+`sweepResult` — a breadth-first walk that can be paused after a time budget (or an abort) and
+resumed later exactly where it left off, instead of `listNotes`'s "always run to completion" model.
+`refreshFromDisk` now keeps one `Sweep` alive across as many poll ticks as it takes (`SWEEP_TICK_BUDGET_MS
+= 400`), only starting a *new* one once the previous fully completes and `FULL_RELIST_MS` has
+elapsed since. `POLL_RELIST_CONCURRENCY`'s sequential walk plus the abort checkpoints still apply
+identically within a sweep — this is a genuinely additive change, not a replacement for them. A
+vault small enough to finish inside one 400ms budget behaves exactly as before (a "sweep" that just
+happens to complete on tick one, no user-visible change); a large vault instead pays ~400ms per
+tick, spread across many ticks, rather than one multi-second walk — for any vault size, capping the
+worst case "how much is in flight when I click" to roughly one budget's worth, not proportional to
+the whole tree.
+Staleness handling carries over unchanged in spirit: `sweepStartNotes` is captured once, when a
+sweep *starts* (not re-captured on continuation ticks), and compared to live `notes` only once the
+sweep *completes* — if something else (an addNote/removeNote/renameActive) refreshed `notes` more
+recently, the sweep's result is dropped, `activeSweep` still clears (ready for a fresh attempt), and
+the throttle clock still doesn't get bumped, so the very next tick starts over for real rather than
+waiting out `FULL_RELIST_MS`.
+Found and fixed a real bug in `continueSweep` while writing its first tests: the budget/abort check
+was placed *before* recording an already-fetched entry, meaning an entry retrieved right at the
+budget boundary was silently discarded rather than kept — a real vault would have quietly lost
+files from the sidebar under just the wrong timing. Moved the check to *after* recording each
+entry, so anything already paid for (a `next()` call that already resolved) is never thrown away;
+only the decision to fetch the *next* one is gated. Confirmed via a resumption test (many small
+budgets, accumulating results across calls) that failed clearly before this fix (missed roughly
+half the tree) and passes after.
+`checkDisk`/`probeDisk` deliberately left as a one-shot `listNotes` call, unchanged — still the
+test-only detection seam the app itself never calls; no reason to add sweep complexity to a path
+with no real behavior to protect.
+Rewrote the `refreshFromDisk` test suite's mocking: `listNotes` is no longer called by this path at
+all (it's fully replaced by `startSweep`/`continueSweep`/`sweepResult`), so every test that used to
+configure `listNotes.mockResolvedValue([...])` to simulate "what the poll discovers" now configures
+`sweepResult.mockReturnValue([...])` instead, with `continueSweep` controlling completion timing.
+One new test (`note-controller.test.ts`) proves a sweep spanning three ticks stays as *one* sweep
+(`startSweep` called once, `continueSweep` three times) and only applies its result once complete
+— confirmed failing (three fresh sweeps instead of one resumed) against a mutation that dropped the
+"don't restart an in-progress sweep" guard.
+Not yet re-measured on the real device — the next `?debug` capture is what tells us whether this
+was the actual remaining lever, or whether something else (the single in-flight scan itself, on
+this particular phone, being inherently slow regardless of how little of the tree it covers) is the
+true floor.

@@ -1,5 +1,16 @@
 import { describe, it, expect } from "vitest"
-import { readNote, saveNote, listNotes, createNote, deleteNote, statNote, moveNote } from "./note"
+import {
+  readNote,
+  saveNote,
+  listNotes,
+  createNote,
+  deleteNote,
+  statNote,
+  moveNote,
+  startSweep,
+  continueSweep,
+  sweepResult,
+} from "./note"
 
 type FileNode = { kind: "file"; content: string; lastModified: number }
 type DirNode = { kind: "directory"; entries: Map<string, Node> }
@@ -354,6 +365,82 @@ describe("listNotes (AC-5, AC-6)", () => {
     const probe = makeConcurrencyProbe(12)
     await listNotes(probe.root, 1)
     expect(probe.peak()).toBe(1)
+  })
+})
+
+describe("Sweep (startSweep/continueSweep/sweepResult)", () => {
+  // A tree of `folderCount` sibling folders, each with one `.md` file, whose
+  // values() takes a fixed short real delay — slow enough that a modest time
+  // budget genuinely can't finish the whole tree in one continueSweep call.
+  function makeSlowTree(folderCount: number): FileSystemDirectoryHandle {
+    function makeSlowSubdir(name: string): FileSystemDirectoryHandle {
+      return {
+        kind: "directory",
+        name,
+        async *values() {
+          await new Promise<void>((resolve) => setTimeout(resolve, 10))
+          yield { kind: "file", name: `${name}.md` } as unknown as FileSystemFileHandle
+        },
+      } as unknown as FileSystemDirectoryHandle
+    }
+    return {
+      kind: "directory",
+      name: "",
+      async *values() {
+        for (let i = 0; i < folderCount; i++) yield makeSlowSubdir(`folder-${i}`)
+      },
+    } as unknown as FileSystemDirectoryHandle
+  }
+
+  it("stops within its time budget instead of running the whole tree in one call", async () => {
+    const root = makeSlowTree(12)
+    const sweep = startSweep(root)
+
+    const complete = await continueSweep(sweep, 25) // enough for a couple of folders, not all 12
+    expect(complete).toBe(false)
+    expect(sweep.pending.length).toBeGreaterThan(0) // real work left, correctly remembered
+  })
+
+  it("resumes across many calls and eventually accumulates the full, correct listing", async () => {
+    const FOLDER_COUNT = 12
+    const root = makeSlowTree(FOLDER_COUNT)
+    const sweep = startSweep(root)
+
+    let complete = false
+    let iterations = 0
+    while (!complete) {
+      complete = await continueSweep(sweep, 15) // small budget — forces multiple resumes
+      iterations++
+      if (iterations > FOLDER_COUNT * 2) throw new Error("sweep never completed — test would hang")
+    }
+
+    expect(iterations).toBeGreaterThan(1) // genuinely took more than one call
+    expect(sweepResult(sweep)).toEqual(
+      Array.from({ length: FOLDER_COUNT }, (_, i) => `folder-${i}/folder-${i}.md`).sort((a, b) =>
+        a.localeCompare(b, undefined, { sensitivity: "base" }),
+      ),
+    )
+  })
+
+  it("stops promptly on an already-aborted signal, even with budget to spare", async () => {
+    const root = makeSlowTree(12)
+    const sweep = startSweep(root)
+    const controller = new AbortController()
+    controller.abort()
+
+    const complete = await continueSweep(sweep, 10_000, controller.signal)
+    expect(complete).toBe(false)
+  })
+
+  it("matches listNotes's own result once a sweep completes on a real (fast) tree", async () => {
+    const folder = fakeFolder({
+      "a.md": { kind: "file", content: "" },
+      sub: { kind: "directory", children: { "b.md": { kind: "file", content: "" } } },
+    })
+    const sweep = startSweep(folder.dir)
+    const complete = await continueSweep(sweep, 10_000)
+    expect(complete).toBe(true)
+    expect(sweepResult(sweep)).toEqual(await listNotes(folder.dir))
   })
 })
 

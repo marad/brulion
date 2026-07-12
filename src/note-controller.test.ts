@@ -12,6 +12,9 @@ vi.mock("./note", () => ({
   deleteNote: vi.fn(),
   statNote: vi.fn(),
   moveNote: vi.fn(),
+  startSweep: vi.fn(),
+  continueSweep: vi.fn(),
+  sweepResult: vi.fn(),
 }))
 vi.mock("./session", () => ({ saveActiveNote: vi.fn(), loadActiveNote: vi.fn() }))
 const readNote = vi.mocked(note.readNote)
@@ -21,6 +24,9 @@ const createNote = vi.mocked(note.createNote)
 const deleteNote = vi.mocked(note.deleteNote)
 const statNote = vi.mocked(note.statNote)
 const moveNote = vi.mocked(note.moveNote)
+const startSweep = vi.mocked(note.startSweep)
+const continueSweep = vi.mocked(note.continueSweep)
+const sweepResult = vi.mocked(note.sweepResult)
 const loadActiveNote = vi.mocked(session.loadActiveNote)
 const saveActiveNote = vi.mocked(session.saveActiveNote)
 
@@ -43,6 +49,14 @@ beforeEach(() => {
   deleteNote.mockResolvedValue(undefined)
   statNote.mockResolvedValue(null)
   moveNote.mockResolvedValue({ status: "moved" })
+  // The poll's relist sweep (see note.ts's Sweep): by default, a sweep
+  // "completes" (continueSweep resolves true) on its very first tick with no
+  // files, matching the old default-empty listNotes(). Tests simulating a
+  // specific discovered list use sweepResult.mockReturnValue([...]); tests
+  // simulating a slow/interrupted sweep override continueSweep directly.
+  startSweep.mockReturnValue({ pending: [], files: [] })
+  continueSweep.mockResolvedValue(true)
+  sweepResult.mockReturnValue([])
   loadActiveNote.mockResolvedValue(undefined)
 })
 
@@ -1015,7 +1029,7 @@ describe("checkDisk (AC-4..AC-7)", () => {
 })
 
 describe("refreshFromDisk (FEAT-0014)", () => {
-  it("relists at a lower concurrency than a foreground open (the real poller's own path)", async () => {
+  it("relists via a budgeted sweep tick, not a one-shot foreground listNotes call", async () => {
     const view = mountView()
     listNotes.mockResolvedValue(["start.md"])
     loadActiveNote.mockResolvedValue("start.md")
@@ -1024,12 +1038,43 @@ describe("refreshFromDisk (FEAT-0014)", () => {
     const controller = createNoteController(view, { debounceMs: 10_000 })
     await controller.open(DIR)
 
-    expect(listNotes).toHaveBeenCalledWith(DIR) // open(): default (foreground) concurrency
+    expect(listNotes).toHaveBeenCalledWith(DIR) // open(): a real foreground listNotes call
 
     listNotes.mockClear()
     await controller.refreshFromDisk()
 
-    expect(listNotes).toHaveBeenCalledWith(DIR, 1, expect.any(AbortSignal)) // the poll's relist: sequential, abortable
+    expect(listNotes).not.toHaveBeenCalled() // the poll never calls listNotes directly
+    expect(startSweep).toHaveBeenCalledWith(DIR)
+    // 400 === SWEEP_TICK_BUDGET_MS (not exported; kept in sync by hand, same as
+    // FULL_RELIST_MS's 15_000 elsewhere in this file).
+    expect(continueSweep).toHaveBeenCalledWith(expect.anything(), 400, expect.any(AbortSignal))
+  })
+
+  it("spans multiple ticks for a sweep that doesn't finish in one budget, without restarting it", async () => {
+    const view = mountView()
+    const onListChanged = vi.fn()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, { onListChanged, debounceMs: 10_000 })
+    await controller.open(DIR)
+    onListChanged.mockClear()
+
+    // Two ticks report "not yet done"; the third finally completes.
+    continueSweep.mockResolvedValueOnce(false).mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    sweepResult.mockReturnValue(["new.md", "start.md"])
+
+    await controller.refreshFromDisk()
+    expect(onListChanged).not.toHaveBeenCalled() // tick 1: still in progress, nothing applied yet
+    await controller.refreshFromDisk()
+    expect(onListChanged).not.toHaveBeenCalled() // tick 2: still in progress
+    await controller.refreshFromDisk()
+    expect(onListChanged).toHaveBeenCalledWith(["new.md", "start.md"], "start.md") // tick 3: done, applied
+
+    // One sweep across all three ticks, not a fresh one started each time.
+    expect(startSweep).toHaveBeenCalledTimes(1)
+    expect(continueSweep).toHaveBeenCalledTimes(3)
   })
 
   it("adopts an externally added note into the list, leaving the editor (AC-1)", async () => {
@@ -1043,7 +1088,7 @@ describe("refreshFromDisk (FEAT-0014)", () => {
     await controller.open(DIR)
     onListChanged.mockClear()
 
-    listNotes.mockResolvedValue(["new.md", "start.md"]) // appeared externally
+    sweepResult.mockReturnValue(["new.md", "start.md"]) // appeared externally
     await controller.refreshFromDisk()
 
     expect(onListChanged).toHaveBeenCalledWith(["new.md", "start.md"], "start.md")
@@ -1061,7 +1106,7 @@ describe("refreshFromDisk (FEAT-0014)", () => {
     await controller.open(DIR)
     onListChanged.mockClear()
 
-    listNotes.mockResolvedValue(["start.md"]) // other.md removed externally
+    sweepResult.mockReturnValue(["start.md"]) // other.md removed externally
     await controller.refreshFromDisk()
 
     expect(onListChanged).toHaveBeenCalledWith(["start.md"], "start.md")
@@ -1157,7 +1202,7 @@ describe("refreshFromDisk (FEAT-0014)", () => {
     onListChanged.mockClear()
 
     statNote.mockResolvedValue(null) // active note deleted externally
-    listNotes.mockResolvedValue(["other.md"])
+    sweepResult.mockReturnValue(["other.md"])
     readNote.mockResolvedValue({ content: "other body", lastModified: 5 })
     await controller.refreshFromDisk()
 
@@ -1252,14 +1297,15 @@ describe("refreshFromDisk (FEAT-0014)", () => {
     await controller.open(DIR) // resets lastFullListAt, so the next relist is due
 
     let capturedSignal: AbortSignal | undefined
-    listNotes.mockImplementationOnce(
-      (_dir, _concurrency, signal?: AbortSignal) =>
-        new Promise<string[]>((_resolve, reject) => {
+    continueSweep.mockImplementationOnce(
+      (_sweep, _budget, signal?: AbortSignal) =>
+        new Promise<boolean>((resolve) => {
           capturedSignal = signal
-          // Mirrors what the real collect() eventually does once it notices
-          // the signal — without this, the mock would hang forever instead
-          // of settling once aborted.
-          signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")))
+          // Mirrors what the real continueSweep eventually does once it
+          // notices the signal — resolves `false` (incomplete), never throws
+          // — without this, the mock would hang forever instead of settling
+          // once aborted.
+          signal?.addEventListener("abort", () => resolve(false))
         }),
     )
     const refreshing = controller.refreshFromDisk()
@@ -1269,7 +1315,7 @@ describe("refreshFromDisk (FEAT-0014)", () => {
     void controller.switchTo("a.md")
 
     expect(capturedSignal?.aborted).toBe(true) // aborted synchronously, on the very next action
-    await refreshing // settles cleanly (refreshFromDisk swallows its own AbortError)
+    await refreshing // settles cleanly (an incomplete sweep just resumes next tick)
   })
 
   it("drops a stale relist instead of clobbering a newer list set while it was in flight", async () => {
@@ -1283,36 +1329,38 @@ describe("refreshFromDisk (FEAT-0014)", () => {
     await controller.open(DIR)
     onListChanged.mockClear()
 
-    // The relist is slow and, unbeknownst to it, about to become stale.
-    let resolvePollList: (names: string[]) => void = () => {}
-    listNotes.mockImplementationOnce(() => new Promise((resolve) => (resolvePollList = resolve)))
+    // The sweep tick is slow and, unbeknownst to it, about to become stale.
+    let resolveSweepTick: (complete: boolean) => void = () => {}
+    continueSweep.mockImplementationOnce(() => new Promise((resolve) => (resolveSweepTick = resolve)))
     const refreshing = controller.refreshFromDisk()
 
-    // Wait until the relist's own listNotes call has genuinely fired (open's
-    // call plus this one) before queuing the next mock value — otherwise it's
-    // a race over which call consumes which mocked value.
-    await vi.waitFor(() => expect(listNotes).toHaveBeenCalledTimes(2))
+    // Wait until the sweep tick has genuinely started before queuing the next
+    // mock value — otherwise it's a race over which call sees which value.
+    await vi.waitFor(() => expect(continueSweep).toHaveBeenCalledTimes(1))
 
-    // A user create lands and completes entirely while the relist is still
-    // in flight — its own listNotes call resolves with the up-to-date list.
+    // A user create lands and completes entirely while the sweep tick is
+    // still in flight — its own listNotes call resolves with the up-to-date
+    // list (addNote/removeNote/renameActive still call listNotes directly;
+    // only the poll's relist goes through the sweep).
     listNotes.mockResolvedValueOnce(["fresh.md", "start.md"])
     const created = await controller.addNote("fresh")
     expect(created).toEqual({ ok: true })
 
-    // The relist's own (now-stale) listing finally resolves — missing the
-    // note the addNote just created.
-    resolvePollList(["start.md"])
+    // The sweep tick finally completes — but its view of the tree is now
+    // stale, missing the note the addNote just created.
+    sweepResult.mockReturnValue(["start.md"])
+    resolveSweepTick(true)
     await refreshing
 
     // The stale relist must not have clobbered the newer list.
     expect(onListChanged).not.toHaveBeenCalledWith(["start.md"], expect.anything())
 
-    // A dropped, stale relist must not have spent the throttle window either —
-    // the very next tick should retry for real (not wait out FULL_RELIST_MS).
-    listNotes.mockClear()
-    listNotes.mockResolvedValue(["fresh.md", "start.md"])
+    // A dropped, stale sweep must not have spent the throttle window either —
+    // the very next tick should start a fresh sweep for real (not wait out
+    // FULL_RELIST_MS).
+    startSweep.mockClear()
     await controller.refreshFromDisk()
-    expect(listNotes).toHaveBeenCalledTimes(1)
+    expect(startSweep).toHaveBeenCalledTimes(1)
   })
 })
 

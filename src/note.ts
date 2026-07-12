@@ -194,6 +194,70 @@ async function collect(
 }
 
 /**
+ * A `listNotes` walk that can be paused and resumed across many calls instead
+ * of always running to completion in one go — for a caller (the poll relist)
+ * that has no one waiting on it and would rather spend a small slice of time
+ * every few seconds than a multi-second burst all at once, however large the
+ * vault. `pending` is a plain FIFO queue of folders not yet visited *in this
+ * sweep*; `files` accumulates matches as they're found. Both are exposed (not
+ * hidden behind a class) so a caller can inspect progress, but should only be
+ * mutated by {@link continueSweep}.
+ */
+export interface Sweep {
+  pending: Array<{ dir: FileSystemDirectoryHandle; prefix: string }>
+  files: string[]
+}
+
+/** Begin a new sweep of `root` — nothing visited yet. */
+export function startSweep(root: FileSystemDirectoryHandle): Sweep {
+  return { pending: [{ dir: root, prefix: "" }], files: [] }
+}
+
+/**
+ * Visit folders breadth-first off `sweep.pending`, mutating `sweep` in place,
+ * until either the queue empties (the sweep is complete — returns `true`) or
+ * `budgetMs` of wall-clock time elapses or `signal` aborts (returns `false`,
+ * with `sweep` left exactly where it can pick up again on the next call —
+ * nothing already visited is redone, and nothing already-fetched is dropped:
+ * the deadline/abort check runs *after* recording each entry, never before,
+ * since an entry already retrieved from `values()` has already been paid for).
+ * Unlike {@link listNotes}, running out of time or being aborted is the
+ * ordinary, expected way for this to end, not an error: the whole point is
+ * many short, interruptible slices instead of one long walk, so this returns
+ * a plain boolean rather than throwing.
+ */
+export async function continueSweep(sweep: Sweep, budgetMs: number, signal?: AbortSignal): Promise<boolean> {
+  const deadline = performance.now() + budgetMs
+  while (sweep.pending.length > 0) {
+    if (signal?.aborted || performance.now() >= deadline) return false
+    // FIFO (not LIFO): breadth-first, so a sweep interrupted partway through a
+    // vault touches a bit of everything rather than exhausting one deep branch
+    // before starting its siblings.
+    const { dir, prefix } = sweep.pending.shift() as { dir: FileSystemDirectoryHandle; prefix: string }
+    for await (const entry of dir.values()) {
+      // Always record an entry once it's arrived — it's already been paid
+      // for (the `next()` call already happened), so bailing *before* using
+      // it would silently drop real, already-fetched data. Check the budget
+      // only after, to decide whether to fetch the *next* one.
+      if (entry.kind === "file") {
+        if (MD_EXT.test(entry.name)) sweep.files.push(prefix + entry.name)
+      } else {
+        sweep.pending.push({ dir: entry, prefix: prefix + entry.name + "/" })
+      }
+      if (signal?.aborted || performance.now() >= deadline) return false
+    }
+  }
+  return true
+}
+
+/** The sorted path list for a *complete* sweep (`continueSweep` returned
+ * `true`) — same sort as {@link listNotes}, so the two are interchangeable
+ * from a caller's point of view once a sweep finishes. */
+export function sweepResult(sweep: Sweep): string[] {
+  return sweep.files.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+}
+
+/**
  * Create an empty `name`. If a file already exists it is left untouched and
  * `{ status: "exists" }` is returned, so a name clash never clobbers content.
  * A folder segment occupied by a like-named *file* (so the folder can't be

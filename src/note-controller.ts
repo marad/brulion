@@ -1,6 +1,19 @@
 import type { EditorView } from "codemirror"
 import { setEditorText, reloadEditorText } from "./editor"
-import { readNote, saveNote, listNotes, createNote, deleteNote, statNote, moveNote, type NoteContent } from "./note"
+import {
+  readNote,
+  saveNote,
+  listNotes,
+  createNote,
+  deleteNote,
+  statNote,
+  moveNote,
+  startSweep,
+  continueSweep,
+  sweepResult,
+  type NoteContent,
+  type Sweep,
+} from "./note"
 import { track, trackSync, mark } from "./perf"
 import { normalizeNoteName } from "./note-name"
 import { rewriteLinksForRename, rebaseOutboundLinks } from "./link-rewrite"
@@ -10,15 +23,34 @@ import { debounce } from "./debounce"
 const SEED_NOTE = "start.md"
 
 /**
- * How often {@link NoteController.checkDisk}/`refreshFromDisk` actually re-walk the
- * whole tree (FEAT-0014's external add/remove detection), vs. every poll tick (2s):
- * a full recursive `listNotes` is real work — proportional to vault size — while the
+ * How often {@link NoteController.checkDisk} re-walks the whole tree in one shot
+ * (FEAT-0014's external add/remove detection), vs. every poll tick (2s): a full
+ * recursive `listNotes` is real work — proportional to vault size — while the
  * active note's own mtime (checked every tick regardless, see `probeDisk`) is one
  * cheap file stat. Detecting a file added/removed *elsewhere* by another tool can
  * afford to lag; silently clobbering the note you're actively editing cannot, so
  * that guarantee stays at the full 2s cadence.
+ *
+ * `refreshFromDisk` (the poller's real path) uses this the same way, but *between
+ * sweeps* rather than between one-shot relists — see `SWEEP_TICK_BUDGET_MS`.
  */
 const FULL_RELIST_MS = 15_000
+
+/**
+ * How much wall-clock time one poll tick spends continuing the relist sweep
+ * (see `note.ts`'s `Sweep`), instead of walking the whole tree in a single go.
+ * A real-device `?debug` capture kept showing an unrelated foreground `readNote`
+ * slowing down (~75ms → 400-650ms) whenever it happened to overlap *any* part of
+ * a relist — reducing concurrency (see `POLL_RELIST_CONCURRENCY`) and aborting
+ * eagerly both helped, but couldn't shrink the one thing neither can touch:
+ * whichever single directory scan is *already in flight* the instant the user
+ * acts. Spreading the relist itself across many small slices (instead of one
+ * multi-second walk) directly shrinks how much can be "already in flight" at any
+ * given moment, for vaults of any size — a smaller, more direct lever than
+ * concurrency or abortion. A vault small enough to finish within one budget
+ * behaves exactly as before (a "sweep" that completes in its first tick).
+ */
+const SWEEP_TICK_BUDGET_MS = 400
 
 /**
  * `listNotes` concurrency for the poll's relist specifically: fully sequential.
@@ -217,6 +249,17 @@ export function createNoteController(
   // shrinks the contention window down to "whatever's already in flight",
   // rather than "the rest of the whole tree" — see DECISIONS.md.
   let pollAbortController: AbortController | null = null
+  // The poll's in-progress relist sweep, if any — persists across poll ticks
+  // (unlike `pollAbortController`, which is per-tick) so a sweep interrupted by
+  // its time budget or an abort resumes exactly where it left off next tick,
+  // rather than restarting the whole walk. `null` between sweeps.
+  let activeSweep: Sweep | null = null
+  // `notes` at the moment the *current* sweep began — set once, when the sweep
+  // starts, not on every tick. Compared against live `notes` only once the
+  // sweep finally completes, to detect whether some other operation (an
+  // addNote/removeNote/renameActive) already refreshed `notes` more recently
+  // than this (possibly many-ticks-old) sweep's view of the tree.
+  let sweepStartNotes: string[] | null = null
 
   // A user-initiated action is about to run — if a background relist is
   // currently walking the tree, tell it to stop making further progress. Safe
@@ -469,6 +512,10 @@ export function createNoteController(
         // vault's throttle state — a freshly attached folder always gets one
         // verified listing before FULL_RELIST_MS throttling kicks in.
         lastFullListAt = -Infinity
+        // Any sweep in progress belonged to the previous vault (if any) — drop
+        // it rather than let it resume against the wrong folder.
+        activeSweep = null
+        sweepStartNotes = null
         const active = pickActiveNote(notes, persisted)
         // Only worth adopting the speculative read if the guess it was based on
         // is the note we're actually activating — otherwise (a fresh vault, or
@@ -603,40 +650,40 @@ export function createNoteController(
       })
     },
     refreshFromDisk() {
-      // The expensive part — a full recursive relist, throttled to
-      // FULL_RELIST_MS — must never sit inside the serialize queue: a
+      // The expensive part — the relist sweep, throttled to FULL_RELIST_MS
+      // *between* sweeps — must never sit inside the serialize queue: a
       // user-initiated action (switchTo, addNote, …) queued behind it would
-      // otherwise wait out the *whole* relist just to, say, switch notes. So
-      // this runs across two short serialize() slots with the slow listing in
-      // between them, not inside either — anything else queued can run while
-      // it's in flight. The apply slot re-validates against *live* state
-      // (not the snapshot), the same "recheck right before mutating"
+      // otherwise wait out the whole thing just to, say, switch notes. So
+      // this runs across two short serialize() slots with the slow sweep step
+      // in between them, not inside either — anything else queued can run
+      // while it's in flight. The apply slot re-validates against *live*
+      // state (not the snapshot), the same "recheck right before mutating"
       // discipline the rest of this file already uses for its other awaits
       // (see `safeToReplaceBuffer`).
       return (async () => {
         const snapshot = await serialize(async () => {
           if (!dir || savePromise) return null // same skip rationale as checkDisk
-          return {
-            folder: dir,
-            notesAtSnapshot: notes,
-            dueForRelist: isDueForRelist(),
+          // Start a new sweep only if none is already in progress — an
+          // in-progress one always continues regardless of the throttle
+          // (it's already committed; abandoning it would waste the ticks
+          // already spent). `sweepStartNotes` is captured once, here, not
+          // re-captured on later ticks that merely continue the same sweep.
+          if (!activeSweep && isDueForRelist()) {
+            activeSweep = startSweep(dir)
+            sweepStartNotes = notes
           }
+          return { folder: dir, sweep: activeSweep }
         })
         if (!snapshot) return
 
-        let diskNotes: string[] | null = null
-        if (snapshot.dueForRelist) {
+        let sweepCompleted = false
+        if (snapshot.sweep) {
           const abortController = new AbortController()
           pollAbortController = abortController
           try {
-            diskNotes = await track("poll: listNotes", () =>
-              listNotes(snapshot.folder, POLL_RELIST_CONCURRENCY, abortController.signal),
+            sweepCompleted = await track("poll: sweep tick", () =>
+              continueSweep(snapshot.sweep as Sweep, SWEEP_TICK_BUDGET_MS, abortController.signal),
             )
-          } catch (err) {
-            // Aborted by a foreground action (see `abortPendingRelist`) — fall
-            // through with `diskNotes` still null, handled exactly like the
-            // stale-relist case below: dropped, not applied, next tick retries.
-            if (!(err instanceof DOMException && err.name === "AbortError")) throw err
           } finally {
             pollAbortController = null
           }
@@ -644,24 +691,30 @@ export function createNoteController(
 
         return serialize(async () => {
           // The folder changed (a vault switch) or our own save started while
-          // the listing was in flight — this probe no longer applies to
+          // the sweep tick was in flight — this probe no longer applies to
           // anything live.
           if (dir !== snapshot.folder || savePromise) return
-          // Something else (an addNote/removeNote/renameActive, or an earlier
-          // tick) already updated `notes` while our relist was in flight —
-          // our fetched listing is stale now; drop it rather than risk
-          // clobbering a newer state with it. Also true whenever the relist
-          // was aborted or skipped (`diskNotes` is null). Crucially, don't
-          // bump the throttle clock in any of these cases either — that would
-          // extend the "next real check" wait past FULL_RELIST_MS instead of
-          // retrying on the very next (2s) tick as intended.
-          const listStale = snapshot.dueForRelist && diskNotes !== null && notes !== snapshot.notesAtSnapshot
-          const gotFreshList = snapshot.dueForRelist && diskNotes !== null && !listStale
+          // Something else (an addNote/removeNote/renameActive) already
+          // updated `notes` more recently than this sweep's view of the tree
+          // — its result is stale now; drop it rather than risk clobbering a
+          // newer state with it. Crucially, don't bump the throttle clock in
+          // this case either — that would extend the "next real check" wait
+          // past FULL_RELIST_MS instead of starting a fresh sweep on the very
+          // next (2s) tick as intended.
+          const listStale = sweepCompleted && notes !== sweepStartNotes
+          const gotFreshList = sweepCompleted && !listStale
+          if (sweepCompleted) {
+            // The sweep is done either way (successfully applied or dropped
+            // as stale) — clear it so the next due tick starts a fresh one.
+            activeSweep = null
+            sweepStartNotes = null
+          }
           if (gotFreshList) lastFullListAt = Date.now()
+          const diskNotes = gotFreshList ? sweepResult(snapshot.sweep as Sweep) : notes
           const diskActiveLastModified = await statNote(snapshot.folder, activeName)
           const check = classifyDiskCheck({
             knownNotes: notes,
-            diskNotes: gotFreshList ? (diskNotes as string[]) : notes,
+            diskNotes,
             knownLastModified: lastModified,
             diskActiveLastModified,
             dirty,
