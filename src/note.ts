@@ -157,11 +157,13 @@ export async function listNotes(
  * matters — only the total concurrency does.
  *
  * `signal` is checked before every single-level scan starts (both before and
- * after waiting for a semaphore slot, since it may go stale while queued) and
- * throws if already aborted — there is no `AbortSignal` on the platform's own
- * `values()` iteration, so a scan already running keeps running regardless;
- * this only stops *new* scans from starting, shrinking the contention window
- * from "the rest of the whole tree" down to "whatever's already in flight". */
+ * after waiting for a semaphore slot, since it may go stale while queued), and
+ * again before every single entry *within* an already-running scan — there is
+ * no `AbortSignal` on the platform's own `values()` iteration, so the current
+ * `next()` call in flight can't be interrupted, but a folder holding hundreds
+ * of entries doesn't have to run to completion once aborted mid-iteration. All
+ * three checkpoints throw if aborted, never silently returning a truncated
+ * listing that could be mistaken for the real disk state. */
 async function collect(
   dir: FileSystemDirectoryHandle,
   prefix: string,
@@ -178,6 +180,7 @@ async function collect(
   const subdirs: FileSystemDirectoryHandle[] = []
   try {
     for await (const entry of dir.values()) {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError")
       if (entry.kind === "file") {
         if (MD_EXT.test(entry.name)) out.push(prefix + entry.name)
       } else {

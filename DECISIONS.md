@@ -2379,3 +2379,25 @@ Two new tests: `note.test.ts` proves an abort mid-walk actually stops starting n
 count stays well short of the full tree, confirmed with a naive "check once at the top" mutation
 that this catches); `note-controller.test.ts` proves `switchTo` aborts an in-flight relist's signal
 synchronously — confirmed failing without the `abortPendingRelist()` call.
+
+## Also check the abort signal inside a single folder's entry loop, not just between folders
+A real-device `?debug` capture after the abort mechanism above shipped showed it helping but not
+closing the gap: a `readNote` still went from its ~70-100ms baseline to 444ms, overlapping a poll
+relist that had started ~173ms earlier. Traced why: with `POLL_RELIST_CONCURRENCY = 1`, exactly one
+folder's scan is ever active — and the abort check only ran *between* folders (before/after
+acquiring a semaphore slot), never *during* one folder's own `for await (const entry of
+dir.values())` loop. A folder with many entries could keep iterating for a while after being
+aborted, since nothing inside that loop was watching the signal.
+Fix: check `signal?.aborted` on every entry inside that loop too, throwing immediately instead of
+continuing to iterate. Still can't interrupt the single in-flight `next()` call already awaited
+(no platform support for that), but no longer runs an entire large folder to completion once
+aborted mid-way — the third and last of the checkpoints this mechanism has: before starting a
+folder's scan, right after acquiring a slot (in case it went stale while queued), and now during
+the scan itself.
+New test: a fake folder yielding 50 entries one at a time, aborted after the 5th — proves the
+generator is never asked for a 6th, confirmed failing (ran through most/all of the 50) without the
+in-loop check.
+Not yet re-measured on a real device. This closes the only known remaining gap in the "stop
+starting new work" approach; anything still left after this is the truly irreducible cost of
+whichever single `next()` call happens to be in flight the instant the user acts — which cannot be
+closed further without the platform shipping cancellation support for directory iteration.

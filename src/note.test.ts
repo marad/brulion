@@ -326,6 +326,30 @@ describe("listNotes (AC-5, AC-6)", () => {
     expect(visited).toBeLessThan(FOLDER_COUNT)
   })
 
+  it("aborts mid-iteration within a single large folder, not just between folders", async () => {
+    const FILE_COUNT = 50
+    let produced = 0
+    const controller = new AbortController()
+
+    const root = {
+      kind: "directory",
+      name: "",
+      async *values() {
+        for (let i = 0; i < FILE_COUNT; i++) {
+          produced++
+          if (produced === 5) controller.abort() // abort partway through this one folder's entries
+          yield { kind: "file", name: `note-${i}.md` } as unknown as FileSystemFileHandle
+        }
+      },
+    } as unknown as FileSystemDirectoryHandle
+
+    await expect(listNotes(root, 4, controller.signal)).rejects.toMatchObject({ name: "AbortError" })
+    // Stopped consuming the generator well before it could produce all 50 —
+    // proves the abort check runs *inside* the loop over one folder's
+    // entries, not only before/after the folder as a whole.
+    expect(produced).toBeLessThan(FILE_COUNT)
+  })
+
   it("honors an explicit maxConcurrent — 1 means fully sequential", async () => {
     const probe = makeConcurrencyProbe(12)
     await listNotes(probe.root, 1)
