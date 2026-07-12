@@ -78,7 +78,7 @@ describe("pickActiveNote (AC-6, AC-7)", () => {
 describe("open", () => {
   it("loads the picked active note and reports the list (AC-1, AC-2)", async () => {
     const view = mountView()
-    listNotes.mockResolvedValue(["apple.md", "start.md"])
+    sweepResult.mockReturnValue(["apple.md", "start.md"])
     readNote.mockResolvedValue({ content: "apple body", lastModified: 5 })
     loadActiveNote.mockResolvedValue("apple.md")
     const onListChanged = vi.fn()
@@ -94,7 +94,7 @@ describe("open", () => {
 
   it("keeps the previously open note when re-opening a folder whose listing fails", async () => {
     const view = mountView()
-    listNotes.mockResolvedValueOnce(["apple.md", "start.md"])
+    sweepResult.mockReturnValueOnce(["apple.md", "start.md"])
     readNote.mockResolvedValue({ content: "apple body", lastModified: 5 })
     loadActiveNote.mockResolvedValue("apple.md")
     const onListChanged = vi.fn()
@@ -103,11 +103,11 @@ describe("open", () => {
     expect(view.state.doc.toString()).toBe("apple body")
     onListChanged.mockClear()
 
-    // A second folder that's gone from disk (a dead vault) → listNotes throws. The
+    // A second folder that's gone from disk (a dead vault) → the sweep throws. The
     // controller must commit nothing, leaving the first folder's note open so a
     // failed vault switch falls back cleanly instead of half-pointing at the dead one.
     const DEAD = {} as FileSystemDirectoryHandle
-    listNotes.mockRejectedValueOnce(new Error("NotFoundError"))
+    continueSweep.mockRejectedValueOnce(new Error("NotFoundError"))
     await expect(controller.open(DEAD)).rejects.toThrow()
 
     expect(view.state.doc.toString()).toBe("apple body") // editor unchanged
@@ -118,8 +118,9 @@ describe("open", () => {
     const view = mountView()
     loadActiveNote.mockResolvedValue("apple.md")
     readNote.mockResolvedValue({ content: "apple body", lastModified: 5 })
-    let resolveListing: (names: string[]) => void = () => {}
-    listNotes.mockReturnValue(new Promise((resolve) => (resolveListing = resolve)))
+    sweepResult.mockReturnValue(["apple.md", "start.md"])
+    let resolveListing: (complete: boolean) => void = () => {}
+    continueSweep.mockReturnValue(new Promise((resolve) => (resolveListing = resolve)))
     const controller = createNoteController(view)
 
     const opening = controller.open(DIR)
@@ -127,7 +128,7 @@ describe("open", () => {
     // already have been kicked off — not queued behind the listing.
     await vi.waitFor(() => expect(readNote).toHaveBeenCalledWith(DIR, "apple.md"))
 
-    resolveListing(["apple.md", "start.md"])
+    resolveListing(true)
     await opening
 
     expect(view.state.doc.toString()).toBe("apple body")
@@ -136,7 +137,7 @@ describe("open", () => {
   it("falls back to the real active note when the speculative guess no longer exists", async () => {
     const view = mountView()
     loadActiveNote.mockResolvedValue("gone.md") // persisted, but deleted since last session
-    listNotes.mockResolvedValue(["start.md"])
+    sweepResult.mockReturnValue(["start.md"])
     readNote.mockImplementation(async (_dir, name) =>
       name === "gone.md" ? { content: "stale guess", lastModified: 1 } : { content: "real start", lastModified: 2 },
     )
@@ -151,8 +152,9 @@ describe("open", () => {
     const view = mountView()
     loadActiveNote.mockResolvedValue("start.md")
     readNote.mockResolvedValue({ content: "preview body", lastModified: 1 })
-    let resolveListing: (names: string[]) => void = () => {}
-    listNotes.mockReturnValue(new Promise((resolve) => (resolveListing = resolve)))
+    sweepResult.mockReturnValue(["start.md"])
+    let resolveListing: (complete: boolean) => void = () => {}
+    continueSweep.mockReturnValue(new Promise((resolve) => (resolveListing = resolve)))
     const onPreviewReady = vi.fn()
     const controller = createNoteController(view, { onPreviewReady })
 
@@ -162,13 +164,13 @@ describe("open", () => {
     // validity) is confirmed.
     expect(view.state.doc.toString()).toBe("preview body")
 
-    resolveListing(["start.md"])
+    resolveListing(true)
     await opening
   })
 
   it("reverts the preview if the listing then fails (a dead vault)", async () => {
     const view = mountView()
-    listNotes.mockResolvedValue(["apple.md", "start.md"])
+    sweepResult.mockReturnValue(["apple.md", "start.md"])
     readNote.mockResolvedValue({ content: "apple body", lastModified: 5 })
     loadActiveNote.mockResolvedValue("apple.md")
     const controller = createNoteController(view)
@@ -179,7 +181,7 @@ describe("open", () => {
     const DEAD = {} as FileSystemDirectoryHandle
     readNote.mockResolvedValue({ content: "dead vault's stale guess", lastModified: 1 })
     let rejectListing: (err: Error) => void = () => {}
-    listNotes.mockReturnValue(new Promise((_resolve, reject) => (rejectListing = reject)))
+    continueSweep.mockReturnValue(new Promise((_resolve, reject) => (rejectListing = reject)))
 
     const opening = controller.open(DEAD)
     await vi.waitFor(() => expect(view.state.doc.toString()).toBe("dead vault's stale guess"))
@@ -195,7 +197,7 @@ describe("open", () => {
 
   it("does not fire onPreviewReady when the speculative read itself fails", async () => {
     const view = mountView()
-    listNotes.mockResolvedValue(["start.md"])
+    sweepResult.mockReturnValue(["start.md"])
     loadActiveNote.mockResolvedValue("start.md")
     // Only the speculative attempt fails (a transient blip); the real read
     // `load()` falls back to once the listing confirms the guess succeeds.
@@ -211,7 +213,7 @@ describe("open", () => {
   it("skips a redundant editor redraw once the listing confirms an already-previewed guess", async () => {
     const view = mountView()
     loadActiveNote.mockResolvedValue("start.md")
-    listNotes.mockResolvedValue(["start.md"])
+    sweepResult.mockReturnValue(["start.md"])
     readNote.mockResolvedValue({ content: "settled body", lastModified: 1 })
     const dispatchSpy = vi.spyOn(view, "dispatch")
     const controller = createNoteController(view)
@@ -230,7 +232,7 @@ describe("open", () => {
     const VAULT_A = {} as FileSystemDirectoryHandle
     const VAULT_B = {} as FileSystemDirectoryHandle
     loadActiveNote.mockResolvedValue("start.md")
-    listNotes.mockResolvedValue(["start.md"])
+    sweepResult.mockReturnValue(["start.md"])
     readNote.mockImplementation(async (dir) =>
       dir === VAULT_A ? { content: "vault A's start", lastModified: 1 } : { content: "vault B's start", lastModified: 1 },
     )
@@ -323,7 +325,7 @@ describe("flush", () => {
 describe("switchTo", () => {
   function twoNoteController(onListChanged = vi.fn()) {
     const view = mountView()
-    listNotes.mockResolvedValue(["a.md", "b.md"])
+    sweepResult.mockReturnValue(["a.md", "b.md"])
     loadActiveNote.mockResolvedValue("a.md")
     readNote.mockImplementation(async (_dir, name) =>
       name === "b.md"
@@ -372,7 +374,7 @@ describe("switchTo", () => {
 
   it("serializes overlapping switches so content and active note stay in sync", async () => {
     const view = mountView()
-    listNotes.mockResolvedValue(["a.md", "b.md", "c.md"])
+    sweepResult.mockReturnValue(["a.md", "b.md", "c.md"])
     loadActiveNote.mockResolvedValue("a.md")
     // b.md reads slowly, c.md fast: without serialization the slow b could land last.
     readNote.mockImplementation(async (_dir, name) => {
@@ -410,7 +412,7 @@ describe("switchTo", () => {
 describe("lazy start.md appears in the list (AC-8)", () => {
   it("re-lists after the first save materializes the active note", async () => {
     const view = mountView()
-    listNotes.mockResolvedValueOnce([]).mockResolvedValue(["start.md"])
+    listNotes.mockResolvedValue(["start.md"]) // doSave's own relist once the note materializes
     const onListChanged = vi.fn()
     const controller = createNoteController(view, { onListChanged, debounceMs: 10 })
     await controller.open(DIR)
@@ -428,7 +430,8 @@ describe("lazy start.md appears in the list (AC-8)", () => {
 describe("addNote (FEAT-0012)", () => {
   it("creates a valid note, opens it, and lists it (AC-1)", async () => {
     const view = mountView()
-    listNotes.mockResolvedValueOnce(["start.md"]).mockResolvedValue(["Diablo builds.md", "start.md"])
+    sweepResult.mockReturnValue(["start.md"])
+    listNotes.mockResolvedValue(["Diablo builds.md", "start.md"]) // addNote's own relist
     loadActiveNote.mockResolvedValue("start.md")
     const onListChanged = vi.fn()
     const controller = createNoteController(view, { onListChanged, debounceMs: 10_000 })
@@ -459,7 +462,8 @@ describe("addNote (FEAT-0012)", () => {
       }
     })
     const view = mountView()
-    listNotes.mockResolvedValueOnce(["a.md"]).mockResolvedValue(["a.md", "new.md"])
+    sweepResult.mockReturnValue(["a.md"])
+    listNotes.mockResolvedValue(["a.md", "new.md"]) // addNote's own relist
     loadActiveNote.mockResolvedValue("a.md")
     const controller = createNoteController(view, { debounceMs: 10_000 })
     await controller.open(DIR)
@@ -477,7 +481,7 @@ describe("addNote (FEAT-0012)", () => {
 
   it("refuses a duplicate name and leaves the editor untouched (AC-3)", async () => {
     const view = mountView()
-    listNotes.mockResolvedValue(["start.md"])
+    sweepResult.mockReturnValue(["start.md"])
     loadActiveNote.mockResolvedValue("start.md")
     readNote.mockResolvedValue({ content: "start body", lastModified: 1 })
     createNote.mockResolvedValue({ status: "exists" })
@@ -509,6 +513,7 @@ describe("removeNote (FEAT-0012)", () => {
   async function open(active: string, names: string[]) {
     const view = mountView()
     listNotes.mockResolvedValue(names)
+    sweepResult.mockReturnValue(names)
     loadActiveNote.mockResolvedValue(active)
     readNote.mockImplementation(async (_dir, name) => ({
       content: `${name} body`,
@@ -586,7 +591,8 @@ describe("removeNote (FEAT-0012)", () => {
       order.push(`delete:${name}`)
     })
     const view = mountView()
-    listNotes.mockResolvedValueOnce(["a.md", "b.md"]).mockResolvedValue(["b.md"])
+    sweepResult.mockReturnValue(["a.md", "b.md"])
+    listNotes.mockResolvedValue(["b.md"]) // removeNote's own relist
     loadActiveNote.mockResolvedValue("a.md")
     readNote.mockImplementation(async (_dir, name) => ({ content: `${name} body`, lastModified: 1 }))
     const controller = createNoteController(view, { debounceMs: 5 })
@@ -611,6 +617,7 @@ describe("renameActive (FEAT-0034)", () => {
   async function open(active: string, names: string[]) {
     const view = mountView()
     listNotes.mockResolvedValue(names)
+    sweepResult.mockReturnValue(names)
     loadActiveNote.mockResolvedValue(active)
     readNote.mockImplementation(async (_dir, name) => ({ content: `${name} body`, lastModified: 1 }))
     const onListChanged = vi.fn()
@@ -737,6 +744,7 @@ describe("renameActive — inbound link rewriting (FEAT-0040)", () => {
   async function open(active: string, names: string[], links: Record<string, string>) {
     const view = mountView()
     listNotes.mockResolvedValue(names)
+    sweepResult.mockReturnValue(names)
     loadActiveNote.mockResolvedValue(active)
     readNote.mockImplementation(async (_dir, name) => ({
       content: links[name] ?? `${name} body`,
@@ -949,7 +957,7 @@ describe("checkDisk (AC-4..AC-7)", () => {
 
   it("reports a note added to the folder", async () => {
     const view = mountView()
-    listNotes.mockResolvedValue(["start.md"])
+    sweepResult.mockReturnValue(["start.md"])
     readNote.mockResolvedValue({ content: "body", lastModified: 1 })
     statNote.mockResolvedValue(1)
     const controller = createNoteController(view, { debounceMs: 10_000 })
@@ -963,14 +971,14 @@ describe("checkDisk (AC-4..AC-7)", () => {
 
   it("relists at a lower concurrency than a foreground open — nothing waits on the poll's own scan", async () => {
     const view = mountView()
-    listNotes.mockResolvedValue(["start.md"])
+    sweepResult.mockReturnValue(["start.md"])
     loadActiveNote.mockResolvedValue("start.md")
     readNote.mockResolvedValue({ content: "body", lastModified: 1 })
     statNote.mockResolvedValue(1)
     const controller = createNoteController(view, { debounceMs: 10_000 })
     await controller.open(DIR)
 
-    expect(listNotes).toHaveBeenCalledWith(DIR) // open(): default (foreground) concurrency
+    expect(startSweep).toHaveBeenCalledWith(DIR) // open(): the sweep-based initial listing
 
     listNotes.mockClear()
     await controller.checkDisk()
@@ -982,7 +990,7 @@ describe("checkDisk (AC-4..AC-7)", () => {
 
   it("reports a note removed from the folder", async () => {
     const view = mountView()
-    listNotes.mockResolvedValue(["a.md", "start.md"])
+    sweepResult.mockReturnValue(["a.md", "start.md"])
     loadActiveNote.mockResolvedValue("start.md")
     readNote.mockResolvedValue({ content: "body", lastModified: 1 })
     statNote.mockResolvedValue(1)
@@ -1109,14 +1117,14 @@ describe("checkDisk (AC-4..AC-7)", () => {
 describe("refreshFromDisk (FEAT-0014)", () => {
   it("relists via a budgeted sweep tick, not a one-shot foreground listNotes call", async () => {
     const view = mountView()
-    listNotes.mockResolvedValue(["start.md"])
+    sweepResult.mockReturnValue(["start.md"])
     loadActiveNote.mockResolvedValue("start.md")
     readNote.mockResolvedValue({ content: "body", lastModified: 1 })
     statNote.mockResolvedValue(1)
     const controller = createNoteController(view, { debounceMs: 10_000 })
     await controller.open(DIR)
 
-    expect(listNotes).toHaveBeenCalledWith(DIR) // open(): a real foreground listNotes call
+    expect(startSweep).toHaveBeenCalledWith(DIR) // open(): the sweep-based initial listing
 
     listNotes.mockClear()
     await controller.refreshFromDisk()
@@ -1138,6 +1146,10 @@ describe("refreshFromDisk (FEAT-0014)", () => {
     const controller = createNoteController(view, { onListChanged, debounceMs: 10_000 })
     await controller.open(DIR)
     onListChanged.mockClear()
+    // open() already ran its own startSweep/continueSweep for the initial
+    // listing — clear so the counts below reflect only this refresh's sweep.
+    startSweep.mockClear()
+    continueSweep.mockClear()
 
     // Two ticks report "not yet done"; the third finally completes.
     continueSweep.mockResolvedValueOnce(false).mockResolvedValueOnce(false).mockResolvedValueOnce(true)
@@ -1153,6 +1165,26 @@ describe("refreshFromDisk (FEAT-0014)", () => {
     // One sweep across all three ticks, not a fresh one started each time.
     expect(startSweep).toHaveBeenCalledTimes(1)
     expect(continueSweep).toHaveBeenCalledTimes(3)
+  })
+
+  it("drops a sweep that throws mid-way (a folder vanished) instead of retrying the same broken queue forever", async () => {
+    const view = mountView()
+    listNotes.mockResolvedValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, { debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    continueSweep.mockRejectedValueOnce(new Error("NotFoundError"))
+    await expect(controller.refreshFromDisk()).resolves.toBeUndefined() // doesn't crash the poll
+
+    // The broken sweep is gone — the very next tick starts a fresh one
+    // instead of re-awaiting the same doomed queue.
+    startSweep.mockClear()
+    continueSweep.mockResolvedValue(true)
+    await controller.refreshFromDisk()
+    expect(startSweep).toHaveBeenCalledTimes(1)
   })
 
   it("adopts an externally added note into the list, leaving the editor (AC-1)", async () => {
@@ -1292,7 +1324,7 @@ describe("refreshFromDisk (FEAT-0014)", () => {
   it("falls back to an empty start buffer when the last note is deleted externally (AC-5)", async () => {
     const view = mountView()
     const onListChanged = vi.fn()
-    listNotes.mockResolvedValue(["start.md"])
+    sweepResult.mockReturnValue(["start.md"])
     loadActiveNote.mockResolvedValue("start.md")
     readNote.mockResolvedValue({ content: "body", lastModified: 1 })
     statNote.mockResolvedValue(1)
@@ -1301,7 +1333,7 @@ describe("refreshFromDisk (FEAT-0014)", () => {
     onListChanged.mockClear()
 
     statNote.mockResolvedValue(null) // the only note deleted externally
-    listNotes.mockResolvedValue([])
+    sweepResult.mockReturnValue([])
     readNote.mockResolvedValue({ content: "", lastModified: null })
     await controller.refreshFromDisk()
 

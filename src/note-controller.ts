@@ -53,6 +53,18 @@ const FULL_RELIST_MS = 15_000
 const SWEEP_TICK_BUDGET_MS = 400
 
 /**
+ * `open()`'s own initial-listing budget — bigger than a background poll tick's,
+ * since there's a real user waiting for *a* sidebar, but the same idea: a
+ * small vault finishes within this and behaves exactly as before, while a
+ * large one shows whatever was found so far and hands the rest off to the
+ * poll's existing sweep-continuation machinery (see `activeSweep`) instead of
+ * blocking first paint on the entire tree — the whole reason `onPreviewReady`
+ * exists is that nothing about seeing *a* note should wait on knowing *every*
+ * note.
+ */
+const INITIAL_SWEEP_BUDGET_MS = 800
+
+/**
  * `listNotes` concurrency for the poll's relist specifically: fully sequential.
  * A real-device `?debug` capture showed an unrelated foreground `readNote`
  * ballooning from ~75ms to ~490ms when it happened to run alongside a poll
@@ -500,10 +512,16 @@ export function createNoteController(
         // guessed-at file is not. Start both at once instead of reading only
         // after the listing settles — by the time the listing confirms the
         // folder is valid, the guessed note's content is usually already in
-        // hand. Purely I/O: nothing here touches `dir`/`notes` or the editor,
-        // so a listNotes failure below still leaves everything exactly as it
-        // was (see the safety comment kept on that await).
-        const notesPromise = track("open: listNotes", () => listNotes(folder))
+        // hand. The listing itself is a *sweep* (see note.ts), same mechanism
+        // the poll uses: a small vault finishes within `INITIAL_SWEEP_BUDGET_MS`
+        // and nothing below changes; a large one shows whatever's found so far
+        // and hands the rest to the poll (`activeSweep`) instead of blocking
+        // first paint on the entire tree. Purely I/O: nothing here touches
+        // `dir`/`notes` or the editor, so a sweep failure below still leaves
+        // everything exactly as it was (see the safety comment kept on that
+        // await).
+        const sweep = startSweep(folder)
+        const sweepPromise = continueSweep(sweep, INITIAL_SWEEP_BUDGET_MS)
         const persisted = await loadActiveNote()
         const guess = persisted ?? SEED_NOTE
         const speculativeRead = track(`readNote (speculative): ${guess}`, () => readNote(folder, guess)).catch(
@@ -527,15 +545,16 @@ export function createNoteController(
           }
         })
 
-        // Commit `dir`/`notes` only once the listing succeeds: a folder that's
-        // gone from disk (a dead vault) makes listNotes throw, and committing
-        // `dir` before that would leave the controller half-pointed at the dead
+        // Commit `dir`/`notes` only once the sweep's first budget settles: a
+        // folder that's gone from disk (a dead vault) makes it throw (the very
+        // first thing it visits is the root itself), and committing `dir`
+        // before that would leave the controller half-pointed at the dead
         // folder (the poller would then probe it). On failure the previously
         // open folder stays intact, so a failed vault switch falls cleanly back
         // to it — undo the preview above if it already painted over that.
-        let folderNotes: string[]
+        let complete: boolean
         try {
-          folderNotes = await notesPromise
+          complete = await track("open: sweep", () => sweepPromise)
         } catch (err) {
           openFailed = true
           if (view.state.doc.toString() !== previousDocText) {
@@ -544,7 +563,7 @@ export function createNoteController(
           throw err
         }
         dir = folder
-        notes = folderNotes
+        notes = sweepResult(sweep)
         // The cache is keyed by relative path only, not by folder — reused
         // across every vault this one controller instance ever attaches to
         // (M33 multi-vault). Every vault's seed note shares the name
@@ -552,14 +571,24 @@ export function createNoteController(
         // silently outrank this vault's real content in `load()`. Clearing on
         // every (re-)open is always safe, just an occasional cache miss.
         contentCache.clear()
-        // Force the *next* probe to relist for real regardless of any previous
-        // vault's throttle state — a freshly attached folder always gets one
-        // verified listing before FULL_RELIST_MS throttling kicks in.
+        // Force the *next* probe to relist for real regardless of any
+        // previous vault's throttle state — a freshly attached folder always
+        // gets one verified listing before FULL_RELIST_MS throttling kicks in
+        // (unchanged from before the sweep migration). A sweep handed off
+        // below still just continues on the next tick regardless of this.
         lastFullListAt = -Infinity
-        // Any sweep in progress belonged to the previous vault (if any) — drop
-        // it rather than let it resume against the wrong folder.
-        activeSweep = null
-        sweepStartNotes = null
+        if (complete) {
+          activeSweep = null
+          sweepStartNotes = null
+        } else {
+          // Didn't finish within budget: hand the same sweep off to the poll,
+          // which already knows how to keep advancing an in-progress one
+          // (see refreshFromDisk) — it'll complete in the background and
+          // update `notes`/the sidebar again once it does, exactly like
+          // catching up on an external change.
+          activeSweep = sweep
+          sweepStartNotes = notes
+        }
         const active = pickActiveNote(notes, persisted)
         // Only worth adopting the speculative read if the guess it was based on
         // is the note we're actually activating — otherwise (a fresh vault, or
@@ -721,6 +750,7 @@ export function createNoteController(
         if (!snapshot) return
 
         let sweepCompleted = false
+        let sweepThrew = false
         if (snapshot.sweep) {
           const abortController = new AbortController()
           pollAbortController = abortController
@@ -728,6 +758,12 @@ export function createNoteController(
             sweepCompleted = await track("poll: sweep tick", () =>
               continueSweep(snapshot.sweep as Sweep, SWEEP_TICK_BUDGET_MS, abortController.signal),
             )
+          } catch (err) {
+            // A folder likely disappeared mid-sweep (or some other I/O error) —
+            // drop this attempt rather than let it wedge the poll forever on
+            // the same now-broken queue; the next due tick starts fresh.
+            sweepThrew = true
+            console.error("Relist sweep failed, will restart on the next attempt:", err)
           } finally {
             pollAbortController = null
           }
@@ -747,9 +783,10 @@ export function createNoteController(
           // next (2s) tick as intended.
           const listStale = sweepCompleted && notes !== sweepStartNotes
           const gotFreshList = sweepCompleted && !listStale
-          if (sweepCompleted) {
-            // The sweep is done either way (successfully applied or dropped
-            // as stale) — clear it so the next due tick starts a fresh one.
+          if (sweepCompleted || sweepThrew) {
+            // The sweep is done either way — successfully applied, dropped as
+            // stale, or blew up entirely — clear it so the next due tick
+            // starts a fresh one rather than retrying the same broken queue.
             activeSweep = null
             sweepStartNotes = null
           }

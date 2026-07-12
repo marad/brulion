@@ -2490,3 +2490,46 @@ before being fixed. Measured on the 2018-note desktop benchmark: editor content 
 essentially tied with the 265ms full listing on desktop (where the listing itself is already fast)
 — the real payoff is on the phone, where that listing was measured at 2.8-4.4s and the guessed
 note's read alone takes well under a second.
+
+## `open()`'s own initial listing is a sweep too — the sidebar no longer waits on the whole vault
+The previous fix decoupled the *editor content* from the listing (`onPreviewReady`), but a real
+`?debug` capture showed the *sidebar* still didn't render until the listing fully finished
+(`open: listNotes: 2948.7ms`, `renderNoteList` only firing at t=3216ms) — the user's next complaint.
+`open()` still called plain `listNotes(folder)`, a one-shot, run-to-completion walk; only
+`refreshFromDisk` (the poll) had been migrated to the resumable `Sweep`.
+Fix: `open()` now calls `startSweep`/`continueSweep(sweep, INITIAL_SWEEP_BUDGET_MS)` instead of
+`listNotes`, with its own larger budget (800ms vs. the poll's 400ms tick — a real user is waiting
+for *a* sidebar here, not just background upkeep). A vault that finishes within budget behaves
+exactly as before (`notes`/`onListChanged` reflect the complete list, `lastFullListAt` reset).
+A vault that doesn't finish commits whatever the sweep found *so far* as `notes` (so the sidebar
+shows a real, if partial, list immediately) and hands the same `Sweep` object off to
+`activeSweep`/`sweepStartNotes` — the exact fields `refreshFromDisk` already knows how to keep
+advancing. The poll picks it up on its next 2s tick and keeps going in the background, completing
+it in the same way it already completes a sweep interrupted by its own budget — no new machinery,
+just `open()` becoming another producer of the same handoff. Once it completes, `onListChanged`
+fires again with the full list, exactly like catching up on an externally-added note.
+Found and fixed a related robustness gap while building this: `refreshFromDisk`'s `continueSweep`
+call had no `try`/`catch` — a folder vanishing mid-sweep (an already-rare but real case: the vault
+removed from disk while the poll happens to be mid-walk) would throw uncaught, and since nothing
+cleared `activeSweep`, every subsequent tick would keep re-awaiting the same now-broken queue
+forever. Added a `sweepThrew` flag alongside `sweepCompleted`; both now clear `activeSweep`/
+`sweepStartNotes` so the very next due tick starts fresh instead of retrying a dead sweep. Confirmed
+via a test that fails without the `|| sweepThrew` condition (the second, deliberately fresh
+`refreshFromDisk` call never calls `startSweep` again, because the broken sweep is still "active").
+While migrating, also caught and reverted an unintended side effect: an early draft had `open()`
+set `lastFullListAt = Date.now()` on a *complete* sweep (reasoning: a fresh, full listing just
+happened, no need to force another one right after) — but this quietly broke a pre-existing,
+already-tested invariant that a freshly-opened folder always gets one verified relist on its very
+first poll, regardless of the throttle window (see the original `open()`, which unconditionally set
+`-Infinity`). That invariant existed for a real reason (a vault opened seconds ago could already be
+stale from another process) and had 12 tests depending on it, several of which failed clearly once
+reverted back to confirm the regression-catch actually works. Restored the unconditional
+`lastFullListAt = -Infinity` after `open()` (whether the sweep completed or was handed off) —
+scope discipline: this migration is about first-paint latency, not about re-litigating the
+relist-throttle policy.
+Test suite: every test that configured `listNotes.mockResolvedValue([...])` purely to control what
+`open()` "discovers" now configures `sweepResult.mockReturnValue([...])` instead (the `open()`-only
+`listNotes` mock calls that remain are exercising `addNote`/`removeNote`/`renameActive`'s own
+still-real, unchanged `listNotes` calls — those were left as-is). Not yet re-measured on the real
+device — the next `?debug` capture is what confirms the sidebar now populates progressively there,
+the way the 2018-note desktop benchmark already showed it doing.
