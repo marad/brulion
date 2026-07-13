@@ -666,9 +666,13 @@ export function createNoteController(
         if (created.status === "exists") {
           return { ok: false, reason: "A folder with that name already exists." }
         }
-        // An empty folder adds no `.md` file, so `notes` itself is unchanged —
-        // this call exists purely to tell the UI to re-render (it re-fetches
-        // the folder listing itself; the controller has no notion of "folders").
+        // An empty folder adds no `.md` file, so the note *content* is
+        // unchanged — but the UI's "did the list change" check (main.ts) is a
+        // reference comparison on this exact array, and a genuinely new
+        // folder must still force a real re-render (it re-fetches the folder
+        // listing itself; the controller has no notion of "folders"). A fresh
+        // array, even with identical contents, defeats that shortcut honestly.
+        notes = [...notes]
         opts.onListChanged?.(notes, activeName)
         return { ok: true }
       })

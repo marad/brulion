@@ -638,6 +638,26 @@ describe("addFolder (FEAT-0069)", () => {
     expect(view.state.doc.toString()).toBe("start body") // the active note is untouched
   })
 
+  it("passes a fresh array reference even though the note content is unchanged", async () => {
+    // main.ts's onListChanged skips a full re-render when `notes === currentNotes`
+    // (same reference) — a real perf shortcut for "only the active note changed".
+    // A brand-new empty folder must not be silently swallowed by that shortcut, so
+    // this pins down that addFolder always hands back a distinct array.
+    const view = mountView()
+    sweepResult.mockReturnValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    const onListChanged = vi.fn()
+    const controller = createNoteController(view, { onListChanged, debounceMs: 10_000 })
+    await controller.open(DIR)
+    const notesBefore = onListChanged.mock.calls.at(-1)?.[0]
+
+    await controller.addFolder("ideas")
+
+    const notesAfter = onListChanged.mock.calls.at(-1)?.[0]
+    expect(notesAfter).not.toBe(notesBefore)
+    expect(notesAfter).toEqual(notesBefore)
+  })
+
   it("refuses an already-existing folder with a message (AC-4)", async () => {
     const view = mountView()
     createFolder.mockResolvedValue({ status: "exists" })
