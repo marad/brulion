@@ -144,6 +144,14 @@ function folderOf(path: string): string {
   return slash === -1 ? "" : path.slice(0, slash)
 }
 
+/** True when `path` is `container` itself, or a descendant of it — the shared
+ * "is this note/folder inside that folder" check `removeFolder`/`moveFolder`
+ * each need (an active-note-inside-a-deleted/moved-folder guard, and
+ * moveFolder's self/descendant refusal). */
+function isWithin(path: string, container: string): boolean {
+  return path === container || path.startsWith(container + "/")
+}
+
 /** Element-wise equality of two pre-sorted listings (see {@link listNotes}). */
 function sameNotes(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false
@@ -167,11 +175,11 @@ export interface NoteControllerOptions {
   onConflictResolved?: () => void
   /** Called whenever the note list or the active note changes. */
   onListChanged?: (notes: string[], active: string) => void
-  /** Called whenever the set of folders changes (M35/FEAT-0069) — fired only by
-   * `addFolder`/`removeFolder`. Ordinary note operations never affect folder
-   * existence, so this stays rare; the UI doesn't need to re-walk the tree's
-   * directories on every note add/delete/rename the way it would if this rode
-   * along on `onListChanged` instead. */
+  /** Called whenever the set of folders changes (M35/FEAT-0069/FEAT-0070) —
+   * fired only by `addFolder`/`removeFolder`/`moveFolder`. Ordinary note
+   * operations never affect folder existence, so this stays rare; the UI
+   * doesn't need to re-walk the tree's directories on every note add/delete/
+   * rename the way it would if this rode along on `onListChanged` instead. */
   onFoldersChanged?: (folders: string[]) => void
   /**
    * Called from `open()` as soon as the *guessed* active note's content is
@@ -699,7 +707,7 @@ export function createNoteController(
       abortPendingRelist()
       return serialize(async () => {
         if (!dir || conflict) return // conflict is modal — resolve it first
-        const activeInsideFolder = activeName === path || activeName.startsWith(path + "/")
+        const activeInsideFolder = isWithin(activeName, path)
         // Same reasoning as removeNote: drop the active note's unsaved edits
         // before it's yanked out from under an in-flight save, then flush to
         // settle anything already mid-write before we delete.
@@ -723,11 +731,11 @@ export function createNoteController(
       return serialize<AddNoteResult>(async () => {
         if (!dir) return { ok: false, reason: "Open a folder first." }
         if (conflict) return { ok: false, reason: "Resolve the conflict first." }
-        if (toPath === fromPath || toPath.startsWith(fromPath + "/")) {
+        if (isWithin(toPath, fromPath)) {
           return { ok: false, reason: "Can't move a folder into itself or one of its own subfolders." }
         }
 
-        const activeInsideFolder = activeName === fromPath || activeName.startsWith(fromPath + "/")
+        const activeInsideFolder = isWithin(activeName, fromPath)
         if (activeInsideFolder) {
           await flushAndWait()
           if (conflict) return { ok: false, reason: "Resolve the conflict first." }

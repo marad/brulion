@@ -193,7 +193,7 @@ let currentNotes: string[] = []
 // Folders with no notes in them (M35/FEAT-0069) — not covered by currentNotes
 // at all (an empty folder implies no note path), so tracked separately.
 // Refreshed once per vault attach (openNote) and whenever addFolder/
-// removeFolder actually change the set (onFoldersChanged); NOT on every
+// removeFolder/moveFolder actually change the set (onFoldersChanged); NOT on every
 // ordinary note change, which never affects folder existence — a per-note-op
 // directory walk would undermine the Sweep/budget work done elsewhere to
 // bound relist cost on large vaults.
