@@ -13,6 +13,7 @@ import {
   listFolders,
   createFolder,
   deleteFolder,
+  isFolderEmpty,
 } from "./note"
 
 type FileNode = { kind: "file"; content: string; lastModified: number }
@@ -554,6 +555,32 @@ describe("createFolder (AC-1, AC-2, AC-3, AC-4)", () => {
     const result = await createFolder(folder.dir, "projects")
     expect(result).toEqual({ status: "exists" })
     expect(folder.content("projects")).toBe("x") // the blocking file is untouched
+  })
+})
+
+describe("isFolderEmpty (M35/FEAT-0070)", () => {
+  it("is true for a folder with nothing in it", async () => {
+    const folder = fakeFolder({ empty: { kind: "directory" } })
+    expect(await isFolderEmpty(folder.dir, "empty")).toBe(true)
+  })
+
+  it("is false for a folder containing a note", async () => {
+    const folder = fakeFolder({
+      sub: { kind: "directory", children: { "a.md": { kind: "file", content: "x" } } },
+    })
+    expect(await isFolderEmpty(folder.dir, "sub")).toBe(false)
+  })
+
+  it("is false for a folder containing only a subfolder", async () => {
+    const folder = fakeFolder({
+      sub: { kind: "directory", children: { nested: { kind: "directory" } } },
+    })
+    expect(await isFolderEmpty(folder.dir, "sub")).toBe(false)
+  })
+
+  it("is true (nothing to protect) for a folder that doesn't exist", async () => {
+    const folder = fakeFolder()
+    expect(await isFolderEmpty(folder.dir, "ghost")).toBe(true)
   })
 })
 
