@@ -14,6 +14,7 @@ import {
   type IconNode,
 } from "lucide"
 import { mountEditor, setEditorEditable, setLinkContext, scrollEditorToHeading } from "./editor"
+import { listFolders } from "./note"
 import { createNoteController, type NoteController } from "./note-controller"
 import { mountConflictDiff, type ConflictDiff } from "./conflict-view"
 import {
@@ -113,6 +114,7 @@ const noteIdentityEl = document.querySelector<HTMLElement>("#note-identity")
 const missingNoteEl = document.querySelector<HTMLElement>("#missing-note")
 const listEl = document.querySelector<HTMLElement>("#note-list")
 const sidebarSearchEl = document.querySelector<HTMLButtonElement>("#sidebar-search")
+const sidebarNewFolderEl = document.querySelector<HTMLButtonElement>("#sidebar-new-folder")
 const switcherBackdropEl = document.querySelector<HTMLDivElement>("#switcher-backdrop")
 const switcherInputEl = document.querySelector<HTMLInputElement>("#switcher-input")
 const switcherListEl = document.querySelector<HTMLElement>("#switcher-list")
@@ -143,6 +145,7 @@ if (
   !missingNoteEl ||
   !listEl ||
   !sidebarSearchEl ||
+  !sidebarNewFolderEl ||
   !switcherBackdropEl ||
   !switcherInputEl ||
   !switcherListEl ||
@@ -387,6 +390,24 @@ const noteListHandlers = {
     else expandedFolders.add(path)
     void saveExpandedFolders(currentVaultId, expandedFolders)
   },
+  onCreateFolder: (parentPath: string) => promptNewFolder(parentPath),
+  onDeleteFolder: (path: string) => {
+    if (window.confirm(`Delete "${path}" and everything inside it? This removes every note beneath it from your folder.`)) {
+      void controller.removeFolder(path)
+    }
+  },
+}
+
+/** Prompt for a new folder's name and create it under `parentPath` ("" = the
+ * vault root) — M35/FEAT-0069. Native `prompt`/`alert`, matching the pattern
+ * note delete already uses (`window.confirm` above); no new modal. */
+function promptNewFolder(parentPath: string): void {
+  const name = window.prompt("New folder name:")
+  if (!name) return // dismissed or empty — no-op
+  const path = parentPath ? `${parentPath}/${name}` : name
+  void controller.addFolder(path).then((result) => {
+    if (!result.ok) window.alert(result.reason)
+  })
 }
 controller = createNoteController(view, {
   onConflict: (versions) => {
@@ -436,7 +457,7 @@ controller = createNoteController(view, {
     })
     identity.update(path)
   },
-  onListChanged: (notes, active) => {
+  onListChanged: async (notes, active) => {
     // A folder is open — swap the welcome hero for the workspace and reveal the
     // in-note header controls (FEAT-0031). The collapse preference (a CSS class on
     // .workspace) is orthogonal: if the user left the sidebar collapsed it stays
@@ -476,7 +497,13 @@ controller = createNoteController(view, {
         row.toggleAttribute("aria-current", isActive)
       }
     } else {
-      trackSync("renderNoteList", () => renderNoteList(listEl, notes, active, noteListHandlers, expandedFolders))
+      // Empty folders (M35/FEAT-0069) aren't part of `notes` at all — fetched
+      // fresh here, alongside the real (not cached) listing this branch already
+      // represents, so a just-created/deleted one shows up immediately.
+      const folders = settingsDir ? await listFolders(settingsDir) : []
+      trackSync("renderNoteList", () =>
+        renderNoteList(listEl, notes, active, noteListHandlers, expandedFolders, folders),
+      )
       cachedNoteList = notes
       void saveNoteList(currentVaultId, notes) // the fresh, authoritative list — this vault's next attach paints from it
     }
@@ -512,6 +539,9 @@ const switcher = mountQuickSwitcher(
 // textbox), and the Ctrl/Cmd+K shortcut. The shortcut is a capture-phase listener
 // so neither CodeMirror nor the Vim layer can swallow it first (AC-9).
 sidebarSearchEl.addEventListener("click", () => switcher.open())
+// Root-level "new folder" (M35/FEAT-0069) — same prompt/create path as a
+// folder row's own "+", just with no parent (creates at the vault root).
+sidebarNewFolderEl.addEventListener("click", () => promptNewFolder(""))
 // Show the platform-correct chord in the hint (the app is meant to run on any
 // foreign machine), and match the button's tooltip to it.
 {
