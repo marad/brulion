@@ -162,6 +162,33 @@ export interface NoteListHandlers {
   /** The folder row's "×" was clicked (M35/FEAT-0069); `path` is the folder to
    * delete, along with everything beneath it. */
   onDeleteFolder?: (path: string) => void
+  /** A note row's move control was clicked (M35/FEAT-0070); `path` is that
+   * note's own path. */
+  onMoveNote?: (path: string) => void
+  /** A folder row's move control was clicked (M35/FEAT-0070); `path` is that
+   * folder's own path. */
+  onMoveFolder?: (path: string) => void
+}
+
+/**
+ * Every unique folder path implied by `notes` (the same prefix-walk
+ * {@link buildNoteTree} does internally, collected instead of built into
+ * nodes) unioned with `folders` (M35/FEAT-0069's explicit empty-folder list) —
+ * a flat, sorted destination list for the "Move to…" picker (M35/FEAT-0070).
+ * Root is deliberately not included here; only the picker knows to special-case
+ * it as "(root)".
+ */
+export function derivedFolderPaths(notes: string[], folders: string[]): string[] {
+  const set = new Set<string>(folders)
+  for (const path of notes) {
+    const segments = path.split("/")
+    let prefix = ""
+    for (let i = 0; i < segments.length - 1; i++) {
+      prefix = prefix ? `${prefix}/${segments[i]}` : segments[i]
+      set.add(prefix)
+    }
+  }
+  return [...set].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
 }
 
 /**
@@ -237,6 +264,14 @@ function renderNode(
   createButton.setAttribute("aria-label", `New folder in ${node.name}`)
   createButton.addEventListener("click", () => handlers.onCreateFolder?.(node.path))
 
+  const moveButton = document.createElement("button")
+  moveButton.type = "button"
+  moveButton.className = "folder-move"
+  moveButton.textContent = "→"
+  moveButton.title = `Move ${node.name}`
+  moveButton.setAttribute("aria-label", `Move ${node.name}`)
+  moveButton.addEventListener("click", () => handlers.onMoveFolder?.(node.path))
+
   const deleteButton = document.createElement("button")
   deleteButton.type = "button"
   deleteButton.className = "folder-delete"
@@ -247,7 +282,7 @@ function renderNode(
 
   const row = document.createElement("div")
   row.className = "folder-row"
-  row.append(header, createButton, deleteButton)
+  row.append(header, createButton, moveButton, deleteButton)
 
   folder.append(row, children)
   return folder
@@ -270,6 +305,14 @@ function renderNoteRow(node: NoteLeaf, active: string, handlers: NoteListHandler
   nameButton.title = displayName(node.path) // full note path on hover (rows ellipsize)
   nameButton.addEventListener("click", () => handlers.onSelect(node.path))
 
+  const moveButton = document.createElement("button")
+  moveButton.type = "button"
+  moveButton.className = "note-move"
+  moveButton.textContent = "→"
+  moveButton.title = `Move ${node.name}`
+  moveButton.setAttribute("aria-label", `Move ${node.name}`)
+  moveButton.addEventListener("click", () => handlers.onMoveNote?.(node.path))
+
   const deleteButton = document.createElement("button")
   deleteButton.type = "button"
   deleteButton.className = "note-delete"
@@ -278,7 +321,7 @@ function renderNoteRow(node: NoteLeaf, active: string, handlers: NoteListHandler
   deleteButton.setAttribute("aria-label", `Delete ${node.name}`)
   deleteButton.addEventListener("click", () => handlers.onDelete(node.path))
 
-  row.append(nameButton, deleteButton)
+  row.append(nameButton, moveButton, deleteButton)
   return row
 }
 
