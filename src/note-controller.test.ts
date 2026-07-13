@@ -801,6 +801,27 @@ describe("moveFolder (FEAT-0070)", () => {
     expect(saveNote).toHaveBeenCalledWith(DIR, "start.md", "[d](archive/projects/a.md)", 7)
   })
 
+  it("does not mis-rebase a moved note's link to a sibling that moved with it (AC-6)", async () => {
+    // a.md and b.md both live in `projects` and both move to `archive/projects` —
+    // a.md's relative link to b.md must not be "corrected" as if b.md had stayed
+    // at projects/b.md (a real bug caught by the e2e suite).
+    const { controller } = await open("start.md", ["start.md", "projects/a.md", "projects/b.md"])
+    listNotes.mockResolvedValue(["start.md", "archive/projects/a.md", "archive/projects/b.md"])
+    readNote.mockImplementation(async (_dir, name) => ({
+      content: name === "archive/projects/a.md" ? "[b](b.md)" : `${name} body`,
+      lastModified: 7,
+    }))
+
+    await controller.moveFolder("projects", "archive/projects")
+
+    expect(saveNote).not.toHaveBeenCalledWith(
+      DIR,
+      "archive/projects/a.md",
+      expect.anything(),
+      expect.anything(),
+    )
+  })
+
   it("the active note follows when its folder moves (AC-8)", async () => {
     const { view, controller } = await open("projects/a.md", ["projects/a.md"])
     listNotes.mockResolvedValue(["archive/projects/a.md"])
