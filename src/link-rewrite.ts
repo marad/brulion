@@ -181,11 +181,19 @@ export function rewriteLinksForRename(args: RenameRewrite): string | null {
  * (every destination still resolves identically), so this returns `null`.
  * Wikilinks are untouched — they resolve by basename / from the root, independent
  * of where the linking note lives. External and non-note links are left as-is.
+ *
+ * `movedTargets` (M35/FEAT-0070) maps any *other* old path that moved in the same
+ * batch to its own new path — a whole-folder move relocates many notes at once, and
+ * a link to one of its own siblings must follow *that* note to where it actually
+ * ended up, not be rebased as if it were still at its pre-move path (which would
+ * silently point at nothing, or worse, at whatever now occupies that stale path).
+ * Empty/omitted for a single rename (FEAT-0034/0041), where no such siblings exist.
  */
 export function rebaseOutboundLinks(
   text: string,
   oldPath: string,
   newPath: string,
+  movedTargets: ReadonlyMap<string, string> = new Map(),
 ): string | null {
   const edits: Array<{ from: number; to: number; insert: string }> = []
   for (const { from, to, dest } of markdownLinkDests(text)) {
@@ -194,8 +202,10 @@ export function rebaseOutboundLinks(
     if (resolved === null) continue // not an in-tree note link (escapes root / not .md)
     // A self-link (the moved note links to itself) follows the note: its target is
     // the new path, not the stale old one — otherwise it would be rebased to the
-    // old location and dangle.
-    const target = resolved === oldPath ? newPath : resolved
+    // old location and dangle. A link to a co-moved sibling follows it to its own
+    // new path for the same reason; anything else is assumed to still be where it
+    // resolved from the old location.
+    const target = resolved === oldPath ? newPath : (movedTargets.get(resolved) ?? resolved)
     if (resolveNotePath(newPath, dest) === target) continue // still resolves from the new location
     edits.push({ from, to, insert: markdownDest(relativeLink(newPath, target)) })
   }
