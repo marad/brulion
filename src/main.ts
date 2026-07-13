@@ -640,11 +640,19 @@ const openNote = async (dir: FileSystemDirectoryHandle) => {
   loadingSettings = true
   settingsDir = dir
   try {
-    // Independent reads — run together so a vault with many empty folders
-    // doesn't add its listFolders latency on top of the settings read.
-    ;[currentSettings, currentFolders] = await Promise.all([loadSettings(dir), listFolders(dir)])
+    currentSettings = await loadSettings(dir)
   } finally {
     loadingSettings = false
+  }
+  // Best-effort: empty folders (M35/FEAT-0069) are an opportunistic sidebar
+  // extra, not load-bearing for opening the vault — a transient failure here
+  // must not abort the whole open the way it would if this shared a
+  // Promise.all (and thus a single failure path) with the settings read
+  // above. Empty folders just won't show until the next successful listing.
+  try {
+    currentFolders = await listFolders(dir)
+  } catch {
+    currentFolders = []
   }
   applySettings(view, currentSettings)
   refreshActionBar() // paint this folder's pinned action bar (FEAT-0058)
