@@ -507,10 +507,14 @@ export function createNoteController(
     folder: FileSystemDirectoryHandle,
     from: string,
     to: string,
+    // Any *other* notes moving in the same batch (M35/FEAT-0070's moveFolder) —
+    // a link to one of them must follow it to its own new path, not be rebased
+    // as if it had stayed at its pre-move location. Empty for a single rename.
+    movedTargets: ReadonlyMap<string, string> = new Map(),
   ): Promise<void> => {
     if (folderOf(from) === folderOf(to)) return // same folder — outbound links unaffected
     const { content, lastModified } = await readNote(folder, to)
-    const rebased = rebaseOutboundLinks(content, from, to)
+    const rebased = rebaseOutboundLinks(content, from, to, movedTargets)
     if (rebased !== null) await saveNote(folder, to, rebased, lastModified)
   }
 
@@ -737,13 +741,23 @@ export function createNoteController(
           const result = await moveNote(dir, oldPath, newPath)
           if (result.status !== "moved") continue // occupied/missing — leave this one where it is
           contentCache.delete(oldPath)
+          moves.push({ from: oldPath, to: newPath })
+          if (oldPath === activeName) newActiveName = newPath
+        }
+
+        // Rebase each moved note's own outbound links only once the *whole*
+        // batch is known — a link to a sibling that also moved must follow it
+        // to its own new path, not be rebased as if that sibling had stayed put
+        // (a real bug caught by the e2e suite: doing this inline in the loop
+        // above, one file at a time, meant later siblings' destinations weren't
+        // known yet when an earlier file's own links were rebased).
+        const movedTargets = new Map(moves.map((move) => [move.from, move.to]))
+        for (const { from, to } of moves) {
           try {
-            await rebaseMovedNote(dir, oldPath, newPath)
+            await rebaseMovedNote(dir, from, to, movedTargets)
           } catch {
             // leave this note's own outbound links as-is rather than failing the move
           }
-          moves.push({ from: oldPath, to: newPath })
-          if (oldPath === activeName) newActiveName = newPath
         }
 
         // Empty subfolders (no notes anywhere beneath them) never move on their
