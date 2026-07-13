@@ -703,8 +703,10 @@ header button:hover {
   font-weight: 600;
 }
 
-/* Delete control: always present (touch devices have no hover), but muted —
- * it gains weight on row hover and turns red on its own hover/focus. */
+/* Move/delete controls: always present (touch devices have no hover), but
+ * muted — they gain weight on row hover; delete turns red on its own hover/
+ * focus, move (non-destructive) just brightens like a normal action. */
+.note-move,
 .note-delete {
   font: inherit;
   flex: 0 0 auto;
@@ -717,8 +719,15 @@ header button:hover {
   cursor: pointer;
 }
 
+.note-row:hover .note-move,
 .note-row:hover .note-delete {
   color: var(--text-muted);
+}
+
+.note-move:hover,
+.note-move:focus-visible {
+  color: var(--accent-text);
+  background: var(--surface-2);
 }
 
 .note-delete:hover,
@@ -765,8 +774,9 @@ header button:hover {
   background: var(--surface-2);
 }
 
-/* Create/delete controls: same muted-until-hover treatment as .note-delete. */
+/* Create/move/delete controls: same muted-until-hover treatment as .note-delete. */
 .folder-create,
+.folder-move,
 .folder-delete {
   font: inherit;
   flex: 0 0 auto;
@@ -780,12 +790,15 @@ header button:hover {
 }
 
 .folder-row:hover .folder-create,
+.folder-row:hover .folder-move,
 .folder-row:hover .folder-delete {
   color: var(--text-muted);
 }
 
 .folder-create:hover,
-.folder-create:focus-visible {
+.folder-create:focus-visible,
+.folder-move:hover,
+.folder-move:focus-visible {
   color: var(--accent-text);
   background: var(--surface-2);
 }
@@ -823,9 +836,11 @@ header button:hover {
 
 /* Quick switcher (FEAT-0033): a modal find-or-create palette. Same backdrop
    pattern as the conflict modal, but anchored near the top (palette convention)
-   and calmer — a tool, not an alert. */
+   and calmer — a tool, not an alert. The move picker (M35/FEAT-0070) is a third
+   instance of the exact same overlay shape. */
 #switcher-backdrop,
-#palette-backdrop {
+#palette-backdrop,
+#move-backdrop {
   position: fixed;
   inset: 0;
   z-index: 100;
@@ -844,20 +859,23 @@ header button:hover {
 
 @starting-style {
   #switcher-backdrop,
-  #palette-backdrop {
+  #palette-backdrop,
+  #move-backdrop {
     opacity: 0;
   }
 }
 
 #switcher-backdrop[hidden],
-#palette-backdrop[hidden] {
+#palette-backdrop[hidden],
+#move-backdrop[hidden] {
   display: none;
   opacity: 0;
   pointer-events: none; /* don't block the workspace during the fade-out */
 }
 
 #switcher,
-#palette {
+#palette,
+#move {
   display: flex;
   flex-direction: column;
   width: min(34rem, 100%);
@@ -877,20 +895,23 @@ header button:hover {
 
 @starting-style {
   #switcher,
-  #palette {
+  #palette,
+  #move {
     opacity: 0;
     transform: translateY(-8px) scale(0.98);
   }
 }
 
 #switcher-backdrop[hidden] #switcher,
-#palette-backdrop[hidden] #palette {
+#palette-backdrop[hidden] #palette,
+#move-backdrop[hidden] #move {
   opacity: 0;
   transform: translateY(-8px) scale(0.98);
 }
 
 #switcher-input,
-#palette-input {
+#palette-input,
+#move-input {
   font: inherit;
   font-size: 1.05rem;
   flex: 0 0 auto;
@@ -902,11 +923,13 @@ header button:hover {
 }
 
 #switcher-input:focus,
-#palette-input:focus {
+#palette-input:focus,
+#move-input:focus {
   outline: none;
 }
 
-#switcher-error {
+#switcher-error,
+#move-error {
   margin: 0;
   flex: 0 0 auto;
   padding: 0.4rem 0.9rem;
@@ -916,7 +939,8 @@ header button:hover {
   border-bottom: 1px solid var(--danger-border);
 }
 
-#switcher-error[hidden] {
+#switcher-error[hidden],
+#move-error[hidden] {
   display: none;
 }
 
@@ -924,7 +948,8 @@ header button:hover {
    column distribute its overflow by shrinking the rows. `min-height: 0` lets a
    flex child shrink below its content so `overflow-y` actually engages. */
 #switcher-list,
-#palette-list {
+#palette-list,
+#move-list {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -936,7 +961,8 @@ header button:hover {
 
 .switch-row,
 .switch-create,
-.palette-row {
+.palette-row,
+.move-row {
   font: inherit;
   /* Keep their natural height — without this the rows shrink to fit a long list
      (height shrinking with item count), instead of the list scrolling. */
@@ -959,7 +985,8 @@ header button:hover {
 
 .switch-row.active,
 .switch-create.active,
-.palette-row.active {
+.palette-row.active,
+.move-row.active {
   background: var(--border);
 }
 

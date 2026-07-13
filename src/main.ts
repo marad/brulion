@@ -22,6 +22,7 @@ import {
   openFolder,
   restoreVault,
   renderNoteList,
+  derivedFolderPaths,
   renderActionBar,
   wireToggle,
   wireSidebarResize,
@@ -33,6 +34,7 @@ import {
 } from "./ui"
 import { mountQuickSwitcher } from "./quick-switcher"
 import { mountCommandPalette } from "./command-palette"
+import { mountMovePicker } from "./move-picker"
 import { resolvePinned, type Action } from "./actions"
 import {
   addVault,
@@ -122,6 +124,10 @@ const switcherErrorEl = document.querySelector<HTMLElement>("#switcher-error")
 const paletteBackdropEl = document.querySelector<HTMLDivElement>("#palette-backdrop")
 const paletteInputEl = document.querySelector<HTMLInputElement>("#palette-input")
 const paletteListEl = document.querySelector<HTMLElement>("#palette-list")
+const moveBackdropEl = document.querySelector<HTMLDivElement>("#move-backdrop")
+const moveInputEl = document.querySelector<HTMLInputElement>("#move-input")
+const moveListEl = document.querySelector<HTMLElement>("#move-list")
+const moveErrorEl = document.querySelector<HTMLElement>("#move-error")
 const openButton = document.querySelector<HTMLButtonElement>("#open-folder")
 const resumeButton = document.querySelector<HTMLButtonElement>("#resume-access")
 const installButton = document.querySelector<HTMLButtonElement>("#install-app")
@@ -146,6 +152,10 @@ if (
   !listEl ||
   !sidebarSearchEl ||
   !sidebarNewFolderEl ||
+  !moveBackdropEl ||
+  !moveInputEl ||
+  !moveListEl ||
+  !moveErrorEl ||
   !switcherBackdropEl ||
   !switcherInputEl ||
   !switcherListEl ||
@@ -404,6 +414,20 @@ const noteListHandlers = {
       void controller.removeFolder(path)
     }
   },
+  onMoveNote: (path: string) => {
+    // renameActive is active-note-scoped — switch to this note first, exactly
+    // like clicking its name already does, then let the picker apply the move.
+    void controller.switchTo(path).then(() => {
+      const name = displayName(path).split("/").pop() as string
+      movePicker.open(destinationChoices(), (dest) => controller.renameActive(dest ? `${dest}/${name}` : name))
+    })
+  },
+  onMoveFolder: (path: string) => {
+    const name = path.split("/").pop() as string
+    movePicker.open(destinationChoices(), (dest) =>
+      controller.moveFolder(path, dest ? `${dest}/${name}` : name),
+    )
+  },
 }
 
 /** Prompt for a new folder's name and create it under `parentPath` ("" = the
@@ -551,6 +575,20 @@ const switcher = mountQuickSwitcher(
     createNote: (name) => controller.addNote(name),
   },
 )
+
+// "Move to…" destination picker (M35/FEAT-0070). Moving a note switches to it
+// first (renameActive is active-note-scoped, same constraint the header
+// rename already has); moving a folder has no such constraint.
+const movePicker = mountMovePicker({
+  backdrop: moveBackdropEl,
+  input: moveInputEl,
+  list: moveListEl,
+  error: moveErrorEl,
+})
+
+function destinationChoices(): string[] {
+  return ["", ...derivedFolderPaths(currentNotes, currentFolders)]
+}
 
 // The sidebar's visible entry point into the switcher (creation is no longer a
 // textbox), and the Ctrl/Cmd+K shortcut. The shortcut is a capture-phase listener
