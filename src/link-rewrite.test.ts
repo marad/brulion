@@ -344,4 +344,26 @@ describe("rebaseOutboundLinks — the moved note's own links (FEAT-0041)", () =>
     expect(out).toBe("[x](<my dir/other.md>)")
     expect(resolveNotePath("n.md", "<my dir/other.md>")).toBe("my dir/other.md")
   })
+
+  it("leaves a link to a co-moved note untouched when its relative position is preserved (M35/FEAT-0070)", () => {
+    // a.md and b.md both move from projects/ to archive/projects/ (a whole-folder
+    // move) — a.md's link to b.md must NOT be "corrected" as if b.md stayed at
+    // projects/b.md; it's already right from the new location.
+    const movedTargets = new Map([["projects/b.md", "archive/projects/b.md"]])
+    const out = rebaseOutboundLinks("[b](b.md)", "projects/a.md", "archive/projects/a.md", movedTargets)
+    expect(out).toBeNull()
+  })
+
+  it("still rebases a link to a note that did NOT move, alongside one that did (M35/FEAT-0070)", () => {
+    const movedTargets = new Map([["projects/b.md", "archive/projects/b.md"]])
+    const out = rebaseOutboundLinks(
+      "[b](b.md) [o](../other.md)",
+      "projects/a.md",
+      "archive/projects/a.md",
+      movedTargets,
+    )
+    // "b.md" resolves correctly already (no churn); "../other.md" (→ other.md,
+    // unmoved) needs rebasing from the new two-levels-deep location.
+    expect(out).toBe("[b](b.md) [o](../../other.md)")
+  })
 })
