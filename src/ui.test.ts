@@ -7,6 +7,7 @@ import {
   wireOpenFolder,
   renderNoteList,
   buildNoteTree,
+  derivedFolderPaths,
   wireToggle,
   showWorkspace,
   mountNoteIdentity,
@@ -259,6 +260,20 @@ describe("buildNoteTree with empty folders (FEAT-0069 AC-1, AC-2)", () => {
   })
 })
 
+describe("derivedFolderPaths (FEAT-0070)", () => {
+  it("collects every folder prefix implied by note paths", () => {
+    expect(derivedFolderPaths(["a.md", "sub/b.md", "sub/deep/c.md"], [])).toEqual(["sub", "sub/deep"])
+  })
+
+  it("unions in the explicit empty-folders list, deduped and sorted", () => {
+    expect(derivedFolderPaths(["projects/a.md"], ["apples", "projects"])).toEqual(["apples", "projects"])
+  })
+
+  it("returns an empty list when there are no folders at all", () => {
+    expect(derivedFolderPaths(["a.md", "b.md"], [])).toEqual([])
+  })
+})
+
 describe("renderNoteList tree (FEAT-0024)", () => {
   const handlers = () => ({ onSelect: vi.fn(), onDelete: vi.fn(), onToggleFolder: vi.fn() })
 
@@ -395,6 +410,33 @@ describe("renderNoteList folder create/delete controls (FEAT-0069)", () => {
     renderNoteList(container, [], "", handlers(), new Set(), ["ideas"])
 
     expect([...container.querySelectorAll(".folder-header")].map((el) => el.textContent)).toEqual(["ideas"])
+  })
+})
+
+describe("renderNoteList move controls (FEAT-0070)", () => {
+  const handlers = () => ({
+    onSelect: vi.fn(),
+    onDelete: vi.fn(),
+    onMoveNote: vi.fn(),
+    onMoveFolder: vi.fn(),
+  })
+
+  it("calls onMoveNote with the note's path when its move control is clicked (AC-1)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["sub/b.md"], "sub/b.md", h)
+
+    container.querySelector<HTMLElement>(".note-move")!.click()
+    expect(h.onMoveNote).toHaveBeenCalledWith("sub/b.md")
+  })
+
+  it("calls onMoveFolder with the folder's path when its move control is clicked (AC-3)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["sub/b.md"], "sub/b.md", h)
+
+    container.querySelector<HTMLElement>(".folder-move")!.click()
+    expect(h.onMoveFolder).toHaveBeenCalledWith("sub")
   })
 })
 
