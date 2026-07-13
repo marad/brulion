@@ -731,6 +731,113 @@ describe("removeFolder (FEAT-0069)", () => {
   })
 })
 
+describe("moveFolder (FEAT-0070)", () => {
+  async function open(active: string, names: string[]) {
+    const view = mountView()
+    listNotes.mockResolvedValue(names)
+    sweepResult.mockReturnValue(names)
+    listFolders.mockResolvedValue([])
+    loadActiveNote.mockResolvedValue(active)
+    readNote.mockImplementation(async (_dir, name) => ({ content: `${name} body`, lastModified: 1 }))
+    const onListChanged = vi.fn()
+    const onFoldersChanged = vi.fn()
+    const controller = createNoteController(view, { onListChanged, onFoldersChanged, debounceMs: 10_000 })
+    await controller.open(DIR)
+    return { view, controller, onListChanged, onFoldersChanged }
+  }
+
+  it("moves every note in the subtree and relocates the folder itself (AC-3)", async () => {
+    const { controller } = await open("start.md", ["start.md", "projects/a.md", "projects/ideas/b.md"])
+    listNotes.mockResolvedValue(["start.md", "archive/projects/a.md", "archive/projects/ideas/b.md"])
+
+    const result = await controller.moveFolder("projects", "archive/projects")
+
+    expect(result).toEqual({ ok: true })
+    expect(moveNote).toHaveBeenCalledWith(DIR, "projects/a.md", "archive/projects/a.md")
+    expect(moveNote).toHaveBeenCalledWith(DIR, "projects/ideas/b.md", "archive/projects/ideas/b.md")
+    expect(createFolder).toHaveBeenCalledWith(DIR, "archive/projects")
+    expect(deleteFolder).toHaveBeenCalledWith(DIR, "projects")
+  })
+
+  it("relocates an empty subfolder that has no notes of its own", async () => {
+    const { controller } = await open("start.md", ["start.md", "projects/a.md"])
+    listFolders.mockResolvedValue(["projects/empty-sub"])
+    listNotes.mockResolvedValue(["start.md", "archive/projects/a.md"])
+
+    await controller.moveFolder("projects", "archive/projects")
+
+    expect(createFolder).toHaveBeenCalledWith(DIR, "archive/projects/empty-sub")
+    expect(deleteFolder).toHaveBeenCalledWith(DIR, "projects/empty-sub")
+  })
+
+  it("refuses moving a folder into itself (AC-4)", async () => {
+    const { controller } = await open("start.md", ["start.md"])
+
+    const result = await controller.moveFolder("projects", "projects")
+
+    expect(result.ok).toBe(false)
+    expect(moveNote).not.toHaveBeenCalled()
+  })
+
+  it("refuses moving a folder into its own descendant (AC-5)", async () => {
+    const { controller } = await open("start.md", ["start.md"])
+
+    const result = await controller.moveFolder("projects", "projects/ideas")
+
+    expect(result.ok).toBe(false)
+    expect(moveNote).not.toHaveBeenCalled()
+  })
+
+  it("rewrites inbound links from notes outside the moved folder (AC-7)", async () => {
+    const { controller } = await open("start.md", ["start.md", "projects/a.md"])
+    listNotes.mockResolvedValue(["start.md", "archive/projects/a.md"])
+    readNote.mockImplementation(async (_dir, name) => ({
+      content: name === "start.md" ? "[d](projects/a.md)" : `${name} body`,
+      lastModified: 7,
+    }))
+
+    await controller.moveFolder("projects", "archive/projects")
+
+    expect(saveNote).toHaveBeenCalledWith(DIR, "start.md", "[d](archive/projects/a.md)", 7)
+  })
+
+  it("the active note follows when its folder moves (AC-8)", async () => {
+    const { view, controller } = await open("projects/a.md", ["projects/a.md"])
+    listNotes.mockResolvedValue(["archive/projects/a.md"])
+    readNote.mockImplementation(async (_dir, name) => ({
+      content: name === "archive/projects/a.md" ? "a body" : `${name} body`,
+      lastModified: 1,
+    }))
+
+    await controller.moveFolder("projects", "archive/projects")
+
+    expect(view.state.doc.toString()).toBe("a body")
+  })
+
+  it("skips a file whose destination is already occupied, without failing the whole move (AC-9)", async () => {
+    const { controller } = await open("start.md", ["start.md", "projects/a.md", "projects/b.md"])
+    moveNote.mockImplementation(async (_dir, from) =>
+      from === "projects/a.md" ? { status: "exists" } : { status: "moved" },
+    )
+    listNotes.mockResolvedValue(["start.md", "projects/a.md", "archive/projects/b.md"])
+
+    const result = await controller.moveFolder("projects", "archive/projects")
+
+    expect(result).toEqual({ ok: true })
+    expect(moveNote).toHaveBeenCalledWith(DIR, "projects/b.md", "archive/projects/b.md")
+  })
+
+  it("fires onFoldersChanged with the fresh folder listing", async () => {
+    const { controller, onFoldersChanged } = await open("start.md", ["start.md", "projects/a.md"])
+    listFolders.mockResolvedValue(["archive"])
+    listNotes.mockResolvedValue(["start.md", "archive/projects/a.md"])
+
+    await controller.moveFolder("projects", "archive/projects")
+
+    expect(onFoldersChanged).toHaveBeenLastCalledWith(["archive"])
+  })
+})
+
 describe("renameActive (FEAT-0034)", () => {
   async function open(active: string, names: string[]) {
     const view = mountView()
