@@ -337,10 +337,11 @@ export async function createNote(
 
 /** Remove `name` from the folder. Already-absent is a no-op (idempotent): the
  * folder has many writers, so a note we mean to delete may already be gone.
- * Also prunes any folder the deletion leaves empty (see
- * {@link pruneEmptyAncestors}) — a folder now persists empty only when the
- * user explicitly made one with {@link createFolder} (M35/FEAT-0069), never as
- * litter left behind by deleting the last thing that was in it. */
+ * Deliberately does **not** clean up a folder left empty by this (M35/
+ * FEAT-0069): a folder is now a real, independent thing (see
+ * {@link createFolder}) — exactly like on a real filesystem, emptying it
+ * doesn't delete it. The user removes an unwanted empty folder explicitly via
+ * {@link deleteFolder}. */
 export async function deleteNote(
   dir: FileSystemDirectoryHandle,
   name: string,
@@ -350,33 +351,8 @@ export async function deleteNote(
     const parent = await resolveParent(dir, folders, false)
     if (!parent) return // a missing intermediate folder means the note is already gone
     await parent.removeEntry(file)
-    await pruneEmptyAncestors(dir, folders)
   } catch (err) {
     if (!isNotFound(err)) throw err
-  }
-}
-
-/**
- * Walk from the innermost folder in `folders` back toward `dir`, removing any
- * that has become empty, stopping at the first non-empty one (or the root).
- * Called after something is removed/moved out of a folder (M35/FEAT-0069) — so
- * a folder persists empty only when the user explicitly created it, never as
- * leftover litter from emptying it some other way.
- */
-async function pruneEmptyAncestors(dir: FileSystemDirectoryHandle, folders: string[]): Promise<void> {
-  for (let i = folders.length; i > 0; i--) {
-    const parent = await resolveParent(dir, folders.slice(0, i - 1), false)
-    if (!parent) return
-    let target: FileSystemDirectoryHandle
-    try {
-      target = await parent.getDirectoryHandle(folders[i - 1])
-    } catch (err) {
-      if (isAbsent(err)) return
-      throw err
-    }
-    const first = await target.values().next()
-    if (!first.done) return // still has something in it — stop, don't check further up
-    await parent.removeEntry(folders[i - 1])
   }
 }
 
@@ -411,8 +387,9 @@ export async function createFolder(
 }
 
 /** Remove the folder at `path` and everything beneath it. Already-absent is a
- * no-op (idempotent), same reasoning as {@link deleteNote} — and, like it,
- * prunes any ancestor the removal leaves empty. */
+ * no-op (idempotent), same reasoning as {@link deleteNote}. Its own now-empty
+ * parent is left alone, for the same reason `deleteNote` leaves its emptied
+ * folder alone — a folder's lifecycle is independent of its contents now. */
 export async function deleteFolder(
   dir: FileSystemDirectoryHandle,
   path: string,
@@ -422,7 +399,6 @@ export async function deleteFolder(
     const parent = await resolveParent(dir, folders, false)
     if (!parent) return // a missing intermediate folder means it's already gone
     await parent.removeEntry(file, { recursive: true })
-    await pruneEmptyAncestors(dir, folders)
   } catch (err) {
     if (!isNotFound(err)) throw err
   }
@@ -461,7 +437,6 @@ export async function moveNote(
     try {
       parent = await resolveParent(dir, folders, true)
       await movable.move(parent, file)
-      await pruneEmptyAncestors(dir, splitPath(from).folders) // the source folder may now be empty
       return { status: "moved" }
     } catch (err) {
       if (isAbsent(err)) return { status: "exists" } // a file blocks a folder segment — like createNote

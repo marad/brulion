@@ -17,6 +17,7 @@ vi.mock("./note", () => ({
   sweepResult: vi.fn(),
   createFolder: vi.fn(),
   deleteFolder: vi.fn(),
+  listFolders: vi.fn(),
 }))
 vi.mock("./session", () => ({ saveActiveNote: vi.fn(), loadActiveNote: vi.fn() }))
 const readNote = vi.mocked(note.readNote)
@@ -31,6 +32,7 @@ const continueSweep = vi.mocked(note.continueSweep)
 const sweepResult = vi.mocked(note.sweepResult)
 const createFolder = vi.mocked(note.createFolder)
 const deleteFolder = vi.mocked(note.deleteFolder)
+const listFolders = vi.mocked(note.listFolders)
 const loadActiveNote = vi.mocked(session.loadActiveNote)
 const saveActiveNote = vi.mocked(session.saveActiveNote)
 
@@ -55,6 +57,7 @@ beforeEach(() => {
   moveNote.mockResolvedValue({ status: "moved" })
   createFolder.mockResolvedValue({ status: "created" })
   deleteFolder.mockResolvedValue(undefined)
+  listFolders.mockResolvedValue([])
   // The poll's relist sweep (see note.ts's Sweep): by default, a sweep
   // "completes" (continueSweep resolves true) on its very first tick with no
   // files, matching the old default-empty listNotes(). Tests simulating a
@@ -620,13 +623,15 @@ describe("removeNote (FEAT-0012)", () => {
 })
 
 describe("addFolder (FEAT-0069)", () => {
-  it("creates a valid folder and notifies listeners without touching the editor (AC-1)", async () => {
+  it("creates a valid folder and fires onFoldersChanged without touching the editor (AC-1)", async () => {
     const view = mountView()
     sweepResult.mockReturnValue(["start.md"])
     loadActiveNote.mockResolvedValue("start.md")
     readNote.mockResolvedValue({ content: "start body", lastModified: 1 })
+    listFolders.mockResolvedValue(["ideas"])
+    const onFoldersChanged = vi.fn()
     const onListChanged = vi.fn()
-    const controller = createNoteController(view, { onListChanged, debounceMs: 10_000 })
+    const controller = createNoteController(view, { onFoldersChanged, onListChanged, debounceMs: 10_000 })
     await controller.open(DIR)
     onListChanged.mockClear()
 
@@ -634,28 +639,9 @@ describe("addFolder (FEAT-0069)", () => {
 
     expect(result).toEqual({ ok: true })
     expect(createFolder).toHaveBeenCalledWith(DIR, "ideas")
-    expect(onListChanged).toHaveBeenLastCalledWith(["start.md"], "start.md")
+    expect(onFoldersChanged).toHaveBeenLastCalledWith(["ideas"])
+    expect(onListChanged).not.toHaveBeenCalled() // creating a folder never touches the note list
     expect(view.state.doc.toString()).toBe("start body") // the active note is untouched
-  })
-
-  it("passes a fresh array reference even though the note content is unchanged", async () => {
-    // main.ts's onListChanged skips a full re-render when `notes === currentNotes`
-    // (same reference) — a real perf shortcut for "only the active note changed".
-    // A brand-new empty folder must not be silently swallowed by that shortcut, so
-    // this pins down that addFolder always hands back a distinct array.
-    const view = mountView()
-    sweepResult.mockReturnValue(["start.md"])
-    loadActiveNote.mockResolvedValue("start.md")
-    const onListChanged = vi.fn()
-    const controller = createNoteController(view, { onListChanged, debounceMs: 10_000 })
-    await controller.open(DIR)
-    const notesBefore = onListChanged.mock.calls.at(-1)?.[0]
-
-    await controller.addFolder("ideas")
-
-    const notesAfter = onListChanged.mock.calls.at(-1)?.[0]
-    expect(notesAfter).not.toBe(notesBefore)
-    expect(notesAfter).toEqual(notesBefore)
   })
 
   it("refuses an already-existing folder with a message (AC-4)", async () => {
@@ -693,19 +679,25 @@ describe("removeFolder (FEAT-0069)", () => {
       lastModified: 1,
     }))
     const onListChanged = vi.fn()
-    const controller = createNoteController(view, { onListChanged, debounceMs: 10_000 })
+    const onFoldersChanged = vi.fn()
+    const controller = createNoteController(view, { onListChanged, onFoldersChanged, debounceMs: 10_000 })
     await controller.open(DIR)
-    return { view, controller, onListChanged }
+    return { view, controller, onListChanged, onFoldersChanged }
   }
 
-  it("deletes the folder and refreshes the list (AC-6)", async () => {
-    const { controller, onListChanged } = await open("start.md", ["start.md", "projects/a.md"])
+  it("deletes the folder, refreshes the list, and fires onFoldersChanged (AC-6)", async () => {
+    const { controller, onListChanged, onFoldersChanged } = await open("start.md", [
+      "start.md",
+      "projects/a.md",
+    ])
     listNotes.mockResolvedValue(["start.md"])
+    listFolders.mockResolvedValue([])
 
     await controller.removeFolder("projects")
 
     expect(deleteFolder).toHaveBeenCalledWith(DIR, "projects")
     expect(onListChanged.mock.calls.at(-1)?.[0]).toEqual(["start.md"])
+    expect(onFoldersChanged).toHaveBeenLastCalledWith([])
   })
 
   it("switches to another note when the active note was inside the deleted folder (AC-7)", async () => {

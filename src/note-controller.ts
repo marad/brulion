@@ -13,6 +13,7 @@ import {
   sweepResult,
   createFolder,
   deleteFolder,
+  listFolders,
   type NoteContent,
   type Sweep,
 } from "./note"
@@ -165,6 +166,12 @@ export interface NoteControllerOptions {
   onConflictResolved?: () => void
   /** Called whenever the note list or the active note changes. */
   onListChanged?: (notes: string[], active: string) => void
+  /** Called whenever the set of folders changes (M35/FEAT-0069) — fired only by
+   * `addFolder`/`removeFolder`. Ordinary note operations never affect folder
+   * existence, so this stays rare; the UI doesn't need to re-walk the tree's
+   * directories on every note add/delete/rename the way it would if this rode
+   * along on `onListChanged` instead. */
+  onFoldersChanged?: (folders: string[]) => void
   /**
    * Called from `open()` as soon as the *guessed* active note's content is
    * ready to show — before the full folder listing (and thus `notes`/the
@@ -666,14 +673,10 @@ export function createNoteController(
         if (created.status === "exists") {
           return { ok: false, reason: "A folder with that name already exists." }
         }
-        // An empty folder adds no `.md` file, so the note *content* is
-        // unchanged — but the UI's "did the list change" check (main.ts) is a
-        // reference comparison on this exact array, and a genuinely new
-        // folder must still force a real re-render (it re-fetches the folder
-        // listing itself; the controller has no notion of "folders"). A fresh
-        // array, even with identical contents, defeats that shortcut honestly.
-        notes = [...notes]
-        opts.onListChanged?.(notes, activeName)
+        // An empty folder adds no `.md` file — nothing for onListChanged to
+        // announce — so its own dedicated notification carries the fresh
+        // folder listing instead.
+        opts.onFoldersChanged?.(await listFolders(dir))
         return { ok: true }
       })
     },
@@ -692,6 +695,7 @@ export function createNoteController(
           if (key.startsWith(path + "/")) contentCache.delete(key)
         }
         notes = await listNotes(dir)
+        opts.onFoldersChanged?.(await listFolders(dir))
         if (activeInsideFolder) {
           await activate(dir, pickActiveNote(notes, null))
         } else {

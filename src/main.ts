@@ -180,6 +180,14 @@ let controller: NoteController
 // target from one to offer to create.
 let currentActive = ""
 let currentNotes: string[] = []
+// Folders with no notes in them (M35/FEAT-0069) — not covered by currentNotes
+// at all (an empty folder implies no note path), so tracked separately.
+// Refreshed once per vault attach (openNote) and whenever addFolder/
+// removeFolder actually change the set (onFoldersChanged); NOT on every
+// ordinary note change, which never affects folder existence — a per-note-op
+// directory walk would undermine the Sweep/budget work done elsewhere to
+// bound relist cost on large vaults.
+let currentFolders: string[] = []
 // The vault the window is attached to (M33/FEAT-0059); the key for per-vault session
 // (recency, expanded folders) and the value stamped into `?ws`. Empty until the first
 // attach.
@@ -439,8 +447,10 @@ controller = createNoteController(view, {
     // listing (complete or partial) lands. Runs on every attach, not just
     // first paint, since a vault switch has the same stale-sidebar problem.
     if (cachedNoteList.length > 0) {
+      // currentFolders is already this vault's real (not cached) listing by
+      // this point — openNote fetches it before controller.open() runs.
       trackSync("renderNoteList (cache)", () =>
-        renderNoteList(listEl, cachedNoteList, path, noteListHandlers, expandedFolders),
+        renderNoteList(listEl, cachedNoteList, path, noteListHandlers, expandedFolders, currentFolders),
       )
     }
     if (workspaceShown) return // already showing (e.g. this is a vault switch, not first paint)
@@ -457,7 +467,7 @@ controller = createNoteController(view, {
     })
     identity.update(path)
   },
-  onListChanged: async (notes, active) => {
+  onListChanged: (notes, active) => {
     // A folder is open — swap the welcome hero for the workspace and reveal the
     // in-note header controls (FEAT-0031). The collapse preference (a CSS class on
     // .workspace) is orthogonal: if the user left the sidebar collapsed it stays
@@ -497,16 +507,23 @@ controller = createNoteController(view, {
         row.toggleAttribute("aria-current", isActive)
       }
     } else {
-      // Empty folders (M35/FEAT-0069) aren't part of `notes` at all — fetched
-      // fresh here, alongside the real (not cached) listing this branch already
-      // represents, so a just-created/deleted one shows up immediately.
-      const folders = settingsDir ? await listFolders(settingsDir) : []
+      // currentFolders (M35/FEAT-0069): refreshed on vault attach and by
+      // onFoldersChanged below, not re-fetched here — an ordinary note change
+      // never affects folder existence.
       trackSync("renderNoteList", () =>
-        renderNoteList(listEl, notes, active, noteListHandlers, expandedFolders, folders),
+        renderNoteList(listEl, notes, active, noteListHandlers, expandedFolders, currentFolders),
       )
       cachedNoteList = notes
       void saveNoteList(currentVaultId, notes) // the fresh, authoritative list — this vault's next attach paints from it
     }
+  },
+  onFoldersChanged: (folders) => {
+    // Fired only by addFolder/removeFolder (M35/FEAT-0069) — a real folder-set
+    // change, re-rendered against the note list/active note already in hand.
+    currentFolders = folders
+    trackSync("renderNoteList", () =>
+      renderNoteList(listEl, currentNotes, currentActive, noteListHandlers, expandedFolders, currentFolders),
+    )
   },
 })
 
@@ -585,7 +602,9 @@ const openNote = async (dir: FileSystemDirectoryHandle) => {
   loadingSettings = true
   settingsDir = dir
   try {
-    currentSettings = await loadSettings(dir)
+    // Independent reads — run together so a vault with many empty folders
+    // doesn't add its listFolders latency on top of the settings read.
+    ;[currentSettings, currentFolders] = await Promise.all([loadSettings(dir), listFolders(dir)])
   } finally {
     loadingSettings = false
   }
