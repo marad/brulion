@@ -11,11 +11,13 @@ import {
   startSweep,
   continueSweep,
   sweepResult,
+  createFolder,
+  deleteFolder,
   type NoteContent,
   type Sweep,
 } from "./note"
 import { track, trackSync, mark } from "./perf"
-import { normalizeNoteName } from "./note-name"
+import { normalizeNoteName, normalizeFolderPath } from "./note-name"
 import { rewriteLinksForRename, rebaseOutboundLinks } from "./link-rewrite"
 import { saveActiveNote, loadActiveNote } from "./session"
 import { debounce } from "./debounce"
@@ -187,6 +189,13 @@ export interface NoteController {
   addNote(name: string): Promise<AddNoteResult>
   /** Delete `name`'s file; if it was active, switch to another note. */
   removeNote(name: string): Promise<void>
+  /** Create an empty folder from a user-typed path (M35/FEAT-0069). Reports why
+   * it failed; never touches the active note. */
+  addFolder(path: string): Promise<AddNoteResult>
+  /** Delete the folder at `path` and everything beneath it (M35/FEAT-0069); if
+   * the active note lived inside it, switch to another note the same way
+   * {@link removeNote} does. */
+  removeFolder(path: string): Promise<void>
   /**
    * Rename the active note to a user-typed `name` (FEAT-0034): flush pending
    * edits, move its file via {@link moveNote}, then follow the file to its new
@@ -640,6 +649,46 @@ export function createNoteController(
         contentCache.delete(name)
         notes = await listNotes(dir)
         if (name === activeName) {
+          await activate(dir, pickActiveNote(notes, null))
+        } else {
+          opts.onListChanged?.(notes, activeName)
+        }
+      })
+    },
+    addFolder(path) {
+      abortPendingRelist()
+      return serialize<AddNoteResult>(async () => {
+        if (!dir) return { ok: false, reason: "Open a folder first." }
+        if (conflict) return { ok: false, reason: "Resolve the conflict first." }
+        const normalized = normalizeFolderPath(path)
+        if (!normalized.ok) return { ok: false, reason: normalized.reason }
+        const created = await createFolder(dir, normalized.path)
+        if (created.status === "exists") {
+          return { ok: false, reason: "A folder with that name already exists." }
+        }
+        // An empty folder adds no `.md` file, so `notes` itself is unchanged —
+        // this call exists purely to tell the UI to re-render (it re-fetches
+        // the folder listing itself; the controller has no notion of "folders").
+        opts.onListChanged?.(notes, activeName)
+        return { ok: true }
+      })
+    },
+    removeFolder(path) {
+      abortPendingRelist()
+      return serialize(async () => {
+        if (!dir || conflict) return // conflict is modal — resolve it first
+        const activeInsideFolder = activeName === path || activeName.startsWith(path + "/")
+        // Same reasoning as removeNote: drop the active note's unsaved edits
+        // before it's yanked out from under an in-flight save, then flush to
+        // settle anything already mid-write before we delete.
+        if (activeInsideFolder) dirty = false
+        await flushAndWait()
+        await deleteFolder(dir, path)
+        for (const key of contentCache.keys()) {
+          if (key.startsWith(path + "/")) contentCache.delete(key)
+        }
+        notes = await listNotes(dir)
+        if (activeInsideFolder) {
           await activate(dir, pickActiveNote(notes, null))
         } else {
           opts.onListChanged?.(notes, activeName)
