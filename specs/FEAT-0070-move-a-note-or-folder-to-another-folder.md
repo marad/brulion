@@ -146,10 +146,12 @@ When `projects` moves to `archive/projects`,
 Then the active note becomes `archive/projects/a.md` and the editor still
 shows its content.
 
-**AC-9** — A stale-write conflict during a folder move skips only that file.
-Given `projects/a.md` and `projects/b.md`, and `a.md` is changed on disk by
-another writer between the move starting and its own write,
+**AC-9** — An occupied destination skips only that file.
+Given `projects/a.md` and `projects/b.md`, and another writer has already
+created a conflicting `archive/projects/a.md` before the move reaches that
+file (`moveNote`'s existing no-clobber guard),
 When `projects` moves to `archive/projects`,
 Then `b.md` relocates to `archive/projects/b.md` normally, `a.md` is left at
-its original path with the external content intact, and the move is not
+its original path with its own content intact (the conflicting destination
+file is not overwritten), and the move is not
 reported as a failure of the whole operation.
