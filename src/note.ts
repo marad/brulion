@@ -405,6 +405,20 @@ export async function deleteFolder(
 }
 
 /**
+ * True when the folder at `path` exists and has nothing in it at all — no
+ * files, no subfolders. A missing folder counts as empty (nothing there to
+ * protect). Meant to be checked **before** a caller recursively removes a
+ * folder it *believes* is empty (M35/FEAT-0070's `moveFolder`, which must
+ * never destroy a note left behind by a skipped, conflicting move).
+ */
+export async function isFolderEmpty(dir: FileSystemDirectoryHandle, path: string): Promise<boolean> {
+  const folder = await getExistingFolder(dir, path)
+  if (!folder) return true
+  const first = await folder.values().next()
+  return first.done ?? false
+}
+
+/**
  * Move the note at `from` to `to` within the tree. Prefers the native
  * `FileSystemFileHandle.move()` — the file's bytes are relocated as-is, with no
  * read, rewrite, or intermediate copy, so a rename neither loses nor churns
