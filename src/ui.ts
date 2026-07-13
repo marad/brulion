@@ -219,6 +219,19 @@ export function renderNoteList(
 }
 
 /** Render one tree node (note row or folder subtree) to a detached element. */
+/** A small glyph-labeled action button for a tree row (create/move/delete) —
+ * the same text glyph doubles as its accessible label via title/aria-label. */
+function rowActionButton(className: string, glyph: string, title: string, onClick: () => void): HTMLButtonElement {
+  const button = document.createElement("button")
+  button.type = "button"
+  button.className = className
+  button.textContent = glyph
+  button.title = title
+  button.setAttribute("aria-label", title)
+  button.addEventListener("click", onClick)
+  return button
+}
+
 function renderNode(
   node: TreeNode,
   active: string,
@@ -256,29 +269,15 @@ function renderNode(
     handlers.onToggleFolder?.(node.path, children.hidden)
   })
 
-  const createButton = document.createElement("button")
-  createButton.type = "button"
-  createButton.className = "folder-create"
-  createButton.textContent = "+"
-  createButton.title = `New folder in ${node.name}`
-  createButton.setAttribute("aria-label", `New folder in ${node.name}`)
-  createButton.addEventListener("click", () => handlers.onCreateFolder?.(node.path))
-
-  const moveButton = document.createElement("button")
-  moveButton.type = "button"
-  moveButton.className = "folder-move"
-  moveButton.textContent = "→"
-  moveButton.title = `Move ${node.name}`
-  moveButton.setAttribute("aria-label", `Move ${node.name}`)
-  moveButton.addEventListener("click", () => handlers.onMoveFolder?.(node.path))
-
-  const deleteButton = document.createElement("button")
-  deleteButton.type = "button"
-  deleteButton.className = "folder-delete"
-  deleteButton.textContent = "×"
-  deleteButton.title = `Delete ${node.name}`
-  deleteButton.setAttribute("aria-label", `Delete ${node.name}`)
-  deleteButton.addEventListener("click", () => handlers.onDeleteFolder?.(node.path))
+  const createButton = rowActionButton("folder-create", "+", `New folder in ${node.name}`, () =>
+    handlers.onCreateFolder?.(node.path),
+  )
+  const moveButton = rowActionButton("folder-move", "→", `Move ${node.name}`, () =>
+    handlers.onMoveFolder?.(node.path),
+  )
+  const deleteButton = rowActionButton("folder-delete", "×", `Delete ${node.name}`, () =>
+    handlers.onDeleteFolder?.(node.path),
+  )
 
   const row = document.createElement("div")
   row.className = "folder-row"
@@ -305,21 +304,12 @@ function renderNoteRow(node: NoteLeaf, active: string, handlers: NoteListHandler
   nameButton.title = displayName(node.path) // full note path on hover (rows ellipsize)
   nameButton.addEventListener("click", () => handlers.onSelect(node.path))
 
-  const moveButton = document.createElement("button")
-  moveButton.type = "button"
-  moveButton.className = "note-move"
-  moveButton.textContent = "→"
-  moveButton.title = `Move ${node.name}`
-  moveButton.setAttribute("aria-label", `Move ${node.name}`)
-  moveButton.addEventListener("click", () => handlers.onMoveNote?.(node.path))
-
-  const deleteButton = document.createElement("button")
-  deleteButton.type = "button"
-  deleteButton.className = "note-delete"
-  deleteButton.textContent = "×"
-  deleteButton.title = `Delete ${node.name}`
-  deleteButton.setAttribute("aria-label", `Delete ${node.name}`)
-  deleteButton.addEventListener("click", () => handlers.onDelete(node.path))
+  const moveButton = rowActionButton("note-move", "→", `Move ${node.name}`, () =>
+    handlers.onMoveNote?.(node.path),
+  )
+  const deleteButton = rowActionButton("note-delete", "×", `Delete ${node.name}`, () =>
+    handlers.onDelete(node.path),
+  )
 
   row.append(nameButton, moveButton, deleteButton)
   return row
