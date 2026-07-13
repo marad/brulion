@@ -204,6 +204,16 @@ export interface NoteController {
    * {@link removeNote} does. */
   removeFolder(path: string): Promise<void>
   /**
+   * Move the folder at `fromPath` (and everything beneath it) to `toPath`
+   * (M35/FEAT-0070): every note in the subtree relocates via `moveNote`, its
+   * own outbound links rebase and inbound links from other notes follow, same
+   * as a rename — just driven once per note instead of once. Refuses (without
+   * moving anything) when `toPath` is `fromPath` itself or a descendant of
+   * it. If the active note was inside the moved folder, the editor follows
+   * it to its new path.
+   */
+  moveFolder(fromPath: string, toPath: string): Promise<AddNoteResult>
+  /**
    * Rename the active note to a user-typed `name` (FEAT-0034): flush pending
    * edits, move its file via {@link moveNote}, then follow the file to its new
    * path (new active note, refreshed list, announced). Reports `{ ok }` /
@@ -452,36 +462,36 @@ export function createNoteController(
     opts.onConflict?.({ mine, theirs })
   }
 
-  // Rewrite links in *other* notes that pointed at the just-renamed note so they
-  // follow it (FEAT-0040). Runs after the move + active-note follow, inside the
-  // same serialize slot. Reads each other note, rewrites via the pure core, and
-  // writes each through saveNote's stale-write guard (the known mtime read moments
-  // earlier), so a note edited from outside between the scan and the write is
-  // skipped, never clobbered. The rewrite is silent and unconditional — a rename's
-  // links should just follow it, the way a refactor-rename does; declining would
-  // only leave the very dangling links this feature exists to prevent. The renamed
-  // note (now `to`) is excluded, so a rename never mutates its own bytes here.
-  const updateInboundLinks = async (
+  // Rewrite links in *other* notes that pointed at a just-moved note so they
+  // follow it (FEAT-0040), generalized from one move to a list (M35/FEAT-0070's
+  // moveFolder relocates many notes at once). Runs after the move(s) + active-note
+  // follow, inside the same serialize slot. Reads each other note *once* even if it
+  // links to several of the moved notes — folding every move's rewrite over the
+  // text in sequence — and writes it back through saveNote's stale-write guard (the
+  // known mtime read moments earlier), so a note edited from outside between the
+  // scan and the write is skipped, never clobbered. The rewrite is silent and
+  // unconditional — a move's links should just follow it, the way a refactor-rename
+  // does; declining would only leave the very dangling links this feature exists to
+  // prevent. Every moved note's *own* new path is excluded, so a move never mutates
+  // a moved note's own bytes here (that's `rebaseMovedNote`'s job, for outbound links).
+  const updateInboundLinksForMoves = async (
     folder: FileSystemDirectoryHandle,
-    from: string,
-    to: string,
+    moves: { from: string; to: string }[],
     pathsBefore: ReadonlySet<string>,
   ): Promise<void> => {
     const pathsAfter = new Set(notes) // the post-move listing (set by the caller)
+    const movedTo = new Set(moves.map((move) => move.to))
     for (const path of notes) {
-      if (path === to) continue
+      if (movedTo.has(path)) continue
       const { content, lastModified } = await readNote(folder, path)
-      const rewritten = rewriteLinksForRename({
-        text: content,
-        notePath: path,
-        oldPath: from,
-        newPath: to,
-        pathsBefore,
-        pathsAfter,
-      })
+      let text = content
+      for (const { from, to } of moves) {
+        const rewritten = rewriteLinksForRename({ text, notePath: path, oldPath: from, newPath: to, pathsBefore, pathsAfter })
+        if (rewritten !== null) text = rewritten
+      }
       // A conflict (the file changed on disk since we read it) is skipped — the
       // rewrite is dropped for that file, never overwriting an external edit.
-      if (rewritten !== null) await saveNote(folder, path, rewritten, lastModified)
+      if (text !== content) await saveNote(folder, path, text, lastModified)
     }
   }
 
@@ -703,6 +713,69 @@ export function createNoteController(
         }
       })
     },
+    moveFolder(fromPath, toPath) {
+      abortPendingRelist()
+      return serialize<AddNoteResult>(async () => {
+        if (!dir) return { ok: false, reason: "Open a folder first." }
+        if (conflict) return { ok: false, reason: "Resolve the conflict first." }
+        if (toPath === fromPath || toPath.startsWith(fromPath + "/")) {
+          return { ok: false, reason: "Can't move a folder into itself or one of its own subfolders." }
+        }
+
+        const activeInsideFolder = activeName === fromPath || activeName.startsWith(fromPath + "/")
+        if (activeInsideFolder) {
+          await flushAndWait()
+          if (conflict) return { ok: false, reason: "Resolve the conflict first." }
+        }
+
+        const pathsBefore = new Set(notes)
+        const toMove = notes.filter((path) => path.startsWith(fromPath + "/"))
+        const moves: { from: string; to: string }[] = []
+        let newActiveName: string | null = null
+        for (const oldPath of toMove) {
+          const newPath = toPath + oldPath.slice(fromPath.length)
+          const result = await moveNote(dir, oldPath, newPath)
+          if (result.status !== "moved") continue // occupied/missing — leave this one where it is
+          contentCache.delete(oldPath)
+          try {
+            await rebaseMovedNote(dir, oldPath, newPath)
+          } catch {
+            // leave this note's own outbound links as-is rather than failing the move
+          }
+          moves.push({ from: oldPath, to: newPath })
+          if (oldPath === activeName) newActiveName = newPath
+        }
+
+        // Empty subfolders (no notes anywhere beneath them) never move on their
+        // own — nothing in the loop above touches them. Deepest paths first so a
+        // parent's `createFolder` never races a not-yet-relocated child.
+        const emptySubfolders = (await listFolders(dir))
+          .filter((path) => path.startsWith(fromPath + "/"))
+          .sort((a, b) => b.length - a.length)
+        for (const emptyFolder of emptySubfolders) {
+          await createFolder(dir, toPath + emptyFolder.slice(fromPath.length))
+          await deleteFolder(dir, emptyFolder)
+        }
+        // The folder itself is moving — unlike an incidentally emptied folder
+        // (M35/FEAT-0069), it never lingers at the old path once relocated.
+        await createFolder(dir, toPath)
+        await deleteFolder(dir, fromPath)
+
+        notes = await listNotes(dir)
+        try {
+          await updateInboundLinksForMoves(dir, moves, pathsBefore)
+        } catch {
+          // leave inbound links as-is rather than failing the move
+        }
+        opts.onFoldersChanged?.(await listFolders(dir))
+        if (newActiveName) {
+          await activate(dir, newActiveName)
+        } else {
+          opts.onListChanged?.(notes, activeName)
+        }
+        return { ok: true }
+      })
+    },
     renameActive(name) {
       abortPendingRelist()
       return serialize<AddNoteResult>(async () => {
@@ -752,7 +825,7 @@ export function createNoteController(
         }
         await activate(dir, normalized.filename)
         try {
-          await updateInboundLinks(dir, from, normalized.filename, pathsBefore)
+          await updateInboundLinksForMoves(dir, [{ from, to: normalized.filename }], pathsBefore)
         } catch {
           // leave inbound links as-is rather than failing the rename
         }
