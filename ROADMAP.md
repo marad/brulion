@@ -16,7 +16,8 @@ Every technical decision defers to that.
 
 > **Execution order (next up), agreed with the user.** M-numbers are **stable
 > identities, not the running order**. M1–M13, **M14**, **M15**, **M16**, **M17**,
-> **M18**–**M34** are done; no milestone is currently active.
+> **M18**–**M34** are done; **M35** is active (built on a feature branch, not
+> merged to `main` — see the milestone review before it lands).
 > Recently shipped: **M18**
 > (light/dark theme + theme-aware syntax palette + a toggle action), **M24**
 > (scroll/caret preservation on external refresh), **M26** (table rendering),
@@ -504,6 +505,34 @@ In:
 
 Out (deliberately): animating editor content (text, caret, decorations); spring/physics
 libraries; any motion that touches the file format.
+
+### M35 — Folder & note management
+**Goal:** the sidebar tree today can only list/select/toggle folders and
+create/delete/rename **notes** — there is no way to create or delete a
+**folder**, or move a note/folder into a different folder. Closes that gap.
+Real file moves (moat-relevant), building on the existing `moveNote` (already
+cross-folder-capable, used today only for same-folder rename) and `deleteNote`
+primitives in `note.ts`.
+
+In:
+- **Create folder** — a real empty directory via
+  `getDirectoryHandle(name, {create: true})`; a sidebar affordance per folder
+  (and at the root) to add a subfolder.
+- **Delete folder** — recursive `removeEntry(name, {recursive: true})`,
+  destroying every note beneath it; a confirmation step is mandatory (this is
+  the one operation here that can silently take real content with it).
+- **Move a note** — generalize the existing rename path (`renameActive` in
+  `note-controller.ts`) from "same folder, new name" to "any destination
+  folder", reusing `moveNote` and its link-rebase step as-is.
+- **Move a folder** — new `moveFolder`: walk the subtree (existing
+  `listNotes`/sweep infra), `moveNote` each file into the new prefix, rebase
+  inbound links per moved note, then remove the emptied source subtree.
+
+Out (deliberately): drag-and-drop reordering (destination picked via a
+"Move to…" folder overlay instead — keyboard/mobile-friendly, no new DnD
+machinery); a general right-click context-menu system for the tree (folder
+create/delete get the same inline-button treatment notes already have, not a
+new UI subsystem); undo of a move/delete.
 
 ## Later / backlog (out of MVP, on purpose)
 

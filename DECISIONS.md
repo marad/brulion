@@ -2574,3 +2574,48 @@ Four new tests in `session.test.ts` mirror the `saveRecency`/`loadRecency` suite
 the vault-scoped key, load it back, default to `[]`, keyed per vault) — confirmed each fails against a
 deliberately mistyped key before being fixed. `main.ts` itself stays outside the unit test net (as
 every other wiring change here has been) — verified via the full e2e suite instead.
+
+## Folder create/delete + move: destination picker, no context-menu system, move reuses rename (M35)
+M35 closes a real gap: the sidebar tree can list/select/toggle folders and
+create/delete/rename **notes**, but there's no way to create/delete a
+**folder**, or move a note/folder elsewhere. Scoped before any spec work, per
+the survey of `note.ts`/`ui.ts`:
+- **Folder create/delete get the same inline-button treatment notes already
+  have** (a "+" to add a subfolder, a "×" to delete one) — not a new
+  right-click context-menu subsystem. The tree has never had context menus
+  (`context-menu.ts` is unrelated — a CodeMirror wikilink editor extension);
+  building one just for two folder actions is more surface than the feature
+  needs. (Rejected: right-click menu — a new interaction pattern and a new
+  overlay/positioning problem for two buttons the row can hold directly.)
+- **Deleting a folder is destructive and gets a mandatory confirm step** —
+  unlike a note's one-click "×", a folder can hold an unbounded number of
+  notes beneath it, so removing it can silently take real content with it.
+  This is the one place in this milestone where the moat's "never lose data
+  silently" principle applies directly.
+- **Move is driven by a "Move to…" destination-picker overlay, not
+  drag-and-drop.** DnD would need new pointer/touch machinery, reorder
+  semantics, and a distinct accessibility story; a palette-styled picker
+  (same visual family as the quick switcher) reuses an existing overlay
+  pattern, works identically with keyboard/mouse/touch, and needs no new
+  interaction model. (Rejected: drag-and-drop reordering — heavier to build
+  and test, and mobile drag is exactly the kind of touch-fiddly interaction
+  M17 flagged as a general risk.)
+- **Moving a note is a generalization of the existing rename path, not a new
+  primitive.** `moveNote` (`note.ts`) already resolves an arbitrary
+  destination path (cross-folder capable, prefers the native
+  `FileSystemFileHandle.move()`, falls back to copy-then-delete) and
+  `renameActive` (`note-controller.ts`) already wraps it with flush + link
+  rebase + reactivation — today only ever called with a same-folder target.
+  P2 widens the destination it's called with; no new note-level FS
+  operation. **Moving a folder is new** (`moveFolder`): walk the subtree via
+  the existing `listNotes` infra, `moveNote` each contained file into the
+  equivalent path under the new prefix (rebasing inbound links per moved
+  note, exactly like a rename), then remove the emptied source folder tree.
+  A folder move into its own subtree is refused (would orphan/self-nest).
+- **Built on a feature branch, not shipped straight to `main`.** Unlike every
+  prior milestone (spec → implement → review → verify/seal → push to
+  `main`), M35 stays on `feature/folder-note-management` through the whole
+  build — the user wants a live-tested staging pass before this lands, per
+  the GitHub Pages staging discussion this session. `specman seal` and the
+  usual commit trailers still apply per phase; only the final "ship" step
+  (merge to `main`) is deferred to the milestone review.
