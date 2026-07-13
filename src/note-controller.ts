@@ -14,6 +14,7 @@ import {
   createFolder,
   deleteFolder,
   listFolders,
+  isFolderEmpty,
   type NoteContent,
   type Sweep,
 } from "./note"
@@ -760,20 +761,28 @@ export function createNoteController(
           }
         }
 
-        // Empty subfolders (no notes anywhere beneath them) never move on their
-        // own — nothing in the loop above touches them. Deepest paths first so a
-        // parent's `createFolder` never races a not-yet-relocated child.
-        const emptySubfolders = (await listFolders(dir))
+        // Candidate subfolders that never move on their own (nothing in the
+        // loop above touches a folder with no notes of its own) — deepest
+        // paths first so a parent's own emptiness check sees an already-
+        // resolved child, and so a skipped file two levels down correctly
+        // keeps every ancestor above it from being deleted too.
+        const candidateSubfolders = (await listFolders(dir))
           .filter((path) => path.startsWith(fromPath + "/"))
           .sort((a, b) => b.length - a.length)
-        for (const emptyFolder of emptySubfolders) {
-          await createFolder(dir, toPath + emptyFolder.slice(fromPath.length))
-          await deleteFolder(dir, emptyFolder)
+        for (const folder of candidateSubfolders) {
+          // An occupied-destination skip (AC-9) can leave a note behind in
+          // here — verify it's actually empty before recursively deleting it,
+          // never assume so just because we moved everything we knew about.
+          if (!(await isFolderEmpty(dir, folder))) continue
+          await createFolder(dir, toPath + folder.slice(fromPath.length))
+          await deleteFolder(dir, folder)
         }
         // The folder itself is moving — unlike an incidentally emptied folder
-        // (M35/FEAT-0069), it never lingers at the old path once relocated.
+        // (M35/FEAT-0069), it never lingers at the old path once relocated —
+        // but only once it's genuinely empty; a skipped file must not be
+        // destroyed by an unconditional recursive delete of the source.
         await createFolder(dir, toPath)
-        await deleteFolder(dir, fromPath)
+        if (await isFolderEmpty(dir, fromPath)) await deleteFolder(dir, fromPath)
 
         notes = await listNotes(dir)
         try {
