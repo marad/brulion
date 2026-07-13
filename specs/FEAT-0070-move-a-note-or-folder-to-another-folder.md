@@ -34,9 +34,16 @@ row's own control. Picking a destination for a **note** calls
 `renameActive(destination + "/" + currentName)` (root: just `currentName`) —
 already-correct behavior top to bottom (flush, move, own-link rebase, inbound
 rewrite, active-note follow), so this half of the phase is wiring, not new
-logic. Picking a destination for a **folder** drives the new `moveFolder`
-below. Neither path asks for confirmation — a move isn't destructive the way
-a folder delete is, matching the existing silent-rename precedent (FEAT-0040).
+logic. `renameActive` only ever operates on the controller's *active* note
+(same constraint the existing header rename already has), so a note row's
+"Move to…" switches to that note first — exactly like clicking its name
+already does — before applying the picked destination; the user never
+notices a two-step sequence, it's the existing click-to-open behavior with
+the picker riding along. Picking a destination for a **folder** drives the
+new `moveFolder` below (which is not active-note-scoped — it moves whichever
+folder's row the picker was opened from, regardless of what's open). Neither
+path asks for confirmation — a move isn't destructive the way a folder
+delete is, matching the existing silent-rename precedent (FEAT-0040).
 
 **Moving a folder.** `NoteController.moveFolder(fromPath, toPath)` relocates
 every note in `fromPath`'s subtree to the equivalent path under `toPath`:
