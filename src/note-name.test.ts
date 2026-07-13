@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
   normalizeNoteName,
+  normalizeFolderPath,
   isExternalLink,
   resolveNotePath,
   resolveWikilink,
@@ -77,6 +78,32 @@ describe("normalizeNoteName rejection (AC-10)", () => {
       expect(normalizeNoteName(bad).ok).toBe(false)
       expect(normalizeNoteName("sub/" + bad).ok).toBe(false)
     }
+  })
+})
+
+describe("normalizeFolderPath (FEAT-0069 AC-1, AC-2, AC-3)", () => {
+  it("trims a bare folder name, no .md appended", () => {
+    expect(normalizeFolderPath("  ideas  ")).toEqual({ ok: true, path: "ideas" })
+  })
+
+  it("normalizes and trims a nested path", () => {
+    expect(normalizeFolderPath("projects / ideas")).toEqual({ ok: true, path: "projects/ideas" })
+  })
+
+  it("rejects an empty or whitespace-only name", () => {
+    expect(normalizeFolderPath("   ").ok).toBe(false)
+    expect(normalizeFolderPath("").ok).toBe(false)
+  })
+
+  it("rejects a . or .. segment (no escaping the root)", () => {
+    expect(normalizeFolderPath("..").ok).toBe(false)
+    expect(normalizeFolderPath("../secrets").ok).toBe(false)
+    expect(normalizeFolderPath("a/../b").ok).toBe(false)
+  })
+
+  it("rejects empty segments and unsafe characters, same as normalizeNoteName", () => {
+    expect(normalizeFolderPath("a//b").ok).toBe(false)
+    expect(normalizeFolderPath("a<b").ok).toBe(false)
   })
 })
 
