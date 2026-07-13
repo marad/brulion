@@ -15,6 +15,8 @@ vi.mock("./note", () => ({
   startSweep: vi.fn(),
   continueSweep: vi.fn(),
   sweepResult: vi.fn(),
+  createFolder: vi.fn(),
+  deleteFolder: vi.fn(),
 }))
 vi.mock("./session", () => ({ saveActiveNote: vi.fn(), loadActiveNote: vi.fn() }))
 const readNote = vi.mocked(note.readNote)
@@ -27,6 +29,8 @@ const moveNote = vi.mocked(note.moveNote)
 const startSweep = vi.mocked(note.startSweep)
 const continueSweep = vi.mocked(note.continueSweep)
 const sweepResult = vi.mocked(note.sweepResult)
+const createFolder = vi.mocked(note.createFolder)
+const deleteFolder = vi.mocked(note.deleteFolder)
 const loadActiveNote = vi.mocked(session.loadActiveNote)
 const saveActiveNote = vi.mocked(session.saveActiveNote)
 
@@ -49,6 +53,8 @@ beforeEach(() => {
   deleteNote.mockResolvedValue(undefined)
   statNote.mockResolvedValue(null)
   moveNote.mockResolvedValue({ status: "moved" })
+  createFolder.mockResolvedValue({ status: "created" })
+  deleteFolder.mockResolvedValue(undefined)
   // The poll's relist sweep (see note.ts's Sweep): by default, a sweep
   // "completes" (continueSweep resolves true) on its very first tick with no
   // files, matching the old default-empty listNotes(). Tests simulating a
@@ -610,6 +616,106 @@ describe("removeNote (FEAT-0012)", () => {
     await removed
     // The in-flight write of a.md completes BEFORE the delete, so the file ends deleted.
     expect(order.indexOf("save-end:a.md")).toBeLessThan(order.indexOf("delete:a.md"))
+  })
+})
+
+describe("addFolder (FEAT-0069)", () => {
+  it("creates a valid folder and notifies listeners without touching the editor (AC-1)", async () => {
+    const view = mountView()
+    sweepResult.mockReturnValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "start body", lastModified: 1 })
+    const onListChanged = vi.fn()
+    const controller = createNoteController(view, { onListChanged, debounceMs: 10_000 })
+    await controller.open(DIR)
+    onListChanged.mockClear()
+
+    const result = await controller.addFolder("  ideas  ")
+
+    expect(result).toEqual({ ok: true })
+    expect(createFolder).toHaveBeenCalledWith(DIR, "ideas")
+    expect(onListChanged).toHaveBeenLastCalledWith(["start.md"], "start.md")
+    expect(view.state.doc.toString()).toBe("start body") // the active note is untouched
+  })
+
+  it("refuses an already-existing folder with a message (AC-4)", async () => {
+    const view = mountView()
+    createFolder.mockResolvedValue({ status: "exists" })
+    const controller = createNoteController(view, { debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    const result = await controller.addFolder("projects")
+
+    expect(result.ok).toBe(false)
+    expect(result.ok === false && result.reason).toMatch(/exist/i)
+  })
+
+  it("refuses an invalid name without touching the folder (AC-3)", async () => {
+    const view = mountView()
+    const controller = createNoteController(view)
+    await controller.open(DIR)
+
+    const result = await controller.addFolder("../escape")
+
+    expect(result.ok).toBe(false)
+    expect(createFolder).not.toHaveBeenCalled()
+  })
+})
+
+describe("removeFolder (FEAT-0069)", () => {
+  async function open(active: string, names: string[]) {
+    const view = mountView()
+    listNotes.mockResolvedValue(names)
+    sweepResult.mockReturnValue(names)
+    loadActiveNote.mockResolvedValue(active)
+    readNote.mockImplementation(async (_dir, name) => ({
+      content: `${name} body`,
+      lastModified: 1,
+    }))
+    const onListChanged = vi.fn()
+    const controller = createNoteController(view, { onListChanged, debounceMs: 10_000 })
+    await controller.open(DIR)
+    return { view, controller, onListChanged }
+  }
+
+  it("deletes the folder and refreshes the list (AC-6)", async () => {
+    const { controller, onListChanged } = await open("start.md", ["start.md", "projects/a.md"])
+    listNotes.mockResolvedValue(["start.md"])
+
+    await controller.removeFolder("projects")
+
+    expect(deleteFolder).toHaveBeenCalledWith(DIR, "projects")
+    expect(onListChanged.mock.calls.at(-1)?.[0]).toEqual(["start.md"])
+  })
+
+  it("switches to another note when the active note was inside the deleted folder (AC-7)", async () => {
+    const { view, controller } = await open("projects/a.md", ["start.md", "projects/a.md"])
+    listNotes.mockResolvedValue(["start.md"])
+
+    await controller.removeFolder("projects")
+
+    expect(view.state.doc.toString()).toBe("start.md body")
+  })
+
+  it("falls back to an empty start buffer when the active note's folder held everything (AC-7)", async () => {
+    const { view, controller, onListChanged } = await open("projects/a.md", ["projects/a.md"])
+    listNotes.mockResolvedValue([])
+    readNote.mockResolvedValue({ content: "", lastModified: null })
+
+    await controller.removeFolder("projects")
+
+    expect(view.state.doc.toString()).toBe("")
+    expect(onListChanged.mock.calls.at(-1)).toEqual([[], "start.md"])
+  })
+
+  it("leaves the editor in place when the active note is outside the deleted folder (AC-8)", async () => {
+    const { view, controller, onListChanged } = await open("start.md", ["start.md", "projects/a.md"])
+    listNotes.mockResolvedValue(["start.md"])
+
+    await controller.removeFolder("projects")
+
+    expect(view.state.doc.toString()).toBe("start.md body") // still on start.md
+    expect(onListChanged.mock.calls.at(-1)).toEqual([["start.md"], "start.md"])
   })
 })
 
