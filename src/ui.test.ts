@@ -223,6 +223,42 @@ describe("buildNoteTree (AC-1)", () => {
   })
 })
 
+describe("buildNoteTree with empty folders (FEAT-0069 AC-1, AC-2)", () => {
+  it("includes a folder with no notes in it", () => {
+    expect(buildNoteTree([], ["ideas"])).toEqual([
+      { kind: "folder", name: "ideas", path: "ideas", children: [] },
+    ])
+  })
+
+  it("materializes a nested empty folder's ancestor chain", () => {
+    expect(buildNoteTree([], ["projects/ideas"])).toEqual([
+      {
+        kind: "folder",
+        name: "projects",
+        path: "projects",
+        children: [{ kind: "folder", name: "ideas", path: "projects/ideas", children: [] }],
+      },
+    ])
+  })
+
+  it("interleaves an empty folder alphabetically with populated siblings, not trailing after them", () => {
+    const tree = buildNoteTree(["projects/a.md"], ["apples"])
+    expect(tree.map((n) => n.name)).toEqual(["apples", "projects"])
+  })
+
+  it("does not duplicate a folder that already has notes in it", () => {
+    const tree = buildNoteTree(["projects/a.md"], ["projects"])
+    expect(tree).toEqual([
+      {
+        kind: "folder",
+        name: "projects",
+        path: "projects",
+        children: [{ kind: "note", name: "a", path: "projects/a.md" }],
+      },
+    ])
+  })
+})
+
 describe("renderNoteList tree (FEAT-0024)", () => {
   const handlers = () => ({ onSelect: vi.fn(), onDelete: vi.fn(), onToggleFolder: vi.fn() })
 
@@ -314,6 +350,51 @@ describe("renderNoteList tree (FEAT-0024)", () => {
     expect(active).toHaveLength(1)
     expect(active[0].querySelector(".note-name")?.textContent).toBe("b")
     expect(active[0].getAttribute("aria-current")).toBe("true")
+  })
+})
+
+describe("renderNoteList folder create/delete controls (FEAT-0069)", () => {
+  const handlers = () => ({
+    onSelect: vi.fn(),
+    onDelete: vi.fn(),
+    onCreateFolder: vi.fn(),
+    onDeleteFolder: vi.fn(),
+  })
+
+  it("calls onCreateFolder with the folder's path when its + is clicked (AC-1, AC-2)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["sub/b.md"], "sub/b.md", h)
+
+    container.querySelector<HTMLElement>(".folder-create")!.click()
+    expect(h.onCreateFolder).toHaveBeenCalledWith("sub")
+  })
+
+  it("calls onDeleteFolder with the folder's path when its × is clicked (AC-5, AC-6)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["sub/b.md"], "sub/b.md", h)
+
+    container.querySelector<HTMLElement>(".folder-delete")!.click()
+    expect(h.onDeleteFolder).toHaveBeenCalledWith("sub")
+  })
+
+  it("leaves the existing folder-header toggle untouched (no regression)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["sub/b.md"], "sub/b.md", h)
+
+    container.querySelector<HTMLElement>(".folder-header")!.click()
+    expect(container.querySelector<HTMLElement>(".folder-children")!.hidden).toBe(true)
+    expect(h.onCreateFolder).not.toHaveBeenCalled()
+    expect(h.onDeleteFolder).not.toHaveBeenCalled()
+  })
+
+  it("renders an empty folder passed via the folders argument (AC-1, AC-2)", () => {
+    const container = document.createElement("div")
+    renderNoteList(container, [], "", handlers(), new Set(), ["ideas"])
+
+    expect([...container.querySelectorAll(".folder-header")].map((el) => el.textContent)).toEqual(["ideas"])
   })
 })
 
