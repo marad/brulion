@@ -2619,3 +2619,48 @@ the survey of `note.ts`/`ui.ts`:
   the GitHub Pages staging discussion this session. `specman seal` and the
   usual commit trailers still apply per phase; only the final "ship" step
   (merge to `main`) is deferred to the milestone review.
+
+## A folder's lifecycle is independent of its contents — empty folders are never auto-pruned (M35 → FEAT-0069)
+First cut of `deleteNote`/`deleteFolder`/`moveNote` pruned any folder a
+deletion/move left empty, to keep the pre-M35 illusion that "an emptied
+folder disappears" (the behavior a real e2e regression, `subfolders.spec.ts`,
+was written against back when folders had no independent existence at all).
+A high-effort `/code-review` caught that this was actually wrong: pruning
+can't tell "emptied by deleting/moving the last thing out of it" apart from
+"the user explicitly made this with `createFolder` and it just doesn't have
+anything in it yet" — both look identical on disk. So it silently deleted a
+folder the user deliberately created the moment a note passed through it and
+back out, directly contradicting this milestone's own point. **Fix: don't
+prune at all.** A folder is now a real, independent filesystem object —
+exactly like on a real OS, emptying it doesn't delete it; the user removes an
+unwanted empty one explicitly via its own "×" (`deleteFolder`). Consequence:
+within one browser session, a folder that only ever existed via **note-path
+inference** (never explicitly created, e.g. materialized by `sub/note.md`)
+still stops rendering the moment its last note is gone — nothing tracks it as
+a "known folder" so there's nothing to resurface — matching the old,
+already-tested behavior with no code change needed there. But a **leftover
+empty directory** does resurface on the *next* vault attach (a fresh
+`listFolders` walk sees whatever is really on disk) — an honest reflection of
+real state rather than hiding it forever, and the cost of not pretending to
+track something the app never actually modeled.
+
+## `onFoldersChanged` is a separate, rare callback — not folded into `onListChanged` (M35 → FEAT-0069)
+The same review flagged a second problem in the first cut: `onListChanged`
+had been made `async` (to `await listFolders()` inline) so a freshly
+created/deleted folder would show up — but every call site in
+`note-controller.ts` still fires it fire-and-forget against its still-`void`-
+typed signature, so two overlapping renders could resolve out of order and
+leave the sidebar showing stale content. Worse, doing this **inside**
+`onListChanged` meant *every* note add/delete/rename paid for a full
+recursive directory walk just to look for empty folders, even though almost
+none of those operations ever change folder existence — directly undermining
+the `Sweep`/budget machinery built elsewhere in this codebase specifically to
+bound relist cost on large vaults. Fix: `onListChanged` goes back to fully
+synchronous (its original contract), and a new **`onFoldersChanged?:
+(folders: string[]) => void`** fires only from `addFolder`/`removeFolder` —
+the only two operations that actually touch folder existence — with the
+listing computed there (naturally serialized through the controller's
+existing queue, so two folder ops can't race each other either). `main.ts`
+tracks the result in `currentFolders`, refreshed once per vault attach
+(`openNote`, in parallel with the settings read) and on that callback; every
+`renderNoteList` call site reads it, never re-fetching it itself.
