@@ -93,31 +93,60 @@ export type TreeNode = FolderNode | NoteLeaf
 /**
  * Turn the sorted flat path list from `listNotes` into a nested tree (FEAT-0024):
  * a path with no `/` is a root note; folder segments contribute (interned) folder
- * nodes holding the note. Pure — the only place the listing becomes a tree — and
- * order-preserving: children appear in the order their paths arrive (already
- * case-insensitively sorted by full path). The tree is never stored; it is
- * rebuilt from the listing each render, so the disk stays the source of truth.
+ * nodes holding the note. `folders` (M35/FEAT-0069) additionally materializes
+ * folders that hold no notes at all — a note path only ever implies the folders
+ * on its way to a leaf, so an empty one needs its own explicit entry. Pure — the
+ * only place the listing becomes a tree — and order-preserving: **neither list is
+ * ever reordered relative to itself** (the caller owns that), they are only
+ * merged — walked with two pointers, taking whichever of the two current heads
+ * compares first — so an empty folder still interleaves sensibly among populated
+ * siblings instead of only ever trailing after them, without second-guessing the
+ * order either list was given in. The tree is never stored; it is rebuilt from
+ * the listing each render, so the disk stays the source of truth.
  */
-export function buildNoteTree(paths: string[]): TreeNode[] {
+export function buildNoteTree(paths: string[], folders: string[] = []): TreeNode[] {
   const root: TreeNode[] = []
-  const folders = new Map<string, FolderNode>() // full folder path → node (interned)
+  const folderNodes = new Map<string, FolderNode>() // full folder path → node (interned)
 
-  for (const path of paths) {
-    const segments = path.split("/")
+  // Materialize (or find) the chain of folder nodes for `segments`, creating any
+  // missing ones along the way, and return the innermost folder's children array.
+  const ensureChain = (segments: string[]): TreeNode[] => {
     let children = root
     let prefix = ""
-    for (let i = 0; i < segments.length - 1; i++) {
-      prefix = prefix ? `${prefix}/${segments[i]}` : segments[i]
-      let folder = folders.get(prefix)
+    for (const segment of segments) {
+      prefix = prefix ? `${prefix}/${segment}` : segment
+      let folder = folderNodes.get(prefix)
       if (!folder) {
-        folder = { kind: "folder", name: segments[i], path: prefix, children: [] }
-        folders.set(prefix, folder)
+        folder = { kind: "folder", name: segment, path: prefix, children: [] }
+        folderNodes.set(prefix, folder)
         children.push(folder)
       }
       children = folder.children
     }
+    return children
+  }
+
+  const insertNote = (path: string): void => {
+    const segments = path.split("/")
+    const children = ensureChain(segments.slice(0, -1))
     children.push({ kind: "note", name: displayName(segments[segments.length - 1]), path })
   }
+  const insertFolder = (path: string): void => {
+    ensureChain(path.split("/")) // a bare folder — materializes the chain, no leaf
+  }
+
+  let i = 0
+  let j = 0
+  while (i < paths.length && j < folders.length) {
+    if (paths[i].localeCompare(folders[j], undefined, { sensitivity: "base" }) <= 0) {
+      insertNote(paths[i++])
+    } else {
+      insertFolder(folders[j++])
+    }
+  }
+  while (i < paths.length) insertNote(paths[i++])
+  while (j < folders.length) insertFolder(folders[j++])
+
   return root
 }
 
@@ -127,6 +156,12 @@ export interface NoteListHandlers {
   onDelete: (path: string) => void
   /** A folder's disclosure was clicked; `collapsed` is its new state. */
   onToggleFolder?: (path: string, collapsed: boolean) => void
+  /** The folder row's "+" was clicked (M35/FEAT-0069); `path` is that folder's
+   * own path, the new subfolder's intended parent. */
+  onCreateFolder?: (path: string) => void
+  /** The folder row's "×" was clicked (M35/FEAT-0069); `path` is the folder to
+   * delete, along with everything beneath it. */
+  onDeleteFolder?: (path: string) => void
 }
 
 /**
@@ -139,7 +174,8 @@ export interface NoteListHandlers {
  * active note (which is always expanded so the open note stays visible). The set
  * is read, never mutated, here. Clicking a folder header hides/shows its children
  * in place and reports the new collapsed state via `onToggleFolder`. Rebuilds the
- * container each call.
+ * container each call. `folders` (M35/FEAT-0069) lists any folders with no
+ * notes in them, so they still render (empty) rather than disappearing.
  */
 export function renderNoteList(
   container: HTMLElement,
@@ -147,9 +183,10 @@ export function renderNoteList(
   active: string,
   handlers: NoteListHandlers,
   expanded: ReadonlySet<string> = new Set(),
+  folders: string[] = [],
 ): void {
   container.replaceChildren()
-  for (const node of buildNoteTree(notes)) {
+  for (const node of buildNoteTree(notes, folders)) {
     container.append(renderNode(node, active, handlers, expanded))
   }
 }
@@ -192,7 +229,27 @@ function renderNode(
     handlers.onToggleFolder?.(node.path, children.hidden)
   })
 
-  folder.append(header, children)
+  const createButton = document.createElement("button")
+  createButton.type = "button"
+  createButton.className = "folder-create"
+  createButton.textContent = "+"
+  createButton.title = `New folder in ${node.name}`
+  createButton.setAttribute("aria-label", `New folder in ${node.name}`)
+  createButton.addEventListener("click", () => handlers.onCreateFolder?.(node.path))
+
+  const deleteButton = document.createElement("button")
+  deleteButton.type = "button"
+  deleteButton.className = "folder-delete"
+  deleteButton.textContent = "×"
+  deleteButton.title = `Delete ${node.name}`
+  deleteButton.setAttribute("aria-label", `Delete ${node.name}`)
+  deleteButton.addEventListener("click", () => handlers.onDeleteFolder?.(node.path))
+
+  const row = document.createElement("div")
+  row.className = "folder-row"
+  row.append(header, createButton, deleteButton)
+
+  folder.append(row, children)
   return folder
 }
 
