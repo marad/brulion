@@ -18,6 +18,7 @@ vi.mock("./note", () => ({
   createFolder: vi.fn(),
   deleteFolder: vi.fn(),
   listFolders: vi.fn(),
+  isFolderEmpty: vi.fn(),
 }))
 vi.mock("./session", () => ({ saveActiveNote: vi.fn(), loadActiveNote: vi.fn() }))
 const readNote = vi.mocked(note.readNote)
@@ -33,6 +34,7 @@ const sweepResult = vi.mocked(note.sweepResult)
 const createFolder = vi.mocked(note.createFolder)
 const deleteFolder = vi.mocked(note.deleteFolder)
 const listFolders = vi.mocked(note.listFolders)
+const isFolderEmpty = vi.mocked(note.isFolderEmpty)
 const loadActiveNote = vi.mocked(session.loadActiveNote)
 const saveActiveNote = vi.mocked(session.saveActiveNote)
 
@@ -58,6 +60,7 @@ beforeEach(() => {
   createFolder.mockResolvedValue({ status: "created" })
   deleteFolder.mockResolvedValue(undefined)
   listFolders.mockResolvedValue([])
+  isFolderEmpty.mockResolvedValue(true)
   // The poll's relist sweep (see note.ts's Sweep): by default, a sweep
   // "completes" (continueSweep resolves true) on its very first tick with no
   // files, matching the old default-empty listNotes(). Tests simulating a
@@ -846,6 +849,37 @@ describe("moveFolder (FEAT-0070)", () => {
 
     expect(result).toEqual({ ok: true })
     expect(moveNote).toHaveBeenCalledWith(DIR, "projects/b.md", "archive/projects/b.md")
+  })
+
+  it("never deletes the source folder when a skipped file is still inside it (AC-9)", async () => {
+    // The occupied-destination skip above leaves projects/a.md in place — the
+    // folder itself must not be swept up by an unconditional recursive delete.
+    const { controller } = await open("start.md", ["start.md", "projects/a.md", "projects/b.md"])
+    moveNote.mockImplementation(async (_dir, from) =>
+      from === "projects/a.md" ? { status: "exists" } : { status: "moved" },
+    )
+    isFolderEmpty.mockImplementation(async (_dir, path) => path !== "projects") // a.md is still in there
+    listNotes.mockResolvedValue(["start.md", "projects/a.md", "archive/projects/b.md"])
+
+    await controller.moveFolder("projects", "archive/projects")
+
+    expect(deleteFolder).not.toHaveBeenCalledWith(DIR, "projects")
+    expect(createFolder).toHaveBeenCalledWith(DIR, "archive/projects") // destination still ensured
+  })
+
+  it("never deletes a subfolder that still has a skipped file in it", async () => {
+    const { controller } = await open("start.md", ["start.md", "projects/sub/a.md", "projects/b.md"])
+    moveNote.mockImplementation(async (_dir, from) =>
+      from === "projects/sub/a.md" ? { status: "exists" } : { status: "moved" },
+    )
+    listFolders.mockResolvedValue(["projects/sub"])
+    isFolderEmpty.mockImplementation(async (_dir, path) => path !== "projects/sub" && path !== "projects")
+    listNotes.mockResolvedValue(["start.md", "projects/sub/a.md", "archive/projects/b.md"])
+
+    await controller.moveFolder("projects", "archive/projects")
+
+    expect(deleteFolder).not.toHaveBeenCalledWith(DIR, "projects/sub")
+    expect(deleteFolder).not.toHaveBeenCalledWith(DIR, "projects")
   })
 
   it("fires onFoldersChanged with the fresh folder listing", async () => {
