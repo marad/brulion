@@ -480,13 +480,42 @@ describe("createNote (AC-6, AC-7, AC-8)", () => {
 })
 
 describe("deleteNote (AC-8)", () => {
-  it("removes a nested note's file, leaving its folder", async () => {
+  it("removes a nested note's file and prunes the now-empty folder (M35/FEAT-0069)", async () => {
+    // Before M35, an emptied folder was left on disk but simply never shown (the
+    // tree only ever derived folders from note paths). Now that listFolders
+    // (FEAT-0069) surfaces real directories, leaving it behind would mean a
+    // freshly emptied folder starts appearing as a phantom empty node — so the
+    // folder itself must go too, exactly like it used to "disappear" before.
     const folder = fakeFolder({
       sub: { kind: "directory", children: { "gone.md": { kind: "file", content: "x", lastModified: 1 } } },
     })
     await deleteNote(folder.dir, "sub/gone.md")
     expect(folder.has("sub/gone.md")).toBe(false)
+    expect(folder.has("sub")).toBe(false)
+  })
+
+  it("prunes empty ancestors all the way up (M35/FEAT-0069)", async () => {
+    const folder = fakeFolder({
+      a: {
+        kind: "directory",
+        children: { b: { kind: "directory", children: { "c.md": { kind: "file", content: "x" } } } },
+      },
+    })
+    await deleteNote(folder.dir, "a/b/c.md")
+    expect(folder.has("a/b")).toBe(false)
+    expect(folder.has("a")).toBe(false)
+  })
+
+  it("keeps a folder that still has other notes in it (M35/FEAT-0069)", async () => {
+    const folder = fakeFolder({
+      sub: {
+        kind: "directory",
+        children: { "gone.md": { kind: "file", content: "x" }, "keep.md": { kind: "file", content: "y" } },
+      },
+    })
+    await deleteNote(folder.dir, "sub/gone.md")
     expect(folder.has("sub")).toBe(true)
+    expect(folder.content("sub/keep.md")).toBe("y")
   })
 
   it("is a no-op when the note is already gone (many writers)", async () => {
@@ -579,6 +608,26 @@ describe("deleteFolder (AC-5, AC-6)", () => {
     const folder = fakeFolder()
     await expect(deleteFolder(folder.dir, "ghost")).resolves.toBeUndefined()
   })
+
+  it("prunes its own now-empty parent too (M35/FEAT-0069)", async () => {
+    const folder = fakeFolder({
+      parent: { kind: "directory", children: { child: { kind: "directory", children: {} } } },
+    })
+    await deleteFolder(folder.dir, "parent/child")
+    expect(folder.has("parent")).toBe(false)
+  })
+
+  it("does not prune a parent that still has other content", async () => {
+    const folder = fakeFolder({
+      parent: {
+        kind: "directory",
+        children: { child: { kind: "directory", children: {} }, "keep.md": { kind: "file", content: "x" } },
+      },
+    })
+    await deleteFolder(folder.dir, "parent/child")
+    expect(folder.has("parent")).toBe(true)
+    expect(folder.content("parent/keep.md")).toBe("x")
+  })
 })
 
 describe("statNote", () => {
@@ -608,6 +657,15 @@ describe("moveNote (AC-1..AC-5)", () => {
     expect(await moveNote(folder.dir, "a.md", "projects/a.md")).toEqual({ status: "moved" })
     expect(folder.has("a.md")).toBe(false)
     expect(folder.content("projects/a.md")).toBe("body")
+  })
+
+  it("prunes the source folder once emptied by the move (M35/FEAT-0069)", async () => {
+    const folder = fakeFolder({
+      sub: { kind: "directory", children: { "a.md": { kind: "file", content: "body", lastModified: 1 } } },
+    })
+    expect(await moveNote(folder.dir, "sub/a.md", "a.md")).toEqual({ status: "moved" })
+    expect(folder.has("sub")).toBe(false)
+    expect(folder.content("a.md")).toBe("body")
   })
 
   it("never clobbers an existing destination (AC-3)", async () => {
