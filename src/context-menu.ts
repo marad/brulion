@@ -3,22 +3,16 @@ import { type Extension } from "@codemirror/state"
 import { type MenuItem } from "./format-actions"
 import { linkContext } from "./markdown-render"
 import { computeWikilinkToggle } from "./wikilink"
+import { openPositionedMenu, closePositionedMenu } from "./positioned-menu"
 
 /**
  * The right-click menu (FEAT-0009), reduced in M17 P3 (FEAT-0053) to its one
  * position-based item: the **wikilink-form toggle**. Formatting moved to the selection
  * toolbar (FEAT-0052/FEAT-0053). So this menu opens *only* when the click lands on a
  * togglable wikilink; on plain text it does nothing and the browser's native menu is
- * left to show.
+ * left to show. Built on the shared `positioned-menu.ts` primitive it has in common
+ * with the sidebar tree's context menu (M35/FEAT-0071).
  */
-
-/** The single open menu and the teardown that removes it + its listeners. */
-let close: (() => void) | null = null
-
-function closeMenu() {
-  close?.()
-  close = null
-}
 
 /** The wikilink-form toggle item for a right-click at `(x, y)`, when the click lands
  * on a wikilink that points at a nested note with a unique basename — else `null` (no
@@ -39,61 +33,19 @@ function toggleItemFor(view: EditorView, x: number, y: number): MenuItem | null 
 }
 
 function openMenu(view: EditorView, x: number, y: number, items: MenuItem[]) {
-  closeMenu()
-
-  const menu = document.createElement("div")
-  menu.className = "cm-context-menu"
-  menu.setAttribute("role", "menu")
-
-  for (const item of items) {
-    const button = document.createElement("button")
-    button.type = "button"
-    button.setAttribute("role", "menuitem")
-    button.textContent = item.label
-    // mousedown would blur the editor and collapse the selection before the
-    // click handler runs; prevent it so the selection survives until we act.
-    button.addEventListener("mousedown", (e) => e.preventDefault())
-    button.addEventListener("click", () => {
-      const spec = item.run(view.state)
-      if (spec) view.dispatch(spec)
-      closeMenu()
-      view.focus()
-    })
-    menu.appendChild(button)
-  }
-
-  menu.style.left = `${x}px`
-  menu.style.top = `${y}px`
-  document.body.appendChild(menu)
-
-  // Clamp into the viewport so a right-click near the bottom/right edge doesn't
-  // push items off-screen.
-  const rect = menu.getBoundingClientRect()
-  if (rect.right > window.innerWidth) {
-    menu.style.left = `${Math.max(0, window.innerWidth - rect.width)}px`
-  }
-  if (rect.bottom > window.innerHeight) {
-    menu.style.top = `${Math.max(0, window.innerHeight - rect.height)}px`
-  }
-
-  const onPointerDown = (e: MouseEvent) => {
-    if (!menu.contains(e.target as Node)) closeMenu()
-  }
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      closeMenu()
-      view.focus()
-    }
-  }
-  // `true` (capture) so an outside click closes us before it does anything else.
-  document.addEventListener("pointerdown", onPointerDown, true)
-  document.addEventListener("keydown", onKeyDown, true)
-
-  close = () => {
-    document.removeEventListener("pointerdown", onPointerDown, true)
-    document.removeEventListener("keydown", onKeyDown, true)
-    menu.remove()
-  }
+  openPositionedMenu(
+    x,
+    y,
+    items.map((item) => ({
+      label: item.label,
+      onPick: () => {
+        const spec = item.run(view.state)
+        if (spec) view.dispatch(spec)
+        view.focus()
+      },
+    })),
+    () => view.focus(), // Escape also returns focus to the editor
+  )
 }
 
 /** Opens our one-item toggle popup only when the right-click lands on a togglable
@@ -108,10 +60,10 @@ const contextMenuHandler = EditorView.domEventHandlers({
   },
 })
 
-// `close` and the menu DOM live on document.body, outside CodeMirror's tree, so
-// tear them down when the view is destroyed (e.g. unmount / HMR) — otherwise the
+// The menu DOM lives on document.body, outside CodeMirror's tree, so tear it
+// down when the view is destroyed (e.g. unmount / HMR) — otherwise the
 // orphaned node and its document listeners would leak and reference a dead view.
-const contextMenuCleanup = ViewPlugin.define(() => ({ destroy: closeMenu }))
+const contextMenuCleanup = ViewPlugin.define(() => ({ destroy: closePositionedMenu }))
 
 /** The right-click formatting menu extension. */
 export const contextMenu: Extension = [contextMenuHandler, contextMenuCleanup]
