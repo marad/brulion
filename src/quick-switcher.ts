@@ -38,8 +38,10 @@ export interface QuickSwitcherElements {
 
 /** Handle returned to the host. */
 export interface QuickSwitcher {
-  /** Show the overlay (reset + focus). A no-op refocus if already open. */
-  open(): void
+  /** Show the overlay (reset + focus), optionally pre-filled with
+   * `initialQuery` (M35/FEAT-0072 — a folder's "New note…" seeds its path),
+   * cursor at the end. A no-op refocus if already open. */
+  open(initialQuery?: string): void
   /** Hide the overlay without changing the open note. */
   close(): void
   isOpen(): boolean
@@ -148,7 +150,7 @@ export function mountQuickSwitcher(
     if (event.target === backdrop) close()
   }
 
-  function openSwitcher(): void {
+  function openSwitcher(initialQuery?: string): void {
     if (open) {
       input.focus()
       return
@@ -156,11 +158,14 @@ export function mountQuickSwitcher(
     generation++
     open = true
     restoreFocus = document.activeElement as HTMLElement | null
-    input.value = ""
+    input.value = initialQuery ?? ""
     setError(null)
     backdrop.hidden = false
     render()
     input.focus()
+    // Cursor at the end (M35/FEAT-0072) — a pre-filled folder prefix reads as
+    // "keep typing the name", not a selection to retype over.
+    input.setSelectionRange(input.value.length, input.value.length)
   }
 
   function close(): void {
