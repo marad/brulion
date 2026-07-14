@@ -47,6 +47,20 @@ async function noteExists(page: Page, path: string): Promise<boolean> {
   )
 }
 
+async function readNoteContent(page: Page, path: string): Promise<string> {
+  return await page.evaluate(
+    async ([folder, rel]) => {
+      const root = await navigator.storage.getDirectory()
+      let dir = await root.getDirectoryHandle(folder, { create: true })
+      const segments = rel.split("/")
+      for (const seg of segments.slice(0, -1)) dir = await dir.getDirectoryHandle(seg)
+      const handle = await dir.getFileHandle(segments[segments.length - 1])
+      return await (await handle.getFile()).text()
+    },
+    [FOLDER, path] as const,
+  )
+}
+
 async function folderExists(page: Page, path: string): Promise<boolean> {
   return await page.evaluate(
     async ([folder, rel]) => {
@@ -101,6 +115,31 @@ test("dropping a folder onto itself does not move it (AC-7)", async ({ page }) =
   await folderHeader(page, "projects").dragTo(folderHeader(page, "projects"))
 
   expect(await noteExists(page, "projects/a.md")).toBe(true) // untouched
+})
+
+test("dropping a note onto an occupied destination shows an error and leaves it in place", async ({
+  page,
+}) => {
+  await stubPicker(page)
+  await page.goto("/brulion/")
+  await writeNote(page, "alpha.md", "root body")
+  await writeNote(page, "projects/alpha.md", "projects body") // same name already there
+
+  let sawAlert = false
+  page.on("dialog", (d) => {
+    if (d.type() === "alert") sawAlert = true
+    void d.accept()
+  })
+  await page.locator("#open-folder").click()
+
+  // "alpha" exists at both the root and inside "projects" — scope to the
+  // root-level row (a direct child of #note-list, not nested inside a folder).
+  const rootAlpha = page.locator("#note-list > .note-row", { hasText: "alpha" })
+  await rootAlpha.dragTo(folderHeader(page, "projects"))
+
+  await expect.poll(() => sawAlert).toBe(true) // the refusal must surface, not fail silently
+  expect(await noteExists(page, "alpha.md")).toBe(true) // the drop was refused
+  expect(await readNoteContent(page, "projects/alpha.md")).toBe("projects body") // untouched
 })
 
 test("dropping a note onto the root zone moves it there (root drop)", async ({ page }) => {
