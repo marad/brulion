@@ -27,10 +27,15 @@ or lose content.
 
 ## Behavior
 
+> **Trigger surface superseded by FEAT-0071.** "Move…" was originally always
+> a visible row button; the M35 milestone review moved it (and every other
+> row action) into a right-click/long-press context menu. The picker
+> described below, and everything it does once opened, is unchanged.
+
 **Destination picker.** A "Move to…" overlay (same visual family as the quick
 switcher/command palette) lists the vault's folders by path, root included,
-for one-click pick — reachable from a note row's own control and a folder
-row's own control. Picking a destination for a **note** calls
+for one-click pick — reachable from a note row's own action and a folder
+row's own action. Picking a destination for a **note** calls
 `renameActive(destination + "/" + currentName)` (root: just `currentName`) —
 already-correct behavior top to bottom (flush, move, own-link rebase, inbound
 rewrite, active-note follow), so this half of the phase is wiring, not new
