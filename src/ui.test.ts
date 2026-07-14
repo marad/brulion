@@ -342,7 +342,8 @@ describe("renderNoteList tree (FEAT-0024)", () => {
 
     rowFor(container, "b")!.querySelector<HTMLElement>(".note-name")!.click()
     expect(h.onSelect).toHaveBeenCalledWith("sub/b.md")
-    rowFor(container, "b")!.querySelector<HTMLElement>(".note-delete")!.click()
+    openMenuOn(rowFor(container, "b")!)
+    clickMenuItem("Delete")
     expect(h.onDelete).toHaveBeenCalledWith("sub/b.md")
   })
 

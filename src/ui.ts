@@ -2,6 +2,8 @@ import { createElement } from "lucide"
 import { pickFolder } from "./fs"
 import { hasPermission, requestAccess } from "./session"
 import { displayName } from "./note-name"
+import { openTreeMenu, type TreeMenuItem } from "./tree-menu"
+import { wireLongPress } from "./long-press"
 import type { AddNoteResult } from "./note-controller"
 import type { Action } from "./actions"
 import type { Vault } from "./vaults"
@@ -218,20 +220,18 @@ export function renderNoteList(
   }
 }
 
-/** Render one tree node (note row or folder subtree) to a detached element. */
-/** A small glyph-labeled action button for a tree row (create/move/delete) —
- * the same text glyph doubles as its accessible label via title/aria-label. */
-function rowActionButton(className: string, glyph: string, title: string, onClick: () => void): HTMLButtonElement {
-  const button = document.createElement("button")
-  button.type = "button"
-  button.className = className
-  button.textContent = glyph
-  button.title = title
-  button.setAttribute("aria-label", title)
-  button.addEventListener("click", onClick)
-  return button
+/** Wire a row/header element to open `items` on right-click and on long-press
+ * (M35/FEAT-0071) — the single reachability path for every tree row action,
+ * replacing what used to be a permanent inline button per action. */
+function wireTreeMenu(el: HTMLElement, items: () => TreeMenuItem[]): void {
+  el.addEventListener("contextmenu", (event) => {
+    event.preventDefault()
+    openTreeMenu(event.clientX, event.clientY, items())
+  })
+  wireLongPress(el, (x, y) => openTreeMenu(x, y, items()))
 }
 
+/** Render one tree node (note row or folder subtree) to a detached element. */
 function renderNode(
   node: TreeNode,
   active: string,
@@ -269,25 +269,18 @@ function renderNode(
     handlers.onToggleFolder?.(node.path, children.hidden)
   })
 
-  const createButton = rowActionButton("folder-create", "+", `New folder in ${node.name}`, () =>
-    handlers.onCreateFolder?.(node.path),
-  )
-  const moveButton = rowActionButton("folder-move", "→", `Move ${node.name}`, () =>
-    handlers.onMoveFolder?.(node.path),
-  )
-  const deleteButton = rowActionButton("folder-delete", "×", `Delete ${node.name}`, () =>
-    handlers.onDeleteFolder?.(node.path),
-  )
+  wireTreeMenu(header, () => [
+    { label: "New subfolder…", run: () => handlers.onCreateFolder?.(node.path) },
+    { label: "Move…", run: () => handlers.onMoveFolder?.(node.path) },
+    { label: "Delete", run: () => handlers.onDeleteFolder?.(node.path) },
+  ])
 
-  const row = document.createElement("div")
-  row.className = "folder-row"
-  row.append(header, createButton, moveButton, deleteButton)
-
-  folder.append(row, children)
+  folder.append(header, children)
   return folder
 }
 
-/** Render a single note row (name button + delete button). */
+/** Render a single note row (just the name — every other action lives behind
+ * its context menu, M35/FEAT-0071). */
 function renderNoteRow(node: NoteLeaf, active: string, handlers: NoteListHandlers): HTMLElement {
   const row = document.createElement("div")
   row.className = "note-row"
@@ -304,14 +297,13 @@ function renderNoteRow(node: NoteLeaf, active: string, handlers: NoteListHandler
   nameButton.title = displayName(node.path) // full note path on hover (rows ellipsize)
   nameButton.addEventListener("click", () => handlers.onSelect(node.path))
 
-  const moveButton = rowActionButton("note-move", "→", `Move ${node.name}`, () =>
-    handlers.onMoveNote?.(node.path),
-  )
-  const deleteButton = rowActionButton("note-delete", "×", `Delete ${node.name}`, () =>
-    handlers.onDelete(node.path),
-  )
+  row.append(nameButton)
 
-  row.append(nameButton, moveButton, deleteButton)
+  wireTreeMenu(row, () => [
+    { label: "Move…", run: () => handlers.onMoveNote?.(node.path) },
+    { label: "Delete", run: () => handlers.onDelete(node.path) },
+  ])
+
   return row
 }
 
