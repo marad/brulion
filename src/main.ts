@@ -477,31 +477,33 @@ function promptNewFolder(parentPath: string): void {
   })
 }
 
-/** Prompt for a new name (leaf segment only) and rename `path` in place,
- * keeping its parent folder (M35/FEAT-0072) — distinct from "Move…", which
- * changes the parent but keeps the name. */
-function promptRenameNote(path: string): void {
-  const current = displayName(path).split("/").pop() as string
-  const name = window.prompt("Rename to:", current)
-  if (!name || name === current) return
+/** Prompt for a new name (leaf segment only) and apply it by calling
+ * `rename(target)` — the shared shape behind both "Rename…" entry points
+ * (M35/FEAT-0072): read the current leaf, prompt, no-op on empty/unchanged,
+ * keep the same parent and swap only the leaf, alert on failure. Distinct
+ * from "Move…", which changes the parent but keeps the name. */
+function promptRenameTo(
+  path: string,
+  currentLeaf: string,
+  rename: (target: string) => Promise<AddNoteResult>,
+): void {
+  const name = window.prompt("Rename to:", currentLeaf)
+  if (!name || name === currentLeaf) return
   const parent = parentOf(path)
   const target = parent ? `${parent}/${name}` : name
-  void controller.switchTo(path).then(() =>
-    controller.renameActive(target).then((result) => {
-      if (!result.ok) window.alert(result.reason)
-    }),
-  )
+  void rename(target).then((result) => {
+    if (!result.ok) window.alert(result.reason)
+  })
+}
+
+function promptRenameNote(path: string): void {
+  const current = displayName(path).split("/").pop() as string
+  promptRenameTo(path, current, (target) => controller.switchTo(path).then(() => controller.renameActive(target)))
 }
 
 function promptRenameFolder(path: string): void {
   const current = path.split("/").pop() as string
-  const name = window.prompt("Rename to:", current)
-  if (!name || name === current) return
-  const parent = parentOf(path)
-  const target = parent ? `${parent}/${name}` : name
-  void controller.moveFolder(path, target).then((result) => {
-    if (!result.ok) window.alert(result.reason)
-  })
+  promptRenameTo(path, current, (target) => controller.moveFolder(path, target))
 }
 controller = createNoteController(view, {
   onConflict: (versions) => {
