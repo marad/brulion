@@ -78,7 +78,6 @@
 button,
 .note-row,
 .note-name,
-.note-delete,
 .folder-header,
 .note-identity-display,
 #sidebar-search,
@@ -703,52 +702,13 @@ header button:hover {
   font-weight: 600;
 }
 
-/* Move/delete controls: always present (touch devices have no hover), but
- * muted — they gain weight on row hover; delete turns red on its own hover/
- * focus, move (non-destructive) just brightens like a normal action. */
-.note-move,
-.note-delete {
-  font: inherit;
-  flex: 0 0 auto;
-  margin-right: 0.25rem;
-  padding: 0 0.4rem;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-faint);
-  cursor: pointer;
-}
-
-.note-row:hover .note-move,
-.note-row:hover .note-delete {
-  color: var(--text-muted);
-}
-
-.note-move:hover,
-.note-move:focus-visible {
-  color: var(--accent-text);
-  background: var(--surface-2);
-}
-
-.note-delete:hover,
-.note-delete:focus-visible {
-  color: var(--accent-text);
-  background: var(--danger-border);
-}
-
 /* Folder tree (FEAT-0024). A folder is a header row with a disclosure caret over
- * an indented children container. */
+ * an indented children container. Row actions (create/move/delete) live behind
+ * a right-click/long-press context menu (M35/FEAT-0071), not an inline button. */
 .note-folder {
   display: flex;
   flex-direction: column;
   gap: 2px;
-}
-
-/* A folder row (M35/FEAT-0069): the disclosure header plus its create/delete
- * controls, side by side — same shape as a note row's name + delete button. */
-.folder-row {
-  display: flex;
-  align-items: center;
 }
 
 .folder-header {
@@ -756,8 +716,6 @@ header button:hover {
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  flex: 1;
-  min-width: 0;
   text-align: left;
   padding: 0.35rem 0.6rem;
   border: 0;
@@ -772,41 +730,6 @@ header button:hover {
 
 .folder-header:hover {
   background: var(--surface-2);
-}
-
-/* Create/move/delete controls: same muted-until-hover treatment as .note-delete. */
-.folder-create,
-.folder-move,
-.folder-delete {
-  font: inherit;
-  flex: 0 0 auto;
-  margin-right: 0.25rem;
-  padding: 0 0.4rem;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-faint);
-  cursor: pointer;
-}
-
-.folder-row:hover .folder-create,
-.folder-row:hover .folder-move,
-.folder-row:hover .folder-delete {
-  color: var(--text-muted);
-}
-
-.folder-create:hover,
-.folder-create:focus-visible,
-.folder-move:hover,
-.folder-move:focus-visible {
-  color: var(--accent-text);
-  background: var(--surface-2);
-}
-
-.folder-delete:hover,
-.folder-delete:focus-visible {
-  color: var(--accent-text);
-  background: var(--danger-border);
 }
 
 .folder-header::before {
