@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import * as fs from "./fs"
 import * as session from "./session"
+import { closeTreeMenu } from "./tree-menu"
 import {
   openFolder,
   restoreVault,
@@ -47,7 +48,33 @@ function fixture() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  closeTreeMenu()
+  document.body.innerHTML = ""
 })
+
+// FEAT-0071: every row action now lives behind a right-click/long-press
+// context menu (tree-menu.ts) rather than an inline button.
+function openMenuOn(el: HTMLElement): void {
+  el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }))
+}
+function menuLabels(): (string | null)[] {
+  return [...document.querySelectorAll<HTMLElement>(".cm-context-menu button[role=menuitem]")].map(
+    (b) => b.textContent,
+  )
+}
+function clickMenuItem(label: string): void {
+  const item = [...document.querySelectorAll<HTMLElement>(".cm-context-menu button[role=menuitem]")].find(
+    (b) => b.textContent === label,
+  )
+  item!.click()
+}
+// happy-dom has no native TouchEvent — a plain Event with a `touches` array
+// attached is enough for the long-press wiring, which only ever reads it.
+function touchEvent(type: string, points: Array<{ clientX: number; clientY: number }>): Event {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperty(event, "touches", { value: points, configurable: true })
+  return event
+}
 
 describe("openFolder", () => {
   it("picks the folder and hands it to onOpen, hiding the resume button (AC-1)", async () => {
@@ -175,14 +202,23 @@ describe("renderNoteList", () => {
     expect(h.onSelect).toHaveBeenCalledWith("banana.md")
   })
 
-  it("calls onDelete with the filename when a row's delete button is clicked (AC-5)", () => {
+  it("calls onDelete with the filename when Delete is picked from the row's context menu (AC-5, FEAT-0071 AC-1)", () => {
     const container = document.createElement("div")
     const h = handlers()
     renderNoteList(container, ["apple.md", "banana.md"], "apple.md", h)
 
-    container.querySelectorAll<HTMLElement>(".note-delete")[1].click()
+    openMenuOn(container.querySelectorAll<HTMLElement>(".note-row")[1])
+    clickMenuItem("Delete")
     expect(h.onDelete).toHaveBeenCalledWith("banana.md")
     expect(h.onSelect).not.toHaveBeenCalled() // delete is not a select
+  })
+
+  it("a note row has no inline action buttons (FEAT-0071)", () => {
+    const container = document.createElement("div")
+    renderNoteList(container, ["apple.md"], "apple.md", handlers())
+
+    expect(container.querySelector(".note-delete")).toBeNull()
+    expect(container.querySelector(".note-move")).toBeNull()
   })
 
   it("replaces previous rows on re-render", () => {
@@ -368,7 +404,7 @@ describe("renderNoteList tree (FEAT-0024)", () => {
   })
 })
 
-describe("renderNoteList folder create/delete controls (FEAT-0069)", () => {
+describe("renderNoteList folder context menu (FEAT-0069/FEAT-0071)", () => {
   const handlers = () => ({
     onSelect: vi.fn(),
     onDelete: vi.fn(),
@@ -376,21 +412,23 @@ describe("renderNoteList folder create/delete controls (FEAT-0069)", () => {
     onDeleteFolder: vi.fn(),
   })
 
-  it("calls onCreateFolder with the folder's path when its + is clicked (AC-1, AC-2)", () => {
+  it("calls onCreateFolder with the folder's path when New subfolder… is picked (AC-1, AC-2)", () => {
     const container = document.createElement("div")
     const h = handlers()
     renderNoteList(container, ["sub/b.md"], "sub/b.md", h)
 
-    container.querySelector<HTMLElement>(".folder-create")!.click()
+    openMenuOn(container.querySelector<HTMLElement>(".folder-header")!)
+    clickMenuItem("New subfolder…")
     expect(h.onCreateFolder).toHaveBeenCalledWith("sub")
   })
 
-  it("calls onDeleteFolder with the folder's path when its × is clicked (AC-5, AC-6)", () => {
+  it("calls onDeleteFolder with the folder's path when Delete is picked (AC-5, AC-6)", () => {
     const container = document.createElement("div")
     const h = handlers()
     renderNoteList(container, ["sub/b.md"], "sub/b.md", h)
 
-    container.querySelector<HTMLElement>(".folder-delete")!.click()
+    openMenuOn(container.querySelector<HTMLElement>(".folder-header")!)
+    clickMenuItem("Delete")
     expect(h.onDeleteFolder).toHaveBeenCalledWith("sub")
   })
 
@@ -411,9 +449,18 @@ describe("renderNoteList folder create/delete controls (FEAT-0069)", () => {
 
     expect([...container.querySelectorAll(".folder-header")].map((el) => el.textContent)).toEqual(["ideas"])
   })
+
+  it("a folder row has no inline action buttons (FEAT-0071)", () => {
+    const container = document.createElement("div")
+    renderNoteList(container, ["sub/b.md"], "sub/b.md", handlers())
+
+    expect(container.querySelector(".folder-create")).toBeNull()
+    expect(container.querySelector(".folder-move")).toBeNull()
+    expect(container.querySelector(".folder-delete")).toBeNull()
+  })
 })
 
-describe("renderNoteList move controls (FEAT-0070)", () => {
+describe("renderNoteList move via context menu (FEAT-0070/FEAT-0071)", () => {
   const handlers = () => ({
     onSelect: vi.fn(),
     onDelete: vi.fn(),
@@ -421,22 +468,120 @@ describe("renderNoteList move controls (FEAT-0070)", () => {
     onMoveFolder: vi.fn(),
   })
 
-  it("calls onMoveNote with the note's path when its move control is clicked (AC-1)", () => {
+  it("calls onMoveNote with the note's path when Move… is picked (AC-1)", () => {
     const container = document.createElement("div")
     const h = handlers()
     renderNoteList(container, ["sub/b.md"], "sub/b.md", h)
 
-    container.querySelector<HTMLElement>(".note-move")!.click()
+    openMenuOn(container.querySelector<HTMLElement>(".note-row")!)
+    clickMenuItem("Move…")
     expect(h.onMoveNote).toHaveBeenCalledWith("sub/b.md")
   })
 
-  it("calls onMoveFolder with the folder's path when its move control is clicked (AC-3)", () => {
+  it("calls onMoveFolder with the folder's path when Move… is picked on the folder row (AC-3)", () => {
     const container = document.createElement("div")
     const h = handlers()
     renderNoteList(container, ["sub/b.md"], "sub/b.md", h)
 
-    container.querySelector<HTMLElement>(".folder-move")!.click()
+    openMenuOn(container.querySelector<HTMLElement>(".folder-header")!)
+    clickMenuItem("Move…")
     expect(h.onMoveFolder).toHaveBeenCalledWith("sub")
+  })
+})
+
+describe("tree row context menu shape (FEAT-0071)", () => {
+  const handlers = () => ({
+    onSelect: vi.fn(),
+    onDelete: vi.fn(),
+    onCreateFolder: vi.fn(),
+    onDeleteFolder: vi.fn(),
+    onMoveNote: vi.fn(),
+    onMoveFolder: vi.fn(),
+  })
+
+  it("a note row's context menu has exactly Move… and Delete (AC-1)", () => {
+    const container = document.createElement("div")
+    renderNoteList(container, ["a.md"], "a.md", handlers())
+
+    openMenuOn(container.querySelector<HTMLElement>(".note-row")!)
+
+    expect(menuLabels()).toEqual(["Move…", "Delete"])
+  })
+
+  it("a folder row's context menu has exactly New subfolder…, Move…, and Delete (AC-2)", () => {
+    const container = document.createElement("div")
+    renderNoteList(container, ["sub/a.md"], "sub/a.md", handlers())
+
+    openMenuOn(container.querySelector<HTMLElement>(".folder-header")!)
+
+    expect(menuLabels()).toEqual(["New subfolder…", "Move…", "Delete"])
+  })
+
+  it("the contextmenu event does not bubble to the native menu (preventDefault)", () => {
+    const container = document.createElement("div")
+    renderNoteList(container, ["a.md"], "a.md", handlers())
+    const row = container.querySelector<HTMLElement>(".note-row")!
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true })
+
+    row.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  it("opens the same menu via long-press on a note row (AC-5)", () => {
+    vi.useFakeTimers()
+    const container = document.createElement("div")
+    renderNoteList(container, ["a.md"], "a.md", handlers())
+    const row = container.querySelector<HTMLElement>(".note-row")!
+
+    row.dispatchEvent(touchEvent("touchstart", [{ clientX: 5, clientY: 5 }]))
+    vi.advanceTimersByTime(500)
+
+    expect(menuLabels()).toEqual(["Move…", "Delete"])
+    vi.useRealTimers()
+  })
+
+  it("opens the same menu via long-press on a folder row (AC-5)", () => {
+    vi.useFakeTimers()
+    const container = document.createElement("div")
+    renderNoteList(container, ["sub/a.md"], "sub/a.md", handlers())
+    const header = container.querySelector<HTMLElement>(".folder-header")!
+
+    header.dispatchEvent(touchEvent("touchstart", [{ clientX: 5, clientY: 5 }]))
+    vi.advanceTimersByTime(500)
+
+    expect(menuLabels()).toEqual(["New subfolder…", "Move…", "Delete"])
+    vi.useRealTimers()
+  })
+
+  it("a long-press suppresses the row's own tap action (no onSelect alongside the menu, AC-5)", () => {
+    vi.useFakeTimers()
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["a.md"], "a.md", h)
+    const row = container.querySelector<HTMLElement>(".note-row")!
+
+    row.dispatchEvent(touchEvent("touchstart", [{ clientX: 5, clientY: 5 }]))
+    vi.advanceTimersByTime(500)
+    row.dispatchEvent(touchEvent("touchend", []))
+
+    expect(h.onSelect).not.toHaveBeenCalled()
+    vi.useRealTimers()
+  })
+
+  it("moving past the tolerance cancels a long-press; the lift behaves as an ordinary tap (AC-6)", () => {
+    vi.useFakeTimers()
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["a.md"], "a.md", h)
+    const row = container.querySelector<HTMLElement>(".note-row")!
+
+    row.dispatchEvent(touchEvent("touchstart", [{ clientX: 5, clientY: 5 }]))
+    row.dispatchEvent(touchEvent("touchmove", [{ clientX: 40, clientY: 5 }]))
+    vi.advanceTimersByTime(500)
+
+    expect(menuLabels()).toEqual([])
+    vi.useRealTimers()
   })
 })
 
