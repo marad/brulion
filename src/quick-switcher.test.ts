@@ -78,6 +78,27 @@ describe("mountQuickSwitcher open/render (FEAT-0033 AC-2)", () => {
     expect(activeRow(els)).toBe(all[0])
   })
 
+  it("open(initialQuery) pre-fills the input, cursor at the end, and filters by it (M35/FEAT-0072)", () => {
+    const els = elements()
+    const sw = mountQuickSwitcher(els, deps())
+
+    sw.open("projects/")
+
+    expect(els.input.value).toBe("projects/")
+    expect(els.input.selectionStart).toBe("projects/".length)
+    expect(els.input.selectionEnd).toBe("projects/".length)
+    expect(rows(els).map((r) => r.textContent)).toEqual(["projects/diablo"])
+  })
+
+  it("open() with no argument still starts with an empty query", () => {
+    const els = elements()
+    const sw = mountQuickSwitcher(els, deps())
+
+    sw.open()
+
+    expect(els.input.value).toBe("")
+  })
+
   it("orders the empty-query list by recency, most-recent first (FEAT-0039)", () => {
     const els = elements()
     // start.md most-recently visited, then ideas.md; projects/diablo.md never.
