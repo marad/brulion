@@ -50,6 +50,16 @@ const row = (page: Page, name: string) => page.locator(".note-row", { hasText: n
 const folderHeader = (page: Page, name: string) => page.locator(".folder-header", { hasText: name })
 const moveRow = (page: Page, label: string) => page.locator("#move-list .move-row", { hasText: label })
 
+// "Move…" lives behind the note row's context menu now (M35/FEAT-0071), not
+// an inline button — right-click the row, then pick it.
+async function openMoveNote(rowLocator: ReturnType<typeof row>) {
+  await rowLocator.click({ button: "right" })
+  await rowLocator
+    .page()
+    .locator(".cm-context-menu button[role=menuitem]", { hasText: "Move…" })
+    .click()
+}
+
 test("moves a note to another folder via the picker, switching to it first (AC-1)", async ({ page }) => {
   await stubPicker(page)
   await page.goto("/brulion/")
@@ -59,7 +69,7 @@ test("moves a note to another folder via the picker, switching to it first (AC-1
   await page.locator("#open-folder").click()
   await expect(editor(page)).toHaveText("start body") // start.md is active by default, not alpha
 
-  await row(page, "alpha").locator(".note-move").click()
+  await openMoveNote(row(page, "alpha"))
   await expect(page.locator("#move-input")).toBeFocused()
   await expect(editor(page)).toHaveText("alpha body") // switched to alpha before the picker even opens
   await moveRow(page, "projects").click()
@@ -77,10 +87,7 @@ test("moves a note back to the root via the picker (AC-2)", async ({ page }) => 
   // The only note is auto-active, so "projects" is already expanded as its
   // ancestor (FEAT-0043) — no need to click the folder header.
 
-  await page
-    .locator(".folder-children .note-row", { hasText: "alpha" })
-    .locator(".note-move")
-    .click()
+  await openMoveNote(page.locator(".folder-children .note-row", { hasText: "alpha" }))
   await moveRow(page, "(root)").click()
   await expect(page.locator("#move-backdrop")).toBeHidden()
 

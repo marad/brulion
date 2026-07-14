@@ -52,6 +52,13 @@ async function createNote(page: Page, name: string) {
   await page.locator("#switcher-input").press("Enter")
 }
 
+// Delete now lives behind the row's context menu (M35/FEAT-0071), not an
+// inline button — right-click the row, then pick "Delete" from the menu.
+async function deleteNote(page: Page, name: string) {
+  await row(page, name).click({ button: "right" })
+  await page.locator(".cm-context-menu button[role=menuitem]", { hasText: "Delete" }).click()
+}
+
 test("creates a named note and opens it (AC-1)", async ({ page }) => {
   await stubPicker(page)
   await page.goto("/brulion/")
@@ -90,7 +97,7 @@ test("deletes a note after confirmation (AC-5, AC-6)", async ({ page }) => {
   await expect(page.locator(".note-row")).toHaveCount(2)
 
   page.once("dialog", (d) => d.accept())
-  await row(page, "trash").locator(".note-delete").click()
+  await deleteNote(page, "trash")
 
   await expect(row(page, "trash")).toHaveCount(0)
   await expect(page.locator(".note-row")).toHaveCount(1)
@@ -105,7 +112,7 @@ test("declining the confirmation keeps the note (AC-5)", async ({ page }) => {
   await page.locator("#open-folder").click()
 
   page.once("dialog", (d) => d.dismiss())
-  await row(page, "beta").locator(".note-delete").click()
+  await deleteNote(page, "beta")
 
   await expect(row(page, "beta")).toBeVisible()
   expect(await noteExists(page, "beta.md")).toBe(true)
@@ -121,7 +128,7 @@ test("deleting the active note switches to another (AC-7)", async ({ page }) => 
   await expect(editor(page)).toHaveText("beta body")
 
   page.once("dialog", (d) => d.accept())
-  await row(page, "beta").locator(".note-delete").click()
+  await deleteNote(page, "beta")
 
   await expect(row(page, "beta")).toHaveCount(0)
   await expect(editor(page)).toHaveText("alpha body") // switched to the remaining note

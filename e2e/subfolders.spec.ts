@@ -96,7 +96,8 @@ test("creates a subfolder note, switches, and removes the folder on delete (AC-7
 
   // Delete the only note in `sub`: the folder header disappears.
   page.once("dialog", (d) => d.accept())
-  await nested.locator(".note-delete").click()
+  await nested.click({ button: "right" })
+  await page.locator(".cm-context-menu button[role=menuitem]", { hasText: "Delete" }).click()
 
   await expect(folderHeader(page, "sub")).toHaveCount(0)
   expect(await noteExists(page, "sub/one.md")).toBe(false)

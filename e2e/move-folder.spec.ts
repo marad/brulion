@@ -77,8 +77,14 @@ async function folderExists(page: Page, path: string): Promise<boolean> {
 
 const editor = (page: Page) => page.locator(".cm-content")
 const folderHeader = (page: Page, name: string) => page.locator(".folder-header", { hasText: name })
-const folderRow = (page: Page, name: string) => page.locator(".folder-row", { hasText: name })
 const moveRow = (page: Page, label: string) => page.locator("#move-list .move-row", { hasText: label })
+
+// "Move…" lives behind the folder header's context menu now (M35/FEAT-0071),
+// not an inline button — right-click it, then pick the item.
+async function openMoveFolder(page: Page, name: string) {
+  await folderHeader(page, name).click({ button: "right" })
+  await page.locator(".cm-context-menu button[role=menuitem]", { hasText: "Move…" }).click()
+}
 
 test("moves a folder and everything beneath it, including nested subfolders (AC-3)", async ({ page }) => {
   await stubPicker(page)
@@ -88,7 +94,7 @@ test("moves a folder and everything beneath it, including nested subfolders (AC-
   await writeNote(page, "projects/ideas/b.md", "b body")
   await page.locator("#open-folder").click()
 
-  await folderRow(page, "projects").locator(".folder-move").click()
+  await openMoveFolder(page, "projects")
   await moveRow(page, "archive").click()
   await expect(page.locator("#move-backdrop")).toBeHidden() // picker closes once the move settles
 
@@ -104,7 +110,7 @@ test("refuses moving a folder into itself, showing a message (AC-4)", async ({ p
   await writeNote(page, "projects/a.md", "a body")
   await page.locator("#open-folder").click()
 
-  await folderRow(page, "projects").locator(".folder-move").click()
+  await openMoveFolder(page, "projects")
   await moveRow(page, "projects").click()
 
   await expect(page.locator("#move-error")).toBeVisible()
@@ -118,7 +124,7 @@ test("refuses moving a folder into its own descendant (AC-5)", async ({ page }) 
   await writeNote(page, "projects/ideas/c.md", "c body")
   await page.locator("#open-folder").click()
 
-  await folderRow(page, "projects").locator(".folder-move").click()
+  await openMoveFolder(page, "projects")
   await moveRow(page, "projects/ideas").click()
 
   await expect(page.locator("#move-error")).toBeVisible()
@@ -136,7 +142,7 @@ test("rebases a moved note's own links and rewrites inbound links from outside (
   await writeNote(page, "outside.md", "[a](projects/a.md)") // inbound link from outside the folder
   await page.locator("#open-folder").click()
 
-  await folderRow(page, "projects").locator(".folder-move").click()
+  await openMoveFolder(page, "projects")
   await moveRow(page, "archive").click()
   await expect(page.locator("#move-backdrop")).toBeHidden() // picker closes once the move settles
 
@@ -154,7 +160,7 @@ test("the active note follows when its folder moves (AC-8)", async ({ page }) =>
   await page.locator(".folder-children .note-row", { hasText: "a" }).locator(".note-name").click()
   await expect(editor(page)).toHaveText("a body")
 
-  await folderRow(page, "projects").locator(".folder-move").click()
+  await openMoveFolder(page, "projects")
   await moveRow(page, "archive").click()
   await expect(page.locator("#move-backdrop")).toBeHidden() // picker closes once the move settles
 

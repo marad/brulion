@@ -63,7 +63,17 @@ async function noteExists(page: Page, path: string): Promise<boolean> {
 
 const editor = (page: Page) => page.locator(".cm-content")
 const folderHeader = (page: Page, name: string) => page.locator(".folder-header", { hasText: name })
-const folderRow = (page: Page, name: string) => page.locator(".folder-row", { hasText: name })
+
+// Every folder action lives behind the header's context menu now
+// (M35/FEAT-0071), not an inline button — right-click it, then pick the item.
+async function createSubfolder(page: Page, parentName: string) {
+  await folderHeader(page, parentName).click({ button: "right" })
+  await page.locator(".cm-context-menu button[role=menuitem]", { hasText: "New subfolder…" }).click()
+}
+async function deleteFolder(page: Page, name: string) {
+  await folderHeader(page, name).click({ button: "right" })
+  await page.locator(".cm-context-menu button[role=menuitem]", { hasText: "Delete" }).click()
+}
 
 test("creates an empty folder at the root (AC-1)", async ({ page }) => {
   await stubPicker(page)
@@ -85,7 +95,7 @@ test("creates a subfolder inside an existing folder (AC-2)", async ({ page }) =>
   await folderHeader(page, "projects").click() // collapsed by default — expand it
 
   page.on("dialog", (d) => void d.accept("ideas"))
-  await folderRow(page, "projects").locator(".folder-create").click()
+  await createSubfolder(page, "projects")
 
   const nestedFolder = page.locator(".folder-children .folder-header", { hasText: "ideas" })
   await expect(nestedFolder).toBeVisible()
@@ -139,7 +149,7 @@ test("deleting a folder asks for confirmation; declining leaves it untouched (AC
   await page.locator("#open-folder").click()
 
   page.once("dialog", (d) => d.dismiss())
-  await folderRow(page, "projects").locator(".folder-delete").click()
+  await deleteFolder(page, "projects")
 
   await expect(folderHeader(page, "projects")).toBeVisible()
   expect(await folderExists(page, "projects")).toBe(true)
@@ -154,7 +164,7 @@ test("confirmed deletion removes the folder and every note beneath it (AC-6)", a
   await page.locator("#open-folder").click()
 
   page.once("dialog", (d) => d.accept())
-  await folderRow(page, "projects").locator(".folder-delete").click()
+  await deleteFolder(page, "projects")
 
   await expect(folderHeader(page, "projects")).toHaveCount(0)
   expect(await folderExists(page, "projects")).toBe(false)
@@ -175,7 +185,7 @@ test("deleting the active note's folder falls back to another note (AC-7)", asyn
   await expect(editor(page)).toHaveText("a body")
 
   page.once("dialog", (d) => d.accept())
-  await folderRow(page, "projects").locator(".folder-delete").click()
+  await deleteFolder(page, "projects")
 
   await expect(editor(page)).toHaveText("start body") // fell back to start.md
 })
@@ -191,7 +201,7 @@ test("leaves the editor in place when the active note is outside the deleted fol
   await expect(editor(page)).toHaveText("start body") // start.md picked active by default
 
   page.once("dialog", (d) => d.accept())
-  await folderRow(page, "projects").locator(".folder-delete").click()
+  await deleteFolder(page, "projects")
 
   await expect(folderHeader(page, "projects")).toHaveCount(0)
   await expect(editor(page)).toHaveText("start body") // unchanged
