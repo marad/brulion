@@ -429,10 +429,16 @@ const noteListHandlers = {
   onRenameFolder: (path: string) => promptRenameFolder(path),
   onDropNote: (path: string, destination: string) => {
     // Same active-note constraint as onMoveNote above.
-    void controller.switchTo(path).then(() => moveNoteTo(path, destination))
+    void controller.switchTo(path).then(() =>
+      moveNoteTo(path, destination).then((result) => {
+        if (!result.ok) window.alert(result.reason)
+      }),
+    )
   },
   onDropFolder: (path: string, destination: string) => {
-    void moveFolderTo(path, destination)
+    void moveFolderTo(path, destination).then((result) => {
+      if (!result.ok) window.alert(result.reason)
+    })
   },
 }
 
