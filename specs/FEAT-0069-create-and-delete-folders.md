@@ -21,8 +21,14 @@ loses their data without their say-so.
 
 ## Behavior
 
-**Creating.** Each folder row in the sidebar tree (and the tree's root) gets a
-"+" control. Activating it prompts for a name and, on a valid one, creates a
+> **Trigger surface superseded by FEAT-0071.** The controls below were
+> originally always-visible row buttons; the M35 milestone review replaced
+> every one of them with a right-click/long-press context menu (FEAT-0071).
+> The verbs, validation, and confirmation described here are unchanged —
+> only *how* the user reaches "create"/"delete" moved.
+
+**Creating.** Activating "New subfolder…" for a folder (or the tree root's own
+entry point) prompts for a name and, on a valid one, creates a
 real empty directory at that path — `createFolder(dir, path)` resolves/creates
 each path segment via `getDirectoryHandle(name, { create: true })`, the same
 segment-walking `normalizeNoteName`-style validation notes already use (no
@@ -30,9 +36,9 @@ empty/unsafe/`.`/`..` segments). The new folder appears in the tree immediately,
 empty, ready to receive notes. An invalid or duplicate name is refused with a
 message; nothing is created.
 
-**Deleting.** Each folder row gets a "×" control, mirroring the note row's.
-Activating it always asks for confirmation — unlike a note, a folder can hold
-any number of notes beneath it, so there is no safe one-click path. On
+**Deleting.** Activating "Delete" for a folder always asks for confirmation —
+unlike a note, a folder can hold any number of notes beneath it, so there is
+no safe one-click path. On
 confirmation, `deleteFolder(dir, path)` removes the folder and everything in it
 via `removeEntry(name, { recursive: true })` on the resolved parent; the tree
 re-renders from a fresh listing. If the active note was inside the deleted
@@ -61,8 +67,6 @@ folder and its contents untouched.
 ## Out of scope
 
 - Moving a note or a folder into another folder — a separate phase (M35 P2).
-- A general right-click context-menu system for the tree — folder actions use
-  the same inline-button pattern the note row already has.
 - Undo of a folder deletion.
 - Renaming a folder (distinct from moving a note/folder — deferred to whenever
   it's separately requested).
@@ -77,7 +81,7 @@ Then a corresponding empty directory is created on disk and appears as an
 empty folder node in the tree.
 
 **AC-2** — Create a subfolder inside an existing folder.
-Given an existing folder `projects/` and the user activates its "+" control
+Given an existing folder `projects/` and the user invokes its create action
 with a valid, unused name `ideas`,
 When they confirm,
 Then `projects/ideas/` is created on disk and appears as an empty child node
@@ -98,7 +102,7 @@ it already exists.
 
 **AC-5** — Deleting a folder asks for confirmation.
 Given a folder in the tree (empty or containing notes/subfolders),
-When the user activates its "×" control,
+When the user invokes its delete action,
 Then they are asked to confirm before anything is removed; declining leaves
 the folder and everything beneath it unchanged.
 
