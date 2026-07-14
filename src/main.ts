@@ -15,7 +15,7 @@ import {
 } from "lucide"
 import { mountEditor, setEditorEditable, setLinkContext, scrollEditorToHeading } from "./editor"
 import { listFolders } from "./note"
-import { createNoteController, type NoteController } from "./note-controller"
+import { createNoteController, type NoteController, type AddNoteResult } from "./note-controller"
 import { mountConflictDiff, type ConflictDiff } from "./conflict-view"
 import {
   wireOpenFolder,
@@ -418,16 +418,45 @@ const noteListHandlers = {
     // renameActive is active-note-scoped — switch to this note first, exactly
     // like clicking its name already does, then let the picker apply the move.
     void controller.switchTo(path).then(() => {
-      const name = displayName(path).split("/").pop() as string
-      movePicker.open(destinationChoices(), (dest) => controller.renameActive(dest ? `${dest}/${name}` : name))
+      movePicker.open(destinationChoices(), (dest) => moveNoteTo(path, dest))
     })
   },
   onMoveFolder: (path: string) => {
-    const name = path.split("/").pop() as string
-    movePicker.open(destinationChoices(), (dest) =>
-      controller.moveFolder(path, dest ? `${dest}/${name}` : name),
-    )
+    movePicker.open(destinationChoices(), (dest) => moveFolderTo(path, dest))
   },
+  onCreateNoteIn: (parentPath: string) => switcher.open(`${parentPath}/`),
+  onRenameNote: (path: string) => promptRenameNote(path),
+  onRenameFolder: (path: string) => promptRenameFolder(path),
+  onDropNote: (path: string, destination: string) => {
+    // Same active-note constraint as onMoveNote above.
+    void controller.switchTo(path).then(() => moveNoteTo(path, destination))
+  },
+  onDropFolder: (path: string, destination: string) => {
+    void moveFolderTo(path, destination)
+  },
+}
+
+/** The folder-relative path one level up from `path` (`""` at the root) —
+ * mirrors `note-controller.ts`'s private `folderOf`; duplicated rather than
+ * exported since it's a one-liner and that version is intentionally private. */
+function parentOf(path: string): string {
+  const slash = path.lastIndexOf("/")
+  return slash === -1 ? "" : path.slice(0, slash)
+}
+
+/** Move note `path` to `destination` (M35/FEAT-0070/FEAT-0072) — the single
+ * place "what target does a note move actually call renameActive with" is
+ * computed, shared by the "Move…" picker and a drag-and-drop drop. */
+function moveNoteTo(path: string, destination: string): Promise<AddNoteResult> {
+  const name = displayName(path).split("/").pop() as string
+  return controller.renameActive(destination ? `${destination}/${name}` : name)
+}
+
+/** Move folder `path` to `destination` — the drag-and-drop/picker-shared
+ * counterpart of {@link moveNoteTo} for folders. */
+function moveFolderTo(path: string, destination: string): Promise<AddNoteResult> {
+  const name = path.split("/").pop() as string
+  return controller.moveFolder(path, destination ? `${destination}/${name}` : name)
 }
 
 /** Prompt for a new folder's name and create it under `parentPath` ("" = the
@@ -438,6 +467,33 @@ function promptNewFolder(parentPath: string): void {
   if (!name) return // dismissed or empty — no-op
   const path = parentPath ? `${parentPath}/${name}` : name
   void controller.addFolder(path).then((result) => {
+    if (!result.ok) window.alert(result.reason)
+  })
+}
+
+/** Prompt for a new name (leaf segment only) and rename `path` in place,
+ * keeping its parent folder (M35/FEAT-0072) — distinct from "Move…", which
+ * changes the parent but keeps the name. */
+function promptRenameNote(path: string): void {
+  const current = displayName(path).split("/").pop() as string
+  const name = window.prompt("Rename to:", current)
+  if (!name || name === current) return
+  const parent = parentOf(path)
+  const target = parent ? `${parent}/${name}` : name
+  void controller.switchTo(path).then(() =>
+    controller.renameActive(target).then((result) => {
+      if (!result.ok) window.alert(result.reason)
+    }),
+  )
+}
+
+function promptRenameFolder(path: string): void {
+  const current = path.split("/").pop() as string
+  const name = window.prompt("Rename to:", current)
+  if (!name || name === current) return
+  const parent = parentOf(path)
+  const target = parent ? `${parent}/${name}` : name
+  void controller.moveFolder(path, target).then((result) => {
     if (!result.ok) window.alert(result.reason)
   })
 }
