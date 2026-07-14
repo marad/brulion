@@ -2664,3 +2664,40 @@ existing queue, so two folder ops can't race each other either). `main.ts`
 tracks the result in `currentFolders`, refreshed once per vault attach
 (`openNote`, in parallel with the settings read) and on that callback; every
 `renderNoteList` call site reads it, never re-fetching it itself.
+
+## Reversal: drag-and-drop IS coming after all, additive to the picker (M35 → FEAT-0072)
+P2's scope note picked "a destination picker, not drag-and-drop" — reasoning
+that DnD needed new machinery (drag handles, drop-target feedback, a touch
+equivalent) the picker got for free, and that keyboard/mobile reachability
+mattered more than a mouse-only fast path. The milestone review overrode
+this: the user wants DnD too. Per the same reasoning FEAT-0027 used when the
+user overrode "no wikilinks" — this is the user's call to make about their
+own moat/ergonomics trade, not the agent's to refuse a second time. Settled
+as **additive, not a replacement**: the picker (and its context-menu entry
+point, FEAT-0071) stays exactly as built — still the only way in for
+keyboard and touch — and dragging a row onto a folder (or a root drop zone)
+is a second, faster path for a mouse, calling the *same* underlying move
+(`renameActive` after switching, or `moveFolder`) a picker pick would have,
+including the same self-nest refusal. No new file-system operation; this is
+purely a second trigger surface, same relationship P1/P2's buttons had to
+P3's context menu before the review replaced them.
+
+## New note in a folder reuses the quick switcher, seeded with a prefix (M35 → FEAT-0072)
+Rather than inventing a second "type a name" prompt for folder-scoped
+creation, a folder's "New note…" menu item opens the existing FEAT-0033
+quick switcher with its input pre-filled `<folderpath>/` — the *same*
+find-or-create mechanism every other note creation already goes through,
+already handling duplicate detection; the user just continues typing the
+leaf name. One creation path, one place `normalizeNoteName` validation lives,
+consistent with FEAT-0012's own reasoning for reusing `createNote` rather
+than a parallel folder-scoped variant.
+
+## Rename is a distinct verb from Move, not a special case of the picker (M35 → FEAT-0072)
+"Move…" already lets a destination equal the current parent (a no-op), so a
+rename *could* have been "open the picker, pick the same folder, then also
+prompt for a new name" — rejected as a clunky two-step for the single most
+common file operation there is. Instead "Rename…" is its own menu item that
+prompts for a bare name (mirroring "New subfolder…"'s prompt shape) and
+recomputes the target by keeping the parent and swapping only the leaf
+segment — `moveFolder`/`renameActive` underneath, unchanged; only what target
+path gets computed is new.
