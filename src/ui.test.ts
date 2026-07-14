@@ -506,7 +506,7 @@ describe("tree row context menu shape (FEAT-0071)", () => {
 
     openMenuOn(container.querySelector<HTMLElement>(".note-row")!)
 
-    expect(menuLabels()).toEqual(["Move…", "Delete"])
+    expect(menuLabels()).toEqual(["Rename…", "Move…", "Delete"])
   })
 
   it("a folder row's context menu has exactly New subfolder…, Move…, and Delete (AC-2)", () => {
@@ -515,7 +515,7 @@ describe("tree row context menu shape (FEAT-0071)", () => {
 
     openMenuOn(container.querySelector<HTMLElement>(".folder-header")!)
 
-    expect(menuLabels()).toEqual(["New subfolder…", "Move…", "Delete"])
+    expect(menuLabels()).toEqual(["New subfolder…", "New note…", "Rename…", "Move…", "Delete"])
   })
 
   it("the contextmenu event does not bubble to the native menu (preventDefault)", () => {
@@ -538,7 +538,7 @@ describe("tree row context menu shape (FEAT-0071)", () => {
     row.dispatchEvent(touchEvent("touchstart", [{ clientX: 5, clientY: 5 }]))
     vi.advanceTimersByTime(500)
 
-    expect(menuLabels()).toEqual(["Move…", "Delete"])
+    expect(menuLabels()).toEqual(["Rename…", "Move…", "Delete"])
     vi.useRealTimers()
   })
 
@@ -551,7 +551,7 @@ describe("tree row context menu shape (FEAT-0071)", () => {
     header.dispatchEvent(touchEvent("touchstart", [{ clientX: 5, clientY: 5 }]))
     vi.advanceTimersByTime(500)
 
-    expect(menuLabels()).toEqual(["New subfolder…", "Move…", "Delete"])
+    expect(menuLabels()).toEqual(["New subfolder…", "New note…", "Rename…", "Move…", "Delete"])
     vi.useRealTimers()
   })
 
@@ -583,6 +583,170 @@ describe("tree row context menu shape (FEAT-0071)", () => {
 
     expect(menuLabels()).toEqual([])
     vi.useRealTimers()
+  })
+})
+
+describe("renderNoteList create-in-folder and rename menu items (FEAT-0072)", () => {
+  const handlers = () => ({
+    onSelect: vi.fn(),
+    onDelete: vi.fn(),
+    onCreateFolder: vi.fn(),
+    onDeleteFolder: vi.fn(),
+    onMoveNote: vi.fn(),
+    onMoveFolder: vi.fn(),
+    onCreateNoteIn: vi.fn(),
+    onRenameNote: vi.fn(),
+    onRenameFolder: vi.fn(),
+  })
+
+  it("calls onCreateNoteIn with the folder's path when New note… is picked (AC-1)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["sub/b.md"], "sub/b.md", h)
+
+    openMenuOn(container.querySelector<HTMLElement>(".folder-header")!)
+    clickMenuItem("New note…")
+    expect(h.onCreateNoteIn).toHaveBeenCalledWith("sub")
+  })
+
+  it("calls onRenameNote with the note's path when Rename… is picked (AC-4)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["sub/b.md"], "sub/b.md", h)
+
+    openMenuOn(container.querySelector<HTMLElement>(".note-row")!)
+    clickMenuItem("Rename…")
+    expect(h.onRenameNote).toHaveBeenCalledWith("sub/b.md")
+  })
+
+  it("calls onRenameFolder with the folder's path when Rename… is picked (AC-3)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["sub/b.md"], "sub/b.md", h)
+
+    openMenuOn(container.querySelector<HTMLElement>(".folder-header")!)
+    clickMenuItem("Rename…")
+    expect(h.onRenameFolder).toHaveBeenCalledWith("sub")
+  })
+})
+
+describe("renderNoteList drag-and-drop (FEAT-0072)", () => {
+  const handlers = () => ({
+    onSelect: vi.fn(),
+    onDelete: vi.fn(),
+    onDropNote: vi.fn(),
+    onDropFolder: vi.fn(),
+  })
+
+  // happy-dom has no real DataTransfer — a plain object with the methods our
+  // wiring calls (only `setData`, on dragstart, for browser compliance) is enough;
+  // the actual "what's being dragged" state lives in ui.ts's own module scope.
+  function dragEvent(type: string): Event {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    Object.defineProperty(event, "dataTransfer", {
+      value: { setData: vi.fn(), getData: vi.fn(), types: [] },
+      configurable: true,
+    })
+    return event
+  }
+
+  it("marks note rows and folder headers as draggable", () => {
+    const container = document.createElement("div")
+    renderNoteList(container, ["sub/b.md"], "sub/b.md", handlers())
+
+    expect(container.querySelector(".note-row")!.getAttribute("draggable")).toBe("true")
+    expect(container.querySelector(".folder-header")!.getAttribute("draggable")).toBe("true")
+  })
+
+  it("dropping a dragged note onto a folder calls onDropNote(path, destination) (AC-5)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["a.md", "sub/b.md"], "a.md", h)
+    const noteRow = container.querySelector<HTMLElement>(".note-row")!
+    const folderHeader = container.querySelector<HTMLElement>(".folder-header")!
+
+    noteRow.dispatchEvent(dragEvent("dragstart"))
+    folderHeader.dispatchEvent(dragEvent("dragover"))
+    folderHeader.dispatchEvent(dragEvent("drop"))
+
+    expect(h.onDropNote).toHaveBeenCalledWith("a.md", "sub")
+  })
+
+  it("dropping a dragged folder onto another folder calls onDropFolder(path, destination) (AC-6)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["sub/a.md", "archive/b.md"], "sub/a.md", h)
+    const subHeader = [...container.querySelectorAll<HTMLElement>(".folder-header")].find(
+      (el) => el.textContent === "sub",
+    )!
+    const archiveHeader = [...container.querySelectorAll<HTMLElement>(".folder-header")].find(
+      (el) => el.textContent === "archive",
+    )!
+
+    subHeader.dispatchEvent(dragEvent("dragstart"))
+    archiveHeader.dispatchEvent(dragEvent("dragover"))
+    archiveHeader.dispatchEvent(dragEvent("drop"))
+
+    expect(h.onDropFolder).toHaveBeenCalledWith("sub", "archive")
+  })
+
+  it("dropping onto the root zone calls the handler with an empty destination", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["sub/a.md"], "sub/a.md", h)
+    const noteRow = container.querySelector<HTMLElement>(".note-row")!
+
+    noteRow.dispatchEvent(dragEvent("dragstart"))
+    container.dispatchEvent(dragEvent("dragover"))
+    container.dispatchEvent(dragEvent("drop"))
+
+    expect(h.onDropNote).toHaveBeenCalledWith("sub/a.md", "")
+  })
+
+  it("a row's own drop does not also trigger the root zone's drop", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["a.md", "sub/b.md"], "a.md", h)
+    const noteRow = container.querySelector<HTMLElement>(".note-row")!
+    const folderHeader = container.querySelector<HTMLElement>(".folder-header")!
+
+    noteRow.dispatchEvent(dragEvent("dragstart"))
+    folderHeader.dispatchEvent(dragEvent("dragover"))
+    folderHeader.dispatchEvent(dragEvent("drop"))
+
+    expect(h.onDropNote).toHaveBeenCalledTimes(1)
+    expect(h.onDropNote).toHaveBeenCalledWith("a.md", "sub") // not "" (root)
+  })
+
+  it("dragging a folder onto itself does not call onDropFolder (self-nest guard)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["sub/a.md"], "sub/a.md", h)
+    const header = container.querySelector<HTMLElement>(".folder-header")!
+
+    header.dispatchEvent(dragEvent("dragstart"))
+    header.dispatchEvent(dragEvent("dragover"))
+    header.dispatchEvent(dragEvent("drop"))
+
+    expect(h.onDropFolder).not.toHaveBeenCalled()
+  })
+
+  it("dragging a folder onto its own descendant does not call onDropFolder (AC-7)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["sub/ideas/a.md"], "sub/ideas/a.md", h)
+    const subHeader = [...container.querySelectorAll<HTMLElement>(".folder-header")].find(
+      (el) => el.textContent === "sub",
+    )!
+    const ideasHeader = [...container.querySelectorAll<HTMLElement>(".folder-header")].find(
+      (el) => el.textContent === "ideas",
+    )!
+
+    subHeader.dispatchEvent(dragEvent("dragstart"))
+    ideasHeader.dispatchEvent(dragEvent("dragover"))
+    ideasHeader.dispatchEvent(dragEvent("drop"))
+
+    expect(h.onDropFolder).not.toHaveBeenCalled()
   })
 })
 
