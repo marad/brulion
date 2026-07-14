@@ -4,7 +4,7 @@ import { hasPermission, requestAccess } from "./session"
 import { displayName } from "./note-name"
 import { openTreeMenu, type TreeMenuItem } from "./tree-menu"
 import { wireLongPress } from "./long-press"
-import type { AddNoteResult } from "./note-controller"
+import { isWithin, type AddNoteResult } from "./note-controller"
 import type { Action } from "./actions"
 import type { Vault } from "./vaults"
 
@@ -170,7 +170,29 @@ export interface NoteListHandlers {
   /** A folder row's move control was clicked (M35/FEAT-0070); `path` is that
    * folder's own path. */
   onMoveFolder?: (path: string) => void
+  /** A folder row's "New note…" was picked (M35/FEAT-0072); `path` is that
+   * folder's own path, the new note's intended parent. */
+  onCreateNoteIn?: (path: string) => void
+  /** A note row's "Rename…" was picked (M35/FEAT-0072); `path` is that note's
+   * own path. */
+  onRenameNote?: (path: string) => void
+  /** A folder row's "Rename…" was picked (M35/FEAT-0072); `path` is that
+   * folder's own path. */
+  onRenameFolder?: (path: string) => void
+  /** A note was dragged and dropped onto `destination` (M35/FEAT-0072, "" is
+   * the root) — the drag-and-drop equivalent of picking `destination` in the
+   * "Move…" picker. */
+  onDropNote?: (path: string, destination: string) => void
+  /** A folder was dragged and dropped onto `destination` (M35/FEAT-0072, ""
+   * is the root). */
+  onDropFolder?: (path: string, destination: string) => void
 }
+
+/** What's currently being dragged in the tree (M35/FEAT-0072) — only one
+ * drag is ever in flight, so a single module-level slot is enough; native
+ * `DataTransfer` can't be read during `dragover` (only at `drop`), so this is
+ * the source of truth for "can I drop here" and "what am I dropping". */
+let draggedItem: { kind: "note" | "folder"; path: string } | null = null
 
 /**
  * Every unique folder path implied by `notes` (the same prefix-walk
@@ -218,6 +240,13 @@ export function renderNoteList(
   for (const node of buildNoteTree(notes, folders)) {
     container.append(renderNode(node, active, handlers, expanded))
   }
+  // The root drop zone (M35/FEAT-0072) lives on `container` itself, which
+  // (unlike its children) survives every re-render — wire it once, not once
+  // per render, or a long session would stack up one listener per render.
+  if (!container.dataset.dropZoneWired) {
+    container.dataset.dropZoneWired = "true"
+    wireDropTarget(container, () => "", handlers)
+  }
 }
 
 /** Wire a row/header element to open `items` on right-click and on long-press
@@ -229,6 +258,63 @@ function wireTreeMenu(el: HTMLElement, items: () => TreeMenuItem[]): void {
     openTreeMenu(event.clientX, event.clientY, items())
   })
   wireLongPress(el, (x, y) => openTreeMenu(x, y, items()))
+}
+
+/** Make `el` a drag source (M35/FEAT-0072) — `dragstart` records what's being
+ * dragged in the shared `draggedItem` slot; `dragend` clears it regardless of
+ * whether the drop landed anywhere valid. */
+function wireDragSource(el: HTMLElement, kind: "note" | "folder", path: string): void {
+  el.setAttribute("draggable", "true") // the attribute, not just the IDL property — happy-dom doesn't reflect the latter
+  el.addEventListener("dragstart", (event) => {
+    draggedItem = { kind, path }
+    event.dataTransfer?.setData("text/plain", path) // some engines require *some* data for the drag to register
+  })
+  el.addEventListener("dragend", () => {
+    draggedItem = null
+  })
+}
+
+/** True when dropping whatever's currently dragged onto `destination` is a
+ * move that could actually succeed — refuses a dragged folder dropped onto
+ * itself or one of its own descendants, the same guard `moveFolder` itself
+ * enforces (`isWithin`), so the UI's hint agrees with what a drop actually does. */
+function isValidDropTarget(destination: string): boolean {
+  if (!draggedItem) return false
+  if (draggedItem.kind === "folder" && isWithin(destination, draggedItem.path)) return false
+  return true
+}
+
+/** Make `el` a drop target that moves whatever's dragged onto
+ * `getDestination()` (M35/FEAT-0072 — `""` for the tree root). Both events
+ * stop propagating once accepted, so a drop on a specific row's target never
+ * also fires an ancestor's (e.g. the root zone's). */
+function wireDropTarget(el: HTMLElement, getDestination: () => string, handlers: NoteListHandlers): void {
+  el.addEventListener("dragover", (event) => {
+    // This element is the intended drop target for anything hovering over
+    // it — never an ancestor drop zone (e.g. the root) — regardless of
+    // whether *this* target turns out to be valid for what's being dragged.
+    event.stopPropagation()
+    if (!isValidDropTarget(getDestination())) return // no valid-drop indicator (AC-7)
+    event.preventDefault() // required to permit a drop here at all
+    el.classList.add("tree-drop-target")
+  })
+  el.addEventListener("dragleave", () => {
+    el.classList.remove("tree-drop-target")
+  })
+  el.addEventListener("drop", (event) => {
+    el.classList.remove("tree-drop-target")
+    // Same reasoning as dragover: claim the event so an invalid drop here
+    // doesn't bubble up and get silently reinterpreted by an ancestor zone.
+    event.preventDefault()
+    event.stopPropagation()
+    const destination = getDestination()
+    const valid = isValidDropTarget(destination) // read before clearing draggedItem below
+    const item = draggedItem
+    draggedItem = null
+    if (!item || !valid) return
+    if (item.kind === "note") handlers.onDropNote?.(item.path, destination)
+    else handlers.onDropFolder?.(item.path, destination)
+  })
 }
 
 /** Render one tree node (note row or folder subtree) to a detached element. */
@@ -271,9 +357,13 @@ function renderNode(
 
   wireTreeMenu(header, () => [
     { label: "New subfolder…", run: () => handlers.onCreateFolder?.(node.path) },
+    { label: "New note…", run: () => handlers.onCreateNoteIn?.(node.path) },
+    { label: "Rename…", run: () => handlers.onRenameFolder?.(node.path) },
     { label: "Move…", run: () => handlers.onMoveFolder?.(node.path) },
     { label: "Delete", run: () => handlers.onDeleteFolder?.(node.path) },
   ])
+  wireDragSource(header, "folder", node.path)
+  wireDropTarget(header, () => node.path, handlers)
 
   folder.append(header, children)
   return folder
@@ -300,9 +390,11 @@ function renderNoteRow(node: NoteLeaf, active: string, handlers: NoteListHandler
   row.append(nameButton)
 
   wireTreeMenu(row, () => [
+    { label: "Rename…", run: () => handlers.onRenameNote?.(node.path) },
     { label: "Move…", run: () => handlers.onMoveNote?.(node.path) },
     { label: "Delete", run: () => handlers.onDelete(node.path) },
   ])
+  wireDragSource(row, "note", node.path)
 
   return row
 }
