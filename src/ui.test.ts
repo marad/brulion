@@ -703,6 +703,21 @@ describe("renderNoteList drag-and-drop (FEAT-0072)", () => {
     expect(h.onDropNote).toHaveBeenCalledWith("sub/a.md", "")
   })
 
+  it("dropping onto a nested note row does not bubble to the root zone (a note isn't a container)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["todo.md", "archive/keep.md"], "todo.md", h)
+    const rows = [...container.querySelectorAll<HTMLElement>(".note-row")]
+    const todoRow = rows.find((el) => el.textContent === "todo")!
+    const keepRow = rows.find((el) => el.textContent === "keep")! // inside "archive"
+
+    todoRow.dispatchEvent(dragEvent("dragstart"))
+    keepRow.dispatchEvent(dragEvent("dragover"))
+    keepRow.dispatchEvent(dragEvent("drop"))
+
+    expect(h.onDropNote).not.toHaveBeenCalled()
+  })
+
   it("a row's own drop does not also trigger the root zone's drop", () => {
     const container = document.createElement("div")
     const h = handlers()
