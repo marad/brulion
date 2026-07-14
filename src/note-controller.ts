@@ -147,8 +147,10 @@ function folderOf(path: string): string {
 /** True when `path` is `container` itself, or a descendant of it — the shared
  * "is this note/folder inside that folder" check `removeFolder`/`moveFolder`
  * each need (an active-note-inside-a-deleted/moved-folder guard, and
- * moveFolder's self/descendant refusal). */
-function isWithin(path: string, container: string): boolean {
+ * moveFolder's self/descendant refusal). Exported so the tree's drag-and-drop
+ * hint (M35/FEAT-0072) agrees with what a drop will actually do, instead of a
+ * second copy of the same rule. */
+export function isWithin(path: string, container: string): boolean {
   return path === container || path.startsWith(container + "/")
 }
 
