@@ -284,6 +284,19 @@ function isValidDropTarget(destination: string): boolean {
   return true
 }
 
+/** Claim drag events on `el` without ever acting on them — a note row is
+ * never a drop target (a note isn't a container), but it still must stop a
+ * drop from bubbling past it to an ancestor drop zone (e.g. the root), which
+ * would otherwise silently reinterpret "dropped on this note" as "dropped at
+ * the root" (M35/FEAT-0072). */
+function blockDropBubbling(el: HTMLElement): void {
+  el.addEventListener("dragover", (event) => event.stopPropagation())
+  el.addEventListener("drop", (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+  })
+}
+
 /** Make `el` a drop target that moves whatever's dragged onto
  * `getDestination()` (M35/FEAT-0072 — `""` for the tree root). Both events
  * stop propagating once accepted, so a drop on a specific row's target never
@@ -395,6 +408,7 @@ function renderNoteRow(node: NoteLeaf, active: string, handlers: NoteListHandler
     { label: "Delete", run: () => handlers.onDelete(node.path) },
   ])
   wireDragSource(row, "note", node.path)
+  blockDropBubbling(row) // a note isn't a drop target, but must still claim the event
 
   return row
 }
