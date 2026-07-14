@@ -742,6 +742,24 @@ header button:hover {
   content: "▾";
 }
 
+/* Drag-and-drop (M35/FEAT-0072) — additive to the "Move…" picker, a faster
+ * mouse-only path. Draggable rows show a grab cursor; a valid drop target
+ * (a folder header, or the tree root while something's dragged over it)
+ * highlights so the pointer's target is unambiguous. */
+[draggable="true"] {
+  cursor: grab;
+}
+
+[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.tree-drop-target {
+  background: var(--surface-2);
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
 .folder-children {
   display: flex;
   flex-direction: column;
