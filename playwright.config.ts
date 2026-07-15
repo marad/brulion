@@ -15,7 +15,7 @@ export default defineConfig({
   retries: 1,
   reporter: "list",
   use: {
-    baseURL: "http://localhost:5173",
+    baseURL: "http://localhost:5299",
     trace: "retain-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
@@ -26,8 +26,12 @@ export default defineConfig({
   // URL (http://localhost:4173/brulion/) rather than the dev baseURL.
   webServer: [
     {
-      command: "npm run dev",
-      url: "http://localhost:5173/brulion/",
+      // A fixed, deliberately unusual port + --strictPort: vite's own default
+      // (5173) collides with other local projects' dev servers often enough
+      // to be a recurring interrupt — reuseExistingServer would then silently
+      // point every test at the WRONG app instead of failing loudly.
+      command: "npm run dev -- --port 5299 --strictPort",
+      url: "http://localhost:5299/brulion/",
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
     },

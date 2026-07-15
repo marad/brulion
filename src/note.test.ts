@@ -10,6 +10,10 @@ import {
   startSweep,
   continueSweep,
   sweepResult,
+  listFolders,
+  createFolder,
+  deleteFolder,
+  isFolderEmpty,
 } from "./note"
 
 type FileNode = { kind: "file"; content: string; lastModified: number }
@@ -477,7 +481,10 @@ describe("createNote (AC-6, AC-7, AC-8)", () => {
 })
 
 describe("deleteNote (AC-8)", () => {
-  it("removes a nested note's file, leaving its folder", async () => {
+  it("removes a nested note's file, leaving its folder (M35/FEAT-0069)", async () => {
+    // A folder is a real, independent thing now (createFolder) — exactly like on
+    // a real filesystem, emptying it doesn't delete it. Left as-is here; the
+    // user removes an unwanted empty folder explicitly via deleteFolder.
     const folder = fakeFolder({
       sub: { kind: "directory", children: { "gone.md": { kind: "file", content: "x", lastModified: 1 } } },
     })
@@ -494,6 +501,121 @@ describe("deleteNote (AC-8)", () => {
   it("is a no-op when an intermediate folder is missing", async () => {
     const folder = fakeFolder()
     await expect(deleteNote(folder.dir, "sub/never.md")).resolves.toBeUndefined()
+  })
+})
+
+describe("listFolders (AC-1, AC-2)", () => {
+  it("lists every directory, including ones with no notes in them", async () => {
+    const folder = fakeFolder({
+      empty: { kind: "directory" },
+      projects: { kind: "directory", children: { "a.md": { kind: "file", content: "x" } } },
+    })
+    expect(await listFolders(folder.dir)).toEqual(["empty", "projects"])
+  })
+
+  it("lists nested folders under their full relative path", async () => {
+    const folder = fakeFolder({
+      projects: { kind: "directory", children: { ideas: { kind: "directory" } } },
+    })
+    expect(await listFolders(folder.dir)).toEqual(["projects", "projects/ideas"])
+  })
+
+  it("returns an empty list when the tree has no subdirectories", async () => {
+    const folder = fakeFolder({ "a.md": { kind: "file", content: "x" } })
+    expect(await listFolders(folder.dir)).toEqual([])
+  })
+})
+
+describe("createFolder (AC-1, AC-2, AC-3, AC-4)", () => {
+  it("creates an empty directory at the root", async () => {
+    const folder = fakeFolder()
+    const result = await createFolder(folder.dir, "ideas")
+    expect(result).toEqual({ status: "created" })
+    expect(await listFolders(folder.dir)).toEqual(["ideas"])
+  })
+
+  it("creates a nested folder, materializing its parent", async () => {
+    const folder = fakeFolder()
+    const result = await createFolder(folder.dir, "projects/ideas")
+    expect(result).toEqual({ status: "created" })
+    expect(await listFolders(folder.dir)).toEqual(["projects", "projects/ideas"])
+  })
+
+  it("reports exists without altering anything when the folder is already there", async () => {
+    const folder = fakeFolder({
+      projects: { kind: "directory", children: { "a.md": { kind: "file", content: "keep me" } } },
+    })
+    const result = await createFolder(folder.dir, "projects")
+    expect(result).toEqual({ status: "exists" })
+    expect(folder.content("projects/a.md")).toBe("keep me") // untouched
+  })
+
+  it("reports exists (not a raw error) when a file occupies the target name", async () => {
+    const folder = fakeFolder({ projects: { kind: "file", content: "x", lastModified: 1 } })
+    const result = await createFolder(folder.dir, "projects")
+    expect(result).toEqual({ status: "exists" })
+    expect(folder.content("projects")).toBe("x") // the blocking file is untouched
+  })
+})
+
+describe("isFolderEmpty (M35/FEAT-0070)", () => {
+  it("is true for a folder with nothing in it", async () => {
+    const folder = fakeFolder({ empty: { kind: "directory" } })
+    expect(await isFolderEmpty(folder.dir, "empty")).toBe(true)
+  })
+
+  it("is false for a folder containing a note", async () => {
+    const folder = fakeFolder({
+      sub: { kind: "directory", children: { "a.md": { kind: "file", content: "x" } } },
+    })
+    expect(await isFolderEmpty(folder.dir, "sub")).toBe(false)
+  })
+
+  it("is false for a folder containing only a subfolder", async () => {
+    const folder = fakeFolder({
+      sub: { kind: "directory", children: { nested: { kind: "directory" } } },
+    })
+    expect(await isFolderEmpty(folder.dir, "sub")).toBe(false)
+  })
+
+  it("is true (nothing to protect) for a folder that doesn't exist", async () => {
+    const folder = fakeFolder()
+    expect(await isFolderEmpty(folder.dir, "ghost")).toBe(true)
+  })
+})
+
+describe("deleteFolder (AC-5, AC-6)", () => {
+  it("removes a folder and every note beneath it", async () => {
+    const folder = fakeFolder({
+      projects: { kind: "directory", children: { "a.md": { kind: "file", content: "x" } } },
+    })
+    await deleteFolder(folder.dir, "projects")
+    expect(folder.has("projects")).toBe(false)
+    expect(folder.has("projects/a.md")).toBe(false)
+  })
+
+  it("removes nested subfolders too", async () => {
+    const folder = fakeFolder({
+      projects: {
+        kind: "directory",
+        children: { ideas: { kind: "directory", children: { "a.md": { kind: "file", content: "x" } } } },
+      },
+    })
+    await deleteFolder(folder.dir, "projects")
+    expect(folder.has("projects/ideas/a.md")).toBe(false)
+  })
+
+  it("is a no-op when the folder is already gone (many writers)", async () => {
+    const folder = fakeFolder()
+    await expect(deleteFolder(folder.dir, "ghost")).resolves.toBeUndefined()
+  })
+
+  it("leaves its own now-empty parent alone (M35/FEAT-0069)", async () => {
+    const folder = fakeFolder({
+      parent: { kind: "directory", children: { child: { kind: "directory", children: {} } } },
+    })
+    await deleteFolder(folder.dir, "parent/child")
+    expect(folder.has("parent")).toBe(true)
   })
 })
 
@@ -524,6 +646,15 @@ describe("moveNote (AC-1..AC-5)", () => {
     expect(await moveNote(folder.dir, "a.md", "projects/a.md")).toEqual({ status: "moved" })
     expect(folder.has("a.md")).toBe(false)
     expect(folder.content("projects/a.md")).toBe("body")
+  })
+
+  it("leaves the source folder in place once emptied by the move (M35/FEAT-0069)", async () => {
+    const folder = fakeFolder({
+      sub: { kind: "directory", children: { "a.md": { kind: "file", content: "body", lastModified: 1 } } },
+    })
+    expect(await moveNote(folder.dir, "sub/a.md", "a.md")).toEqual({ status: "moved" })
+    expect(folder.has("sub")).toBe(true)
+    expect(folder.content("a.md")).toBe("body")
   })
 
   it("never clobbers an existing destination (AC-3)", async () => {

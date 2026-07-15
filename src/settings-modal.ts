@@ -1,6 +1,7 @@
 import { MIN_SIZE, MAX_SIZE, type Settings, type EditorWidth, type Theme } from "./settings"
 import type { FontChoices } from "./font-access"
 import { togglePinned, reorderPinned } from "./actions"
+import { applyAntiAutofillAttrs } from "./anti-autofill"
 
 /** The minimal action metadata the modal needs to list pinnable actions (FEAT-0058);
  * the host maps the full action registry down to this. */
@@ -197,6 +198,7 @@ export function mountSettingsModal(
   journalInput.type = "text"
   journalInput.className = "settings-journal"
   journalInput.placeholder = "e.g. Journal/Week/{mondayOfTheWeek}"
+  applyAntiAutofillAttrs(journalInput)
   journalInput.addEventListener("input", () => emit({ journalPath: journalInput.value }))
   const journalHint = document.createElement("p")
   journalHint.className = "settings-section-hint"

@@ -24,6 +24,26 @@ function hasControlChar(s: string): boolean {
   return false
 }
 
+/** Trim and validate each `/`-split segment (non-empty, no `.`/`..`, no
+ * unsafe/control character) — the rule both a note path and a folder path
+ * enforce identically; only what the *last* segment additionally gets
+ * (`normalizeNoteName`'s `.md` suffix) differs between the two. */
+function validateSegments(raw: string[]): { ok: true; segments: string[] } | { ok: false; reason: string } {
+  const segments: string[] = []
+  for (const part of raw) {
+    const segment = part.trim()
+    if (!segment) return { ok: false, reason: "Name segments cannot be empty." }
+    if (segment === "." || segment === "..") {
+      return { ok: false, reason: "Name cannot contain . or .. path segments." }
+    }
+    if (UNSAFE.test(segment) || hasControlChar(segment)) {
+      return { ok: false, reason: 'Name cannot contain \\ < > : " | ? * or control characters.' }
+    }
+    segments.push(segment)
+  }
+  return { ok: true, segments }
+}
+
 /**
  * Normalize `input` to a folder-relative `.md` path (FEAT-0023). Trims the input,
  * then splits on `/` into folder segments plus a final note segment. Each segment
@@ -39,22 +59,31 @@ export function normalizeNoteName(input: string): NormalizeResult {
 
   const raw = trimmed.split("/")
   const last = raw.length - 1
-  const segments: string[] = []
-  for (let i = 0; i < raw.length; i++) {
-    let segment = raw[i].trim()
-    if (i === last) segment = segment.replace(/\.md$/i, "").trim() // strip the extension off the note name only
-    if (!segment) return { ok: false, reason: "Name segments cannot be empty." }
-    if (segment === "." || segment === "..") {
-      return { ok: false, reason: "Name cannot contain . or .. path segments." }
-    }
-    if (UNSAFE.test(segment) || hasControlChar(segment)) {
-      return { ok: false, reason: 'Name cannot contain \\ < > : " | ? * or control characters.' }
-    }
-    segments.push(segment)
-  }
+  raw[last] = raw[last].trim().replace(/\.md$/i, "") // strip the extension off the note name only
 
+  const result = validateSegments(raw)
+  if (!result.ok) return result
+
+  const { segments } = result
   segments[last] += ".md"
   return { ok: true, filename: segments.join("/") }
+}
+
+/**
+ * Normalize `input` to a folder-relative path with **no** `.md` handling —
+ * every segment is a folder name (M35/FEAT-0069). Same trimming and
+ * segment-safety rules as {@link normalizeNoteName} (shared via
+ * {@link validateSegments}), so a folder path can never escape the granted
+ * root either.
+ */
+export function normalizeFolderPath(input: string): { ok: true; path: string } | { ok: false; reason: string } {
+  const trimmed = input.trim()
+  if (!trimmed) return { ok: false, reason: "Name cannot be empty." }
+
+  const result = validateSegments(trimmed.split("/"))
+  if (!result.ok) return result
+
+  return { ok: true, path: result.segments.join("/") }
 }
 
 /** The user-facing label for a note filename: the name without its `.md`

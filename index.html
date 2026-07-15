@@ -40,6 +40,10 @@
           placeholder="Find or create a note…"
           aria-label="Find or create a note"
           autocomplete="off"
+          data-lpignore="true"
+          data-1p-ignore
+          data-bwignore="true"
+          data-form-type="other"
         />
         <p id="switcher-error" hidden></p>
         <div id="switcher-list" aria-label="Results"></div>
@@ -53,8 +57,49 @@
           placeholder="Run a command…"
           aria-label="Run a command"
           autocomplete="off"
+          data-lpignore="true"
+          data-1p-ignore
+          data-bwignore="true"
+          data-form-type="other"
         />
         <div id="palette-list" aria-label="Actions"></div>
+      </div>
+    </div>
+    <div id="move-backdrop" hidden>
+      <div id="move" role="dialog" aria-modal="true" aria-label="Move to…">
+        <input
+          id="move-input"
+          type="text"
+          placeholder="Move to…"
+          aria-label="Move to…"
+          autocomplete="off"
+          data-lpignore="true"
+          data-1p-ignore
+          data-bwignore="true"
+          data-form-type="other"
+        />
+        <p id="move-error" hidden></p>
+        <div id="move-list" aria-label="Destinations"></div>
+      </div>
+    </div>
+    <div id="dialog-backdrop" hidden>
+      <div id="dialog" role="alertdialog" aria-modal="true" aria-label="Confirm">
+        <p id="dialog-message"></p>
+        <input
+          id="dialog-input"
+          type="text"
+          aria-label="Name"
+          autocomplete="off"
+          data-lpignore="true"
+          data-1p-ignore
+          data-bwignore="true"
+          data-form-type="other"
+          hidden
+        />
+        <div class="dialog-actions">
+          <button id="dialog-cancel" type="button">Cancel</button>
+          <button id="dialog-confirm" type="button">OK</button>
+        </div>
       </div>
     </div>
     <div id="conflict-backdrop" hidden>
@@ -92,6 +137,9 @@
         <button id="sidebar-search" type="button" title="Find or create a note (Ctrl+K)">
           <span>Find or create note…</span>
           <kbd id="search-shortcut">Ctrl K</kbd>
+        </button>
+        <button id="sidebar-new-folder" type="button" title="New folder at the root">
+          <span>+ New folder</span>
         </button>
         <div id="note-list" aria-label="Notes"></div>
       </aside>

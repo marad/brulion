@@ -52,6 +52,22 @@ async function createNote(page: Page, name: string) {
   await page.locator("#switcher-input").press("Enter")
 }
 
+// Delete now lives behind the row's context menu (M35/FEAT-0071), not an
+// inline button — right-click the row, then pick "Delete" from the menu.
+// The confirm/prompt/alert dialog (M35/FEAT-0073) replaces window.confirm/
+// prompt/alert — interact with its DOM instead of Playwright's page.on("dialog").
+async function confirmDialog(page: Page) {
+  await page.locator("#dialog-confirm").click()
+}
+async function cancelDialog(page: Page) {
+  await page.locator("#dialog-cancel").click()
+}
+
+async function deleteNote(page: Page, name: string) {
+  await row(page, name).click({ button: "right" })
+  await page.locator(".cm-context-menu button[role=menuitem]", { hasText: "Delete" }).click()
+}
+
 test("creates a named note and opens it (AC-1)", async ({ page }) => {
   await stubPicker(page)
   await page.goto("/brulion/")
@@ -89,8 +105,8 @@ test("deletes a note after confirmation (AC-5, AC-6)", async ({ page }) => {
   await page.locator("#open-folder").click()
   await expect(page.locator(".note-row")).toHaveCount(2)
 
-  page.once("dialog", (d) => d.accept())
-  await row(page, "trash").locator(".note-delete").click()
+  await deleteNote(page, "trash")
+  await confirmDialog(page)
 
   await expect(row(page, "trash")).toHaveCount(0)
   await expect(page.locator(".note-row")).toHaveCount(1)
@@ -104,8 +120,8 @@ test("declining the confirmation keeps the note (AC-5)", async ({ page }) => {
   await writeNote(page, "beta.md", "beta body")
   await page.locator("#open-folder").click()
 
-  page.once("dialog", (d) => d.dismiss())
-  await row(page, "beta").locator(".note-delete").click()
+  await deleteNote(page, "beta")
+  await cancelDialog(page)
 
   await expect(row(page, "beta")).toBeVisible()
   expect(await noteExists(page, "beta.md")).toBe(true)
@@ -120,8 +136,8 @@ test("deleting the active note switches to another (AC-7)", async ({ page }) => 
   await row(page, "beta").locator(".note-name").click()
   await expect(editor(page)).toHaveText("beta body")
 
-  page.once("dialog", (d) => d.accept())
-  await row(page, "beta").locator(".note-delete").click()
+  await deleteNote(page, "beta")
+  await confirmDialog(page)
 
   await expect(row(page, "beta")).toHaveCount(0)
   await expect(editor(page)).toHaveText("alpha body") // switched to the remaining note

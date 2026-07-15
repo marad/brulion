@@ -2,7 +2,10 @@ import { createElement } from "lucide"
 import { pickFolder } from "./fs"
 import { hasPermission, requestAccess } from "./session"
 import { displayName } from "./note-name"
-import type { AddNoteResult } from "./note-controller"
+import { openTreeMenu, type TreeMenuItem } from "./tree-menu"
+import { wireLongPress } from "./long-press"
+import { isWithin, type AddNoteResult } from "./note-controller"
+import { applyAntiAutofillAttrs } from "./anti-autofill"
 import type { Action } from "./actions"
 import type { Vault } from "./vaults"
 
@@ -93,31 +96,60 @@ export type TreeNode = FolderNode | NoteLeaf
 /**
  * Turn the sorted flat path list from `listNotes` into a nested tree (FEAT-0024):
  * a path with no `/` is a root note; folder segments contribute (interned) folder
- * nodes holding the note. Pure — the only place the listing becomes a tree — and
- * order-preserving: children appear in the order their paths arrive (already
- * case-insensitively sorted by full path). The tree is never stored; it is
- * rebuilt from the listing each render, so the disk stays the source of truth.
+ * nodes holding the note. `folders` (M35/FEAT-0069) additionally materializes
+ * folders that hold no notes at all — a note path only ever implies the folders
+ * on its way to a leaf, so an empty one needs its own explicit entry. Pure — the
+ * only place the listing becomes a tree — and order-preserving: **neither list is
+ * ever reordered relative to itself** (the caller owns that), they are only
+ * merged — walked with two pointers, taking whichever of the two current heads
+ * compares first — so an empty folder still interleaves sensibly among populated
+ * siblings instead of only ever trailing after them, without second-guessing the
+ * order either list was given in. The tree is never stored; it is rebuilt from
+ * the listing each render, so the disk stays the source of truth.
  */
-export function buildNoteTree(paths: string[]): TreeNode[] {
+export function buildNoteTree(paths: string[], folders: string[] = []): TreeNode[] {
   const root: TreeNode[] = []
-  const folders = new Map<string, FolderNode>() // full folder path → node (interned)
+  const folderNodes = new Map<string, FolderNode>() // full folder path → node (interned)
 
-  for (const path of paths) {
-    const segments = path.split("/")
+  // Materialize (or find) the chain of folder nodes for `segments`, creating any
+  // missing ones along the way, and return the innermost folder's children array.
+  const ensureChain = (segments: string[]): TreeNode[] => {
     let children = root
     let prefix = ""
-    for (let i = 0; i < segments.length - 1; i++) {
-      prefix = prefix ? `${prefix}/${segments[i]}` : segments[i]
-      let folder = folders.get(prefix)
+    for (const segment of segments) {
+      prefix = prefix ? `${prefix}/${segment}` : segment
+      let folder = folderNodes.get(prefix)
       if (!folder) {
-        folder = { kind: "folder", name: segments[i], path: prefix, children: [] }
-        folders.set(prefix, folder)
+        folder = { kind: "folder", name: segment, path: prefix, children: [] }
+        folderNodes.set(prefix, folder)
         children.push(folder)
       }
       children = folder.children
     }
+    return children
+  }
+
+  const insertNote = (path: string): void => {
+    const segments = path.split("/")
+    const children = ensureChain(segments.slice(0, -1))
     children.push({ kind: "note", name: displayName(segments[segments.length - 1]), path })
   }
+  const insertFolder = (path: string): void => {
+    ensureChain(path.split("/")) // a bare folder — materializes the chain, no leaf
+  }
+
+  let i = 0
+  let j = 0
+  while (i < paths.length && j < folders.length) {
+    if (paths[i].localeCompare(folders[j], undefined, { sensitivity: "base" }) <= 0) {
+      insertNote(paths[i++])
+    } else {
+      insertFolder(folders[j++])
+    }
+  }
+  while (i < paths.length) insertNote(paths[i++])
+  while (j < folders.length) insertFolder(folders[j++])
+
   return root
 }
 
@@ -127,6 +159,73 @@ export interface NoteListHandlers {
   onDelete: (path: string) => void
   /** A folder's disclosure was clicked; `collapsed` is its new state. */
   onToggleFolder?: (path: string, collapsed: boolean) => void
+  /** The folder row's "+" was clicked (M35/FEAT-0069); `path` is that folder's
+   * own path, the new subfolder's intended parent. */
+  onCreateFolder?: (path: string) => void
+  /** The folder row's "×" was clicked (M35/FEAT-0069); `path` is the folder to
+   * delete, along with everything beneath it. */
+  onDeleteFolder?: (path: string) => void
+  /** A note row's move control was clicked (M35/FEAT-0070); `path` is that
+   * note's own path. */
+  onMoveNote?: (path: string) => void
+  /** A folder row's move control was clicked (M35/FEAT-0070); `path` is that
+   * folder's own path. */
+  onMoveFolder?: (path: string) => void
+  /** A folder row's "New note…" was picked (M35/FEAT-0072); `path` is that
+   * folder's own path, the new note's intended parent. */
+  onCreateNoteIn?: (path: string) => void
+  /** A note row's "Rename…" was picked (M35/FEAT-0072); `path` is that note's
+   * own path. */
+  onRenameNote?: (path: string) => void
+  /** A folder row's "Rename…" was picked (M35/FEAT-0072); `path` is that
+   * folder's own path. */
+  onRenameFolder?: (path: string) => void
+  /** A note was dragged and dropped onto `destination` (M35/FEAT-0072, "" is
+   * the root) — the drag-and-drop equivalent of picking `destination` in the
+   * "Move…" picker. */
+  onDropNote?: (path: string, destination: string) => void
+  /** A folder was dragged and dropped onto `destination` (M35/FEAT-0072, ""
+   * is the root). */
+  onDropFolder?: (path: string, destination: string) => void
+}
+
+/** What's currently being dragged in the tree (M35/FEAT-0072) — only one
+ * drag is ever in flight, so a single module-level slot is enough; native
+ * `DataTransfer` can't be read during `dragover` (only at `drop`), so this is
+ * the source of truth for "can I drop here" and "what am I dropping". */
+let draggedItem: { kind: "note" | "folder"; path: string } | null = null
+
+/** Whether `item` still corresponds to something in this render's data — a
+ * note must still be in `notes`; a folder must either be listed explicitly
+ * (an empty one) or still contain at least one note (M35/FEAT-0072). */
+function draggedItemStillExists(
+  item: { kind: "note" | "folder"; path: string },
+  notes: string[],
+  folders: string[],
+): boolean {
+  if (item.kind === "note") return notes.includes(item.path)
+  return folders.includes(item.path) || notes.some((path) => path.startsWith(item.path + "/"))
+}
+
+/**
+ * Every unique folder path implied by `notes` (the same prefix-walk
+ * {@link buildNoteTree} does internally, collected instead of built into
+ * nodes) unioned with `folders` (M35/FEAT-0069's explicit empty-folder list) —
+ * a flat, sorted destination list for the "Move to…" picker (M35/FEAT-0070).
+ * Root is deliberately not included here; only the picker knows to special-case
+ * it as "(root)".
+ */
+export function derivedFolderPaths(notes: string[], folders: string[]): string[] {
+  const set = new Set<string>(folders)
+  for (const path of notes) {
+    const segments = path.split("/")
+    let prefix = ""
+    for (let i = 0; i < segments.length - 1; i++) {
+      prefix = prefix ? `${prefix}/${segments[i]}` : segments[i]
+      set.add(prefix)
+    }
+  }
+  return [...set].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
 }
 
 /**
@@ -139,7 +238,8 @@ export interface NoteListHandlers {
  * active note (which is always expanded so the open note stays visible). The set
  * is read, never mutated, here. Clicking a folder header hides/shows its children
  * in place and reports the new collapsed state via `onToggleFolder`. Rebuilds the
- * container each call.
+ * container each call. `folders` (M35/FEAT-0069) lists any folders with no
+ * notes in them, so they still render (empty) rather than disappearing.
  */
 export function renderNoteList(
   container: HTMLElement,
@@ -147,11 +247,142 @@ export function renderNoteList(
   active: string,
   handlers: NoteListHandlers,
   expanded: ReadonlySet<string> = new Set(),
+  folders: string[] = [],
 ): void {
   container.replaceChildren()
-  for (const node of buildNoteTree(notes)) {
+  // A rebuild mid-drag (e.g. the background poller repainting the list after
+  // a genuine external change while the user is still holding a drag) always
+  // detaches the dragged row, and the browser may never fire its `dragend` on
+  // an element no longer in the DOM — but the drag itself is still perfectly
+  // valid as long as whatever's being dragged still exists; only clearing
+  // `draggedItem` unconditionally here would silently kill an in-progress
+  // drag over an unrelated, still-valid re-render. Clear it only when the
+  // dragged path is actually gone from this render's data (deleted, or moved
+  // out from under the drag by whatever triggered the rebuild).
+  if (draggedItem && !draggedItemStillExists(draggedItem, notes, folders)) draggedItem = null
+  for (const node of buildNoteTree(notes, folders)) {
     container.append(renderNode(node, active, handlers, expanded))
   }
+  // The root drop zone (M35/FEAT-0072) lives on `container` itself, which
+  // (unlike its children) survives every re-render — wire it once, not once
+  // per render, or a long session would stack up one listener per render.
+  if (!container.dataset.dropZoneWired) {
+    container.dataset.dropZoneWired = "true"
+    wireDropTarget(container, () => "", handlers)
+  }
+}
+
+/** Wire a row/header element to open `items` on right-click, on long-press
+ * (M35/FEAT-0071), and on the standard keyboard context-menu shortcut
+ * (Shift+F10, or a keyboard's dedicated "Menu"/"ContextMenu" key) — the only
+ * way a keyboard-only user can reach these actions, since right-click and
+ * long-press both require a pointer. A folder header is itself focusable; a
+ * note row isn't, but its keydown bubbles up from its focusable name button,
+ * so listening on `el` catches both without any extra wiring. */
+function wireTreeMenu(el: HTMLElement, items: () => TreeMenuItem[]): void {
+  el.addEventListener("contextmenu", (event) => {
+    event.preventDefault()
+    openTreeMenu(event.clientX, event.clientY, items())
+  })
+  wireLongPress(el, (x, y) => openTreeMenu(x, y, items()))
+  el.addEventListener("keydown", (event) => {
+    if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey)) return
+    event.preventDefault()
+    // The element actually holding focus (a folder header, or a note row's name
+    // button) — refocus it when the keyboard-opened menu closes, so the user
+    // lands back where they were (M35/FEAT-0071/AC-8) instead of on <body>.
+    const opener = document.activeElement as HTMLElement | null
+    const rect = el.getBoundingClientRect()
+    openTreeMenu(rect.left, rect.bottom, items(), {
+      fromKeyboard: true,
+      onDismiss: () => opener?.focus(),
+    })
+  })
+}
+
+/** Make `el` a drag source (M35/FEAT-0072) — `dragstart` records what's being
+ * dragged in the shared `draggedItem` slot; `dragend` clears it regardless of
+ * whether the drop landed anywhere valid. */
+function wireDragSource(el: HTMLElement, kind: "note" | "folder", path: string): void {
+  el.setAttribute("draggable", "true") // the attribute, not just the IDL property — happy-dom doesn't reflect the latter
+  el.addEventListener("dragstart", (event) => {
+    draggedItem = { kind, path }
+    event.dataTransfer?.setData("text/plain", path) // some engines require *some* data for the drag to register
+  })
+  el.addEventListener("dragend", () => {
+    draggedItem = null
+  })
+}
+
+/** True when dropping whatever's currently dragged onto `destination` is a
+ * move that could actually succeed — refuses a dragged folder dropped onto
+ * itself or one of its own descendants, the same guard `moveFolder` itself
+ * enforces (`isWithin`), so the UI's hint agrees with what a drop actually does. */
+function isValidDropTarget(destination: string): boolean {
+  if (!draggedItem) return false
+  if (draggedItem.kind === "folder") {
+    if (isWithin(destination, draggedItem.path)) return false
+    // Dropping a folder back onto its own current parent (or the root, for a
+    // root-level folder) is a no-op the user almost certainly didn't intend
+    // as "move it" — moveFolder's own guard would otherwise refuse this with
+    // the same message as a genuine self-nest attempt, which reads as a
+    // confusing error for what was really just a mis-drop.
+    if (destination === parentOf(draggedItem.path)) return false
+  }
+  return true
+}
+
+/** The folder-relative parent of `path` ("" at the root) — mirrors
+ * `note-controller.ts`'s private `folderOf`/`main.ts`'s `parentOf`. */
+function parentOf(path: string): string {
+  const slash = path.lastIndexOf("/")
+  return slash === -1 ? "" : path.slice(0, slash)
+}
+
+/** Make `el` a drop target that moves whatever's dragged onto
+ * `getDestination()` (M35/FEAT-0072 — `""` for the tree root). Both events
+ * stop propagating once accepted, so a drop on a specific row's target never
+ * also fires an ancestor's (e.g. the root zone's). */
+function wireDropTarget(el: HTMLElement, getDestination: () => string, handlers: NoteListHandlers): void {
+  // The drop indicator highlights the whole destination *folder block* (its
+  // header plus everything nested under it), not just the row the pointer is
+  // over: a drop on a note row targets that note's containing folder (AC-9),
+  // so highlighting only the hovered row would point at the wrong place
+  // (M35/FEAT-0072/AC-10). A drop targeting the vault root (a root-level note
+  // row, or the root zone itself) has no folder block, so it highlights the
+  // whole tree container — the element the root drop zone is wired on
+  // (`[data-drop-zone-wired]`). Computed at event time (not render time) so a
+  // root-level row, appended after wiring, still resolves its container.
+  const highlightEl = (): HTMLElement =>
+    el.closest<HTMLElement>(".note-folder") ??
+    el.closest<HTMLElement>("[data-drop-zone-wired]") ??
+    el
+  el.addEventListener("dragover", (event) => {
+    // This element is the intended drop target for anything hovering over
+    // it — never an ancestor drop zone (e.g. the root) — regardless of
+    // whether *this* target turns out to be valid for what's being dragged.
+    event.stopPropagation()
+    if (!isValidDropTarget(getDestination())) return // no valid-drop indicator (AC-7)
+    event.preventDefault() // required to permit a drop here at all
+    highlightEl().classList.add("tree-drop-target")
+  })
+  el.addEventListener("dragleave", () => {
+    highlightEl().classList.remove("tree-drop-target")
+  })
+  el.addEventListener("drop", (event) => {
+    highlightEl().classList.remove("tree-drop-target")
+    // Same reasoning as dragover: claim the event so an invalid drop here
+    // doesn't bubble up and get silently reinterpreted by an ancestor zone.
+    event.preventDefault()
+    event.stopPropagation()
+    const destination = getDestination()
+    const valid = isValidDropTarget(destination) // read before clearing draggedItem below
+    const item = draggedItem
+    draggedItem = null
+    if (!item || !valid) return
+    if (item.kind === "note") handlers.onDropNote?.(item.path, destination)
+    else handlers.onDropFolder?.(item.path, destination)
+  })
 }
 
 /** Render one tree node (note row or folder subtree) to a detached element. */
@@ -192,11 +423,22 @@ function renderNode(
     handlers.onToggleFolder?.(node.path, children.hidden)
   })
 
+  wireTreeMenu(header, () => [
+    { label: "New subfolder…", run: () => handlers.onCreateFolder?.(node.path) },
+    { label: "New note…", run: () => handlers.onCreateNoteIn?.(node.path) },
+    { label: "Rename…", run: () => handlers.onRenameFolder?.(node.path) },
+    { label: "Move…", run: () => handlers.onMoveFolder?.(node.path) },
+    { label: "Delete", run: () => handlers.onDeleteFolder?.(node.path) },
+  ])
+  wireDragSource(header, "folder", node.path)
+  wireDropTarget(header, () => node.path, handlers)
+
   folder.append(header, children)
   return folder
 }
 
-/** Render a single note row (name button + delete button). */
+/** Render a single note row (just the name — every other action lives behind
+ * its context menu, M35/FEAT-0071). */
 function renderNoteRow(node: NoteLeaf, active: string, handlers: NoteListHandlers): HTMLElement {
   const row = document.createElement("div")
   row.className = "note-row"
@@ -213,15 +455,20 @@ function renderNoteRow(node: NoteLeaf, active: string, handlers: NoteListHandler
   nameButton.title = displayName(node.path) // full note path on hover (rows ellipsize)
   nameButton.addEventListener("click", () => handlers.onSelect(node.path))
 
-  const deleteButton = document.createElement("button")
-  deleteButton.type = "button"
-  deleteButton.className = "note-delete"
-  deleteButton.textContent = "×"
-  deleteButton.title = `Delete ${node.name}`
-  deleteButton.setAttribute("aria-label", `Delete ${node.name}`)
-  deleteButton.addEventListener("click", () => handlers.onDelete(node.path))
+  row.append(nameButton)
 
-  row.append(nameButton, deleteButton)
+  wireTreeMenu(row, () => [
+    { label: "Rename…", run: () => handlers.onRenameNote?.(node.path) },
+    { label: "Move…", run: () => handlers.onMoveNote?.(node.path) },
+    { label: "Delete", run: () => handlers.onDelete(node.path) },
+  ])
+  wireDragSource(row, "note", node.path)
+  // A note isn't a container, but its row is the easiest target to hit when
+  // the intent is "put this alongside that note" — drop here targets its
+  // own containing folder, same as dropping directly on that folder's
+  // header would (M35/FEAT-0072/AC-9).
+  wireDropTarget(row, () => parentOf(node.path), handlers)
+
   return row
 }
 
@@ -260,7 +507,7 @@ export function mountNoteIdentity(
   input.type = "text"
   input.className = "note-identity-edit"
   input.setAttribute("aria-label", "Rename note")
-  input.autocomplete = "off"
+  applyAntiAutofillAttrs(input)
   input.hidden = true
 
   const error = document.createElement("span")

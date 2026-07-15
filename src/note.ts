@@ -21,6 +21,8 @@ export type SaveResult =
 
 export type CreateResult = { status: "created" } | { status: "exists" }
 
+export type CreateFolderResult = { status: "created" } | { status: "exists" }
+
 export type MoveResult =
   | { status: "moved" }
   | { status: "exists" }
@@ -194,6 +196,56 @@ async function collect(
 }
 
 /**
+ * List every **folder** under `dir` (M35/FEAT-0069), sorted the same way as
+ * {@link listNotes} — a sibling walk, not a byproduct of the note listing, so
+ * an empty folder (no `.md` file inside it) is still reported. Kept as its
+ * own walk rather than folded into `listNotes`'s return shape: that would
+ * touch every one of `listNotes`'s existing callers for a feature only the
+ * sidebar tree needs. Same concurrency/abort behavior as `listNotes`.
+ */
+export async function listFolders(
+  dir: FileSystemDirectoryHandle,
+  maxConcurrent: number = MAX_CONCURRENT_WALKS,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const paths: string[] = []
+  await collectFolders(dir, "", paths, new Semaphore(maxConcurrent), signal)
+  return paths.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+}
+
+/** Recurse `dir`, pushing `prefix`-qualified relative paths of every
+ * subdirectory (unlike {@link collect}, which pushes `.md` files) — the same
+ * semaphore-bounded, abortable shape, for the same reason (see `collect`'s
+ * doc comment). */
+async function collectFolders(
+  dir: FileSystemDirectoryHandle,
+  prefix: string,
+  out: string[],
+  sem: Semaphore,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError")
+  await sem.acquire()
+  if (signal?.aborted) {
+    sem.release()
+    throw new DOMException("Aborted", "AbortError")
+  }
+  const subdirs: FileSystemDirectoryHandle[] = []
+  try {
+    for await (const entry of dir.values()) {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError")
+      if (entry.kind === "directory") {
+        out.push(prefix + entry.name)
+        subdirs.push(entry)
+      }
+    }
+  } finally {
+    sem.release()
+  }
+  await Promise.all(subdirs.map((entry) => collectFolders(entry, prefix + entry.name + "/", out, sem, signal)))
+}
+
+/**
  * A `listNotes` walk that can be paused and resumed across many calls instead
  * of always running to completion in one go — for a caller (the poll relist)
  * that has no one waiting on it and would rather spend a small slice of time
@@ -284,7 +336,12 @@ export async function createNote(
 }
 
 /** Remove `name` from the folder. Already-absent is a no-op (idempotent): the
- * folder has many writers, so a note we mean to delete may already be gone. */
+ * folder has many writers, so a note we mean to delete may already be gone.
+ * Deliberately does **not** clean up a folder left empty by this (M35/
+ * FEAT-0069): a folder is now a real, independent thing (see
+ * {@link createFolder}) — exactly like on a real filesystem, emptying it
+ * doesn't delete it. The user removes an unwanted empty folder explicitly via
+ * {@link deleteFolder}. */
 export async function deleteNote(
   dir: FileSystemDirectoryHandle,
   name: string,
@@ -297,6 +354,68 @@ export async function deleteNote(
   } catch (err) {
     if (!isNotFound(err)) throw err
   }
+}
+
+/**
+ * Create an empty real directory at `path` (M35/FEAT-0069) — unlike a note's
+ * folder, which only ever exists as a side effect of a file inside it, this
+ * materializes the folder itself. If one already exists there it is left
+ * untouched and `{ status: "exists" }` is returned, same shape as
+ * {@link createNote}; a like-named *file* occupying the path is reported the
+ * same way rather than surfacing a raw `TypeMismatchError`.
+ */
+export async function createFolder(
+  dir: FileSystemDirectoryHandle,
+  path: string,
+): Promise<CreateFolderResult> {
+  if (await getExistingFolder(dir, path)) return { status: "exists" }
+  const { folders, file } = splitPath(path)
+  let parent: FileSystemDirectoryHandle
+  try {
+    parent = await resolveParent(dir, folders, true)
+  } catch (err) {
+    if (isAbsent(err)) return { status: "exists" } // a file blocks a folder segment
+    throw err
+  }
+  try {
+    await parent.getDirectoryHandle(file, { create: true })
+  } catch (err) {
+    if (isAbsent(err)) return { status: "exists" } // a file already occupies `file`
+    throw err
+  }
+  return { status: "created" }
+}
+
+/** Remove the folder at `path` and everything beneath it. Already-absent is a
+ * no-op (idempotent), same reasoning as {@link deleteNote}. Its own now-empty
+ * parent is left alone, for the same reason `deleteNote` leaves its emptied
+ * folder alone — a folder's lifecycle is independent of its contents now. */
+export async function deleteFolder(
+  dir: FileSystemDirectoryHandle,
+  path: string,
+): Promise<void> {
+  try {
+    const { folders, file } = splitPath(path)
+    const parent = await resolveParent(dir, folders, false)
+    if (!parent) return // a missing intermediate folder means it's already gone
+    await parent.removeEntry(file, { recursive: true })
+  } catch (err) {
+    if (!isNotFound(err)) throw err
+  }
+}
+
+/**
+ * True when the folder at `path` exists and has nothing in it at all — no
+ * files, no subfolders. A missing folder counts as empty (nothing there to
+ * protect). Meant to be checked **before** a caller recursively removes a
+ * folder it *believes* is empty (M35/FEAT-0070's `moveFolder`, which must
+ * never destroy a note left behind by a skipped, conflicting move).
+ */
+export async function isFolderEmpty(dir: FileSystemDirectoryHandle, path: string): Promise<boolean> {
+  const folder = await getExistingFolder(dir, path)
+  if (!folder) return true
+  const first = await folder.values().next()
+  return first.done ?? false
 }
 
 /**
@@ -363,6 +482,23 @@ async function getExisting(
   if (!parent) return null
   try {
     return await parent.getFileHandle(file)
+  } catch (err) {
+    if (isAbsent(err)) return null
+    throw err
+  }
+}
+
+/** The directory handle for the folder at `path` if it exists, else `null` —
+ * the {@link getExisting} of {@link createFolder}. */
+async function getExistingFolder(
+  dir: FileSystemDirectoryHandle,
+  path: string,
+): Promise<FileSystemDirectoryHandle | null> {
+  const { folders, file } = splitPath(path)
+  const parent = await resolveParent(dir, folders, false)
+  if (!parent) return null
+  try {
+    return await parent.getDirectoryHandle(file)
   } catch (err) {
     if (isAbsent(err)) return null
     throw err

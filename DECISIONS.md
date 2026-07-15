@@ -2574,3 +2574,370 @@ Four new tests in `session.test.ts` mirror the `saveRecency`/`loadRecency` suite
 the vault-scoped key, load it back, default to `[]`, keyed per vault) — confirmed each fails against a
 deliberately mistyped key before being fixed. `main.ts` itself stays outside the unit test net (as
 every other wiring change here has been) — verified via the full e2e suite instead.
+
+## Folder create/delete + move: destination picker, no context-menu system, move reuses rename (M35)
+M35 closes a real gap: the sidebar tree can list/select/toggle folders and
+create/delete/rename **notes**, but there's no way to create/delete a
+**folder**, or move a note/folder elsewhere. Scoped before any spec work, per
+the survey of `note.ts`/`ui.ts`:
+- **Folder create/delete get the same inline-button treatment notes already
+  have** (a "+" to add a subfolder, a "×" to delete one) — not a new
+  right-click context-menu subsystem. The tree has never had context menus
+  (`context-menu.ts` is unrelated — a CodeMirror wikilink editor extension);
+  building one just for two folder actions is more surface than the feature
+  needs. (Rejected: right-click menu — a new interaction pattern and a new
+  overlay/positioning problem for two buttons the row can hold directly.)
+- **Deleting a folder is destructive and gets a mandatory confirm step** —
+  unlike a note's one-click "×", a folder can hold an unbounded number of
+  notes beneath it, so removing it can silently take real content with it.
+  This is the one place in this milestone where the moat's "never lose data
+  silently" principle applies directly.
+- **Move is driven by a "Move to…" destination-picker overlay, not
+  drag-and-drop.** DnD would need new pointer/touch machinery, reorder
+  semantics, and a distinct accessibility story; a palette-styled picker
+  (same visual family as the quick switcher) reuses an existing overlay
+  pattern, works identically with keyboard/mouse/touch, and needs no new
+  interaction model. (Rejected: drag-and-drop reordering — heavier to build
+  and test, and mobile drag is exactly the kind of touch-fiddly interaction
+  M17 flagged as a general risk.)
+- **Moving a note is a generalization of the existing rename path, not a new
+  primitive.** `moveNote` (`note.ts`) already resolves an arbitrary
+  destination path (cross-folder capable, prefers the native
+  `FileSystemFileHandle.move()`, falls back to copy-then-delete) and
+  `renameActive` (`note-controller.ts`) already wraps it with flush + link
+  rebase + reactivation — today only ever called with a same-folder target.
+  P2 widens the destination it's called with; no new note-level FS
+  operation. **Moving a folder is new** (`moveFolder`): walk the subtree via
+  the existing `listNotes` infra, `moveNote` each contained file into the
+  equivalent path under the new prefix (rebasing inbound links per moved
+  note, exactly like a rename), then remove the emptied source folder tree.
+  A folder move into its own subtree is refused (would orphan/self-nest).
+- **Built on a feature branch, not shipped straight to `main`.** Unlike every
+  prior milestone (spec → implement → review → verify/seal → push to
+  `main`), M35 stays on `feature/folder-note-management` through the whole
+  build — the user wants a live-tested staging pass before this lands, per
+  the GitHub Pages staging discussion this session. `specman seal` and the
+  usual commit trailers still apply per phase; only the final "ship" step
+  (merge to `main`) is deferred to the milestone review.
+
+## A folder's lifecycle is independent of its contents — empty folders are never auto-pruned (M35 → FEAT-0069)
+First cut of `deleteNote`/`deleteFolder`/`moveNote` pruned any folder a
+deletion/move left empty, to keep the pre-M35 illusion that "an emptied
+folder disappears" (the behavior a real e2e regression, `subfolders.spec.ts`,
+was written against back when folders had no independent existence at all).
+A high-effort `/code-review` caught that this was actually wrong: pruning
+can't tell "emptied by deleting/moving the last thing out of it" apart from
+"the user explicitly made this with `createFolder` and it just doesn't have
+anything in it yet" — both look identical on disk. So it silently deleted a
+folder the user deliberately created the moment a note passed through it and
+back out, directly contradicting this milestone's own point. **Fix: don't
+prune at all.** A folder is now a real, independent filesystem object —
+exactly like on a real OS, emptying it doesn't delete it; the user removes an
+unwanted empty one explicitly via its own "×" (`deleteFolder`). Consequence:
+within one browser session, a folder that only ever existed via **note-path
+inference** (never explicitly created, e.g. materialized by `sub/note.md`)
+still stops rendering the moment its last note is gone — nothing tracks it as
+a "known folder" so there's nothing to resurface — matching the old,
+already-tested behavior with no code change needed there. But a **leftover
+empty directory** does resurface on the *next* vault attach (a fresh
+`listFolders` walk sees whatever is really on disk) — an honest reflection of
+real state rather than hiding it forever, and the cost of not pretending to
+track something the app never actually modeled.
+
+## `onFoldersChanged` is a separate, rare callback — not folded into `onListChanged` (M35 → FEAT-0069)
+The same review flagged a second problem in the first cut: `onListChanged`
+had been made `async` (to `await listFolders()` inline) so a freshly
+created/deleted folder would show up — but every call site in
+`note-controller.ts` still fires it fire-and-forget against its still-`void`-
+typed signature, so two overlapping renders could resolve out of order and
+leave the sidebar showing stale content. Worse, doing this **inside**
+`onListChanged` meant *every* note add/delete/rename paid for a full
+recursive directory walk just to look for empty folders, even though almost
+none of those operations ever change folder existence — directly undermining
+the `Sweep`/budget machinery built elsewhere in this codebase specifically to
+bound relist cost on large vaults. Fix: `onListChanged` goes back to fully
+synchronous (its original contract), and a new **`onFoldersChanged?:
+(folders: string[]) => void`** fires only from `addFolder`/`removeFolder` —
+the only two operations that actually touch folder existence — with the
+listing computed there (naturally serialized through the controller's
+existing queue, so two folder ops can't race each other either). `main.ts`
+tracks the result in `currentFolders`, refreshed once per vault attach
+(`openNote`, in parallel with the settings read) and on that callback; every
+`renderNoteList` call site reads it, never re-fetching it itself.
+
+## Reversal: drag-and-drop IS coming after all, additive to the picker (M35 → FEAT-0072)
+P2's scope note picked "a destination picker, not drag-and-drop" — reasoning
+that DnD needed new machinery (drag handles, drop-target feedback, a touch
+equivalent) the picker got for free, and that keyboard/mobile reachability
+mattered more than a mouse-only fast path. The milestone review overrode
+this: the user wants DnD too. Per the same reasoning FEAT-0027 used when the
+user overrode "no wikilinks" — this is the user's call to make about their
+own moat/ergonomics trade, not the agent's to refuse a second time. Settled
+as **additive, not a replacement**: the picker (and its context-menu entry
+point, FEAT-0071) stays exactly as built — still the only way in for
+keyboard and touch — and dragging a row onto a folder (or a root drop zone)
+is a second, faster path for a mouse, calling the *same* underlying move
+(`renameActive` after switching, or `moveFolder`) a picker pick would have,
+including the same self-nest refusal. No new file-system operation; this is
+purely a second trigger surface, same relationship P1/P2's buttons had to
+P3's context menu before the review replaced them.
+
+## New note in a folder reuses the quick switcher, seeded with a prefix (M35 → FEAT-0072)
+Rather than inventing a second "type a name" prompt for folder-scoped
+creation, a folder's "New note…" menu item opens the existing FEAT-0033
+quick switcher with its input pre-filled `<folderpath>/` — the *same*
+find-or-create mechanism every other note creation already goes through,
+already handling duplicate detection; the user just continues typing the
+leaf name. One creation path, one place `normalizeNoteName` validation lives,
+consistent with FEAT-0012's own reasoning for reusing `createNote` rather
+than a parallel folder-scoped variant.
+
+## Reversal: native confirm/prompt/alert give way to in-app dialogs (M35 → FEAT-0073)
+P1 through P4 all used `window.confirm`/`window.prompt`/`window.alert` for
+delete confirmation, rename/new-folder naming, and move-failure feedback —
+reasoning each time "match the pattern the pre-existing note delete already
+uses, no new modal component." Flagged live, after testing the shipped
+milestone, as the wrong call: the app already has a themed, animated overlay
+family (quick switcher, command palette, move picker, conflict modal) native
+dialogs ignore completely — they render in browser chrome, ignore light/dark
+theme, and clash with the motion language M34 built. Reversed: a new
+`dialog.ts`, mirroring `move-picker.ts`'s `mount(els)` shape over a
+pre-declared `#dialog-backdrop`/`#dialog` pair, exposes `confirmDialog`/
+`promptDialog`/`alertDialog`, styled like the existing `#conflict`/
+`.settings-dialog` pair (same backdrop, motion, focus-restore, Escape/
+outside-click dismissal) so it's one more instance of an established family,
+not a new one. No controller/file-system logic changes — only the trigger
+surface for confirmation/naming/feedback.
+
+## Dropping onto a note row targets its containing folder, not a no-op (M35 → FEAT-0072 AC-9)
+Live testing after P1-P5 shipped surfaced that dropping a note/folder onto a
+note row did nothing (`blockDropBubbling` only prevented the drop from
+bubbling to an ancestor zone — a note row was deliberately not a drop target
+at all, on the reasoning that a note isn't a container). Reversed: a note
+row is by far the easiest target to hit when the intent is "put this
+alongside that note," so a drop there now redirects to the note's own
+containing folder — the exact destination dropping directly on that
+folder's header would give, reusing `wireDropTarget` unchanged, just with a
+different computed destination. The self-nest refusal already used by
+folder-header drops applies unchanged.
+
+## Password-manager anti-autofill hints go on every text input, not just the one that was noticed (M35 → FEAT-0074)
+The trigger was a single observation — Bitwarden offering to fill a blank
+rename-dialog input — but the fix scopes to every plain text field in the
+app (switcher, palette, move picker, dialog, header rename, journal path),
+per the user's own framing ("the browser shouldn't suggest anything inside
+Brulion's text fields"). `autocomplete="off"` alone doesn't reliably stop
+extensions like Bitwarden, which by design override it for fields that look
+like login prompts; the standard mitigation is the vendor-specific ignore
+attributes (`data-lpignore`, `data-1p-ignore`, `data-bwignore`) plus a
+generic `data-form-type="other"` hint, applied uniformly rather than
+field-by-field as each one gets noticed.
+
+## Rename is a distinct verb from Move, not a special case of the picker (M35 → FEAT-0072)
+"Move…" already lets a destination equal the current parent (a no-op), so a
+rename *could* have been "open the picker, pick the same folder, then also
+prompt for a new name" — rejected as a clunky two-step for the single most
+common file operation there is. Instead "Rename…" is its own menu item that
+prompts for a bare name (mirroring "New subfolder…"'s prompt shape) and
+recomputes the target by keeping the parent and swapping only the leaf
+segment — `moveFolder`/`renameActive` underneath, unchanged; only what target
+path gets computed is new.
+
+## Reversal: the tree's context menu gets a keyboard path after all (M35 → FEAT-0071/AC-7)
+FEAT-0071 explicitly deferred keyboard reachability ("mouse right-click and
+touch long-press are the two paths in") — reasonable at the time, but a
+high-effort code-review pass flagged it as a real accessibility gap: a
+keyboard-only user had no way at all to delete, rename, or move a note or
+folder once P3 replaced the old inline buttons with the menu. Reversed:
+Shift+F10 / the keyboard's dedicated "Menu"/"ContextMenu" key opens the same
+menu for whichever row has focus. No new focusability needed — a folder
+header is already a `<button>`, and a note row's keydown bubbles up from its
+own focusable name button — so `wireTreeMenu`'s existing per-row wiring
+just gained one more event listener, not a new focus model.
+
+## Reverted: gating moveFolder()'s source delete on createFolder's result (M35 → FEAT-0070)
+A review pass flagged that `moveFolder` ignored `createFolder`'s result
+before deleting an emptied (sub)folder, in theory losing it outright if a
+like-named file blocked the destination. The fix (only delete once
+`createFolder` reported `"created"`) broke a real, previously-passing
+e2e test (AC-3, moving a folder with nested subfolders) — `moveNote`'s own
+file writes and the subfolder-creation loop both auto-vivify ancestor
+directories as a side effect, so by the time the top-level folder's own
+`createFolder` call ran, the destination legitimately already existed for
+reasons that had nothing to do with a conflict, and the fix couldn't tell
+the two apart. Reverted rather than chasing a more elaborate fix: the actual
+harm of the original gap is low (it only ever applies to a folder already
+verified empty via `isFolderEmpty` — no note content is ever at risk, just
+a rare, disk-external-tool-only edge case where an empty folder vanishes
+without reappearing at the destination), too small to justify the
+complexity a correct fix would need to safely distinguish "blocked by a
+genuine conflict" from "already there because this exact move's own note
+writes put it there."
+
+## Round-5 review findings deliberately not acted on (M35 → FEAT-0070)
+Three findings from a 5th `/code-review` pass were left as-is:
+- The "Move…" picker's destination list (`destinationChoices`) doesn't
+  filter out a folder's own subtree the way drag-and-drop's drop-target
+  highlight does — picking it round-trips to a refusal message instead of
+  never being offered. This is the exact, already-documented "Out of scope"
+  decision in FEAT-0070's spec ("filtering the destination picker's folder
+  list to exclude invalid targets up front... the operation is refused with
+  a message if picked anyway, same pattern as an invalid/duplicate folder
+  name") — not a new gap, a standing choice.
+- `collect`/`collectFolders` (`note.ts`) duplicate the same semaphore-walk
+  shape almost verbatim. A real DRY concern, but `moveFolder` has been the
+  single most bug-prone area across all five review rounds on this branch —
+  refactoring the directory-walk primitives underneath it at the tail end of
+  this loop is more risk than the duplication currently costs.
+- `moveFolder`'s per-note move loop awaits each `moveNote` sequentially
+  instead of using the existing `Semaphore`-bounded concurrency `listNotes`/
+  `listFolders` already use. A real perf win for a folder with many notes,
+  but the loop's ordering already carries several hard-won correctness
+  guarantees (rebase only once the whole batch is known, occupied-
+  destination skips, etc.) that concurrent moves would have to re-prove —
+  deferred for the same reason as the walk duplication above.
+
+## Round-15 review findings deliberately not acted on (M35 → FEAT-0069/FEAT-0073)
+A 15th `/code-review` pass, run right after centralizing the existence-guard
+(`ifExists`/`ifExistsResult`) and never-throws (`serializeResult`) wrappers,
+confirmed two more findings. Both were fixed directly (see the commit right
+after this entry): `removeNote`/`removeFolder`'s own post-delete `activate()`
+call getting the same try/catch-with-fallback moveFolder/renameActive already
+had, and `addNote`/`addFolder` no longer reporting a successful disk create as
+a failure when a best-effort follow-up step throws. Two others were left as-is:
+
+- `folderStillExists` (main.ts), used by `ifExists` in `promptNewFolder` and
+  implicitly relied on by `onCreateNoteIn`, reads `currentFolders` — which the
+  background poll only ever refreshes via an explicit folder mutation
+  (`addFolder`/`removeFolder`/`moveFolder`'s `onFoldersChanged` calls), never
+  on its own cadence the way `currentNotes` is kept live by the relist sweep.
+  So an *externally* deleted **empty** folder can stay listed indefinitely
+  (not just for the length of one open dialog), and recreating a folder by
+  that name auto-vivifies it right back. Left alone: unlike the note-level
+  resurrection bugs this session fixed, the "resurrected" thing here is an
+  empty directory — the folder had nothing in it when it was deleted, so
+  there is no content to lose, only a directory reappearing that a user
+  external to Brulion removed. Properly closing this would mean the
+  background poll re-walking folders every tick the way it already does
+  notes, a real expansion of the poll's own scope, not a call-site fix —
+  disproportionate to a cosmetic-only gap on a weekend-scale project.
+- `moveFolder`/`renameActive`'s two-step recovery (primary `activate()`, then
+  a `pickActiveNote` fallback) can still leave `activeName` stale if *both*
+  calls fail — the existing "last resort exhausted" catch already accepts
+  this as a documented residual risk rather than chasing a third fallback.
+  `removeNote`/`removeFolder`'s fix above brings them to the same single-
+  fallback risk profile, not a strictly safer one — deliberately consistent
+  with, not better than, the standard the rest of the controller already
+  accepts. Closing this fully would need the buffer itself to go non-dirty
+  (or blank) when every recovery attempt fails, changing what the user sees
+  rather than just how errors propagate — a bigger, more user-visible change
+  than this loop's scope.
+
+**Round-16 follow-up:** the 16th pass caught that this entry's own fix was
+incomplete on both counts. `removeNote`/`removeFolder` still used bare
+`serialize` (not `serializeResult`) with only their tail `activate()` call
+protected — `deleteNote`/`deleteFolder`/`listNotes`/`flushAndWait` themselves
+could still reject, and both `main.ts` call sites discarded the promise with
+a bare `void`, so a failure there was a silent unhandled rejection with zero
+user feedback (unlike every sibling mutation). Fixed by giving them the same
+`AddNoteResult`/`serializeResult` treatment as `addNote`/`addFolder`, and
+updating `onDelete`/`onDeleteFolder` in `main.ts` to alert on `{ok:false}`.
+Separately, the "last resort exhausted" branches (now in four places:
+`removeNote`, `removeFolder`, `moveFolder`, `renameActive`) never called
+`onListChanged` even though `notes` was already accurate — fixed by adding
+that call to each. This does *not* change the accepted `activeName`-staleness
+risk above (that's still a real, documented residual risk); it only stops
+the sidebar's file listing from silently going stale on top of it.
+
+**Round-17 follow-up:** the 17th pass found the round-16 fix for
+`removeNote`/`removeFolder` was itself still incomplete — `serializeResult`
+wrapped the whole function, but only the tail `activate()` call had its own
+local try/catch; the post-delete `listNotes`/`listFolders`/`onFoldersChanged`
+calls in between had none, so a transient failure there fell through to
+`serializeResult`'s generic catch and reported an already-successful delete
+as failed (the exact class of bug `addNote`/`addFolder`'s post-create steps
+were already protected against). Fixed by wrapping each method's whole
+post-delete sequence in its own try/catch, mirroring `addNote`'s shape.
+
+**Round-18 follow-up:** an exhaustive symmetry check across all six mutating
+methods (addNote, addFolder, removeNote, removeFolder, moveFolder,
+renameActive) found two more real gaps:
+- `removeNote`/`removeFolder` never re-checked `conflict` after their own
+  `flushAndWait()`, unlike `moveFolder`/`renameActive` — a save already in
+  flight from an earlier autosave tick that resolves to a stale-write
+  conflict during that flush would previously fall straight through to the
+  delete, permanently destroying the externally-edited content the conflict
+  modal was about to let the user review. Fixed by adding the same
+  post-flush `conflict` check (scoped to when the note being deleted is, or
+  contains, the active note — the only case a flush can raise a conflict at
+  all).
+- `moveFolder`'s and `renameActive`'s own post-mutation `notes = await
+  listNotes(dir)` calls were themselves unprotected — the exact same gap
+  round 17 fixed for `removeNote`/`removeFolder`, just not yet applied to
+  these two. A transient relist failure right after every file had already
+  moved/renamed on disk fell through to the outer catch and reported the
+  whole operation as failed. Fixed by wrapping each method's whole
+  post-mutation sequence (relist, link maintenance, activate, notify) in its
+  own try/catch, matching the shape used everywhere else.
+
+This is the fourth consecutive round to find the same class of gap in one
+more of these six methods or one more step within them — a real pattern,
+not noise, and each fix has been mechanical once found. If a future round
+finds yet another instance of this exact shape, that's a signal the fix
+belongs at a more structural level (e.g. a shared helper that every method's
+post-mutation block routes through) rather than another one-off local
+try/catch.
+
+**Round-19 follow-up:** it found exactly that fifth instance, predicted
+above — `moveFolder`'s own leftover-folder cleanup (the `candidateSubfolders`
+loop, and the trailing `createFolder(toPath)`/`deleteFolder(fromPath)`) sat
+between the note-move loop and the round-18-protected post-move block,
+itself unprotected. Since the active note's own `moveNote` call can have
+already succeeded by the time this later cleanup step throws, a failure
+there fell to the outer catch *without ever reconciling `activeName`* —
+`newActiveName` was set but `activate()` never ran, leaving `activeName`
+dangling at the vanished pre-move path exactly like every earlier round's
+fix was meant to prevent. Rather than adding a sixth one-off try/catch,
+this was fixed by restructuring `moveFolder`: the note-move loop, link
+rebase, and folder cleanup now run inside their own inner try, catching into
+a `mutationError` variable instead of propagating — so the post-move
+reconciliation block (relist, link maintenance, notify, activate/fallback)
+*always* runs afterward regardless of whether that inner block fully
+succeeded, and only then is the overall `{ok:true}`/`{ok:false}` decided.
+`renameActive` was checked for the same gap and doesn't have it — its single
+`moveNote` call has nothing risky between it and the protected block.
+
+This did NOT turn out to need the generic "shared post-mutation helper"
+flagged as the fallback plan above — the actual fix was narrower (reconcile
+unconditionally after a method's own try, not a cross-cutting wrapper).
+Kept the escalation note for future rounds: a *sixth* instance of this
+pattern, in a method that structural fix doesn't already cover, would be the
+real signal to build that shared helper.
+
+## Structural fix: `reconcileAfterMutation` ends the per-method whack-a-mole (M35)
+Six review rounds (14–19) each found one more hand-rolled copy of the same
+post-mutation block missing a different piece. The user called it: 20 rounds
+of one-off patches is the wrong loop — the invariant belongs in one place.
+The whole post-mutation contract now lives in a single helper in
+`note-controller.ts`, `reconcileAfterMutation`: refresh `notes` → run
+independent best-effort follow-up steps (link maintenance, the pre-open
+flush) → refresh the folder listing when the folder set changed → re-point
+the editor at the target, falling back to `pickActiveNote` **only when the
+active path itself vanished** (the autosave-resurrection hazard), announcing
+the accurate listing if even that fails. It never throws, and by definition
+nothing inside it can be reported as the mutation failing.
+
+Five methods route through it (`addNote`, `removeNote`, `removeFolder`,
+`moveFolder`, `renameActive`); `addFolder` deliberately does not — it never
+touches the note list (its AC-1 asserts `onListChanged` does NOT fire on
+folder creation), so its single follow-up keeps its own dedicated
+notification. Two small behavior changes fell out of the unification, both
+improvements: (1) a *transient* failure loading the fallback note now
+recovers via the helper's single retry instead of leaving the editor on the
+stale buffer; (2) `renameActive`'s inbound-link pass now runs before
+`activate` (matching `moveFolder`'s existing order) — the two passes touch
+disjoint files, so the order was never load-bearing.
+
+The review loop is closed with this refactor. Any future mutation method
+MUST route its post-mutation work through `reconcileAfterMutation` rather
+than hand-rolling the block — that's the whole point.

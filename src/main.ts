@@ -14,13 +14,15 @@ import {
   type IconNode,
 } from "lucide"
 import { mountEditor, setEditorEditable, setLinkContext, scrollEditorToHeading } from "./editor"
-import { createNoteController, type NoteController } from "./note-controller"
+import { listFolders } from "./note"
+import { createNoteController, type NoteController, type AddNoteResult } from "./note-controller"
 import { mountConflictDiff, type ConflictDiff } from "./conflict-view"
 import {
   wireOpenFolder,
   openFolder,
   restoreVault,
   renderNoteList,
+  derivedFolderPaths,
   renderActionBar,
   wireToggle,
   wireSidebarResize,
@@ -32,6 +34,8 @@ import {
 } from "./ui"
 import { mountQuickSwitcher } from "./quick-switcher"
 import { mountCommandPalette } from "./command-palette"
+import { mountMovePicker } from "./move-picker"
+import { mountDialog } from "./dialog"
 import { resolvePinned, type Action } from "./actions"
 import {
   addVault,
@@ -113,6 +117,7 @@ const noteIdentityEl = document.querySelector<HTMLElement>("#note-identity")
 const missingNoteEl = document.querySelector<HTMLElement>("#missing-note")
 const listEl = document.querySelector<HTMLElement>("#note-list")
 const sidebarSearchEl = document.querySelector<HTMLButtonElement>("#sidebar-search")
+const sidebarNewFolderEl = document.querySelector<HTMLButtonElement>("#sidebar-new-folder")
 const switcherBackdropEl = document.querySelector<HTMLDivElement>("#switcher-backdrop")
 const switcherInputEl = document.querySelector<HTMLInputElement>("#switcher-input")
 const switcherListEl = document.querySelector<HTMLElement>("#switcher-list")
@@ -120,6 +125,10 @@ const switcherErrorEl = document.querySelector<HTMLElement>("#switcher-error")
 const paletteBackdropEl = document.querySelector<HTMLDivElement>("#palette-backdrop")
 const paletteInputEl = document.querySelector<HTMLInputElement>("#palette-input")
 const paletteListEl = document.querySelector<HTMLElement>("#palette-list")
+const moveBackdropEl = document.querySelector<HTMLDivElement>("#move-backdrop")
+const moveInputEl = document.querySelector<HTMLInputElement>("#move-input")
+const moveListEl = document.querySelector<HTMLElement>("#move-list")
+const moveErrorEl = document.querySelector<HTMLElement>("#move-error")
 const openButton = document.querySelector<HTMLButtonElement>("#open-folder")
 const resumeButton = document.querySelector<HTMLButtonElement>("#resume-access")
 const installButton = document.querySelector<HTMLButtonElement>("#install-app")
@@ -127,6 +136,12 @@ const conflictBackdropEl = document.querySelector<HTMLDivElement>("#conflict-bac
 const conflictDiffEl = document.querySelector<HTMLDivElement>("#conflict-diff")
 const keepButton = document.querySelector<HTMLButtonElement>("#conflict-keep")
 const diskButton = document.querySelector<HTMLButtonElement>("#conflict-disk")
+const dialogBackdropEl = document.querySelector<HTMLDivElement>("#dialog-backdrop")
+const dialogEl = document.querySelector<HTMLDivElement>("#dialog")
+const dialogMessageEl = document.querySelector<HTMLElement>("#dialog-message")
+const dialogInputEl = document.querySelector<HTMLInputElement>("#dialog-input")
+const dialogCancelButton = document.querySelector<HTMLButtonElement>("#dialog-cancel")
+const dialogConfirmButton = document.querySelector<HTMLButtonElement>("#dialog-confirm")
 if (
   !editorEl ||
   !workspaceEl ||
@@ -143,6 +158,11 @@ if (
   !missingNoteEl ||
   !listEl ||
   !sidebarSearchEl ||
+  !sidebarNewFolderEl ||
+  !moveBackdropEl ||
+  !moveInputEl ||
+  !moveListEl ||
+  !moveErrorEl ||
   !switcherBackdropEl ||
   !switcherInputEl ||
   !switcherListEl ||
@@ -156,7 +176,13 @@ if (
   !conflictBackdropEl ||
   !conflictDiffEl ||
   !keepButton ||
-  !diskButton
+  !diskButton ||
+  !dialogBackdropEl ||
+  !dialogEl ||
+  !dialogMessageEl ||
+  !dialogInputEl ||
+  !dialogCancelButton ||
+  !dialogConfirmButton
 ) {
   throw new Error("missing mount points in index.html")
 }
@@ -177,6 +203,14 @@ let controller: NoteController
 // target from one to offer to create.
 let currentActive = ""
 let currentNotes: string[] = []
+// Folders with no notes in them (M35/FEAT-0069) — not covered by currentNotes
+// at all (an empty folder implies no note path), so tracked separately.
+// Refreshed once per vault attach (openNote) and whenever addFolder/
+// removeFolder/moveFolder actually change the set (onFoldersChanged); NOT on every
+// ordinary note change, which never affects folder existence — a per-note-op
+// directory walk would undermine the Sweep/budget work done elsewhere to
+// bound relist cost on large vaults.
+let currentFolders: string[] = []
 // The vault the window is attached to (M33/FEAT-0059); the key for per-vault session
 // (recency, expanded folders) and the value stamped into `?ws`. Empty until the first
 // attach.
@@ -376,9 +410,22 @@ const noteListHandlers = {
     dismissDrawerIfMobile() // narrow layout: close the drawer to reveal the note (FEAT-0051)
   },
   onDelete: (name: string) => {
-    if (window.confirm(`Delete "${displayName(name)}"? This removes the file from your folder.`)) {
-      void controller.removeNote(name)
-    }
+    void dialog
+      .confirm(`Delete "${displayName(name)}"? This removes the file from your folder.`, "Delete")
+      .then((ok) => {
+        if (!ok) return
+        // The dialog can sit open for a while (unlike the blocking
+        // window.confirm it replaced, M35/FEAT-0073) — the background poll
+        // keeps running underneath it, so `name` may have been externally
+        // renamed/deleted by the time the user confirms. removeNote is a
+        // no-op for an already-missing path, which would otherwise look
+        // like a successful delete with no feedback at all.
+        ifExists(name, noteStillExists, () => {
+          void controller.removeNote(name).then((result) => {
+            if (!result.ok) void dialog.alert(result.reason)
+          })
+        })
+      })
   },
   onToggleFolder: (path: string, collapsed: boolean) => {
     // The persisted set holds expanded folders (FEAT-0043), so invert:
@@ -387,6 +434,206 @@ const noteListHandlers = {
     else expandedFolders.add(path)
     void saveExpandedFolders(currentVaultId, expandedFolders)
   },
+  onCreateFolder: (parentPath: string) => promptNewFolder(parentPath),
+  onDeleteFolder: (path: string) => {
+    void dialog
+      .confirm(
+        `Delete "${path}" and everything inside it? This removes every note beneath it from your folder.`,
+        "Delete",
+      )
+      .then((ok) => {
+        if (!ok) return
+        // Same race as onDelete above: the folder may have been externally
+        // removed/moved while the (now async) confirmation sat open.
+        ifExists(path, folderStillExists, () => {
+          void controller.removeFolder(path).then((result) => {
+            if (!result.ok) void dialog.alert(result.reason)
+          })
+        })
+      })
+  },
+  onMoveNote: (path: string) => {
+    // The tree menu can stay open indefinitely before this fires — re-check
+    // existence first, since switchTo has none of its own (noteStillExists).
+    ifExists(path, noteStillExists, () => {
+      // renameActive is active-note-scoped — switch to this note first, exactly
+      // like clicking its name already does, then let the picker apply the move.
+      void controller.switchTo(path).then(() => {
+        movePicker.open(destinationChoices(), (dest) => moveNoteTo(path, dest))
+      })
+    })
+  },
+  onMoveFolder: (path: string) => {
+    movePicker.open(destinationChoices(), (dest) => moveFolderTo(path, dest))
+  },
+  onCreateNoteIn: (parentPath: string) => switcher.open(`${parentPath}/`),
+  onRenameNote: (path: string) => promptRenameNote(path),
+  onRenameFolder: (path: string) => promptRenameFolder(path),
+  onDropNote: (path: string, destination: string) => {
+    // Same active-note constraint (and existence re-check) as onMoveNote above.
+    ifExists(path, noteStillExists, () => {
+      void controller.switchTo(path).then(() =>
+        moveNoteTo(path, destination).then((result) => {
+          if (!result.ok) void dialog.alert(result.reason)
+        }),
+      )
+    })
+  },
+  onDropFolder: (path: string, destination: string) => {
+    void moveFolderTo(path, destination).then((result) => {
+      if (!result.ok) void dialog.alert(result.reason)
+    })
+  },
+}
+
+/** Whether `path` still names a real folder — either an explicitly-known
+ * empty one, or one implied by still having at least one note under it.
+ * Used to re-check a target that an async dialog held onto across a wait
+ * long enough for the background poll to notice it vanished externally
+ * (M35/FEAT-0073 — the blocking window.confirm/prompt this replaced could
+ * never let that happen). */
+function folderStillExists(path: string): boolean {
+  return currentFolders.includes(path) || currentNotes.some((n) => n.startsWith(`${path}/`))
+}
+
+/** Whether `path` still names a real note — same re-check as
+ * {@link folderStillExists}, for a note. Checked here for the same reason a
+ * menu/picker/drag holds a path across an async wait long enough for it to
+ * vanish externally; `switchTo` itself also re-checks against its own
+ * authoritative state before activating anything (note-controller.ts), so
+ * this UI-side check is the first, friendlier line of defense, not the only
+ * one. */
+function noteStillExists(path: string): boolean {
+  return currentNotes.includes(path)
+}
+
+/** Alert-and-bail if `path` has vanished (per `exists`), otherwise run `fn`.
+ * Centralizes the existence-guard-then-alert pattern every async dialog/
+ * picker/menu handler needs (M35/FEAT-0073): each held `path` across a wait
+ * long enough for the background poll to notice it was externally deleted,
+ * and previously re-implemented this same check-and-alert at each call site. */
+function ifExists(path: string, exists: (path: string) => boolean, fn: () => void): void {
+  if (!exists(path)) {
+    void dialog.alert(`"${displayName(path)}" no longer exists.`)
+    return
+  }
+  fn()
+}
+
+/** Same guard as {@link ifExists}, for a call site that itself resolves to an
+ * `AddNoteResult` rather than doing its own void-returning follow-up. */
+function ifExistsResult(
+  path: string,
+  exists: (path: string) => boolean,
+  fn: () => Promise<AddNoteResult>,
+): Promise<AddNoteResult> {
+  if (!exists(path)) {
+    return Promise.resolve({ ok: false, reason: `"${displayName(path)}" no longer exists.` })
+  }
+  return fn()
+}
+
+/** `switchTo(path)`, then run `fn()` only if the switch actually landed on
+ * `path` — `switchTo` can silently no-op (its own authoritative check,
+ * M35/FEAT-0073) if `path` vanished by the time it was dequeued, in which
+ * case `fn` blindly proceeding would act on whatever note ended up active
+ * instead, since `renameActive` is active-note-scoped. */
+function switchToThenIfLanded(path: string, fn: () => Promise<AddNoteResult>): Promise<AddNoteResult> {
+  return controller.switchTo(path).then(() => {
+    if (currentActive !== path) {
+      return { ok: false, reason: `"${displayName(path)}" no longer exists.` }
+    }
+    return fn()
+  })
+}
+
+/** The folder-relative path one level up from `path` (`""` at the root) —
+ * mirrors `note-controller.ts`'s private `folderOf`; duplicated rather than
+ * exported since it's a one-liner and that version is intentionally private. */
+function parentOf(path: string): string {
+  const slash = path.lastIndexOf("/")
+  return slash === -1 ? "" : path.slice(0, slash)
+}
+
+/** Move note `path` to `destination` (M35/FEAT-0070/FEAT-0072) — the single
+ * place "what target does a note move actually call renameActive with" is
+ * computed, shared by the "Move…" picker and a drag-and-drop drop. */
+function moveNoteTo(path: string, destination: string): Promise<AddNoteResult> {
+  // The picker (or a drag) can sit open for a while (a real person deciding,
+  // unlike the blocking window.confirm this dialog replaced, M35/FEAT-0073),
+  // during which the background poll can notice `path` was deleted
+  // externally. Checked here, before touching any state; switchToThenIfLanded
+  // covers the narrower race switchTo silently no-opping would otherwise open
+  // (renameActive would then act on whatever note ended up active instead).
+  return ifExistsResult(path, noteStillExists, () => {
+    const name = displayName(path).split("/").pop() as string
+    return switchToThenIfLanded(path, () =>
+      controller.renameActive(destination ? `${destination}/${name}` : name),
+    )
+  })
+}
+
+/** Move folder `path` to `destination` — the drag-and-drop/picker-shared
+ * counterpart of {@link moveNoteTo} for folders. */
+function moveFolderTo(path: string, destination: string): Promise<AddNoteResult> {
+  const name = path.split("/").pop() as string
+  return controller.moveFolder(path, destination ? `${destination}/${name}` : name)
+}
+
+/** Prompt for a new folder's name and create it under `parentPath` ("" = the
+ * vault root) — M35/FEAT-0069, via the in-app dialog (M35/FEAT-0073). */
+function promptNewFolder(parentPath: string): void {
+  void dialog.prompt("New folder name:").then((name) => {
+    if (!name) return // dismissed or empty — no-op
+    // Same race as onDelete/onDeleteFolder/moveNoteTo: the dialog can sit
+    // open for a while, during which the parent folder may have been
+    // externally removed. addFolder's createFolder auto-vivifies missing
+    // ancestors, so without this check confirming would silently resurrect
+    // a folder that was deliberately deleted while the dialog was open.
+    // The root ("") is never stale, so the guard only applies to a real path.
+    ifExists(parentPath, (p) => p === "" || folderStillExists(p), () => {
+      const path = parentPath ? `${parentPath}/${name}` : name
+      void controller.addFolder(path).then((result) => {
+        if (!result.ok) void dialog.alert(result.reason)
+      })
+    })
+  })
+}
+
+/** Prompt for a new name (leaf segment only) and apply it by calling
+ * `rename(target)` — the shared shape behind both "Rename…" entry points
+ * (M35/FEAT-0072): read the current leaf, prompt, no-op on empty/unchanged,
+ * keep the same parent and swap only the leaf, alert on failure. Distinct
+ * from "Move…", which changes the parent but keeps the name. */
+function promptRenameTo(
+  path: string,
+  currentLeaf: string,
+  rename: (target: string) => Promise<AddNoteResult>,
+): void {
+  void dialog.prompt("Rename to:", currentLeaf).then((name) => {
+    if (!name || name === currentLeaf) return
+    const parent = parentOf(path)
+    const target = parent ? `${parent}/${name}` : name
+    void rename(target).then((result) => {
+      if (!result.ok) void dialog.alert(result.reason)
+    })
+  })
+}
+
+function promptRenameNote(path: string): void {
+  const current = displayName(path).split("/").pop() as string
+  promptRenameTo(path, current, (target) =>
+    // Same check as moveNoteTo above: the rename dialog can sit open long
+    // enough for `path` to vanish externally.
+    ifExistsResult(path, noteStillExists, () =>
+      switchToThenIfLanded(path, () => controller.renameActive(target)),
+    ),
+  )
+}
+
+function promptRenameFolder(path: string): void {
+  const current = path.split("/").pop() as string
+  promptRenameTo(path, current, (target) => controller.moveFolder(path, target))
 }
 controller = createNoteController(view, {
   onConflict: (versions) => {
@@ -418,8 +665,10 @@ controller = createNoteController(view, {
     // listing (complete or partial) lands. Runs on every attach, not just
     // first paint, since a vault switch has the same stale-sidebar problem.
     if (cachedNoteList.length > 0) {
+      // currentFolders is already this vault's real (not cached) listing by
+      // this point — openNote fetches it before controller.open() runs.
       trackSync("renderNoteList (cache)", () =>
-        renderNoteList(listEl, cachedNoteList, path, noteListHandlers, expandedFolders),
+        renderNoteList(listEl, cachedNoteList, path, noteListHandlers, expandedFolders, currentFolders),
       )
     }
     if (workspaceShown) return // already showing (e.g. this is a vault switch, not first paint)
@@ -476,10 +725,23 @@ controller = createNoteController(view, {
         row.toggleAttribute("aria-current", isActive)
       }
     } else {
-      trackSync("renderNoteList", () => renderNoteList(listEl, notes, active, noteListHandlers, expandedFolders))
+      // currentFolders (M35/FEAT-0069): refreshed on vault attach and by
+      // onFoldersChanged below, not re-fetched here — an ordinary note change
+      // never affects folder existence.
+      trackSync("renderNoteList", () =>
+        renderNoteList(listEl, notes, active, noteListHandlers, expandedFolders, currentFolders),
+      )
       cachedNoteList = notes
       void saveNoteList(currentVaultId, notes) // the fresh, authoritative list — this vault's next attach paints from it
     }
+  },
+  onFoldersChanged: (folders) => {
+    // Fired only by addFolder/removeFolder (M35/FEAT-0069) — a real folder-set
+    // change, re-rendered against the note list/active note already in hand.
+    currentFolders = folders
+    trackSync("renderNoteList", () =>
+      renderNoteList(listEl, currentNotes, currentActive, noteListHandlers, expandedFolders, currentFolders),
+    )
   },
 })
 
@@ -508,10 +770,40 @@ const switcher = mountQuickSwitcher(
   },
 )
 
+// "Move to…" destination picker (M35/FEAT-0070). Moving a note switches to it
+// first (renameActive is active-note-scoped, same constraint the header
+// rename already has); moving a folder has no such constraint.
+const movePicker = mountMovePicker({
+  backdrop: moveBackdropEl,
+  input: moveInputEl,
+  list: moveListEl,
+  error: moveErrorEl,
+})
+
+// Confirm/prompt/alert dialog (M35/FEAT-0073), replacing window.confirm/
+// prompt/alert for delete confirmation, rename/new-folder naming, and
+// move-failure feedback — the same themed/animated overlay family as the
+// switcher/palette/move picker/conflict modal above.
+const dialog = mountDialog({
+  backdrop: dialogBackdropEl,
+  dialog: dialogEl,
+  message: dialogMessageEl,
+  input: dialogInputEl,
+  cancelButton: dialogCancelButton,
+  confirmButton: dialogConfirmButton,
+})
+
+function destinationChoices(): string[] {
+  return ["", ...derivedFolderPaths(currentNotes, currentFolders)]
+}
+
 // The sidebar's visible entry point into the switcher (creation is no longer a
 // textbox), and the Ctrl/Cmd+K shortcut. The shortcut is a capture-phase listener
 // so neither CodeMirror nor the Vim layer can swallow it first (AC-9).
 sidebarSearchEl.addEventListener("click", () => switcher.open())
+// Root-level "new folder" (M35/FEAT-0069) — same prompt/create path as a
+// folder row's own "+", just with no parent (creates at the vault root).
+sidebarNewFolderEl.addEventListener("click", () => promptNewFolder(""))
 // Show the platform-correct chord in the hint (the app is meant to run on any
 // foreign machine), and match the button's tooltip to it.
 {
@@ -532,7 +824,9 @@ window.addEventListener(
       workspaceShown &&
       conflictBackdropEl.hidden && // the conflict modal must stay the only forward path
       settingsBackdropEl.hidden && // don't stack the switcher over an open settings modal
-      paletteBackdropEl.hidden // …nor over an open command palette (FEAT-0057)
+      paletteBackdropEl.hidden && // …nor over an open command palette (FEAT-0057)
+      dialogBackdropEl.hidden && // …nor over a pending confirm/prompt/alert (M35/FEAT-0073)
+      !movePicker.isOpen() // …nor over an open "Move to…" picker (M35/FEAT-0070)
     ) {
       event.preventDefault()
       switcher.open()
@@ -554,11 +848,20 @@ const openNote = async (dir: FileSystemDirectoryHandle) => {
   // freshly loaded value isn't clobbered and nothing is written to the old folder.
   loadingSettings = true
   settingsDir = dir
+  // Best-effort: empty folders (M35/FEAT-0069) are an opportunistic sidebar
+  // extra, not load-bearing for opening the vault — a transient failure here
+  // must not abort the whole open the way it would sharing a `Promise.all`
+  // (and thus a single failure path) with the settings read below. Started
+  // here, genuinely alongside the settings read rather than after it, and
+  // only awaited once that's done — a full recursive walk on a large vault
+  // otherwise doubled the wait before the workspace could reveal.
+  const foldersPromise = listFolders(dir).catch(() => [])
   try {
     currentSettings = await loadSettings(dir)
   } finally {
     loadingSettings = false
   }
+  currentFolders = await foldersPromise
   applySettings(view, currentSettings)
   refreshActionBar() // paint this folder's pinned action bar (FEAT-0058)
   settingsModal?.sync() // reflect this folder's settings if the modal is open
@@ -649,11 +952,11 @@ const attachVault = (vault: Vault): Promise<void> => {
 }
 const attachVaultNow = async (vault: Vault) => {
   // Snapshot the currently attached vault so a failed attach can fall back to it
-  // instead of leaving the window pinned to a vault it couldn't open. Includes the
-  // settings state openNote mutates (settingsDir/currentSettings) — those are applied
-  // to the editor *before* controller.open can throw, so the rollback must restore
-  // them too, or a failed switch would leave default settings applied and route the
-  // next settings write to the dead folder.
+  // instead of leaving the window pinned to a vault it couldn't open. Includes every
+  // bit of state openNote mutates before controller.open can throw — settings
+  // (settingsDir/currentSettings) and the M35 folder listing (currentFolders) — or a
+  // failed switch would leave the dead vault's settings/folder tree applied and route
+  // the next settings write, or the sidebar's folder rows, to a vault that's gone.
   const prev = {
     vaultId: currentVaultId,
     recency,
@@ -661,6 +964,7 @@ const attachVaultNow = async (vault: Vault) => {
     cachedNoteList,
     settingsDir,
     currentSettings,
+    currentFolders,
   }
   // Load the vault's session first, so a transient idb error can't leave `?ws` +
   // currentVaultId pointing at a vault we never actually opened.
@@ -683,6 +987,7 @@ const attachVaultNow = async (vault: Vault) => {
     cachedNoteList = prev.cachedNoteList
     settingsDir = prev.settingsDir
     currentSettings = prev.currentSettings
+    currentFolders = prev.currentFolders
     applySettings(view, currentSettings) // undo the dead folder's settings applied in openNote
     refreshActionBar()
     settingsModal?.sync()
@@ -878,6 +1183,8 @@ window.addEventListener(
       conflictBackdropEl.hidden &&
       switcherBackdropEl.hidden &&
       settingsBackdropEl.hidden &&
+      dialogBackdropEl.hidden && // …nor over a pending confirm/prompt/alert (M35/FEAT-0073)
+      !movePicker.isOpen() && // …nor over an open "Move to…" picker (M35/FEAT-0070)
       !palette.isOpen()
     ) {
       event.preventDefault()
@@ -904,7 +1211,14 @@ window.addEventListener(
     if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
     // Don't fire these chords behind an open modal: the conflict modal must stay the
     // only forward path, and the command palette (FEAT-0057) is modal too.
-    if (!workspaceShown || !conflictBackdropEl.hidden || !paletteBackdropEl.hidden) return
+    if (
+      !workspaceShown ||
+      !conflictBackdropEl.hidden ||
+      !paletteBackdropEl.hidden ||
+      !dialogBackdropEl.hidden ||
+      movePicker.isOpen() // …nor over an open "Move to…" picker (M35/FEAT-0070)
+    )
+      return
     if (event.code === "Semicolon") {
       event.preventDefault()
       toggleVim()

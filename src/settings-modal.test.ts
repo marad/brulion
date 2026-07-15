@@ -557,4 +557,14 @@ describe("Weekly journal field (FEAT-0062)", () => {
     expect(input.value).toBe("Journal/Week")
     expect(input.selectionStart).toBe(7)
   })
+
+  it("carries the anti-autofill attributes (FEAT-0074/AC-2)", () => {
+    const { backdrop } = mount(DEFAULT_SETTINGS)
+    const el = journalInput(backdrop)
+    expect(el.autocomplete).toBe("off")
+    expect(el.getAttribute("data-lpignore")).toBe("true")
+    expect(el.getAttribute("data-1p-ignore")).not.toBeNull()
+    expect(el.getAttribute("data-bwignore")).toBe("true")
+    expect(el.getAttribute("data-form-type")).toBe("other")
+  })
 })

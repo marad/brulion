@@ -11,12 +11,16 @@ import {
   startSweep,
   continueSweep,
   sweepResult,
+  createFolder,
+  deleteFolder,
+  listFolders,
+  isFolderEmpty,
   type NoteContent,
   type Sweep,
 } from "./note"
 import { track, trackSync, mark } from "./perf"
-import { normalizeNoteName } from "./note-name"
-import { rewriteLinksForRename, rebaseOutboundLinks } from "./link-rewrite"
+import { normalizeNoteName, normalizeFolderPath } from "./note-name"
+import { rewriteLinksForRenames, rebaseOutboundLinks } from "./link-rewrite"
 import { saveActiveNote, loadActiveNote } from "./session"
 import { debounce } from "./debounce"
 
@@ -140,6 +144,16 @@ function folderOf(path: string): string {
   return slash === -1 ? "" : path.slice(0, slash)
 }
 
+/** True when `path` is `container` itself, or a descendant of it — the shared
+ * "is this note/folder inside that folder" check `removeFolder`/`moveFolder`
+ * each need (an active-note-inside-a-deleted/moved-folder guard, and
+ * moveFolder's self/descendant refusal). Exported so the tree's drag-and-drop
+ * hint (M35/FEAT-0072) agrees with what a drop will actually do, instead of a
+ * second copy of the same rule. */
+export function isWithin(path: string, container: string): boolean {
+  return path === container || path.startsWith(container + "/")
+}
+
 /** Element-wise equality of two pre-sorted listings (see {@link listNotes}). */
 function sameNotes(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false
@@ -163,6 +177,12 @@ export interface NoteControllerOptions {
   onConflictResolved?: () => void
   /** Called whenever the note list or the active note changes. */
   onListChanged?: (notes: string[], active: string) => void
+  /** Called whenever the set of folders changes (M35/FEAT-0069/FEAT-0070) —
+   * fired only by `addFolder`/`removeFolder`/`moveFolder`. Ordinary note
+   * operations never affect folder existence, so this stays rare; the UI
+   * doesn't need to re-walk the tree's directories on every note add/delete/
+   * rename the way it would if this rode along on `onListChanged` instead. */
+  onFoldersChanged?: (folders: string[]) => void
   /**
    * Called from `open()` as soon as the *guessed* active note's content is
    * ready to show — before the full folder listing (and thus `notes`/the
@@ -185,8 +205,26 @@ export interface NoteController {
   switchTo(name: string): Promise<void>
   /** Create a note from a user-typed name and open it. Reports why it failed. */
   addNote(name: string): Promise<AddNoteResult>
-  /** Delete `name`'s file; if it was active, switch to another note. */
-  removeNote(name: string): Promise<void>
+  /** Delete `name`'s file; if it was active, switch to another note. Reports
+   * why it failed (never rejects). */
+  removeNote(name: string): Promise<AddNoteResult>
+  /** Create an empty folder from a user-typed path (M35/FEAT-0069). Reports why
+   * it failed; never touches the active note. */
+  addFolder(path: string): Promise<AddNoteResult>
+  /** Delete the folder at `path` and everything beneath it (M35/FEAT-0069); if
+   * the active note lived inside it, switch to another note the same way
+   * {@link removeNote} does. Reports why it failed (never rejects). */
+  removeFolder(path: string): Promise<AddNoteResult>
+  /**
+   * Move the folder at `fromPath` (and everything beneath it) to `toPath`
+   * (M35/FEAT-0070): every note in the subtree relocates via `moveNote`, its
+   * own outbound links rebase and inbound links from other notes follow, same
+   * as a rename — just driven once per note instead of once. Refuses (without
+   * moving anything) when `toPath` is `fromPath` itself or a descendant of
+   * it. If the active note was inside the moved folder, the editor follows
+   * it to its new path.
+   */
+  moveFolder(fromPath: string, toPath: string): Promise<AddNoteResult>
   /**
    * Rename the active note to a user-typed `name` (FEAT-0034): flush pending
    * edits, move its file via {@link moveNote}, then follow the file to its new
@@ -346,14 +384,18 @@ export function createNoteController(
     name: string,
     prefetched?: NoteContent,
   ): Promise<void> => {
+    const cached = contentCache.get(name)
+    if (cached) mark(`cache hit: ${name}`)
+    const note = cached ?? prefetched ?? (await track(`readNote: ${name}`, () => readNote(folder, name)))
+    // Nothing below commits until the read above has actually succeeded — a
+    // mid-read failure (permission revoked, a transient FS error) must leave
+    // activeName/lastModified/dirty exactly as they were, not pointing at a
+    // note whose content was never actually loaded into the editor.
     activeName = name
     if (conflict) {
       conflict = false
       opts.onConflictResolved?.()
     }
-    const cached = contentCache.get(name)
-    if (cached) mark(`cache hit: ${name}`)
-    const note = cached ?? prefetched ?? (await track(`readNote: ${name}`, () => readNote(folder, name)))
     if (!cached) contentCache.set(name, note)
     lastModified = note.lastModified
     // Skip the redraw if the buffer already shows this exact content — e.g.
@@ -436,36 +478,37 @@ export function createNoteController(
     opts.onConflict?.({ mine, theirs })
   }
 
-  // Rewrite links in *other* notes that pointed at the just-renamed note so they
-  // follow it (FEAT-0040). Runs after the move + active-note follow, inside the
-  // same serialize slot. Reads each other note, rewrites via the pure core, and
-  // writes each through saveNote's stale-write guard (the known mtime read moments
-  // earlier), so a note edited from outside between the scan and the write is
-  // skipped, never clobbered. The rewrite is silent and unconditional — a rename's
-  // links should just follow it, the way a refactor-rename does; declining would
-  // only leave the very dangling links this feature exists to prevent. The renamed
-  // note (now `to`) is excluded, so a rename never mutates its own bytes here.
-  const updateInboundLinks = async (
+  // Rewrite links in *other* notes that pointed at a just-moved note so they
+  // follow it (FEAT-0040), generalized from one move to a list (M35/FEAT-0070's
+  // moveFolder relocates many notes at once). Runs after the move(s) + active-note
+  // follow, inside the same serialize slot. Reads each other note *once* even if it
+  // links to several of the moved notes — folding every move's rewrite over the
+  // text in sequence — and writes it back through saveNote's stale-write guard (the
+  // known mtime read moments earlier), so a note edited from outside between the
+  // scan and the write is skipped, never clobbered. The rewrite is silent and
+  // unconditional — a move's links should just follow it, the way a refactor-rename
+  // does; declining would only leave the very dangling links this feature exists to
+  // prevent. Every moved note's *own* new path is excluded, so a move never mutates
+  // a moved note's own bytes here (that's `rebaseMovedNote`'s job, for outbound links).
+  const updateInboundLinksForMoves = async (
     folder: FileSystemDirectoryHandle,
-    from: string,
-    to: string,
+    moves: { from: string; to: string }[],
     pathsBefore: ReadonlySet<string>,
   ): Promise<void> => {
     const pathsAfter = new Set(notes) // the post-move listing (set by the caller)
+    const movedTo = new Set(moves.map((move) => move.to))
+    // A single map (rather than looping `moves` per note) so `rewriteLinksForRenames`
+    // parses each unmoved note's text exactly once regardless of how many files
+    // moved — a folder move relocating dozens of notes would otherwise re-parse
+    // every other note in the vault once per moved file.
+    const renames = new Map(moves.map((move) => [move.from, move.to]))
     for (const path of notes) {
-      if (path === to) continue
+      if (movedTo.has(path)) continue
       const { content, lastModified } = await readNote(folder, path)
-      const rewritten = rewriteLinksForRename({
-        text: content,
-        notePath: path,
-        oldPath: from,
-        newPath: to,
-        pathsBefore,
-        pathsAfter,
-      })
+      const rewritten = rewriteLinksForRenames(content, path, renames, pathsBefore, pathsAfter)
       // A conflict (the file changed on disk since we read it) is skipped — the
       // rewrite is dropped for that file, never overwriting an external edit.
-      if (rewritten !== null) await saveNote(folder, path, rewritten, lastModified)
+      if (rewritten !== null && rewritten !== content) await saveNote(folder, path, rewritten, lastModified)
     }
   }
 
@@ -481,10 +524,14 @@ export function createNoteController(
     folder: FileSystemDirectoryHandle,
     from: string,
     to: string,
+    // Any *other* notes moving in the same batch (M35/FEAT-0070's moveFolder) —
+    // a link to one of them must follow it to its own new path, not be rebased
+    // as if it had stayed at its pre-move location. Empty for a single rename.
+    movedTargets: ReadonlyMap<string, string> = new Map(),
   ): Promise<void> => {
     if (folderOf(from) === folderOf(to)) return // same folder — outbound links unaffected
     const { content, lastModified } = await readNote(folder, to)
-    const rebased = rebaseOutboundLinks(content, from, to)
+    const rebased = rebaseOutboundLinks(content, from, to, movedTargets)
     if (rebased !== null) await saveNote(folder, to, rebased, lastModified)
   }
 
@@ -499,6 +546,99 @@ export function createNoteController(
       () => undefined,
     )
     return run
+  }
+
+  // `serialize`, mechanically guaranteeing the `AddNoteResult` contract every
+  // caller (main.ts) relies on: a controller method never rejects, always
+  // resolving {ok:false} instead. A structural backstop only — it doesn't know
+  // which mid-operation failures are actually benign (e.g. "the move already
+  // succeeded, only the best-effort follow-up load failed"), so it never
+  // replaces a step's own specific try/catch for that nuance, only catches
+  // whatever slips past it.
+  const serializeResult = (op: () => Promise<AddNoteResult>): Promise<AddNoteResult> =>
+    serialize<AddNoteResult>(async () => {
+      try {
+        return await op()
+      } catch (err) {
+        console.error("Controller operation failed unexpectedly:", err)
+        return { ok: false, reason: "Something went wrong. Please try again." }
+      }
+    })
+
+  /**
+   * Reconcile in-memory + UI state after a disk mutation that has ALREADY
+   * succeeded: refresh `notes`, run follow-up maintenance, refresh the folder
+   * listing when the folder set changed, re-point the editor, and announce the
+   * listing. Never throws, and nothing in here may be reported as the mutation
+   * failing — that is this helper's entire contract. It exists because six
+   * review rounds (M35) each found one more hand-rolled copy of this block
+   * missing a piece; every mutating method now routes through this single
+   * chokepoint instead of maintaining its own copy.
+   *
+   * - `activateTarget`: the note the editor should now show — a path, a thunk
+   *   evaluated against the fresh listing (for `pickActiveNote`), or `null`
+   *   when the active note is untouched (just announce the listing). If
+   *   activating fails and the active path no longer exists (it vanished with
+   *   the mutation — the autosave-resurrection hazard), falls back once to
+   *   `pickActiveNote`; if even that fails, announces the accurate listing so
+   *   the sidebar never goes silently stale.
+   * - `steps`: independent best-effort follow-ups (link maintenance, the
+   *   pre-open flush) — each caught on its own so one failing doesn't skip
+   *   the next.
+   * - `foldersChanged`: the mutation changed the folder set — also refresh
+   *   the folder listing (its own best-effort step).
+   */
+  const reconcileAfterMutation = async (args: {
+    activateTarget: string | (() => string) | null
+    steps?: Array<() => Promise<void>>
+    foldersChanged?: boolean
+  }): Promise<void> => {
+    if (!dir) return
+    const folder = dir
+    try {
+      notes = await listNotes(folder)
+      for (const step of args.steps ?? []) {
+        try {
+          await step()
+        } catch (err) {
+          console.error("Post-mutation step failed (the mutation itself already succeeded):", err)
+        }
+      }
+      if (args.foldersChanged) {
+        try {
+          opts.onFoldersChanged?.(await listFolders(folder))
+        } catch (err) {
+          console.error("onFoldersChanged failed (the mutation itself already succeeded):", err)
+        }
+      }
+      const target = typeof args.activateTarget === "function" ? args.activateTarget() : args.activateTarget
+      if (target === null) {
+        opts.onListChanged?.(notes, activeName)
+        return
+      }
+      try {
+        await activate(folder, target)
+      } catch (err) {
+        console.error("activate failed after a successful mutation:", err)
+        // Only reach for a fallback note when the active path itself vanished
+        // with the mutation — reporting a vanished path as active would let
+        // the next autosave silently recreate a file there. When the active
+        // note still exists (e.g. opening a freshly created note failed), the
+        // editor simply stays where it is.
+        if (!notes.includes(activeName)) {
+          try {
+            await activate(folder, pickActiveNote(notes, null))
+            return
+          } catch {
+            // Last resort exhausted — activeName is stuck stale, but `notes`
+            // is accurate; fall through so the sidebar still hears about it.
+          }
+        }
+        opts.onListChanged?.(notes, activeName)
+      }
+    } catch (err) {
+      console.error("Post-mutation reconciliation failed (the mutation itself already succeeded):", err)
+    }
   }
 
   return {
@@ -602,6 +742,17 @@ export function createNoteController(
       abortPendingRelist() // don't make the user's switch wait behind our own background scan
       return serialize(async () => {
         if (!dir || name === activeName || conflict) return // conflict is modal
+        // The caller's own existence check (main.ts's noteStillExists) reads a
+        // UI-side snapshot that can still be stale once this is actually
+        // dequeued — e.g. a removeFolder for the same note's folder was
+        // already ahead of this in the queue. `notes` here is this
+        // controller's own authoritative listing, current as of the moment
+        // this runs (every queued operation ahead of it has already
+        // completed) — the one check that can't be raced by a same-session
+        // queue ordering, only reflecting reality slightly late for a true
+        // external change (which the existing existence-check callers
+        // already accept as this feature's known limit).
+        if (!notes.includes(name)) return
         mark(`switchTo: ${name}`)
         await track("flushAndWait", flushAndWait)
         await activate(dir, name)
@@ -609,7 +760,7 @@ export function createNoteController(
     },
     addNote(name) {
       abortPendingRelist()
-      return serialize<AddNoteResult>(async () => {
+      return serializeResult(async () => {
         if (!dir) return { ok: false, reason: "Open a folder first." }
         if (conflict) return { ok: false, reason: "Resolve the conflict first." }
         const normalized = normalizeNoteName(name)
@@ -618,16 +769,20 @@ export function createNoteController(
         if (created.status === "exists") {
           return { ok: false, reason: "A note with that name already exists." }
         }
-        notes = await listNotes(dir)
-        await flushAndWait() // flush the open note before opening the new one
-        await activate(dir, normalized.filename)
+        // The note is already created on disk — nothing below may read back
+        // as a create failure (reconcileAfterMutation guarantees that).
+        await reconcileAfterMutation({
+          activateTarget: normalized.filename,
+          steps: [flushAndWait], // flush the open note before opening the new one
+        })
         return { ok: true }
       })
     },
     removeNote(name) {
       abortPendingRelist()
-      return serialize(async () => {
-        if (!dir || conflict) return // conflict is modal — resolve it first
+      return serializeResult(async () => {
+        if (!dir) return { ok: false, reason: "Open a folder first." }
+        if (conflict) return { ok: false, reason: "Resolve the conflict first." }
         // Drop the deleted note's unsaved edits so the flush below won't write
         // them back. Then await flushAndWait regardless: it settles any save
         // already in flight (which would otherwise complete and re-create the
@@ -636,70 +791,283 @@ export function createNoteController(
         // already mid-flight.
         if (name === activeName) dirty = false
         await flushAndWait()
+        // A flush of the note being deleted can surface a conflict (the
+        // stale-write guard, raised only against the active note) — refuse
+        // rather than silently discarding the externally-edited content the
+        // conflict modal was about to let the user review (same check
+        // renameActive/moveFolder already do after their own flush).
+        if (name === activeName && conflict) {
+          return { ok: false, reason: "Resolve the conflict first." }
+        }
+        const wasActive = name === activeName
         await deleteNote(dir, name)
         contentCache.delete(name)
-        notes = await listNotes(dir)
-        if (name === activeName) {
-          await activate(dir, pickActiveNote(notes, null))
-        } else {
-          opts.onListChanged?.(notes, activeName)
+        // The note is already deleted on disk — nothing below may read back
+        // as a delete failure (reconcileAfterMutation guarantees that).
+        await reconcileAfterMutation({
+          // The thunk runs after the relist, against the fresh listing.
+          activateTarget: wasActive ? () => pickActiveNote(notes, null) : null,
+        })
+        return { ok: true }
+      })
+    },
+    addFolder(path) {
+      abortPendingRelist()
+      return serializeResult(async () => {
+        if (!dir) return { ok: false, reason: "Open a folder first." }
+        if (conflict) return { ok: false, reason: "Resolve the conflict first." }
+        const normalized = normalizeFolderPath(path)
+        if (!normalized.ok) return { ok: false, reason: normalized.reason }
+        const created = await createFolder(dir, normalized.path)
+        if (created.status === "exists") {
+          return { ok: false, reason: "A folder with that name already exists." }
+        }
+        // An empty folder adds no `.md` file — nothing for onListChanged to
+        // announce (AC-1 asserts it does NOT fire) — so addFolder deliberately
+        // does NOT route through reconcileAfterMutation; its one follow-up is
+        // this dedicated notification with the fresh folder listing. The
+        // folder is already created on disk at this point, so a failure
+        // re-listing it isn't a create failure (same contract as the helper).
+        try {
+          opts.onFoldersChanged?.(await listFolders(dir))
+        } catch (err) {
+          console.error("addFolder: onFoldersChanged failed after a successful create:", err)
+        }
+        return { ok: true }
+      })
+    },
+    removeFolder(path) {
+      abortPendingRelist()
+      return serializeResult(async () => {
+        if (!dir) return { ok: false, reason: "Open a folder first." }
+        if (conflict) return { ok: false, reason: "Resolve the conflict first." }
+        const activeInsideFolder = isWithin(activeName, path)
+        // Same reasoning as removeNote: drop the active note's unsaved edits
+        // before it's yanked out from under an in-flight save, then flush to
+        // settle anything already mid-write before we delete.
+        if (activeInsideFolder) dirty = false
+        await flushAndWait()
+        // Same check as removeNote above: a flush of the active note (when
+        // it lives inside the folder being deleted) can surface a conflict —
+        // refuse rather than silently discarding the externally-edited
+        // content the conflict modal was about to let the user review.
+        if (activeInsideFolder && conflict) {
+          return { ok: false, reason: "Resolve the conflict first." }
+        }
+        await deleteFolder(dir, path)
+        for (const key of contentCache.keys()) {
+          if (key.startsWith(path + "/")) contentCache.delete(key)
+        }
+        // The folder (and everything beneath it) is already deleted on disk —
+        // nothing below may read back as a delete failure
+        // (reconcileAfterMutation guarantees that).
+        await reconcileAfterMutation({
+          activateTarget: activeInsideFolder ? () => pickActiveNote(notes, null) : null,
+          foldersChanged: true,
+        })
+        return { ok: true }
+      })
+    },
+    moveFolder(fromPath, toPath) {
+      abortPendingRelist()
+      return serializeResult(async () => {
+        if (!dir) return { ok: false, reason: "Open a folder first." }
+        if (conflict) return { ok: false, reason: "Resolve the conflict first." }
+        const folder = dir // non-null capture for the reconcile step's closure
+        const normalized = normalizeFolderPath(toPath)
+        if (!normalized.ok) return { ok: false, reason: normalized.reason }
+        toPath = normalized.path
+        if (isWithin(toPath, fromPath)) {
+          return { ok: false, reason: "Can't move a folder into itself or one of its own subfolders." }
+        }
+
+        // Everything below is many sequential file-system calls, starting
+        // with the active-note flush; an unexpected mid-way failure
+        // (permission revoked, a transient FS error) must resolve
+        // {ok:false}, not reject — every other caller in this codebase
+        // already assumes a controller method never throws, and an
+        // uncaught rejection here would otherwise surface nowhere (main.ts's
+        // onMoveFolder/onDropFolder have no .catch()), leaving the vault
+        // silently half-migrated with no error shown at all.
+        try {
+          // A flush can reassign `notes` (a not-yet-listed active note gets
+          // written and its fresh listing picked up) — done *before*
+          // snapshotting below, so that snapshot never goes stale the moment
+          // it's taken.
+          const activeInsideFolder = isWithin(activeName, fromPath)
+          if (activeInsideFolder) {
+            await flushAndWait()
+            if (conflict) return { ok: false, reason: "Resolve the conflict first." }
+          }
+
+          const pathsBefore = new Set(notes)
+          const toMove = notes.filter((path) => path.startsWith(fromPath + "/"))
+          // One walk answers both "does fromPath still exist at all" (a stale
+          // row — e.g. deleted or already moved elsewhere — must refuse rather
+          // than silently fabricating an empty folder at the destination) and,
+          // reused below, "which subfolders need to follow." `toMove` alone
+          // isn't enough: a folder with only empty subfolders and no files
+          // would otherwise look identical to one that never existed.
+          const allFolders = await listFolders(dir)
+          const folderExists =
+            toMove.length > 0 || allFolders.includes(fromPath) || allFolders.some((p) => p.startsWith(fromPath + "/"))
+          if (!folderExists) return { ok: false, reason: "That folder no longer exists." }
+
+          const moves: { from: string; to: string }[] = []
+          let newActiveName: string | null = null
+          // A note (possibly the active one) can already be relocated by the
+          // time a LATER step here fails (subfolder cleanup, the final
+          // createFolder/deleteFolder) — that must still be reconciled below
+          // (activate/relist/notify) even though the move as a whole is about
+          // to be reported as failed, so this inner try only decides *what*
+          // to report; it doesn't skip the reconciliation the way letting it
+          // propagate to the outer catch would.
+          let mutationError: unknown = null
+          try {
+            for (const oldPath of toMove) {
+              const newPath = toPath + oldPath.slice(fromPath.length)
+              const moveResult = await moveNote(dir, oldPath, newPath)
+              if (moveResult.status !== "moved") continue // occupied/missing — leave this one where it is
+              contentCache.delete(oldPath)
+              moves.push({ from: oldPath, to: newPath })
+              if (oldPath === activeName) newActiveName = newPath
+            }
+
+            // Rebase each moved note's own outbound links only once the
+            // *whole* batch is known — a link to a sibling that also moved
+            // must follow it to its own new path, not be rebased as if that
+            // sibling had stayed put (a real bug caught by the e2e suite:
+            // doing this inline in the loop above, one file at a time, meant
+            // later siblings' destinations weren't known yet when an earlier
+            // file's own links were rebased).
+            const movedTargets = new Map(moves.map((move) => [move.from, move.to]))
+            for (const { from, to } of moves) {
+              try {
+                await rebaseMovedNote(dir, from, to, movedTargets)
+              } catch {
+                // leave this note's own outbound links as-is rather than failing the move
+              }
+            }
+
+            // Candidate subfolders that never move on their own (nothing in
+            // the loop above touches a folder with no notes of its own) —
+            // deepest paths first so a parent's own emptiness check sees an
+            // already-resolved child, and so a skipped file two levels down
+            // correctly keeps every ancestor above it from being deleted too.
+            // Reuses the `allFolders` walk from the existence check above —
+            // the note-move loop only relocates files, never touches
+            // directory entries, so that snapshot is still accurate.
+            const candidateSubfolders = allFolders
+              .filter((path) => path.startsWith(fromPath + "/"))
+              .sort((a, b) => b.length - a.length)
+            for (const folder of candidateSubfolders) {
+              // An occupied-destination skip (AC-9) can leave a note behind
+              // in here — verify it's actually empty before recursively
+              // deleting it, never assume so just because we moved
+              // everything we knew about.
+              if (!(await isFolderEmpty(dir, folder))) continue
+              await createFolder(dir, toPath + folder.slice(fromPath.length))
+              await deleteFolder(dir, folder)
+            }
+            // The folder itself is moving — unlike an incidentally emptied
+            // folder (M35/FEAT-0069), it never lingers at the old path once
+            // relocated — but only once it's genuinely empty; a skipped file
+            // must not be destroyed by an unconditional recursive delete of
+            // the source.
+            await createFolder(dir, toPath)
+            if (await isFolderEmpty(dir, fromPath)) await deleteFolder(dir, fromPath)
+          } catch (err) {
+            mutationError = err
+          }
+
+          // Reconcile regardless of whether the block above fully succeeded —
+          // even a failed move can have already relocated the active note
+          // itself, and whichever notes did relocate must reach the sidebar
+          // and the editor either way.
+          await reconcileAfterMutation({
+            activateTarget: newActiveName,
+            foldersChanged: true,
+            steps: [() => updateInboundLinksForMoves(folder, moves, pathsBefore)],
+          })
+
+          if (mutationError) {
+            console.error("moveFolder failed partway through:", mutationError)
+            return {
+              ok: false,
+              reason: "Something went wrong moving the folder. Some files may have already moved.",
+            }
+          }
+          return { ok: true }
+        } catch (err) {
+          console.error("moveFolder failed partway through:", err)
+          return { ok: false, reason: "Something went wrong moving the folder. Some files may have already moved." }
         }
       })
     },
     renameActive(name) {
       abortPendingRelist()
-      return serialize<AddNoteResult>(async () => {
+      return serializeResult(async () => {
         if (!dir) return { ok: false, reason: "Open a folder first." }
         if (conflict) return { ok: false, reason: "Resolve the conflict first." }
         const normalized = normalizeNoteName(name)
         if (!normalized.ok) return { ok: false, reason: normalized.reason }
         if (normalized.filename === activeName) return { ok: true } // no-op rename
 
-        // Flush the open note before moving so its file carries the latest edits.
-        // A flush can surface a conflict (the stale-write guard); if so, refuse.
-        await flushAndWait()
-        if (conflict) return { ok: false, reason: "Resolve the conflict first." }
+        // An unexpected mid-way failure (permission revoked, a transient FS
+        // error) must resolve {ok:false}, not reject — every caller in this
+        // codebase assumes a controller method never throws (the same reason
+        // moveFolder got this same guard), and an uncaught rejection here
+        // would otherwise surface nowhere (none of main.ts's callers attach a
+        // .catch()), leaving the UI stuck with no error shown at all.
+        try {
+          // Flush the open note before moving so its file carries the latest
+          // edits. A flush can surface a conflict (the stale-write guard); if
+          // so, refuse.
+          await flushAndWait()
+          if (conflict) return { ok: false, reason: "Resolve the conflict first." }
 
-        const from = activeName
-        const result = await moveNote(dir, from, normalized.filename)
-        if (result.status === "missing") {
-          // `lastModified === null` means this note was never written to disk (a
-          // lazy seed nobody has typed into yet) — so there is no file to move.
-          // Say that, rather than the misleading "no longer exists" that fits the
-          // other case (a file we did have, now gone from disk).
-          return {
-            ok: false,
-            reason:
-              lastModified === null
-                ? "Type something into this note before renaming it — it hasn't been saved yet."
-                : "The note no longer exists.",
+          const from = activeName
+          const result = await moveNote(dir, from, normalized.filename)
+          if (result.status === "missing") {
+            // `lastModified === null` means this note was never written to disk (a
+            // lazy seed nobody has typed into yet) — so there is no file to move.
+            // Say that, rather than the misleading "no longer exists" that fits the
+            // other case (a file we did have, now gone from disk).
+            return {
+              ok: false,
+              reason:
+                lastModified === null
+                  ? "Type something into this note before renaming it — it hasn't been saved yet."
+                  : "The note no longer exists.",
+            }
           }
+          if (result.status === "exists") {
+            return { ok: false, reason: "A note with that name already exists." }
+          }
+          // Follow the file: refresh the list, then re-point the editor at the new
+          // path. `activate` → `load` re-reads it (adopting the new lastModified),
+          // persists it as active, and announces so the UI tracks the new identity.
+          const pathsBefore = new Set(notes) // pre-move listing — still names `from`
+          contentCache.delete(from)
+          const folder = dir // non-null capture for the reconcile steps' closures
+          // The file is already renamed on disk — nothing below may read back
+          // as a rename failure (reconcileAfterMutation guarantees that).
+          // Both link passes (FEAT-0040/0041) are best-effort follow-ups: a
+          // failure leaves the affected links as they were (dangling), which
+          // the existing missing-target handling covers. The rebase runs
+          // before activate so the editor loads the rebased content.
+          await reconcileAfterMutation({
+            activateTarget: normalized.filename,
+            steps: [
+              () => rebaseMovedNote(folder, from, normalized.filename),
+              () => updateInboundLinksForMoves(folder, [{ from, to: normalized.filename }], pathsBefore),
+            ],
+          })
+          return { ok: true }
+        } catch (err) {
+          console.error("renameActive failed partway through:", err)
+          return { ok: false, reason: "Something went wrong renaming the note. It may have already moved on disk." }
         }
-        if (result.status === "exists") {
-          return { ok: false, reason: "A note with that name already exists." }
-        }
-        // Follow the file: refresh the list, then re-point the editor at the new
-        // path. `activate` → `load` re-reads it (adopting the new lastModified),
-        // persists it as active, and announces so the UI tracks the new identity.
-        const pathsBefore = new Set(notes) // pre-move listing — still names `from`
-        contentCache.delete(from)
-        notes = await listNotes(dir)
-        // Follow-on link maintenance (FEAT-0040/0041). Both passes are best-effort:
-        // the move already succeeded, so a failure here (an I/O error part-way) must
-        // not report the rename as failed — the affected links simply stay as they
-        // were (dangling), which the existing missing-target handling covers.
-        try {
-          await rebaseMovedNote(dir, from, normalized.filename) // before activate: editor loads the rebased content
-        } catch {
-          // leave the moved note's own outbound links as-is rather than failing
-        }
-        await activate(dir, normalized.filename)
-        try {
-          await updateInboundLinks(dir, from, normalized.filename, pathsBefore)
-        } catch {
-          // leave inbound links as-is rather than failing the rename
-        }
-        return { ok: true }
       })
     },
     handleChange() {
