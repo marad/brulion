@@ -733,8 +733,20 @@ export function createNoteController(
       return serialize<AddNoteResult>(async () => {
         if (!dir) return { ok: false, reason: "Open a folder first." }
         if (conflict) return { ok: false, reason: "Resolve the conflict first." }
+        const normalized = normalizeFolderPath(toPath)
+        if (!normalized.ok) return { ok: false, reason: normalized.reason }
+        toPath = normalized.path
         if (isWithin(toPath, fromPath)) {
           return { ok: false, reason: "Can't move a folder into itself or one of its own subfolders." }
+        }
+
+        // A flush can reassign `notes` (a not-yet-listed active note gets
+        // written and its fresh listing picked up) — done *before* snapshotting
+        // below, so that snapshot never goes stale the moment it's taken.
+        const activeInsideFolder = isWithin(activeName, fromPath)
+        if (activeInsideFolder) {
+          await flushAndWait()
+          if (conflict) return { ok: false, reason: "Resolve the conflict first." }
         }
 
         const pathsBefore = new Set(notes)
@@ -749,12 +761,6 @@ export function createNoteController(
         const folderExists =
           toMove.length > 0 || allFolders.includes(fromPath) || allFolders.some((p) => p.startsWith(fromPath + "/"))
         if (!folderExists) return { ok: false, reason: "That folder no longer exists." }
-
-        const activeInsideFolder = isWithin(activeName, fromPath)
-        if (activeInsideFolder) {
-          await flushAndWait()
-          if (conflict) return { ok: false, reason: "Resolve the conflict first." }
-        }
 
         const moves: { from: string; to: string }[] = []
         let newActiveName: string | null = null

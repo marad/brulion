@@ -803,6 +803,15 @@ describe("moveFolder (FEAT-0070)", () => {
     expect(moveNote).not.toHaveBeenCalled()
   })
 
+  it("refuses an invalid destination path rather than sending it straight to the file system", async () => {
+    const { controller } = await open("start.md", ["start.md", "projects/a.md"])
+
+    const result = await controller.moveFolder("projects", "../escape")
+
+    expect(result.ok).toBe(false)
+    expect(moveNote).not.toHaveBeenCalled()
+  })
+
   it("refuses moving a folder into its own descendant (AC-5)", async () => {
     const { controller } = await open("start.md", ["start.md"])
 
