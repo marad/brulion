@@ -116,6 +116,31 @@ describe("wireLongPress", () => {
     expect(onLongPress).not.toHaveBeenCalled()
   })
 
+  it("a fired flag from an earlier long-press doesn't leak into a gesture that bails out on two fingers", () => {
+    const onLongPress = vi.fn()
+    wireLongPress(el, onLongPress)
+
+    // First gesture: a real long-press fires and consumes its own touchend.
+    el.dispatchEvent(touchEvent("touchstart", [{ clientX: 10, clientY: 20 }]))
+    vi.advanceTimersByTime(500)
+    el.dispatchEvent(touchEvent("touchend", []))
+
+    // Second gesture starts as a two-finger touch (bails out early in
+    // touchstart, never re-arming `fired`) — its touchend is an ordinary
+    // tap and must not be suppressed by the stale flag from the first.
+    el.dispatchEvent(
+      touchEvent("touchstart", [
+        { clientX: 10, clientY: 20 },
+        { clientX: 50, clientY: 60 },
+      ]),
+    )
+    const endEvent = touchEvent("touchend", [])
+    const preventDefault = vi.spyOn(endEvent, "preventDefault")
+    el.dispatchEvent(endEvent)
+
+    expect(preventDefault).not.toHaveBeenCalled()
+  })
+
   it("touchcancel cancels a pending press", () => {
     const onLongPress = vi.fn()
     wireLongPress(el, onLongPress)

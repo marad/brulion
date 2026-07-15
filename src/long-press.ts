@@ -33,10 +33,10 @@ export function wireLongPress(
   el.addEventListener("touchstart", (event) => {
     const touches = (event as unknown as { touches: ArrayLike<{ clientX: number; clientY: number }> }).touches
     cancel()
+    fired = false // every new touch starts a fresh gesture, even one that bails out below
     if (touches.length !== 1) return // a pinch/second finger is never a long-press
     startX = touches[0].clientX
     startY = touches[0].clientY
-    fired = false
     timer = setTimeout(() => {
       fired = true
       onLongPress(startX, startY)
