@@ -38,6 +38,14 @@ touch point past a small tolerance, or lifting early, cancels the press
 without opening anything; a completed long-press does not also trigger the
 row's normal tap action (select a note / toggle a folder).
 
+Deferred at first ship, reconsidered after review: a keyboard-only user had
+no path in at all (right-click needs a mouse, long-press needs touch). The
+standard keyboard-invoked context-menu shortcut — Shift+F10, or a keyboard's
+dedicated "Menu"/"ContextMenu" key — opens the same menu for whichever row
+currently has focus (a folder header is itself focusable; a note row's
+keydown bubbles up from its focusable name button), positioned at that row's
+own location rather than a click point.
+
 ## Constraints
 
 - One right-click (or long-press) always opens exactly the menu for that
@@ -54,8 +62,6 @@ row's normal tap action (select a note / toggle a folder).
 
 ## Out of scope
 
-- A keyboard-only way to open the menu (e.g. a "Menu"/Shift+F10 key) —
-  deferred; mouse right-click and touch long-press are the two paths in.
 - A context menu for the tree root / empty sidebar space (creating a
   root-level folder stays the existing header button).
 - Submenus, icons, or any styling beyond the existing editor context menu's
@@ -100,3 +106,10 @@ When the user moves it past the tolerance, or lifts it, before the
 long-press threshold elapses,
 Then no menu opens, and a lift before the threshold behaves as an ordinary
 tap (select the note / toggle the folder).
+
+**AC-7** — A keyboard-only user can open the menu too.
+Given a note or folder row (or, for a note, its focusable name button)
+has keyboard focus,
+When the user presses Shift+F10 or the keyboard's dedicated "Menu"/
+"ContextMenu" key,
+Then the same menu for that row's kind opens, positioned at the row.
