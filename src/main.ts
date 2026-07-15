@@ -451,13 +451,13 @@ const noteListHandlers = {
     // Same active-note constraint as onMoveNote above.
     void controller.switchTo(path).then(() =>
       moveNoteTo(path, destination).then((result) => {
-        if (!result.ok) void dialog.alert(result.reason ?? "Could not move it there.")
+        if (!result.ok) void dialog.alert(result.reason)
       }),
     )
   },
   onDropFolder: (path: string, destination: string) => {
     void moveFolderTo(path, destination).then((result) => {
-      if (!result.ok) void dialog.alert(result.reason ?? "Could not move it there.")
+      if (!result.ok) void dialog.alert(result.reason)
     })
   },
 }
@@ -492,7 +492,7 @@ function promptNewFolder(parentPath: string): void {
     if (!name) return // dismissed or empty — no-op
     const path = parentPath ? `${parentPath}/${name}` : name
     void controller.addFolder(path).then((result) => {
-      if (!result.ok) void dialog.alert(result.reason ?? "Could not create it.")
+      if (!result.ok) void dialog.alert(result.reason)
     })
   })
 }
@@ -512,7 +512,7 @@ function promptRenameTo(
     const parent = parentOf(path)
     const target = parent ? `${parent}/${name}` : name
     void rename(target).then((result) => {
-      if (!result.ok) void dialog.alert(result.reason ?? "Could not rename it.")
+      if (!result.ok) void dialog.alert(result.reason)
     })
   })
 }
@@ -715,7 +715,8 @@ window.addEventListener(
       workspaceShown &&
       conflictBackdropEl.hidden && // the conflict modal must stay the only forward path
       settingsBackdropEl.hidden && // don't stack the switcher over an open settings modal
-      paletteBackdropEl.hidden // …nor over an open command palette (FEAT-0057)
+      paletteBackdropEl.hidden && // …nor over an open command palette (FEAT-0057)
+      dialogBackdropEl.hidden // …nor over a pending confirm/prompt/alert (M35/FEAT-0073)
     ) {
       event.preventDefault()
       switcher.open()
@@ -1071,6 +1072,7 @@ window.addEventListener(
       conflictBackdropEl.hidden &&
       switcherBackdropEl.hidden &&
       settingsBackdropEl.hidden &&
+      dialogBackdropEl.hidden && // …nor over a pending confirm/prompt/alert (M35/FEAT-0073)
       !palette.isOpen()
     ) {
       event.preventDefault()
@@ -1097,7 +1099,7 @@ window.addEventListener(
     if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
     // Don't fire these chords behind an open modal: the conflict modal must stay the
     // only forward path, and the command palette (FEAT-0057) is modal too.
-    if (!workspaceShown || !conflictBackdropEl.hidden || !paletteBackdropEl.hidden) return
+    if (!workspaceShown || !conflictBackdropEl.hidden || !paletteBackdropEl.hidden || !dialogBackdropEl.hidden) return
     if (event.code === "Semicolon") {
       event.preventDefault()
       toggleVim()

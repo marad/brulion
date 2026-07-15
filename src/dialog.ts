@@ -39,11 +39,13 @@ export function mountDialog(els: DialogElements): Dialog {
   let open = false
   let restoreFocus: HTMLElement | null = null
   let resolveCurrent: ((value: string | null) => void) | null = null
+  /** Serializes calls: a `show()` that arrives while one is already open
+   * waits its turn instead of superseding the pending one — otherwise an
+   * unrelated async flow (e.g. a background move failing) could silently
+   * cancel a confirm/prompt the user hasn't answered yet (M35/FEAT-0073
+   * review fix). */
+  let queue: Promise<void> = Promise.resolve()
 
-  /** Close and resolve whatever call is pending. A no-op if none is open —
-   * `show` below always calls this first, so a second `show()` while one is
-   * already open resolves the superseded call with `value` rather than
-   * leaving its promise dangling. */
   function close(value: string | null): void {
     if (!open) return
     open = false
@@ -55,8 +57,7 @@ export function mountDialog(els: DialogElements): Dialog {
     resolve?.(value)
   }
 
-  function show(mode: Mode, text: string, initialValue: string, confirmLabel: string): Promise<string | null> {
-    close(null)
+  function openNow(mode: Mode, text: string, initialValue: string, confirmLabel: string): Promise<string | null> {
     open = true
     message.textContent = text
     input.hidden = mode !== "prompt"
@@ -74,6 +75,19 @@ export function mountDialog(els: DialogElements): Dialog {
     return new Promise((resolve) => {
       resolveCurrent = resolve
     })
+  }
+
+  /** Opens right away if nothing is showing; otherwise queues behind
+   * whatever's already open so it appears only once that's been answered. */
+  function show(mode: Mode, text: string, initialValue: string, confirmLabel: string): Promise<string | null> {
+    const result = open
+      ? queue.then(() => openNow(mode, text, initialValue, confirmLabel))
+      : openNow(mode, text, initialValue, confirmLabel)
+    queue = result.then(
+      () => undefined,
+      () => undefined,
+    )
+    return result
   }
 
   function onConfirmClick(): void {

@@ -154,15 +154,24 @@ describe("mountDialog focus restore and superseding (FEAT-0073)", () => {
     expect(document.activeElement).toBe(trigger)
   })
 
-  it("a second open() resolves the first call's promise instead of leaving it dangling", async () => {
+  it("queues a second open() until the first is answered, instead of cancelling it", async () => {
     const els = elements()
     const dialog = mountDialog(els)
 
     const first = dialog.confirm("First?")
     const second = dialog.confirm("Second?")
-    els.confirmButton.click()
 
-    expect(await first).toBe(false)
+    // The second call hasn't opened yet — the first is still showing, unanswered.
+    expect(els.message.textContent).toBe("First?")
+
+    els.confirmButton.click()
+    expect(await first).toBe(true)
+
+    // Let the queue advance to the second call.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(els.message.textContent).toBe("Second?")
+
+    els.confirmButton.click()
     expect(await second).toBe(true)
   })
 })
