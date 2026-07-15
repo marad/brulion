@@ -798,15 +798,25 @@ export function createNoteController(
           // here — verify it's actually empty before recursively deleting it,
           // never assume so just because we moved everything we knew about.
           if (!(await isFolderEmpty(dir, folder))) continue
-          await createFolder(dir, toPath + folder.slice(fromPath.length))
+          // A like-named file (or folder) can block the destination the same
+          // way it blocks a note — createFolder reports that as `"exists"`
+          // rather than throwing. Deleting the source unconditionally here
+          // would lose this subfolder outright (recreated nowhere); leave it
+          // where it is instead, same as a skipped note.
+          const created = await createFolder(dir, toPath + folder.slice(fromPath.length))
+          if (created.status !== "created") continue
           await deleteFolder(dir, folder)
         }
         // The folder itself is moving — unlike an incidentally emptied folder
         // (M35/FEAT-0069), it never lingers at the old path once relocated —
-        // but only once it's genuinely empty; a skipped file must not be
-        // destroyed by an unconditional recursive delete of the source.
-        await createFolder(dir, toPath)
-        if (await isFolderEmpty(dir, fromPath)) await deleteFolder(dir, fromPath)
+        // but only once it's genuinely empty (a skipped file must not be
+        // destroyed by an unconditional recursive delete of the source) and
+        // only once the destination was actually created (an occupied
+        // destination must not delete the only copy that exists).
+        const topCreated = await createFolder(dir, toPath)
+        if (topCreated.status === "created" && (await isFolderEmpty(dir, fromPath))) {
+          await deleteFolder(dir, fromPath)
+        }
 
         notes = await listNotes(dir)
         try {
