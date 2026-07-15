@@ -1166,6 +1166,23 @@ describe("moveFolder (FEAT-0070)", () => {
     expect(moveNote).toHaveBeenCalledWith(DIR, "projects/a.md", "archive/projects/a.md")
   })
 
+  it("still activates the relocated active note even when the trailing folder cleanup fails", async () => {
+    // The active note's own moveNote already succeeded here — a failure in
+    // the trailing createFolder(toPath)/deleteFolder(fromPath) cleanup is a
+    // reported move failure overall, but must not skip following the editor
+    // to the note that DID already relocate (round 19: previously this left
+    // activeName dangling at the vanished pre-move path).
+    const { view, controller } = await open("projects/a.md", ["projects/a.md"])
+    listNotes.mockResolvedValue(["archive/projects/a.md"])
+    createFolder.mockRejectedValueOnce(new Error("boom")) // the final createFolder(dir, toPath)
+
+    const result = await controller.moveFolder("projects", "archive/projects")
+
+    expect(result.ok).toBe(false)
+    expect(moveNote).toHaveBeenCalledWith(DIR, "projects/a.md", "archive/projects/a.md")
+    expect(view.state.doc.toString()).toBe("archive/projects/a.md body")
+  })
+
   it("resolves {ok:false} instead of rejecting when the active-note flush throws", async () => {
     const { view, controller } = await open("projects/a.md", ["projects/a.md"])
     type(view, " edited")

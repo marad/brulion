@@ -2887,3 +2887,29 @@ finds yet another instance of this exact shape, that's a signal the fix
 belongs at a more structural level (e.g. a shared helper that every method's
 post-mutation block routes through) rather than another one-off local
 try/catch.
+
+**Round-19 follow-up:** it found exactly that fifth instance, predicted
+above — `moveFolder`'s own leftover-folder cleanup (the `candidateSubfolders`
+loop, and the trailing `createFolder(toPath)`/`deleteFolder(fromPath)`) sat
+between the note-move loop and the round-18-protected post-move block,
+itself unprotected. Since the active note's own `moveNote` call can have
+already succeeded by the time this later cleanup step throws, a failure
+there fell to the outer catch *without ever reconciling `activeName`* —
+`newActiveName` was set but `activate()` never ran, leaving `activeName`
+dangling at the vanished pre-move path exactly like every earlier round's
+fix was meant to prevent. Rather than adding a sixth one-off try/catch,
+this was fixed by restructuring `moveFolder`: the note-move loop, link
+rebase, and folder cleanup now run inside their own inner try, catching into
+a `mutationError` variable instead of propagating — so the post-move
+reconciliation block (relist, link maintenance, notify, activate/fallback)
+*always* runs afterward regardless of whether that inner block fully
+succeeded, and only then is the overall `{ok:true}`/`{ok:false}` decided.
+`renameActive` was checked for the same gap and doesn't have it — its single
+`moveNote` call has nothing risky between it and the protected block.
+
+This did NOT turn out to need the generic "shared post-mutation helper"
+flagged as the fallback plan above — the actual fix was narrower (reconcile
+unconditionally after a method's own try, not a cross-cutting wrapper).
+Kept the escalation note for future rounds: a *sixth* instance of this
+pattern, in a method that structural fix doesn't already cover, would be the
+real signal to build that shared helper.

@@ -886,60 +886,76 @@ export function createNoteController(
 
           const moves: { from: string; to: string }[] = []
           let newActiveName: string | null = null
-          for (const oldPath of toMove) {
-            const newPath = toPath + oldPath.slice(fromPath.length)
-            const result = await moveNote(dir, oldPath, newPath)
-            if (result.status !== "moved") continue // occupied/missing — leave this one where it is
-            contentCache.delete(oldPath)
-            moves.push({ from: oldPath, to: newPath })
-            if (oldPath === activeName) newActiveName = newPath
-          }
-
-          // Rebase each moved note's own outbound links only once the *whole*
-          // batch is known — a link to a sibling that also moved must follow it
-          // to its own new path, not be rebased as if that sibling had stayed put
-          // (a real bug caught by the e2e suite: doing this inline in the loop
-          // above, one file at a time, meant later siblings' destinations weren't
-          // known yet when an earlier file's own links were rebased).
-          const movedTargets = new Map(moves.map((move) => [move.from, move.to]))
-          for (const { from, to } of moves) {
-            try {
-              await rebaseMovedNote(dir, from, to, movedTargets)
-            } catch {
-              // leave this note's own outbound links as-is rather than failing the move
+          // A note (possibly the active one) can already be relocated by the
+          // time a LATER step here fails (subfolder cleanup, the final
+          // createFolder/deleteFolder) — that must still be reconciled below
+          // (activate/relist/notify) even though the move as a whole is about
+          // to be reported as failed, so this inner try only decides *what*
+          // to report; it doesn't skip the reconciliation the way letting it
+          // propagate to the outer catch would.
+          let mutationError: unknown = null
+          try {
+            for (const oldPath of toMove) {
+              const newPath = toPath + oldPath.slice(fromPath.length)
+              const moveResult = await moveNote(dir, oldPath, newPath)
+              if (moveResult.status !== "moved") continue // occupied/missing — leave this one where it is
+              contentCache.delete(oldPath)
+              moves.push({ from: oldPath, to: newPath })
+              if (oldPath === activeName) newActiveName = newPath
             }
+
+            // Rebase each moved note's own outbound links only once the
+            // *whole* batch is known — a link to a sibling that also moved
+            // must follow it to its own new path, not be rebased as if that
+            // sibling had stayed put (a real bug caught by the e2e suite:
+            // doing this inline in the loop above, one file at a time, meant
+            // later siblings' destinations weren't known yet when an earlier
+            // file's own links were rebased).
+            const movedTargets = new Map(moves.map((move) => [move.from, move.to]))
+            for (const { from, to } of moves) {
+              try {
+                await rebaseMovedNote(dir, from, to, movedTargets)
+              } catch {
+                // leave this note's own outbound links as-is rather than failing the move
+              }
+            }
+
+            // Candidate subfolders that never move on their own (nothing in
+            // the loop above touches a folder with no notes of its own) —
+            // deepest paths first so a parent's own emptiness check sees an
+            // already-resolved child, and so a skipped file two levels down
+            // correctly keeps every ancestor above it from being deleted too.
+            // Reuses the `allFolders` walk from the existence check above —
+            // the note-move loop only relocates files, never touches
+            // directory entries, so that snapshot is still accurate.
+            const candidateSubfolders = allFolders
+              .filter((path) => path.startsWith(fromPath + "/"))
+              .sort((a, b) => b.length - a.length)
+            for (const folder of candidateSubfolders) {
+              // An occupied-destination skip (AC-9) can leave a note behind
+              // in here — verify it's actually empty before recursively
+              // deleting it, never assume so just because we moved
+              // everything we knew about.
+              if (!(await isFolderEmpty(dir, folder))) continue
+              await createFolder(dir, toPath + folder.slice(fromPath.length))
+              await deleteFolder(dir, folder)
+            }
+            // The folder itself is moving — unlike an incidentally emptied
+            // folder (M35/FEAT-0069), it never lingers at the old path once
+            // relocated — but only once it's genuinely empty; a skipped file
+            // must not be destroyed by an unconditional recursive delete of
+            // the source.
+            await createFolder(dir, toPath)
+            if (await isFolderEmpty(dir, fromPath)) await deleteFolder(dir, fromPath)
+          } catch (err) {
+            mutationError = err
           }
 
-          // Candidate subfolders that never move on their own (nothing in the
-          // loop above touches a folder with no notes of its own) — deepest
-          // paths first so a parent's own emptiness check sees an already-
-          // resolved child, and so a skipped file two levels down correctly
-          // keeps every ancestor above it from being deleted too. Reuses the
-          // `allFolders` walk from the existence check above — the note-move
-          // loop only relocates files, never touches directory entries, so
-          // that snapshot is still accurate.
-          const candidateSubfolders = allFolders
-            .filter((path) => path.startsWith(fromPath + "/"))
-            .sort((a, b) => b.length - a.length)
-          for (const folder of candidateSubfolders) {
-            // An occupied-destination skip (AC-9) can leave a note behind in
-            // here — verify it's actually empty before recursively deleting it,
-            // never assume so just because we moved everything we knew about.
-            if (!(await isFolderEmpty(dir, folder))) continue
-            await createFolder(dir, toPath + folder.slice(fromPath.length))
-            await deleteFolder(dir, folder)
-          }
-          // The folder itself is moving — unlike an incidentally emptied folder
-          // (M35/FEAT-0069), it never lingers at the old path once relocated —
-          // but only once it's genuinely empty; a skipped file must not be
-          // destroyed by an unconditional recursive delete of the source.
-          await createFolder(dir, toPath)
-          if (await isFolderEmpty(dir, fromPath)) await deleteFolder(dir, fromPath)
-
-          // The move is fully done on disk at this point — a failure below
-          // (relisting, link maintenance, notifying, or loading the relocated
-          // note) isn't a move failure, and must not read back as one (same
-          // reasoning as addNote's/removeNote's post-mutation steps).
+          // Reconcile in-memory state regardless of whether the block above
+          // fully succeeded — a failure isn't a move failure at this point
+          // for whichever notes already relocated (same reasoning as
+          // addNote's/removeNote's post-mutation steps), and even a failed
+          // move can have already relocated the active note itself.
           try {
             notes = await listNotes(dir)
             try {
@@ -978,6 +994,14 @@ export function createNoteController(
             }
           } catch (err) {
             console.error("moveFolder: post-move steps failed after a successful move:", err)
+          }
+
+          if (mutationError) {
+            console.error("moveFolder failed partway through:", mutationError)
+            return {
+              ok: false,
+              reason: "Something went wrong moving the folder. Some files may have already moved.",
+            }
           }
           return { ok: true }
         } catch (err) {
