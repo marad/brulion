@@ -445,8 +445,7 @@ const noteListHandlers = {
         if (!ok) return
         // Same race as onDelete above: the folder may have been externally
         // removed/moved while the (now async) confirmation sat open.
-        const stillExists = currentFolders.includes(path) || currentNotes.some((n) => n.startsWith(`${path}/`))
-        if (!stillExists) {
+        if (!folderStillExists(path)) {
           void dialog.alert(`"${path}" no longer exists.`)
           return
         }
@@ -479,6 +478,16 @@ const noteListHandlers = {
       if (!result.ok) void dialog.alert(result.reason)
     })
   },
+}
+
+/** Whether `path` still names a real folder — either an explicitly-known
+ * empty one, or one implied by still having at least one note under it.
+ * Used to re-check a target that an async dialog held onto across a wait
+ * long enough for the background poll to notice it vanished externally
+ * (M35/FEAT-0073 — the blocking window.confirm/prompt this replaced could
+ * never let that happen). */
+function folderStillExists(path: string): boolean {
+  return currentFolders.includes(path) || currentNotes.some((n) => n.startsWith(`${path}/`))
 }
 
 /** The folder-relative path one level up from `path` (`""` at the root) —
@@ -518,6 +527,15 @@ function moveFolderTo(path: string, destination: string): Promise<AddNoteResult>
 function promptNewFolder(parentPath: string): void {
   void dialog.prompt("New folder name:").then((name) => {
     if (!name) return // dismissed or empty — no-op
+    // Same race as onDelete/onDeleteFolder/moveNoteTo: the dialog can sit
+    // open for a while, during which the parent folder may have been
+    // externally removed. addFolder's createFolder auto-vivifies missing
+    // ancestors, so without this check confirming would silently resurrect
+    // a folder that was deliberately deleted while the dialog was open.
+    if (parentPath && !folderStillExists(parentPath)) {
+      void dialog.alert(`"${parentPath}" no longer exists.`)
+      return
+    }
     const path = parentPath ? `${parentPath}/${name}` : name
     void controller.addFolder(path).then((result) => {
       if (!result.ok) void dialog.alert(result.reason)
