@@ -35,6 +35,7 @@ import {
 import { mountQuickSwitcher } from "./quick-switcher"
 import { mountCommandPalette } from "./command-palette"
 import { mountMovePicker } from "./move-picker"
+import { mountDialog } from "./dialog"
 import { resolvePinned, type Action } from "./actions"
 import {
   addVault,
@@ -135,6 +136,12 @@ const conflictBackdropEl = document.querySelector<HTMLDivElement>("#conflict-bac
 const conflictDiffEl = document.querySelector<HTMLDivElement>("#conflict-diff")
 const keepButton = document.querySelector<HTMLButtonElement>("#conflict-keep")
 const diskButton = document.querySelector<HTMLButtonElement>("#conflict-disk")
+const dialogBackdropEl = document.querySelector<HTMLDivElement>("#dialog-backdrop")
+const dialogEl = document.querySelector<HTMLDivElement>("#dialog")
+const dialogMessageEl = document.querySelector<HTMLElement>("#dialog-message")
+const dialogInputEl = document.querySelector<HTMLInputElement>("#dialog-input")
+const dialogCancelButton = document.querySelector<HTMLButtonElement>("#dialog-cancel")
+const dialogConfirmButton = document.querySelector<HTMLButtonElement>("#dialog-confirm")
 if (
   !editorEl ||
   !workspaceEl ||
@@ -169,7 +176,13 @@ if (
   !conflictBackdropEl ||
   !conflictDiffEl ||
   !keepButton ||
-  !diskButton
+  !diskButton ||
+  !dialogBackdropEl ||
+  !dialogEl ||
+  !dialogMessageEl ||
+  !dialogInputEl ||
+  !dialogCancelButton ||
+  !dialogConfirmButton
 ) {
   throw new Error("missing mount points in index.html")
 }
@@ -397,9 +410,11 @@ const noteListHandlers = {
     dismissDrawerIfMobile() // narrow layout: close the drawer to reveal the note (FEAT-0051)
   },
   onDelete: (name: string) => {
-    if (window.confirm(`Delete "${displayName(name)}"? This removes the file from your folder.`)) {
-      void controller.removeNote(name)
-    }
+    void dialog
+      .confirm(`Delete "${displayName(name)}"? This removes the file from your folder.`, "Delete")
+      .then((ok) => {
+        if (ok) void controller.removeNote(name)
+      })
   },
   onToggleFolder: (path: string, collapsed: boolean) => {
     // The persisted set holds expanded folders (FEAT-0043), so invert:
@@ -410,9 +425,14 @@ const noteListHandlers = {
   },
   onCreateFolder: (parentPath: string) => promptNewFolder(parentPath),
   onDeleteFolder: (path: string) => {
-    if (window.confirm(`Delete "${path}" and everything inside it? This removes every note beneath it from your folder.`)) {
-      void controller.removeFolder(path)
-    }
+    void dialog
+      .confirm(
+        `Delete "${path}" and everything inside it? This removes every note beneath it from your folder.`,
+        "Delete",
+      )
+      .then((ok) => {
+        if (ok) void controller.removeFolder(path)
+      })
   },
   onMoveNote: (path: string) => {
     // renameActive is active-note-scoped — switch to this note first, exactly
@@ -431,13 +451,13 @@ const noteListHandlers = {
     // Same active-note constraint as onMoveNote above.
     void controller.switchTo(path).then(() =>
       moveNoteTo(path, destination).then((result) => {
-        if (!result.ok) window.alert(result.reason)
+        if (!result.ok) void dialog.alert(result.reason ?? "Could not move it there.")
       }),
     )
   },
   onDropFolder: (path: string, destination: string) => {
     void moveFolderTo(path, destination).then((result) => {
-      if (!result.ok) window.alert(result.reason)
+      if (!result.ok) void dialog.alert(result.reason ?? "Could not move it there.")
     })
   },
 }
@@ -466,14 +486,14 @@ function moveFolderTo(path: string, destination: string): Promise<AddNoteResult>
 }
 
 /** Prompt for a new folder's name and create it under `parentPath` ("" = the
- * vault root) — M35/FEAT-0069. Native `prompt`/`alert`, matching the pattern
- * note delete already uses (`window.confirm` above); no new modal. */
+ * vault root) — M35/FEAT-0069, via the in-app dialog (M35/FEAT-0073). */
 function promptNewFolder(parentPath: string): void {
-  const name = window.prompt("New folder name:")
-  if (!name) return // dismissed or empty — no-op
-  const path = parentPath ? `${parentPath}/${name}` : name
-  void controller.addFolder(path).then((result) => {
-    if (!result.ok) window.alert(result.reason)
+  void dialog.prompt("New folder name:").then((name) => {
+    if (!name) return // dismissed or empty — no-op
+    const path = parentPath ? `${parentPath}/${name}` : name
+    void controller.addFolder(path).then((result) => {
+      if (!result.ok) void dialog.alert(result.reason ?? "Could not create it.")
+    })
   })
 }
 
@@ -487,12 +507,13 @@ function promptRenameTo(
   currentLeaf: string,
   rename: (target: string) => Promise<AddNoteResult>,
 ): void {
-  const name = window.prompt("Rename to:", currentLeaf)
-  if (!name || name === currentLeaf) return
-  const parent = parentOf(path)
-  const target = parent ? `${parent}/${name}` : name
-  void rename(target).then((result) => {
-    if (!result.ok) window.alert(result.reason)
+  void dialog.prompt("Rename to:", currentLeaf).then((name) => {
+    if (!name || name === currentLeaf) return
+    const parent = parentOf(path)
+    const target = parent ? `${parent}/${name}` : name
+    void rename(target).then((result) => {
+      if (!result.ok) void dialog.alert(result.reason ?? "Could not rename it.")
+    })
   })
 }
 
@@ -648,6 +669,19 @@ const movePicker = mountMovePicker({
   input: moveInputEl,
   list: moveListEl,
   error: moveErrorEl,
+})
+
+// Confirm/prompt/alert dialog (M35/FEAT-0073), replacing window.confirm/
+// prompt/alert for delete confirmation, rename/new-folder naming, and
+// move-failure feedback — the same themed/animated overlay family as the
+// switcher/palette/move picker/conflict modal above.
+const dialog = mountDialog({
+  backdrop: dialogBackdropEl,
+  dialog: dialogEl,
+  message: dialogMessageEl,
+  input: dialogInputEl,
+  cancelButton: dialogCancelButton,
+  confirmButton: dialogConfirmButton,
 })
 
 function destinationChoices(): string[] {

@@ -954,9 +954,11 @@ header button:hover {
 /* Conflict resolution is modal: the open note changed on disk under unsaved
    edits, so the user must choose before doing anything else. A full-screen
    backdrop covers the app (list, editor, header) and intercepts all clicks. */
-/* The conflict and settings (FEAT-0048) modals share the same centered backdrop. */
+/* The conflict, settings (FEAT-0048), and confirm/prompt/alert dialog
+   (M35/FEAT-0073) modals share the same centered backdrop. */
 #conflict-backdrop,
-#settings-backdrop {
+#settings-backdrop,
+#dialog-backdrop {
   position: fixed;
   inset: 0;
   z-index: 100;
@@ -974,13 +976,15 @@ header button:hover {
 
 @starting-style {
   #conflict-backdrop,
-  #settings-backdrop {
+  #settings-backdrop,
+  #dialog-backdrop {
     opacity: 0;
   }
 }
 
 #conflict-backdrop[hidden],
-#settings-backdrop[hidden] {
+#settings-backdrop[hidden],
+#dialog-backdrop[hidden] {
   display: none;
   opacity: 0;
   pointer-events: none; /* don't block the workspace during the fade-out */
@@ -988,7 +992,8 @@ header button:hover {
 
 /* The dialogs rise + fade with the backdrop (out via the backdrop's [hidden]). */
 #conflict,
-.settings-dialog {
+.settings-dialog,
+#dialog {
   opacity: 1;
   transform: none;
   transition:
@@ -998,14 +1003,16 @@ header button:hover {
 
 @starting-style {
   #conflict,
-  .settings-dialog {
+  .settings-dialog,
+  #dialog {
     opacity: 0;
     transform: translateY(8px) scale(0.98);
   }
 }
 
 #conflict-backdrop[hidden] #conflict,
-#settings-backdrop[hidden] .settings-dialog {
+#settings-backdrop[hidden] .settings-dialog,
+#dialog-backdrop[hidden] #dialog {
   opacity: 0;
   transform: translateY(8px) scale(0.98);
 }
@@ -1029,6 +1036,41 @@ header button:hover {
   margin: 0 0 1rem;
   font-size: 0.95rem;
   line-height: 1.5;
+}
+
+/* A confirm/prompt/alert dialog (M35/FEAT-0073) is much smaller than the
+   conflict diff — just a message, an optional input, and two buttons. */
+#dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: min(24rem, 100%);
+  padding: 1.25rem 1.5rem;
+  background: var(--soft-surface);
+  border: 1px solid var(--soft-border);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px var(--shadow);
+  color: var(--soft-text);
+}
+
+#dialog-message {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+#dialog-input {
+  font: inherit;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--soft-border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+#dialog-input:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 /* The diff: labels row above two read-only panes, bounded so it scrolls rather
@@ -1079,14 +1121,16 @@ header button:hover {
   font-size: 0.85rem;
 }
 
-.conflict-actions {
+.conflict-actions,
+.dialog-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
   justify-content: flex-end;
 }
 
-#conflict button {
+#conflict button,
+#dialog button {
   font: inherit;
   padding: 0.4rem 0.8rem;
   border: 1px solid var(--soft-border);
@@ -1096,7 +1140,8 @@ header button:hover {
   cursor: pointer;
 }
 
-#conflict button:hover {
+#conflict button:hover,
+#dialog button:hover {
   background: var(--soft-bg);
 }
 

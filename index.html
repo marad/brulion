@@ -70,6 +70,22 @@
         <div id="move-list" aria-label="Destinations"></div>
       </div>
     </div>
+    <div id="dialog-backdrop" hidden>
+      <div id="dialog" role="alertdialog" aria-modal="true" aria-label="Confirm">
+        <p id="dialog-message"></p>
+        <input
+          id="dialog-input"
+          type="text"
+          aria-label="Name"
+          autocomplete="off"
+          hidden
+        />
+        <div class="dialog-actions">
+          <button id="dialog-cancel" type="button">Cancel</button>
+          <button id="dialog-confirm" type="button">OK</button>
+        </div>
+      </div>
+    </div>
     <div id="conflict-backdrop" hidden>
       <div id="conflict" role="alertdialog" aria-modal="true" aria-label="Note changed on disk">
         <p>This note changed on disk. Keep your version or take the one on disk?</p>
