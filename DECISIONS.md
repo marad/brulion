@@ -2796,3 +2796,40 @@ Three findings from a 5th `/code-review` pass were left as-is:
   guarantees (rebase only once the whole batch is known, occupied-
   destination skips, etc.) that concurrent moves would have to re-prove —
   deferred for the same reason as the walk duplication above.
+
+## Round-15 review findings deliberately not acted on (M35 → FEAT-0069/FEAT-0073)
+A 15th `/code-review` pass, run right after centralizing the existence-guard
+(`ifExists`/`ifExistsResult`) and never-throws (`serializeResult`) wrappers,
+confirmed two more findings. Both were fixed directly (see the commit right
+after this entry): `removeNote`/`removeFolder`'s own post-delete `activate()`
+call getting the same try/catch-with-fallback moveFolder/renameActive already
+had, and `addNote`/`addFolder` no longer reporting a successful disk create as
+a failure when a best-effort follow-up step throws. Two others were left as-is:
+
+- `folderStillExists` (main.ts), used by `ifExists` in `promptNewFolder` and
+  implicitly relied on by `onCreateNoteIn`, reads `currentFolders` — which the
+  background poll only ever refreshes via an explicit folder mutation
+  (`addFolder`/`removeFolder`/`moveFolder`'s `onFoldersChanged` calls), never
+  on its own cadence the way `currentNotes` is kept live by the relist sweep.
+  So an *externally* deleted **empty** folder can stay listed indefinitely
+  (not just for the length of one open dialog), and recreating a folder by
+  that name auto-vivifies it right back. Left alone: unlike the note-level
+  resurrection bugs this session fixed, the "resurrected" thing here is an
+  empty directory — the folder had nothing in it when it was deleted, so
+  there is no content to lose, only a directory reappearing that a user
+  external to Brulion removed. Properly closing this would mean the
+  background poll re-walking folders every tick the way it already does
+  notes, a real expansion of the poll's own scope, not a call-site fix —
+  disproportionate to a cosmetic-only gap on a weekend-scale project.
+- `moveFolder`/`renameActive`'s two-step recovery (primary `activate()`, then
+  a `pickActiveNote` fallback) can still leave `activeName` stale if *both*
+  calls fail — the existing "last resort exhausted" catch already accepts
+  this as a documented residual risk rather than chasing a third fallback.
+  `removeNote`/`removeFolder`'s fix above brings them to the same single-
+  fallback risk profile, not a strictly safer one — deliberately consistent
+  with, not better than, the standard the rest of the controller already
+  accepts. Closing this fully would need the buffer itself to go non-dirty
+  (or blank) when every recovery attempt fails, changing what the user sees
+  rather than just how errors propagate — a bigger, more user-visible change
+  than this loop's scope.
+  deferred for the same reason as the walk duplication above.

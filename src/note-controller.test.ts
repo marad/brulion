@@ -548,6 +548,20 @@ describe("addNote (FEAT-0012)", () => {
 
     expect(result).toEqual({ ok: false, reason: "Something went wrong. Please try again." })
   })
+
+  it("still reports success when the note is created but relisting/loading it afterward fails", async () => {
+    // createNote already succeeded (the file exists on disk) — a failure in
+    // the follow-up steps isn't a create failure and must not read back as one.
+    const view = mountView()
+    const controller = createNoteController(view)
+    await controller.open(DIR)
+    listNotes.mockRejectedValueOnce(new Error("boom"))
+
+    const result = await controller.addNote("new note")
+
+    expect(result).toEqual({ ok: true })
+    expect(createNote).toHaveBeenCalledWith(DIR, "new note.md")
+  })
 })
 
 describe("removeNote (FEAT-0012)", () => {
@@ -583,6 +597,18 @@ describe("removeNote (FEAT-0012)", () => {
     await controller.removeNote("a.md")
 
     expect(view.state.doc.toString()).toBe("b.md body")
+  })
+
+  it("doesn't reject when loading the fallback note fails after a successful delete", async () => {
+    // The delete itself is already done at this point — a failure loading
+    // the fallback note into the editor must not surface as an unhandled
+    // rejection (there's no further fallback beyond pickActiveNote to try).
+    const { controller } = await open("a.md", ["a.md", "b.md"])
+    listNotes.mockResolvedValue(["b.md"])
+    readNote.mockRejectedValueOnce(new Error("boom")) // the fallback note's own load()
+
+    await expect(controller.removeNote("a.md")).resolves.toBeUndefined()
+    expect(deleteNote).toHaveBeenCalledWith(DIR, "a.md")
   })
 
   it("falls back to an empty start buffer when the last note is deleted (AC-7)", async () => {
@@ -709,6 +735,20 @@ describe("addFolder (FEAT-0069)", () => {
 
     expect(result).toEqual({ ok: false, reason: "Something went wrong. Please try again." })
   })
+
+  it("still reports success when the folder is created but relisting it afterward fails", async () => {
+    // createFolder already succeeded (the folder exists on disk) — a failure
+    // relisting it isn't a create failure and must not read back as one.
+    const view = mountView()
+    const controller = createNoteController(view)
+    await controller.open(DIR)
+    listFolders.mockRejectedValueOnce(new Error("boom"))
+
+    const result = await controller.addFolder("new-folder")
+
+    expect(result).toEqual({ ok: true })
+    expect(createFolder).toHaveBeenCalledWith(DIR, "new-folder")
+  })
 })
 
 describe("removeFolder (FEAT-0069)", () => {
@@ -750,6 +790,15 @@ describe("removeFolder (FEAT-0069)", () => {
     await controller.removeFolder("projects")
 
     expect(view.state.doc.toString()).toBe("start.md body")
+  })
+
+  it("doesn't reject when loading the fallback note fails after a successful delete", async () => {
+    const { controller } = await open("projects/a.md", ["start.md", "projects/a.md"])
+    listNotes.mockResolvedValue(["start.md"])
+    readNote.mockRejectedValueOnce(new Error("boom")) // the fallback note's own load()
+
+    await expect(controller.removeFolder("projects")).resolves.toBeUndefined()
+    expect(deleteFolder).toHaveBeenCalledWith(DIR, "projects")
   })
 
   it("falls back to an empty start buffer when the active note's folder held everything (AC-7)", async () => {

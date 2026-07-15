@@ -692,9 +692,18 @@ export function createNoteController(
         if (created.status === "exists") {
           return { ok: false, reason: "A note with that name already exists." }
         }
-        notes = await listNotes(dir)
-        await flushAndWait() // flush the open note before opening the new one
-        await activate(dir, normalized.filename)
+        // The note is already created on disk at this point — a failure
+        // below (relisting, flushing the old note, or loading the new one
+        // into the editor) isn't a create failure, and must not read back as
+        // one (serializeResult's generic catch would otherwise report a
+        // successfully-created note as "something went wrong").
+        try {
+          notes = await listNotes(dir)
+          await flushAndWait() // flush the open note before opening the new one
+          await activate(dir, normalized.filename)
+        } catch (err) {
+          console.error("addNote: post-create steps failed after a successful create:", err)
+        }
         return { ok: true }
       })
     },
@@ -714,7 +723,20 @@ export function createNoteController(
         contentCache.delete(name)
         notes = await listNotes(dir)
         if (name === activeName) {
-          await activate(dir, pickActiveNote(notes, null))
+          // The delete itself is already done at this point — a failure
+          // loading the fallback note into the editor isn't a delete
+          // failure, and (per load()'s own "commit only on success" rule)
+          // leaves activeName exactly where it was, i.e. still naming the
+          // just-deleted note. There's no further fallback to try — unlike
+          // moveFolder/renameActive's two-step recovery, pickActiveNote
+          // already picked the best candidate — so this can only log and
+          // accept the same residual risk moveFolder/renameActive's own
+          // "last resort exhausted" case already carries.
+          try {
+            await activate(dir, pickActiveNote(notes, null))
+          } catch (err) {
+            console.error("removeNote: activate failed after a successful delete:", err)
+          }
         } else {
           opts.onListChanged?.(notes, activeName)
         }
@@ -733,8 +755,14 @@ export function createNoteController(
         }
         // An empty folder adds no `.md` file — nothing for onListChanged to
         // announce — so its own dedicated notification carries the fresh
-        // folder listing instead.
-        opts.onFoldersChanged?.(await listFolders(dir))
+        // folder listing instead. The folder is already created on disk at
+        // this point, so a failure re-listing it isn't a create failure (same
+        // reasoning as addNote above).
+        try {
+          opts.onFoldersChanged?.(await listFolders(dir))
+        } catch (err) {
+          console.error("addFolder: onFoldersChanged failed after a successful create:", err)
+        }
         return { ok: true }
       })
     },
@@ -755,7 +783,14 @@ export function createNoteController(
         notes = await listNotes(dir)
         opts.onFoldersChanged?.(await listFolders(dir))
         if (activeInsideFolder) {
-          await activate(dir, pickActiveNote(notes, null))
+          // Same reasoning as removeNote above: the delete already
+          // succeeded, and there's no further fallback beyond pickActiveNote
+          // to try.
+          try {
+            await activate(dir, pickActiveNote(notes, null))
+          } catch (err) {
+            console.error("removeFolder: activate failed after a successful delete:", err)
+          }
         } else {
           opts.onListChanged?.(notes, activeName)
         }
