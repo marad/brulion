@@ -2913,3 +2913,31 @@ unconditionally after a method's own try, not a cross-cutting wrapper).
 Kept the escalation note for future rounds: a *sixth* instance of this
 pattern, in a method that structural fix doesn't already cover, would be the
 real signal to build that shared helper.
+
+## Structural fix: `reconcileAfterMutation` ends the per-method whack-a-mole (M35)
+Six review rounds (14–19) each found one more hand-rolled copy of the same
+post-mutation block missing a different piece. The user called it: 20 rounds
+of one-off patches is the wrong loop — the invariant belongs in one place.
+The whole post-mutation contract now lives in a single helper in
+`note-controller.ts`, `reconcileAfterMutation`: refresh `notes` → run
+independent best-effort follow-up steps (link maintenance, the pre-open
+flush) → refresh the folder listing when the folder set changed → re-point
+the editor at the target, falling back to `pickActiveNote` **only when the
+active path itself vanished** (the autosave-resurrection hazard), announcing
+the accurate listing if even that fails. It never throws, and by definition
+nothing inside it can be reported as the mutation failing.
+
+Five methods route through it (`addNote`, `removeNote`, `removeFolder`,
+`moveFolder`, `renameActive`); `addFolder` deliberately does not — it never
+touches the note list (its AC-1 asserts `onListChanged` does NOT fire on
+folder creation), so its single follow-up keeps its own dedicated
+notification. Two small behavior changes fell out of the unification, both
+improvements: (1) a *transient* failure loading the fallback note now
+recovers via the helper's single retry instead of leaving the editor on the
+stale buffer; (2) `renameActive`'s inbound-link pass now runs before
+`activate` (matching `moveFolder`'s existing order) — the two passes touch
+disjoint files, so the order was never load-bearing.
+
+The review loop is closed with this refactor. Any future mutation method
+MUST route its post-mutation work through `reconcileAfterMutation` rather
+than hand-rolling the block — that's the whole point.

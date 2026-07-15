@@ -611,10 +611,22 @@ describe("removeNote (FEAT-0012)", () => {
     expect(deleteNote).toHaveBeenCalledWith(DIR, "a.md")
   })
 
-  it("still notifies onListChanged with the accurate listing even when the fallback load itself fails", async () => {
+  it("retries the fallback note once when its first load fails transiently", async () => {
+    const { view, controller, onListChanged } = await open("a.md", ["a.md", "b.md"])
+    listNotes.mockResolvedValue(["b.md"])
+    readNote.mockRejectedValueOnce(new Error("boom")) // the fallback note's first load()
+
+    await controller.removeNote("a.md")
+
+    // The reconcile helper retries once — the transient failure recovers.
+    expect(view.state.doc.toString()).toBe("b.md body")
+    expect(onListChanged).toHaveBeenLastCalledWith(["b.md"], "b.md")
+  })
+
+  it("still notifies onListChanged with the accurate listing even when every fallback load fails", async () => {
     const { controller, onListChanged } = await open("a.md", ["a.md", "b.md"])
     listNotes.mockResolvedValue(["b.md"])
-    readNote.mockRejectedValueOnce(new Error("boom")) // the fallback note's own load()
+    readNote.mockRejectedValue(new Error("boom")) // every load() fails
 
     await controller.removeNote("a.md")
 
@@ -863,10 +875,22 @@ describe("removeFolder (FEAT-0069)", () => {
     expect(deleteFolder).toHaveBeenCalledWith(DIR, "projects")
   })
 
-  it("still notifies onListChanged with the accurate listing even when the fallback load itself fails", async () => {
+  it("retries the fallback note once when its first load fails transiently", async () => {
+    const { view, controller, onListChanged } = await open("projects/a.md", ["start.md", "projects/a.md"])
+    listNotes.mockResolvedValue(["start.md"])
+    readNote.mockRejectedValueOnce(new Error("boom")) // the fallback note's first load()
+
+    await controller.removeFolder("projects")
+
+    // The reconcile helper retries once — the transient failure recovers.
+    expect(view.state.doc.toString()).toBe("start.md body")
+    expect(onListChanged).toHaveBeenLastCalledWith(["start.md"], "start.md")
+  })
+
+  it("still notifies onListChanged with the accurate listing even when every fallback load fails", async () => {
     const { controller, onListChanged } = await open("projects/a.md", ["start.md", "projects/a.md"])
     listNotes.mockResolvedValue(["start.md"])
-    readNote.mockRejectedValueOnce(new Error("boom")) // the fallback note's own load()
+    readNote.mockRejectedValue(new Error("boom")) // every load() fails
 
     await controller.removeFolder("projects")
 

@@ -565,6 +565,82 @@ export function createNoteController(
       }
     })
 
+  /**
+   * Reconcile in-memory + UI state after a disk mutation that has ALREADY
+   * succeeded: refresh `notes`, run follow-up maintenance, refresh the folder
+   * listing when the folder set changed, re-point the editor, and announce the
+   * listing. Never throws, and nothing in here may be reported as the mutation
+   * failing — that is this helper's entire contract. It exists because six
+   * review rounds (M35) each found one more hand-rolled copy of this block
+   * missing a piece; every mutating method now routes through this single
+   * chokepoint instead of maintaining its own copy.
+   *
+   * - `activateTarget`: the note the editor should now show — a path, a thunk
+   *   evaluated against the fresh listing (for `pickActiveNote`), or `null`
+   *   when the active note is untouched (just announce the listing). If
+   *   activating fails and the active path no longer exists (it vanished with
+   *   the mutation — the autosave-resurrection hazard), falls back once to
+   *   `pickActiveNote`; if even that fails, announces the accurate listing so
+   *   the sidebar never goes silently stale.
+   * - `steps`: independent best-effort follow-ups (link maintenance, the
+   *   pre-open flush) — each caught on its own so one failing doesn't skip
+   *   the next.
+   * - `foldersChanged`: the mutation changed the folder set — also refresh
+   *   the folder listing (its own best-effort step).
+   */
+  const reconcileAfterMutation = async (args: {
+    activateTarget: string | (() => string) | null
+    steps?: Array<() => Promise<void>>
+    foldersChanged?: boolean
+  }): Promise<void> => {
+    if (!dir) return
+    const folder = dir
+    try {
+      notes = await listNotes(folder)
+      for (const step of args.steps ?? []) {
+        try {
+          await step()
+        } catch (err) {
+          console.error("Post-mutation step failed (the mutation itself already succeeded):", err)
+        }
+      }
+      if (args.foldersChanged) {
+        try {
+          opts.onFoldersChanged?.(await listFolders(folder))
+        } catch (err) {
+          console.error("onFoldersChanged failed (the mutation itself already succeeded):", err)
+        }
+      }
+      const target = typeof args.activateTarget === "function" ? args.activateTarget() : args.activateTarget
+      if (target === null) {
+        opts.onListChanged?.(notes, activeName)
+        return
+      }
+      try {
+        await activate(folder, target)
+      } catch (err) {
+        console.error("activate failed after a successful mutation:", err)
+        // Only reach for a fallback note when the active path itself vanished
+        // with the mutation — reporting a vanished path as active would let
+        // the next autosave silently recreate a file there. When the active
+        // note still exists (e.g. opening a freshly created note failed), the
+        // editor simply stays where it is.
+        if (!notes.includes(activeName)) {
+          try {
+            await activate(folder, pickActiveNote(notes, null))
+            return
+          } catch {
+            // Last resort exhausted — activeName is stuck stale, but `notes`
+            // is accurate; fall through so the sidebar still hears about it.
+          }
+        }
+        opts.onListChanged?.(notes, activeName)
+      }
+    } catch (err) {
+      console.error("Post-mutation reconciliation failed (the mutation itself already succeeded):", err)
+    }
+  }
+
   return {
     open(folder) {
       abortPendingRelist() // a whole vault switch makes any in-flight relist moot
@@ -693,18 +769,12 @@ export function createNoteController(
         if (created.status === "exists") {
           return { ok: false, reason: "A note with that name already exists." }
         }
-        // The note is already created on disk at this point — a failure
-        // below (relisting, flushing the old note, or loading the new one
-        // into the editor) isn't a create failure, and must not read back as
-        // one (serializeResult's generic catch would otherwise report a
-        // successfully-created note as "something went wrong").
-        try {
-          notes = await listNotes(dir)
-          await flushAndWait() // flush the open note before opening the new one
-          await activate(dir, normalized.filename)
-        } catch (err) {
-          console.error("addNote: post-create steps failed after a successful create:", err)
-        }
+        // The note is already created on disk — nothing below may read back
+        // as a create failure (reconcileAfterMutation guarantees that).
+        await reconcileAfterMutation({
+          activateTarget: normalized.filename,
+          steps: [flushAndWait], // flush the open note before opening the new one
+        })
         return { ok: true }
       })
     },
@@ -729,37 +799,15 @@ export function createNoteController(
         if (name === activeName && conflict) {
           return { ok: false, reason: "Resolve the conflict first." }
         }
+        const wasActive = name === activeName
         await deleteNote(dir, name)
-        // The note is already deleted on disk at this point — a failure
-        // below (relisting, or loading a fallback note into the editor)
-        // isn't a delete failure, and must not read back as one (same
-        // reasoning as addNote's post-create steps).
-        try {
-          contentCache.delete(name)
-          notes = await listNotes(dir)
-          if (name === activeName) {
-            // A failure loading the fallback note into the editor (per
-            // load()'s own "commit only on success" rule) leaves activeName
-            // exactly where it was, i.e. still naming the just-deleted note.
-            // There's no further fallback to try — unlike moveFolder/
-            // renameActive's two-step recovery, pickActiveNote already
-            // picked the best candidate — so this can only log and accept
-            // the same residual risk moveFolder/renameActive's own "last
-            // resort exhausted" case already carries. `notes` is already
-            // accurate regardless, so the sidebar still hears about it even
-            // when the fallback load itself fails.
-            try {
-              await activate(dir, pickActiveNote(notes, null))
-            } catch (err) {
-              console.error("removeNote: activate failed after a successful delete:", err)
-              opts.onListChanged?.(notes, activeName)
-            }
-          } else {
-            opts.onListChanged?.(notes, activeName)
-          }
-        } catch (err) {
-          console.error("removeNote: post-delete steps failed after a successful delete:", err)
-        }
+        contentCache.delete(name)
+        // The note is already deleted on disk — nothing below may read back
+        // as a delete failure (reconcileAfterMutation guarantees that).
+        await reconcileAfterMutation({
+          // The thunk runs after the relist, against the fresh listing.
+          activateTarget: wasActive ? () => pickActiveNote(notes, null) : null,
+        })
         return { ok: true }
       })
     },
@@ -775,10 +823,11 @@ export function createNoteController(
           return { ok: false, reason: "A folder with that name already exists." }
         }
         // An empty folder adds no `.md` file — nothing for onListChanged to
-        // announce — so its own dedicated notification carries the fresh
-        // folder listing instead. The folder is already created on disk at
-        // this point, so a failure re-listing it isn't a create failure (same
-        // reasoning as addNote above).
+        // announce (AC-1 asserts it does NOT fire) — so addFolder deliberately
+        // does NOT route through reconcileAfterMutation; its one follow-up is
+        // this dedicated notification with the fresh folder listing. The
+        // folder is already created on disk at this point, so a failure
+        // re-listing it isn't a create failure (same contract as the helper).
         try {
           opts.onFoldersChanged?.(await listFolders(dir))
         } catch (err) {
@@ -806,37 +855,16 @@ export function createNoteController(
           return { ok: false, reason: "Resolve the conflict first." }
         }
         await deleteFolder(dir, path)
-        // The folder (and everything beneath it) is already deleted on disk
-        // at this point — a failure below isn't a delete failure, and must
-        // not read back as one (same reasoning as removeNote's post-delete
-        // steps).
-        try {
-          for (const key of contentCache.keys()) {
-            if (key.startsWith(path + "/")) contentCache.delete(key)
-          }
-          notes = await listNotes(dir)
-          try {
-            opts.onFoldersChanged?.(await listFolders(dir))
-          } catch (err) {
-            console.error("removeFolder: onFoldersChanged failed after a successful delete:", err)
-          }
-          if (activeInsideFolder) {
-            // Same reasoning as removeNote above: the delete already
-            // succeeded, and there's no further fallback beyond pickActiveNote
-            // to try. `notes` is already accurate regardless, so the sidebar
-            // still hears about it even when the fallback load itself fails.
-            try {
-              await activate(dir, pickActiveNote(notes, null))
-            } catch (err) {
-              console.error("removeFolder: activate failed after a successful delete:", err)
-              opts.onListChanged?.(notes, activeName)
-            }
-          } else {
-            opts.onListChanged?.(notes, activeName)
-          }
-        } catch (err) {
-          console.error("removeFolder: post-delete steps failed after a successful delete:", err)
+        for (const key of contentCache.keys()) {
+          if (key.startsWith(path + "/")) contentCache.delete(key)
         }
+        // The folder (and everything beneath it) is already deleted on disk —
+        // nothing below may read back as a delete failure
+        // (reconcileAfterMutation guarantees that).
+        await reconcileAfterMutation({
+          activateTarget: activeInsideFolder ? () => pickActiveNote(notes, null) : null,
+          foldersChanged: true,
+        })
         return { ok: true }
       })
     },
@@ -845,6 +873,7 @@ export function createNoteController(
       return serializeResult(async () => {
         if (!dir) return { ok: false, reason: "Open a folder first." }
         if (conflict) return { ok: false, reason: "Resolve the conflict first." }
+        const folder = dir // non-null capture for the reconcile step's closure
         const normalized = normalizeFolderPath(toPath)
         if (!normalized.ok) return { ok: false, reason: normalized.reason }
         toPath = normalized.path
@@ -951,50 +980,15 @@ export function createNoteController(
             mutationError = err
           }
 
-          // Reconcile in-memory state regardless of whether the block above
-          // fully succeeded — a failure isn't a move failure at this point
-          // for whichever notes already relocated (same reasoning as
-          // addNote's/removeNote's post-mutation steps), and even a failed
-          // move can have already relocated the active note itself.
-          try {
-            notes = await listNotes(dir)
-            try {
-              await updateInboundLinksForMoves(dir, moves, pathsBefore)
-            } catch {
-              // leave inbound links as-is rather than failing the move
-            }
-            try {
-              opts.onFoldersChanged?.(await listFolders(dir))
-            } catch {
-              // best-effort — `notes` above is already the accurate post-move
-              // listing, and the note-level notification below still fires
-              // with it even if this folder-listing walk itself failed
-            }
-            if (newActiveName) {
-              // `activeName` still names the pre-move path, which no longer
-              // exists anywhere under the new tree — reporting that as
-              // active would let the next autosave silently recreate a file
-              // there. Fall back to a real note instead, the same recovery
-              // removeNote/removeFolder already use for a vanished active note.
-              try {
-                await activate(dir, newActiveName)
-              } catch (err) {
-                console.error("moveFolder: activate failed after a successful move:", err)
-                try {
-                  await activate(dir, pickActiveNote(notes, null))
-                } catch {
-                  // Last resort exhausted — activeName is stuck stale either
-                  // way, but `notes` itself is already accurate, so the
-                  // sidebar still hears about the move instead of going silent.
-                  opts.onListChanged?.(notes, activeName)
-                }
-              }
-            } else {
-              opts.onListChanged?.(notes, activeName)
-            }
-          } catch (err) {
-            console.error("moveFolder: post-move steps failed after a successful move:", err)
-          }
+          // Reconcile regardless of whether the block above fully succeeded —
+          // even a failed move can have already relocated the active note
+          // itself, and whichever notes did relocate must reach the sidebar
+          // and the editor either way.
+          await reconcileAfterMutation({
+            activateTarget: newActiveName,
+            foldersChanged: true,
+            steps: [() => updateInboundLinksForMoves(folder, moves, pathsBefore)],
+          })
 
           if (mutationError) {
             console.error("moveFolder failed partway through:", mutationError)
@@ -1055,50 +1049,20 @@ export function createNoteController(
           // persists it as active, and announces so the UI tracks the new identity.
           const pathsBefore = new Set(notes) // pre-move listing — still names `from`
           contentCache.delete(from)
-          // The file is already renamed on disk at this point — a failure
-          // below (relisting, link maintenance, or loading it into the
-          // editor) isn't a rename failure, and must not read back as one
-          // (same reasoning as addNote's/removeNote's post-mutation steps).
-          try {
-            notes = await listNotes(dir)
-            // Follow-on link maintenance (FEAT-0040/0041). Both passes are
-            // best-effort: the move already succeeded, so a failure here (an
-            // I/O error part-way) must not report the rename as failed — the
-            // affected links simply stay as they were (dangling), which the
-            // existing missing-target handling covers.
-            try {
-              await rebaseMovedNote(dir, from, normalized.filename) // before activate: editor loads the rebased content
-            } catch {
-              // leave the moved note's own outbound links as-is rather than failing
-            }
-            // `activeName` still names `from`, which no longer exists
-            // (load() doesn't commit it until its read succeeds) —
-            // reporting that as active would let the next autosave silently
-            // recreate a file there. Fall back to a real note instead, the
-            // same recovery removeNote/removeFolder already use when the
-            // active note vanishes out from under the editor.
-            try {
-              await activate(dir, normalized.filename)
-            } catch (err) {
-              console.error("renameActive: activate failed after a successful move:", err)
-              try {
-                await activate(dir, pickActiveNote(notes, null))
-              } catch {
-                // Last resort exhausted (e.g. the whole folder's unreadable) —
-                // activeName is stuck stale either way, but `notes` itself is
-                // already accurate, so the sidebar still hears about the
-                // rename instead of going silent.
-                opts.onListChanged?.(notes, activeName)
-              }
-            }
-            try {
-              await updateInboundLinksForMoves(dir, [{ from, to: normalized.filename }], pathsBefore)
-            } catch {
-              // leave inbound links as-is rather than failing the rename
-            }
-          } catch (err) {
-            console.error("renameActive: post-rename steps failed after a successful rename:", err)
-          }
+          const folder = dir // non-null capture for the reconcile steps' closures
+          // The file is already renamed on disk — nothing below may read back
+          // as a rename failure (reconcileAfterMutation guarantees that).
+          // Both link passes (FEAT-0040/0041) are best-effort follow-ups: a
+          // failure leaves the affected links as they were (dangling), which
+          // the existing missing-target handling covers. The rebase runs
+          // before activate so the editor loads the rebased content.
+          await reconcileAfterMutation({
+            activateTarget: normalized.filename,
+            steps: [
+              () => rebaseMovedNote(folder, from, normalized.filename),
+              () => updateInboundLinksForMoves(folder, [{ from, to: normalized.filename }], pathsBefore),
+            ],
+          })
           return { ok: true }
         } catch (err) {
           console.error("renameActive failed partway through:", err)
