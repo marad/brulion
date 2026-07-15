@@ -2754,3 +2754,22 @@ menu for whichever row has focus. No new focusability needed — a folder
 header is already a `<button>`, and a note row's keydown bubbles up from its
 own focusable name button — so `wireTreeMenu`'s existing per-row wiring
 just gained one more event listener, not a new focus model.
+
+## Reverted: gating moveFolder()'s source delete on createFolder's result (M35 → FEAT-0070)
+A review pass flagged that `moveFolder` ignored `createFolder`'s result
+before deleting an emptied (sub)folder, in theory losing it outright if a
+like-named file blocked the destination. The fix (only delete once
+`createFolder` reported `"created"`) broke a real, previously-passing
+e2e test (AC-3, moving a folder with nested subfolders) — `moveNote`'s own
+file writes and the subfolder-creation loop both auto-vivify ancestor
+directories as a side effect, so by the time the top-level folder's own
+`createFolder` call ran, the destination legitimately already existed for
+reasons that had nothing to do with a conflict, and the fix couldn't tell
+the two apart. Reverted rather than chasing a more elaborate fix: the actual
+harm of the original gap is low (it only ever applies to a folder already
+verified empty via `isFolderEmpty` — no note content is ever at risk, just
+a rare, disk-external-tool-only edge case where an empty folder vanishes
+without reappearing at the destination), too small to justify the
+complexity a correct fix would need to safely distinguish "blocked by a
+genuine conflict" from "already there because this exact move's own note
+writes put it there."
