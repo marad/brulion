@@ -312,7 +312,15 @@ function wireDragSource(el: HTMLElement, kind: "note" | "folder", path: string):
  * enforces (`isWithin`), so the UI's hint agrees with what a drop actually does. */
 function isValidDropTarget(destination: string): boolean {
   if (!draggedItem) return false
-  if (draggedItem.kind === "folder" && isWithin(destination, draggedItem.path)) return false
+  if (draggedItem.kind === "folder") {
+    if (isWithin(destination, draggedItem.path)) return false
+    // Dropping a folder back onto its own current parent (or the root, for a
+    // root-level folder) is a no-op the user almost certainly didn't intend
+    // as "move it" — moveFolder's own guard would otherwise refuse this with
+    // the same message as a genuine self-nest attempt, which reads as a
+    // confusing error for what was really just a mis-drop.
+    if (destination === parentOf(draggedItem.path)) return false
+  }
   return true
 }
 

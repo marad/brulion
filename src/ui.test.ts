@@ -532,6 +532,7 @@ describe("tree row context menu shape (FEAT-0071)", () => {
   it("opens the same menu via long-press on a note row (AC-5)", () => {
     vi.useFakeTimers()
     const container = document.createElement("div")
+    document.body.append(container) // long-press's isConnected check needs a real attach
     renderNoteList(container, ["a.md"], "a.md", handlers())
     const row = container.querySelector<HTMLElement>(".note-row")!
 
@@ -545,6 +546,7 @@ describe("tree row context menu shape (FEAT-0071)", () => {
   it("opens the same menu via long-press on a folder row (AC-5)", () => {
     vi.useFakeTimers()
     const container = document.createElement("div")
+    document.body.append(container) // long-press's isConnected check needs a real attach
     renderNoteList(container, ["sub/a.md"], "sub/a.md", handlers())
     const header = container.querySelector<HTMLElement>(".folder-header")!
 
@@ -862,6 +864,37 @@ describe("renderNoteList drag-and-drop (FEAT-0072)", () => {
     subHeader.dispatchEvent(dragEvent("dragstart"))
     ideasHeader.dispatchEvent(dragEvent("dragover"))
     ideasHeader.dispatchEvent(dragEvent("drop"))
+
+    expect(h.onDropFolder).not.toHaveBeenCalled()
+  })
+
+  it("dragging a subfolder back onto its own parent header is a no-op, not a refused self-nest", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["sub/ideas/a.md"], "sub/ideas/a.md", h)
+    const subHeader = [...container.querySelectorAll<HTMLElement>(".folder-header")].find(
+      (el) => el.textContent === "sub",
+    )!
+    const ideasHeader = [...container.querySelectorAll<HTMLElement>(".folder-header")].find(
+      (el) => el.textContent === "ideas",
+    )!
+
+    ideasHeader.dispatchEvent(dragEvent("dragstart"))
+    subHeader.dispatchEvent(dragEvent("dragover"))
+    subHeader.dispatchEvent(dragEvent("drop"))
+
+    expect(h.onDropFolder).not.toHaveBeenCalled()
+  })
+
+  it("dragging a root-level folder back onto the root zone is a no-op", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["sub/a.md"], "sub/a.md", h)
+    const header = container.querySelector<HTMLElement>(".folder-header")!
+
+    header.dispatchEvent(dragEvent("dragstart"))
+    container.dispatchEvent(dragEvent("dragover"))
+    container.dispatchEvent(dragEvent("drop"))
 
     expect(h.onDropFolder).not.toHaveBeenCalled()
   })

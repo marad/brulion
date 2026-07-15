@@ -133,6 +133,20 @@ test("dropping a folder onto itself does not move it (AC-7)", async ({ page }) =
   expect(await noteExists(page, "projects/a.md")).toBe(true) // untouched
 })
 
+test("dropping a subfolder back onto its own parent header is a silent no-op, not an error", async ({ page }) => {
+  await stubPicker(page)
+  await page.goto("/brulion/")
+  await writeNote(page, "archive/projects/a.md", "a body")
+  await page.locator("#open-folder").click()
+
+  await folderHeader(page, "projects").dragTo(folderHeader(page, "archive"))
+
+  // No #dialog-backdrop alert — this must not surface as a "can't move into
+  // itself" error the way an actual self-nest attempt does.
+  await expect(page.locator("#dialog-backdrop")).toBeHidden()
+  expect(await noteExists(page, "archive/projects/a.md")).toBe(true) // untouched
+})
+
 test("dropping a note onto an occupied destination shows an error and leaves it in place", async ({
   page,
 }) => {
