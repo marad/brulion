@@ -123,3 +123,10 @@ an empty `start` buffer.
 Given note A (outside the folder being deleted) is active,
 When a different folder is deleted (confirmed),
 Then the editor still shows A as the active note.
+
+**AC-9** — A failed vault switch rolls the folder listing back too.
+Given a vault switch fails (the target folder is unreachable — deleted,
+moved, or its permission revoked),
+When the window rolls back to the previously attached vault,
+Then the sidebar's folder listing reflects that previous vault again, not
+the one that failed to open.
