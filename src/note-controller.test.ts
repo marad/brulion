@@ -630,6 +630,18 @@ describe("removeNote (FEAT-0012)", () => {
     expect(result).toEqual({ ok: false, reason: "Something went wrong. Please try again." })
   })
 
+  it("still reports success when the note is deleted but relisting afterward fails", async () => {
+    // deleteNote already succeeded (the file is gone from disk) — a failure
+    // relisting isn't a delete failure and must not read back as one.
+    const { controller } = await open("a.md", ["a.md", "b.md"])
+    listNotes.mockRejectedValueOnce(new Error("boom"))
+
+    const result = await controller.removeNote("a.md")
+
+    expect(result).toEqual({ ok: true })
+    expect(deleteNote).toHaveBeenCalledWith(DIR, "a.md")
+  })
+
   it("falls back to an empty start buffer when the last note is deleted (AC-7)", async () => {
     const { view, controller, onListChanged } = await open("only.md", ["only.md"])
     listNotes.mockResolvedValue([])
@@ -837,6 +849,18 @@ describe("removeFolder (FEAT-0069)", () => {
     const result = await controller.removeFolder("projects")
 
     expect(result).toEqual({ ok: false, reason: "Something went wrong. Please try again." })
+  })
+
+  it("still reports success when the folder is deleted but relisting afterward fails", async () => {
+    // deleteFolder already succeeded (the folder is gone from disk) — a
+    // failure relisting isn't a delete failure and must not read back as one.
+    const { controller } = await open("start.md", ["start.md", "projects/a.md"])
+    listNotes.mockRejectedValueOnce(new Error("boom"))
+
+    const result = await controller.removeFolder("projects")
+
+    expect(result).toEqual({ ok: true })
+    expect(deleteFolder).toHaveBeenCalledWith(DIR, "projects")
   })
 
   it("falls back to an empty start buffer when the active note's folder held everything (AC-7)", async () => {

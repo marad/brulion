@@ -722,28 +722,35 @@ export function createNoteController(
         if (name === activeName) dirty = false
         await flushAndWait()
         await deleteNote(dir, name)
-        contentCache.delete(name)
-        notes = await listNotes(dir)
-        if (name === activeName) {
-          // The delete itself is already done at this point — a failure
-          // loading the fallback note into the editor isn't a delete
-          // failure, and (per load()'s own "commit only on success" rule)
-          // leaves activeName exactly where it was, i.e. still naming the
-          // just-deleted note. There's no further fallback to try — unlike
-          // moveFolder/renameActive's two-step recovery, pickActiveNote
-          // already picked the best candidate — so this can only log and
-          // accept the same residual risk moveFolder/renameActive's own
-          // "last resort exhausted" case already carries. `notes` is already
-          // accurate regardless, so the sidebar still hears about it even
-          // when the fallback load itself fails.
-          try {
-            await activate(dir, pickActiveNote(notes, null))
-          } catch (err) {
-            console.error("removeNote: activate failed after a successful delete:", err)
+        // The note is already deleted on disk at this point — a failure
+        // below (relisting, or loading a fallback note into the editor)
+        // isn't a delete failure, and must not read back as one (same
+        // reasoning as addNote's post-create steps).
+        try {
+          contentCache.delete(name)
+          notes = await listNotes(dir)
+          if (name === activeName) {
+            // A failure loading the fallback note into the editor (per
+            // load()'s own "commit only on success" rule) leaves activeName
+            // exactly where it was, i.e. still naming the just-deleted note.
+            // There's no further fallback to try — unlike moveFolder/
+            // renameActive's two-step recovery, pickActiveNote already
+            // picked the best candidate — so this can only log and accept
+            // the same residual risk moveFolder/renameActive's own "last
+            // resort exhausted" case already carries. `notes` is already
+            // accurate regardless, so the sidebar still hears about it even
+            // when the fallback load itself fails.
+            try {
+              await activate(dir, pickActiveNote(notes, null))
+            } catch (err) {
+              console.error("removeNote: activate failed after a successful delete:", err)
+              opts.onListChanged?.(notes, activeName)
+            }
+          } else {
             opts.onListChanged?.(notes, activeName)
           }
-        } else {
-          opts.onListChanged?.(notes, activeName)
+        } catch (err) {
+          console.error("removeNote: post-delete steps failed after a successful delete:", err)
         }
         return { ok: true }
       })
@@ -784,24 +791,36 @@ export function createNoteController(
         if (activeInsideFolder) dirty = false
         await flushAndWait()
         await deleteFolder(dir, path)
-        for (const key of contentCache.keys()) {
-          if (key.startsWith(path + "/")) contentCache.delete(key)
-        }
-        notes = await listNotes(dir)
-        opts.onFoldersChanged?.(await listFolders(dir))
-        if (activeInsideFolder) {
-          // Same reasoning as removeNote above: the delete already
-          // succeeded, and there's no further fallback beyond pickActiveNote
-          // to try. `notes` is already accurate regardless, so the sidebar
-          // still hears about it even when the fallback load itself fails.
+        // The folder (and everything beneath it) is already deleted on disk
+        // at this point — a failure below isn't a delete failure, and must
+        // not read back as one (same reasoning as removeNote's post-delete
+        // steps).
+        try {
+          for (const key of contentCache.keys()) {
+            if (key.startsWith(path + "/")) contentCache.delete(key)
+          }
+          notes = await listNotes(dir)
           try {
-            await activate(dir, pickActiveNote(notes, null))
+            opts.onFoldersChanged?.(await listFolders(dir))
           } catch (err) {
-            console.error("removeFolder: activate failed after a successful delete:", err)
+            console.error("removeFolder: onFoldersChanged failed after a successful delete:", err)
+          }
+          if (activeInsideFolder) {
+            // Same reasoning as removeNote above: the delete already
+            // succeeded, and there's no further fallback beyond pickActiveNote
+            // to try. `notes` is already accurate regardless, so the sidebar
+            // still hears about it even when the fallback load itself fails.
+            try {
+              await activate(dir, pickActiveNote(notes, null))
+            } catch (err) {
+              console.error("removeFolder: activate failed after a successful delete:", err)
+              opts.onListChanged?.(notes, activeName)
+            }
+          } else {
             opts.onListChanged?.(notes, activeName)
           }
-        } else {
-          opts.onListChanged?.(notes, activeName)
+        } catch (err) {
+          console.error("removeFolder: post-delete steps failed after a successful delete:", err)
         }
         return { ok: true }
       })

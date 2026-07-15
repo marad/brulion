@@ -2848,4 +2848,13 @@ Separately, the "last resort exhausted" branches (now in four places:
 that call to each. This does *not* change the accepted `activeName`-staleness
 risk above (that's still a real, documented residual risk); it only stops
 the sidebar's file listing from silently going stale on top of it.
-  deferred for the same reason as the walk duplication above.
+
+**Round-17 follow-up:** the 17th pass found the round-16 fix for
+`removeNote`/`removeFolder` was itself still incomplete — `serializeResult`
+wrapped the whole function, but only the tail `activate()` call had its own
+local try/catch; the post-delete `listNotes`/`listFolders`/`onFoldersChanged`
+calls in between had none, so a transient failure there fell through to
+`serializeResult`'s generic catch and reported an already-successful delete
+as failed (the exact class of bug `addNote`/`addFolder`'s post-create steps
+were already protected against). Fixed by wrapping each method's whole
+post-delete sequence in its own try/catch, mirroring `addNote`'s shape.
