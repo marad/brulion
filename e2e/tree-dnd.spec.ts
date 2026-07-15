@@ -93,6 +93,22 @@ test("dragging a note onto a folder moves it there (AC-5)", async ({ page }) => 
   expect(await noteExists(page, "alpha.md")).toBe(false)
 })
 
+test("dropping a note onto another note's row targets that note's containing folder (AC-9)", async ({
+  page,
+}) => {
+  await stubPicker(page)
+  await page.goto("/brulion/")
+  await writeNote(page, "alpha.md", "alpha body")
+  await writeNote(page, "projects/keep.md", "keep body")
+  await page.locator("#open-folder").click()
+  await folderHeader(page, "projects").click() // collapsed by default — expand it
+
+  await row(page, "alpha").dragTo(row(page, "keep"))
+
+  await expect.poll(() => noteExists(page, "projects/alpha.md")).toBe(true)
+  expect(await noteExists(page, "alpha.md")).toBe(false)
+})
+
 test("dragging a folder onto another folder moves it and its contents (AC-6)", async ({ page }) => {
   await stubPicker(page)
   await page.goto("/brulion/")
