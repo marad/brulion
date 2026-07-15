@@ -547,6 +547,23 @@ export function createNoteController(
     return run
   }
 
+  // `serialize`, mechanically guaranteeing the `AddNoteResult` contract every
+  // caller (main.ts) relies on: a controller method never rejects, always
+  // resolving {ok:false} instead. A structural backstop only — it doesn't know
+  // which mid-operation failures are actually benign (e.g. "the move already
+  // succeeded, only the best-effort follow-up load failed"), so it never
+  // replaces a step's own specific try/catch for that nuance, only catches
+  // whatever slips past it.
+  const serializeResult = (op: () => Promise<AddNoteResult>): Promise<AddNoteResult> =>
+    serialize<AddNoteResult>(async () => {
+      try {
+        return await op()
+      } catch (err) {
+        console.error("Controller operation failed unexpectedly:", err)
+        return { ok: false, reason: "Something went wrong. Please try again." }
+      }
+    })
+
   return {
     open(folder) {
       abortPendingRelist() // a whole vault switch makes any in-flight relist moot
@@ -666,7 +683,7 @@ export function createNoteController(
     },
     addNote(name) {
       abortPendingRelist()
-      return serialize<AddNoteResult>(async () => {
+      return serializeResult(async () => {
         if (!dir) return { ok: false, reason: "Open a folder first." }
         if (conflict) return { ok: false, reason: "Resolve the conflict first." }
         const normalized = normalizeNoteName(name)
@@ -705,7 +722,7 @@ export function createNoteController(
     },
     addFolder(path) {
       abortPendingRelist()
-      return serialize<AddNoteResult>(async () => {
+      return serializeResult(async () => {
         if (!dir) return { ok: false, reason: "Open a folder first." }
         if (conflict) return { ok: false, reason: "Resolve the conflict first." }
         const normalized = normalizeFolderPath(path)
@@ -746,7 +763,7 @@ export function createNoteController(
     },
     moveFolder(fromPath, toPath) {
       abortPendingRelist()
-      return serialize<AddNoteResult>(async () => {
+      return serializeResult(async () => {
         if (!dir) return { ok: false, reason: "Open a folder first." }
         if (conflict) return { ok: false, reason: "Resolve the conflict first." }
         const normalized = normalizeFolderPath(toPath)
@@ -884,7 +901,7 @@ export function createNoteController(
     },
     renameActive(name) {
       abortPendingRelist()
-      return serialize<AddNoteResult>(async () => {
+      return serializeResult(async () => {
         if (!dir) return { ok: false, reason: "Open a folder first." }
         if (conflict) return { ok: false, reason: "Resolve the conflict first." }
         const normalized = normalizeNoteName(name)

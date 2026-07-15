@@ -420,11 +420,7 @@ const noteListHandlers = {
         // renamed/deleted by the time the user confirms. removeNote is a
         // no-op for an already-missing path, which would otherwise look
         // like a successful delete with no feedback at all.
-        if (!noteStillExists(name)) {
-          void dialog.alert(`"${displayName(name)}" no longer exists.`)
-          return
-        }
-        void controller.removeNote(name)
+        ifExists(name, noteStillExists, () => void controller.removeNote(name))
       })
   },
   onToggleFolder: (path: string, collapsed: boolean) => {
@@ -445,24 +441,18 @@ const noteListHandlers = {
         if (!ok) return
         // Same race as onDelete above: the folder may have been externally
         // removed/moved while the (now async) confirmation sat open.
-        if (!folderStillExists(path)) {
-          void dialog.alert(`"${path}" no longer exists.`)
-          return
-        }
-        void controller.removeFolder(path)
+        ifExists(path, folderStillExists, () => void controller.removeFolder(path))
       })
   },
   onMoveNote: (path: string) => {
     // The tree menu can stay open indefinitely before this fires — re-check
     // existence first, since switchTo has none of its own (noteStillExists).
-    if (!noteStillExists(path)) {
-      void dialog.alert(`"${displayName(path)}" no longer exists.`)
-      return
-    }
-    // renameActive is active-note-scoped — switch to this note first, exactly
-    // like clicking its name already does, then let the picker apply the move.
-    void controller.switchTo(path).then(() => {
-      movePicker.open(destinationChoices(), (dest) => moveNoteTo(path, dest))
+    ifExists(path, noteStillExists, () => {
+      // renameActive is active-note-scoped — switch to this note first, exactly
+      // like clicking its name already does, then let the picker apply the move.
+      void controller.switchTo(path).then(() => {
+        movePicker.open(destinationChoices(), (dest) => moveNoteTo(path, dest))
+      })
     })
   },
   onMoveFolder: (path: string) => {
@@ -473,15 +463,13 @@ const noteListHandlers = {
   onRenameFolder: (path: string) => promptRenameFolder(path),
   onDropNote: (path: string, destination: string) => {
     // Same active-note constraint (and existence re-check) as onMoveNote above.
-    if (!noteStillExists(path)) {
-      void dialog.alert(`"${displayName(path)}" no longer exists.`)
-      return
-    }
-    void controller.switchTo(path).then(() =>
-      moveNoteTo(path, destination).then((result) => {
-        if (!result.ok) void dialog.alert(result.reason)
-      }),
-    )
+    ifExists(path, noteStillExists, () => {
+      void controller.switchTo(path).then(() =>
+        moveNoteTo(path, destination).then((result) => {
+          if (!result.ok) void dialog.alert(result.reason)
+        }),
+      )
+    })
   },
   onDropFolder: (path: string, destination: string) => {
     void moveFolderTo(path, destination).then((result) => {
@@ -509,6 +497,32 @@ function folderStillExists(path: string): boolean {
  * one. */
 function noteStillExists(path: string): boolean {
   return currentNotes.includes(path)
+}
+
+/** Alert-and-bail if `path` has vanished (per `exists`), otherwise run `fn`.
+ * Centralizes the existence-guard-then-alert pattern every async dialog/
+ * picker/menu handler needs (M35/FEAT-0073): each held `path` across a wait
+ * long enough for the background poll to notice it was externally deleted,
+ * and previously re-implemented this same check-and-alert at each call site. */
+function ifExists(path: string, exists: (path: string) => boolean, fn: () => void): void {
+  if (!exists(path)) {
+    void dialog.alert(`"${displayName(path)}" no longer exists.`)
+    return
+  }
+  fn()
+}
+
+/** Same guard as {@link ifExists}, for a call site that itself resolves to an
+ * `AddNoteResult` rather than doing its own void-returning follow-up. */
+function ifExistsResult(
+  path: string,
+  exists: (path: string) => boolean,
+  fn: () => Promise<AddNoteResult>,
+): Promise<AddNoteResult> {
+  if (!exists(path)) {
+    return Promise.resolve({ ok: false, reason: `"${displayName(path)}" no longer exists.` })
+  }
+  return fn()
 }
 
 /** `switchTo(path)`, then run `fn()` only if the switch actually landed on
@@ -543,13 +557,12 @@ function moveNoteTo(path: string, destination: string): Promise<AddNoteResult> {
   // externally. Checked here, before touching any state; switchToThenIfLanded
   // covers the narrower race switchTo silently no-opping would otherwise open
   // (renameActive would then act on whatever note ended up active instead).
-  if (!noteStillExists(path)) {
-    return Promise.resolve({ ok: false, reason: `"${displayName(path)}" no longer exists.` })
-  }
-  const name = displayName(path).split("/").pop() as string
-  return switchToThenIfLanded(path, () =>
-    controller.renameActive(destination ? `${destination}/${name}` : name),
-  )
+  return ifExistsResult(path, noteStillExists, () => {
+    const name = displayName(path).split("/").pop() as string
+    return switchToThenIfLanded(path, () =>
+      controller.renameActive(destination ? `${destination}/${name}` : name),
+    )
+  })
 }
 
 /** Move folder `path` to `destination` — the drag-and-drop/picker-shared
@@ -569,13 +582,12 @@ function promptNewFolder(parentPath: string): void {
     // externally removed. addFolder's createFolder auto-vivifies missing
     // ancestors, so without this check confirming would silently resurrect
     // a folder that was deliberately deleted while the dialog was open.
-    if (parentPath && !folderStillExists(parentPath)) {
-      void dialog.alert(`"${parentPath}" no longer exists.`)
-      return
-    }
-    const path = parentPath ? `${parentPath}/${name}` : name
-    void controller.addFolder(path).then((result) => {
-      if (!result.ok) void dialog.alert(result.reason)
+    // The root ("") is never stale, so the guard only applies to a real path.
+    ifExists(parentPath, (p) => p === "" || folderStillExists(p), () => {
+      const path = parentPath ? `${parentPath}/${name}` : name
+      void controller.addFolder(path).then((result) => {
+        if (!result.ok) void dialog.alert(result.reason)
+      })
     })
   })
 }
@@ -602,14 +614,13 @@ function promptRenameTo(
 
 function promptRenameNote(path: string): void {
   const current = displayName(path).split("/").pop() as string
-  promptRenameTo(path, current, (target) => {
+  promptRenameTo(path, current, (target) =>
     // Same check as moveNoteTo above: the rename dialog can sit open long
     // enough for `path` to vanish externally.
-    if (!noteStillExists(path)) {
-      return Promise.resolve({ ok: false, reason: `"${displayName(path)}" no longer exists.` })
-    }
-    return switchToThenIfLanded(path, () => controller.renameActive(target))
-  })
+    ifExistsResult(path, noteStillExists, () =>
+      switchToThenIfLanded(path, () => controller.renameActive(target)),
+    ),
+  )
 }
 
 function promptRenameFolder(path: string): void {

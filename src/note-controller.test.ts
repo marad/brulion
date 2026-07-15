@@ -537,6 +537,17 @@ describe("addNote (FEAT-0012)", () => {
     expect(result.ok).toBe(false)
     expect(createNote).not.toHaveBeenCalled()
   })
+
+  it("resolves {ok:false} instead of rejecting when a step throws unexpectedly", async () => {
+    const view = mountView()
+    const controller = createNoteController(view)
+    await controller.open(DIR)
+    createNote.mockRejectedValueOnce(new Error("boom"))
+
+    const result = await controller.addNote("new note")
+
+    expect(result).toEqual({ ok: false, reason: "Something went wrong. Please try again." })
+  })
 })
 
 describe("removeNote (FEAT-0012)", () => {
@@ -686,6 +697,17 @@ describe("addFolder (FEAT-0069)", () => {
 
     expect(result.ok).toBe(false)
     expect(createFolder).not.toHaveBeenCalled()
+  })
+
+  it("resolves {ok:false} instead of rejecting when a step throws unexpectedly", async () => {
+    const view = mountView()
+    const controller = createNoteController(view)
+    await controller.open(DIR)
+    createFolder.mockRejectedValueOnce(new Error("boom"))
+
+    const result = await controller.addFolder("new-folder")
+
+    expect(result).toEqual({ ok: false, reason: "Something went wrong. Please try again." })
   })
 })
 
