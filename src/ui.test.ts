@@ -997,6 +997,141 @@ describe("renderNoteList drag-and-drop (FEAT-0072)", () => {
   })
 })
 
+describe("renderNoteList keyboard navigation (FEAT-0075)", () => {
+  const handlers = () => ({ onSelect: vi.fn(), onDelete: vi.fn(), onToggleFolder: vi.fn() })
+  const key = (el: HTMLElement, k: string) =>
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }))
+  const names = (c: HTMLElement) => [...c.querySelectorAll<HTMLElement>(".note-name")]
+
+  function mount(notes: string[], active: string, expanded = new Set<string>()) {
+    const container = document.createElement("div")
+    document.body.append(container) // focus() needs a connected element
+    renderNoteList(container, notes, active, handlers(), expanded)
+    return container
+  }
+
+  it("makes exactly one row the tab stop — the active note's (AC-8)", () => {
+    const c = mount(["a.md", "b.md", "c.md"], "b.md")
+    const rows = names(c)
+    const zero = rows.filter((r) => r.tabIndex === 0)
+    expect(zero).toHaveLength(1)
+    expect(zero[0].dataset.path).toBe("b.md")
+    expect(rows.filter((r) => r.tabIndex === -1)).toHaveLength(2)
+  })
+
+  it("falls back to the first row as the tab stop when nothing matches active (AC-8)", () => {
+    const c = mount(["a.md", "b.md"], "gone.md")
+    const rows = names(c)
+    expect(rows[0].tabIndex).toBe(0)
+    expect(rows[1].tabIndex).toBe(-1)
+  })
+
+  it("Down moves focus to the next row and carries the tab stop (AC-1)", () => {
+    const c = mount(["a.md", "b.md", "c.md"], "a.md")
+    const rows = names(c)
+    rows[0].focus()
+    key(rows[0], "ArrowDown")
+    expect(document.activeElement).toBe(rows[1])
+    expect(rows[1].tabIndex).toBe(0)
+    expect(rows[0].tabIndex).toBe(-1)
+  })
+
+  it("Down on the last row does not wrap (AC-2)", () => {
+    const c = mount(["a.md", "b.md"], "a.md")
+    const rows = names(c)
+    rows[1].focus()
+    key(rows[1], "ArrowDown")
+    expect(document.activeElement).toBe(rows[1])
+  })
+
+  it("Home/End jump to the first/last visible row (AC-6)", () => {
+    const c = mount(["a.md", "b.md", "c.md"], "b.md")
+    const rows = names(c)
+    rows[1].focus()
+    key(rows[1], "End")
+    expect(document.activeElement).toBe(rows[2])
+    key(rows[2], "Home")
+    expect(document.activeElement).toBe(rows[0])
+  })
+
+  it("Right expands a collapsed folder and persists it (AC-4, AC-9)", () => {
+    const c = mount(["other.md", "sub/a.md"], "other.md") // sub is collapsed
+    const header = c.querySelector<HTMLElement>(".folder-header")!
+    expect(header.getAttribute("aria-expanded")).toBe("false")
+    header.focus()
+    key(header, "ArrowRight")
+    expect(header.getAttribute("aria-expanded")).toBe("true")
+  })
+
+  it("Right on an expanded folder descends to its first child (AC-4)", () => {
+    const c = mount(["sub/a.md"], "sub/a.md") // active inside sub → sub expanded
+    const header = c.querySelector<HTMLElement>(".folder-header")!
+    header.focus()
+    key(header, "ArrowRight")
+    expect((document.activeElement as HTMLElement).dataset.path).toBe("sub/a.md")
+  })
+
+  it("Left collapses an expanded folder (AC-5)", () => {
+    const c = mount(["sub/a.md"], "sub/a.md")
+    const header = c.querySelector<HTMLElement>(".folder-header")!
+    expect(header.getAttribute("aria-expanded")).toBe("true")
+    header.focus()
+    key(header, "ArrowLeft")
+    expect(header.getAttribute("aria-expanded")).toBe("false")
+  })
+
+  it("Left on a note moves focus to its parent folder header (AC-5)", () => {
+    const c = mount(["sub/a.md"], "sub/a.md")
+    const noteName = c.querySelector<HTMLElement>(".note-name")!
+    noteName.focus()
+    key(noteName, "ArrowLeft")
+    expect((document.activeElement as HTMLElement).classList.contains("folder-header")).toBe(true)
+  })
+
+  it("Enter on a note activates it exactly once (AC-7)", () => {
+    const container = document.createElement("div")
+    document.body.append(container)
+    const h = handlers()
+    renderNoteList(container, ["a.md", "b.md"], "a.md", h)
+    const row = container.querySelector<HTMLElement>(".note-name")!
+    row.focus()
+    key(row, "Enter")
+    expect(h.onSelect).toHaveBeenCalledTimes(1)
+    expect(h.onSelect).toHaveBeenCalledWith("a.md")
+  })
+
+  it("restores focus to the tab stop after a re-render when focus was in the tree", () => {
+    const c = mount(["a.md", "b.md"], "a.md")
+    names(c)[1].focus() // focus b.md
+    // A re-render (e.g. onListChanged) rebuilds every row — focus would drop to
+    // <body> without the restore. Active becomes b.md.
+    renderNoteList(c, ["a.md", "b.md"], "b.md", handlers())
+    expect((document.activeElement as HTMLElement).dataset.path).toBe("b.md")
+  })
+
+  it("does NOT steal focus on a re-render when focus was outside the tree", () => {
+    const c = mount(["a.md"], "a.md")
+    const outside = document.createElement("input")
+    document.body.append(outside)
+    outside.focus()
+    // A background repaint while the user is focused elsewhere (e.g. the editor)
+    // must never yank focus into the sidebar.
+    renderNoteList(c, ["a.md", "b.md"], "a.md", handlers())
+    expect(document.activeElement).toBe(outside)
+  })
+
+  it("a collapsed folder's hidden children are skipped by Down (AC-3)", () => {
+    const c = mount(["other.md", "sub/a.md"], "other.md") // sub collapsed; sub/a.md hidden
+    // Visible rows in draw order: other.md, sub (header). sub/a.md is hidden.
+    const other = names(c).find((r) => r.dataset.path === "other.md")!
+    other.focus()
+    key(other, "ArrowDown") // from other.md → the sub header (not the hidden sub/a.md)
+    expect((document.activeElement as HTMLElement).classList.contains("folder-header")).toBe(true)
+    key(document.activeElement as HTMLElement, "ArrowDown") // sub header is last visible → no move
+    expect((document.activeElement as HTMLElement).classList.contains("folder-header")).toBe(true)
+  })
+})
+
 describe("wireToggle", () => {
   function toggleFixture(initialOn = false) {
     const button = document.createElement("button")

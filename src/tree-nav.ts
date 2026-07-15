@@ -1,0 +1,93 @@
+/**
+ * The pure core of the sidebar tree's keyboard navigation (M36/FEAT-0075):
+ * given the currently *visible* rows and which one has focus, decide what a
+ * pressed key does. No DOM, no FSA — the DOM glue in `ui.ts` reads the visible
+ * rows off the rendered tree, calls this, and executes the returned action
+ * (move focus / toggle a folder / activate a row). Isolating the decision here
+ * keeps the traversal rules (skip collapsed children, don't wrap, Right/Left
+ * expand-or-descend / collapse-or-ascend) unit-testable without a rendered
+ * tree, the same way `link-rewrite.ts`/`note-name.ts` isolate their cores.
+ */
+
+/** One visible row, in draw order. `depth` is the nesting level — the number of
+ * `/` in `path` (a root note/folder is 0, a child of a root folder is 1, …) —
+ * which is what makes "the parent is the nearest earlier row one level up" and
+ * "the first child is the very next row one level down" computable from the
+ * flat list alone. `expanded` is meaningful only for a folder. */
+export interface TreeRow {
+  path: string
+  kind: "note" | "folder"
+  expanded: boolean
+  depth: number
+}
+
+/** What a key press resolves to. `index` names the row it acts on (the target
+ * to focus, or the folder to expand/collapse, or the row to activate). */
+export type TreeAction =
+  | { type: "focus"; index: number }
+  | { type: "expand"; index: number }
+  | { type: "collapse"; index: number }
+  | { type: "activate"; index: number }
+  | { type: "none" }
+
+/** The depth (nesting level) of a row path — the number of `/` separators.
+ * Exported so the DOM glue derives descriptors the same way this core reasons
+ * about them, never a second, divergent notion of nesting. */
+export function treeDepth(path: string): number {
+  let n = 0
+  for (const ch of path) if (ch === "/") n++
+  return n
+}
+
+/** The index of `current`'s parent folder header — the nearest earlier row at
+ * exactly one shallower depth — or `-1` at the root (nothing shallower before
+ * it). */
+function parentIndex(rows: TreeRow[], current: number): number {
+  const target = rows[current].depth - 1
+  for (let i = current - 1; i >= 0; i--) {
+    if (rows[i].depth === target) return i
+    if (rows[i].depth < target) return -1 // climbed past the parent's level without finding it
+  }
+  return -1
+}
+
+/**
+ * Resolve `key` (a `KeyboardEvent.key`) against the visible `rows` with focus on
+ * `rows[current]`. Returns the action the glue should perform, or `{type:"none"}`
+ * when the key does nothing here (an unrelated key, a move past an end, Right on
+ * a note, Left at the root). `current` out of range yields `none`.
+ */
+export function resolveTreeKey(key: string, rows: TreeRow[], current: number): TreeAction {
+  if (current < 0 || current >= rows.length) return { type: "none" }
+  const row = rows[current]
+
+  switch (key) {
+    case "ArrowDown":
+      return current < rows.length - 1 ? { type: "focus", index: current + 1 } : { type: "none" }
+    case "ArrowUp":
+      return current > 0 ? { type: "focus", index: current - 1 } : { type: "none" }
+    case "Home":
+      return current === 0 ? { type: "none" } : { type: "focus", index: 0 }
+    case "End":
+      return current === rows.length - 1 ? { type: "none" } : { type: "focus", index: rows.length - 1 }
+    case "ArrowRight": {
+      if (row.kind !== "folder") return { type: "none" } // a note has nothing to open into
+      if (!row.expanded) return { type: "expand", index: current }
+      // Already expanded: descend to the first child, if it has one (the very
+      // next row, one level deeper). An expanded-but-empty folder → nothing.
+      const next = rows[current + 1]
+      return next && next.depth === row.depth + 1 ? { type: "focus", index: current + 1 } : { type: "none" }
+    }
+    case "ArrowLeft": {
+      if (row.kind === "folder" && row.expanded) return { type: "collapse", index: current }
+      // A collapsed folder, or a note: step out to the parent folder header.
+      const parent = parentIndex(rows, current)
+      return parent === -1 ? { type: "none" } : { type: "focus", index: parent }
+    }
+    case "Enter":
+    case " ":
+      return { type: "activate", index: current }
+    default:
+      return { type: "none" }
+  }
+}
