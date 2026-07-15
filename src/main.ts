@@ -413,7 +413,18 @@ const noteListHandlers = {
     void dialog
       .confirm(`Delete "${displayName(name)}"? This removes the file from your folder.`, "Delete")
       .then((ok) => {
-        if (ok) void controller.removeNote(name)
+        if (!ok) return
+        // The dialog can sit open for a while (unlike the blocking
+        // window.confirm it replaced, M35/FEAT-0073) — the background poll
+        // keeps running underneath it, so `name` may have been externally
+        // renamed/deleted by the time the user confirms. removeNote is a
+        // no-op for an already-missing path, which would otherwise look
+        // like a successful delete with no feedback at all.
+        if (!currentNotes.includes(name)) {
+          void dialog.alert(`"${displayName(name)}" no longer exists.`)
+          return
+        }
+        void controller.removeNote(name)
       })
   },
   onToggleFolder: (path: string, collapsed: boolean) => {
@@ -431,7 +442,15 @@ const noteListHandlers = {
         "Delete",
       )
       .then((ok) => {
-        if (ok) void controller.removeFolder(path)
+        if (!ok) return
+        // Same race as onDelete above: the folder may have been externally
+        // removed/moved while the (now async) confirmation sat open.
+        const stillExists = currentFolders.includes(path) || currentNotes.some((n) => n.startsWith(`${path}/`))
+        if (!stillExists) {
+          void dialog.alert(`"${path}" no longer exists.`)
+          return
+        }
+        void controller.removeFolder(path)
       })
   },
   onMoveNote: (path: string) => {
@@ -475,7 +494,16 @@ function parentOf(path: string): string {
  * computed, shared by the "Move…" picker and a drag-and-drop drop. */
 function moveNoteTo(path: string, destination: string): Promise<AddNoteResult> {
   const name = displayName(path).split("/").pop() as string
-  return controller.renameActive(destination ? `${destination}/${name}` : name)
+  // Re-affirm `path` as active right before the move, not just once when the
+  // picker opened — the picker (or a drag) can sit open for a while (a real
+  // person deciding, unlike the blocking window.confirm this dialog replaced,
+  // M35/FEAT-0073), during which the background poll can switch the active
+  // note out from under it (e.g. `path` was deleted/renamed externally).
+  // renameActive only ever acts on *whatever's currently active*, so without
+  // this it could silently rename the wrong note.
+  return controller.switchTo(path).then(() =>
+    controller.renameActive(destination ? `${destination}/${name}` : name),
+  )
 }
 
 /** Move folder `path` to `destination` — the drag-and-drop/picker-shared
