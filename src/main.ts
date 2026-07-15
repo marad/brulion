@@ -502,14 +502,21 @@ function parentOf(path: string): string {
  * place "what target does a note move actually call renameActive with" is
  * computed, shared by the "Move…" picker and a drag-and-drop drop. */
 function moveNoteTo(path: string, destination: string): Promise<AddNoteResult> {
+  // The picker (or a drag) can sit open for a while (a real person deciding,
+  // unlike the blocking window.confirm this dialog replaced, M35/FEAT-0073),
+  // during which the background poll can notice `path` was deleted
+  // externally. switchTo has no existence check of its own (unlike every
+  // other caller, which already gates on currentNotes first) — calling it on
+  // a gone note wouldn't just fail the move, it would flush the *actually*
+  // active note and silently replace the editor with a phantom empty buffer
+  // for the deleted target. Checked here, before touching any state.
+  if (!currentNotes.includes(path)) {
+    return Promise.resolve({ ok: false, reason: `"${displayName(path)}" no longer exists.` })
+  }
   const name = displayName(path).split("/").pop() as string
   // Re-affirm `path` as active right before the move, not just once when the
-  // picker opened — the picker (or a drag) can sit open for a while (a real
-  // person deciding, unlike the blocking window.confirm this dialog replaced,
-  // M35/FEAT-0073), during which the background poll can switch the active
-  // note out from under it (e.g. `path` was deleted/renamed externally).
-  // renameActive only ever acts on *whatever's currently active*, so without
-  // this it could silently rename the wrong note.
+  // picker opened — renameActive only ever acts on *whatever's currently
+  // active*, so without this it could silently rename the wrong note.
   return controller.switchTo(path).then(() =>
     controller.renameActive(destination ? `${destination}/${name}` : name),
   )
@@ -565,7 +572,16 @@ function promptRenameTo(
 
 function promptRenameNote(path: string): void {
   const current = displayName(path).split("/").pop() as string
-  promptRenameTo(path, current, (target) => controller.switchTo(path).then(() => controller.renameActive(target)))
+  promptRenameTo(path, current, (target) => {
+    // Same check as moveNoteTo above: the rename dialog can sit open long
+    // enough for `path` to vanish externally — switchTo has no existence
+    // check of its own, so calling it here would silently replace the
+    // actually-active note's editor with a phantom empty buffer.
+    if (!currentNotes.includes(path)) {
+      return Promise.resolve({ ok: false, reason: `"${displayName(path)}" no longer exists.` })
+    }
+    return controller.switchTo(path).then(() => controller.renameActive(target))
+  })
 }
 
 function promptRenameFolder(path: string): void {
