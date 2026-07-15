@@ -58,6 +58,17 @@ exactly the way dropping on the empty root zone already targets the vault
 root rather than requiring an empty patch of the tree. The self-nest refusal
 above still applies against the retargeted destination.
 
+The drop-target indicator shown while dragging highlights the *whole
+destination folder* — its header together with everything nested under it —
+not just the single row the pointer happens to be over. Because a drop on a
+note row targets that note's containing folder (above), highlighting only the
+hovered note row would point at the wrong thing; highlighting the whole folder
+block makes "this is where it lands" unambiguous, and a drop on the folder's
+own header shows the identical highlight (same destination, same indicator).
+A drop that targets the vault root (a root-level note row, or the root zone)
+highlights the root drop zone rather than any folder block, since the root has
+no folder block of its own.
+
 ## Constraints
 
 - No new file-system primitive: "New note…" reuses the existing quick-
@@ -139,3 +150,12 @@ Then the dragged item moves into `a/b` — the same destination dropping it
 directly on `b`'s folder header would give — refused the same way a drop on
 `b`'s header would be refused (e.g. a dragged folder that would nest into
 itself via that destination).
+
+**AC-10** — The drag indicator highlights the whole destination folder.
+Given a drag is in progress over the tree,
+When the pointer is over a folder's header or over any note row inside that
+folder,
+Then the drop indicator highlights that whole folder block (header plus its
+nested contents), identically in both cases; and when the pointer is over a
+root-level note row or the root drop zone, the root drop zone is highlighted
+instead of any folder block.
