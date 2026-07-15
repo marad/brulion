@@ -160,3 +160,11 @@ Then `b.md` relocates to `archive/projects/b.md` normally, `a.md` is left at
 its original path with its own content intact (the conflicting destination
 file is not overwritten), and the move is not
 reported as a failure of the whole operation.
+
+**AC-10** — Moving a folder that no longer exists refuses cleanly.
+Given a folder `gone` that has already been deleted or moved away (a stale
+sidebar row, or a second concurrent move of the same folder),
+When `moveFolder("gone", "archive/gone")` is called,
+Then the operation reports failure with a reason, and no folder is created
+at the destination — a folder never actually there is not silently
+fabricated as an empty one.
