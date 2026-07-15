@@ -773,6 +773,27 @@ describe("moveFolder (FEAT-0070)", () => {
     expect(deleteFolder).toHaveBeenCalledWith(DIR, "projects/empty-sub")
   })
 
+  it("refuses moving a folder that no longer exists (stale row, no files or subfolders)", async () => {
+    const { controller } = await open("start.md", ["start.md"])
+    listFolders.mockResolvedValue([]) // fromPath has no notes and isn't in the folder listing either
+
+    const result = await controller.moveFolder("gone", "archive/gone")
+
+    expect(result.ok).toBe(false)
+    expect(createFolder).not.toHaveBeenCalled()
+    expect(moveNote).not.toHaveBeenCalled()
+  })
+
+  it("moves an existing empty folder even though it has no notes of its own", async () => {
+    const { controller } = await open("start.md", ["start.md"])
+    listFolders.mockResolvedValue(["empty"]) // the folder itself exists, empty
+
+    const result = await controller.moveFolder("empty", "archive/empty")
+
+    expect(result).toEqual({ ok: true })
+    expect(createFolder).toHaveBeenCalledWith(DIR, "archive/empty")
+  })
+
   it("refuses moving a folder into itself (AC-4)", async () => {
     const { controller } = await open("start.md", ["start.md"])
 

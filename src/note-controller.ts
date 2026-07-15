@@ -737,14 +737,25 @@ export function createNoteController(
           return { ok: false, reason: "Can't move a folder into itself or one of its own subfolders." }
         }
 
+        const pathsBefore = new Set(notes)
+        const toMove = notes.filter((path) => path.startsWith(fromPath + "/"))
+        // One walk answers both "does fromPath still exist at all" (a stale
+        // row — e.g. deleted or already moved elsewhere — must refuse rather
+        // than silently fabricating an empty folder at the destination) and,
+        // reused below, "which subfolders need to follow." `toMove` alone
+        // isn't enough: a folder with only empty subfolders and no files
+        // would otherwise look identical to one that never existed.
+        const allFolders = await listFolders(dir)
+        const folderExists =
+          toMove.length > 0 || allFolders.includes(fromPath) || allFolders.some((p) => p.startsWith(fromPath + "/"))
+        if (!folderExists) return { ok: false, reason: "That folder no longer exists." }
+
         const activeInsideFolder = isWithin(activeName, fromPath)
         if (activeInsideFolder) {
           await flushAndWait()
           if (conflict) return { ok: false, reason: "Resolve the conflict first." }
         }
 
-        const pathsBefore = new Set(notes)
-        const toMove = notes.filter((path) => path.startsWith(fromPath + "/"))
         const moves: { from: string; to: string }[] = []
         let newActiveName: string | null = null
         for (const oldPath of toMove) {
@@ -775,8 +786,11 @@ export function createNoteController(
         // loop above touches a folder with no notes of its own) — deepest
         // paths first so a parent's own emptiness check sees an already-
         // resolved child, and so a skipped file two levels down correctly
-        // keeps every ancestor above it from being deleted too.
-        const candidateSubfolders = (await listFolders(dir))
+        // keeps every ancestor above it from being deleted too. Reuses the
+        // `allFolders` walk from the existence check above — the note-move
+        // loop only relocates files, never touches directory entries, so
+        // that snapshot is still accurate.
+        const candidateSubfolders = allFolders
           .filter((path) => path.startsWith(fromPath + "/"))
           .sort((a, b) => b.length - a.length)
         for (const folder of candidateSubfolders) {
