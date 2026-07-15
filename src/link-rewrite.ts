@@ -18,26 +18,6 @@ import { findWikilinks, shortestLinkText } from "./wikilink"
  * through the stale-write guard); see {@link NoteController.renameActive}.
  */
 
-/** Inputs to {@link rewriteLinksForRename}. */
-export interface RenameRewrite {
-  /** The markdown text of the note being scanned. */
-  text: string
-  /** That note's own folder-relative path — markdown links resolve relative to
-   * its folder; it is unchanged by the rename. */
-  notePath: string
-  /** The renamed note's path before the move. */
-  oldPath: string
-  /** The renamed note's path after the move. */
-  newPath: string
-  /** The vault's note paths *before* the rename (contains `oldPath`) — used to
-   * decide what a link currently points at. */
-  pathsBefore: ReadonlySet<string>
-  /** The vault's note paths *after* the rename (contains `newPath`, not `oldPath`)
-   * — used to choose the new wikilink form and to tell when a link already
-   * resolves to `newPath` (so it needs no rewrite). */
-  pathsAfter: ReadonlySet<string>
-}
-
 /**
  * The POSIX relative path from the folder containing `fromNote` to `target`, such
  * that `resolveNotePath(fromNote, relativeLink(fromNote, target)) === target` (the
@@ -187,11 +167,6 @@ export function rewriteLinksForRenames(
   }
 
   return applyEdits(text, edits)
-}
-
-export function rewriteLinksForRename(args: RenameRewrite): string | null {
-  const { text, notePath, oldPath, newPath, pathsBefore, pathsAfter } = args
-  return rewriteLinksForRenames(text, notePath, new Map([[oldPath, newPath]]), pathsBefore, pathsAfter)
 }
 
 /**

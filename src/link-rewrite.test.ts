@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { relativeLink, rewriteLinksForRename, rewriteLinksForRenames, rebaseOutboundLinks } from "./link-rewrite"
+import { relativeLink, rewriteLinksForRenames, rebaseOutboundLinks } from "./link-rewrite"
 import { resolveNotePath } from "./note-name"
 
 /** Build a path set the way the contract expects (ReadonlySet<string>). */
@@ -38,27 +38,25 @@ describe("relativeLink — round-trip invariant", () => {
 describe("rewriteLinksForRename — markdown links", () => {
   it("AC-1: rewrites a same-folder markdown link, leaving the rest untouched", () => {
     const text = "before [d](diablo.md) after"
-    const out = rewriteLinksForRename({
+    const out = rewriteLinksForRenames(
       text,
-      notePath: "n.md",
-      oldPath: "diablo.md",
-      newPath: "diablo-2.md",
-      pathsBefore: vault("n.md", "diablo.md"),
-      pathsAfter: vault("n.md", "diablo-2.md"),
-    })
+      "n.md",
+      new Map([["diablo.md", "diablo-2.md"]]),
+      vault("n.md", "diablo.md"),
+      vault("n.md", "diablo-2.md"),
+    )
     expect(out).toBe("before [d](diablo-2.md) after")
   })
 
   it("AC-2: rebases a markdown link across a folder move and re-resolves (round-trip)", () => {
     const text = "see [d](diablo.md)"
-    const out = rewriteLinksForRename({
+    const out = rewriteLinksForRenames(
       text,
-      notePath: "sub/n.md",
-      oldPath: "sub/diablo.md",
-      newPath: "archive/diablo.md",
-      pathsBefore: vault("sub/n.md", "sub/diablo.md"),
-      pathsAfter: vault("sub/n.md", "archive/diablo.md"),
-    })
+      "sub/n.md",
+      new Map([["sub/diablo.md", "archive/diablo.md"]]),
+      vault("sub/n.md", "sub/diablo.md"),
+      vault("sub/n.md", "archive/diablo.md"),
+    )
     expect(out).toBe("see [d](../archive/diablo.md)")
     // round-trip: the rewritten destination re-resolves to newPath from sub/n.md.
     expect(resolveNotePath("sub/n.md", "../archive/diablo.md")).toBe("archive/diablo.md")
@@ -66,27 +64,25 @@ describe("rewriteLinksForRename — markdown links", () => {
 
   it("AC-3: wraps a destination containing a space in <…> and re-resolves to newPath", () => {
     const text = "go [d](diablo.md)"
-    const out = rewriteLinksForRename({
+    const out = rewriteLinksForRenames(
       text,
-      notePath: "sub/n.md",
-      oldPath: "sub/diablo.md",
-      newPath: "x/new note.md",
-      pathsBefore: vault("sub/n.md", "sub/diablo.md"),
-      pathsAfter: vault("sub/n.md", "x/new note.md"),
-    })
+      "sub/n.md",
+      new Map([["sub/diablo.md", "x/new note.md"]]),
+      vault("sub/n.md", "sub/diablo.md"),
+      vault("sub/n.md", "x/new note.md"),
+    )
     expect(out).toBe("go [d](<../x/new note.md>)")
     expect(resolveNotePath("sub/n.md", "<../x/new note.md>")).toBe("x/new note.md")
   })
 
   it("percent-encodes a '#' in the destination so the link doesn't split into an anchor", () => {
-    const out = rewriteLinksForRename({
-      text: "go [d](diablo.md)",
-      notePath: "n.md",
-      oldPath: "diablo.md",
-      newPath: "build#1.md", // '#' is a legal note name (not in normalizeNoteName's UNSAFE)
-      pathsBefore: vault("n.md", "diablo.md"),
-      pathsAfter: vault("n.md", "build#1.md"),
-    })
+    const out = rewriteLinksForRenames(
+      "go [d](diablo.md)",
+      "n.md",
+      new Map([["diablo.md", "build#1.md"]]), // '#' is a legal note name (not in normalizeNoteName's UNSAFE)
+      vault("n.md", "diablo.md"),
+      vault("n.md", "build#1.md"),
+    )
     expect(out).toBe("go [d](build%231.md)")
     // round-trip: the encoded destination resolves back to the '#'-named note,
     // not to a phantom note "build" with anchor "1".
@@ -96,51 +92,47 @@ describe("rewriteLinksForRename — markdown links", () => {
 
 describe("rewriteLinksForRename — wikilinks", () => {
   it("AC-4: a bare wikilink stays bare when the basename is renamed (unique after)", () => {
-    const out = rewriteLinksForRename({
-      text: "link [[diablo]] here",
-      notePath: "n.md",
-      oldPath: "diablo.md",
-      newPath: "diablo-2.md",
-      pathsBefore: vault("n.md", "diablo.md"),
-      pathsAfter: vault("n.md", "diablo-2.md"),
-    })
+    const out = rewriteLinksForRenames(
+      "link [[diablo]] here",
+      "n.md",
+      new Map([["diablo.md", "diablo-2.md"]]),
+      vault("n.md", "diablo.md"),
+      vault("n.md", "diablo-2.md"),
+    )
     expect(out).toBe("link [[diablo-2]] here")
   })
 
   it("AC-5: a bare wikilink is left untouched by a pure folder move (returns null)", () => {
-    const out = rewriteLinksForRename({
-      text: "link [[diablo]] here",
-      notePath: "n.md",
-      oldPath: "proj/diablo.md",
-      newPath: "archive/diablo.md",
-      pathsBefore: vault("n.md", "proj/diablo.md"),
-      pathsAfter: vault("n.md", "archive/diablo.md"),
-    })
+    const out = rewriteLinksForRenames(
+      "link [[diablo]] here",
+      "n.md",
+      new Map([["proj/diablo.md", "archive/diablo.md"]]),
+      vault("n.md", "proj/diablo.md"),
+      vault("n.md", "archive/diablo.md"),
+    )
     expect(out).toBeNull()
   })
 
   it("AC-6: a bare wikilink is promoted to a full path when the move makes it ambiguous", () => {
     // [[note]] resolves (first sorted) to a/note.md; b/note.md also present.
-    const out = rewriteLinksForRename({
-      text: "see [[note]]",
-      notePath: "n.md",
-      oldPath: "a/note.md",
-      newPath: "c/note.md",
-      pathsBefore: vault("n.md", "a/note.md", "b/note.md"),
-      pathsAfter: vault("n.md", "c/note.md", "b/note.md"),
-    })
+    const out = rewriteLinksForRenames(
+      "see [[note]]",
+      "n.md",
+      new Map([["a/note.md", "c/note.md"]]),
+      vault("n.md", "a/note.md", "b/note.md"),
+      vault("n.md", "c/note.md", "b/note.md"),
+    )
     expect(out).toBe("see [[c/note]]")
   })
 
   it("AC-7: a slashed wikilink is rewritten to the new full path, alias preserved", () => {
-    const out = rewriteLinksForRename({
-      text: "see [[sub/diablo|Diablo]]",
-      notePath: "n.md",
-      oldPath: "sub/diablo.md",
-      newPath: "archive/diablo.md",
-      pathsBefore: vault("n.md", "sub/diablo.md"),
-      pathsAfter: vault("n.md", "archive/diablo.md"),
-    })
+    const out = rewriteLinksForRenames(
+      "see [[sub/diablo|Diablo]]",
+      "n.md",
+      new Map([["sub/diablo.md", "archive/diablo.md"]]),
+      vault("n.md", "sub/diablo.md"),
+      vault("n.md", "archive/diablo.md"),
+    )
     expect(out).toBe("see [[archive/diablo|Diablo]]")
   })
 })
@@ -149,88 +141,81 @@ describe("rewriteLinksForRename — exclusions and no-ops", () => {
   it("AC-8: unrelated, external, and image links are never rewritten (returns null)", () => {
     const text =
       "a [other](other.md) b [ext](https://x.test) c ![img](diablo.md)"
-    const out = rewriteLinksForRename({
+    const out = rewriteLinksForRenames(
       text,
-      notePath: "n.md",
-      oldPath: "diablo.md",
-      newPath: "diablo-2.md",
-      pathsBefore: vault("n.md", "diablo.md", "other.md"),
-      pathsAfter: vault("n.md", "diablo-2.md", "other.md"),
-    })
+      "n.md",
+      new Map([["diablo.md", "diablo-2.md"]]),
+      vault("n.md", "diablo.md", "other.md"),
+      vault("n.md", "diablo-2.md", "other.md"),
+    )
     expect(out).toBeNull()
   })
 
   it("returns null for a note with no links at all", () => {
-    const out = rewriteLinksForRename({
-      text: "just some prose, nothing linked",
-      notePath: "n.md",
-      oldPath: "diablo.md",
-      newPath: "diablo-2.md",
-      pathsBefore: vault("n.md", "diablo.md"),
-      pathsAfter: vault("n.md", "diablo-2.md"),
-    })
+    const out = rewriteLinksForRenames(
+      "just some prose, nothing linked",
+      "n.md",
+      new Map([["diablo.md", "diablo-2.md"]]),
+      vault("n.md", "diablo.md"),
+      vault("n.md", "diablo-2.md"),
+    )
     expect(out).toBeNull()
   })
 
   it("returns null when every link points at a different note", () => {
-    const out = rewriteLinksForRename({
-      text: "[a](other.md) and [[somewhere/else]]",
-      notePath: "n.md",
-      oldPath: "diablo.md",
-      newPath: "diablo-2.md",
-      pathsBefore: vault("n.md", "diablo.md", "other.md", "somewhere/else.md"),
-      pathsAfter: vault("n.md", "diablo-2.md", "other.md", "somewhere/else.md"),
-    })
+    const out = rewriteLinksForRenames(
+      "[a](other.md) and [[somewhere/else]]",
+      "n.md",
+      new Map([["diablo.md", "diablo-2.md"]]),
+      vault("n.md", "diablo.md", "other.md", "somewhere/else.md"),
+      vault("n.md", "diablo-2.md", "other.md", "somewhere/else.md"),
+    )
     expect(out).toBeNull()
   })
 
   it("leaves an image link to the renamed note untouched (returns null when it's the only link)", () => {
-    const out = rewriteLinksForRename({
-      text: "![pic](diablo.md)",
-      notePath: "n.md",
-      oldPath: "diablo.md",
-      newPath: "diablo-2.md",
-      pathsBefore: vault("n.md", "diablo.md"),
-      pathsAfter: vault("n.md", "diablo-2.md"),
-    })
+    const out = rewriteLinksForRenames(
+      "![pic](diablo.md)",
+      "n.md",
+      new Map([["diablo.md", "diablo-2.md"]]),
+      vault("n.md", "diablo.md"),
+      vault("n.md", "diablo-2.md"),
+    )
     expect(out).toBeNull()
   })
 })
 
 describe("rewriteLinksForRename — multiple matches in one note", () => {
   it("rewrites both a markdown link and a wikilink to the renamed note in one call", () => {
-    const out = rewriteLinksForRename({
-      text: "md [d](diablo.md) and wiki [[diablo]]",
-      notePath: "n.md",
-      oldPath: "diablo.md",
-      newPath: "diablo-2.md",
-      pathsBefore: vault("n.md", "diablo.md"),
-      pathsAfter: vault("n.md", "diablo-2.md"),
-    })
+    const out = rewriteLinksForRenames(
+      "md [d](diablo.md) and wiki [[diablo]]",
+      "n.md",
+      new Map([["diablo.md", "diablo-2.md"]]),
+      vault("n.md", "diablo.md"),
+      vault("n.md", "diablo-2.md"),
+    )
     expect(out).toBe("md [d](diablo-2.md) and wiki [[diablo-2]]")
   })
 
   it("rewrites every markdown link to the renamed note", () => {
-    const out = rewriteLinksForRename({
-      text: "[one](diablo.md) [two](diablo.md) [three](diablo.md)",
-      notePath: "n.md",
-      oldPath: "diablo.md",
-      newPath: "diablo-2.md",
-      pathsBefore: vault("n.md", "diablo.md"),
-      pathsAfter: vault("n.md", "diablo-2.md"),
-    })
+    const out = rewriteLinksForRenames(
+      "[one](diablo.md) [two](diablo.md) [three](diablo.md)",
+      "n.md",
+      new Map([["diablo.md", "diablo-2.md"]]),
+      vault("n.md", "diablo.md"),
+      vault("n.md", "diablo-2.md"),
+    )
     expect(out).toBe("[one](diablo-2.md) [two](diablo-2.md) [three](diablo-2.md)")
   })
 
   it("rewrites the renamed note's links but leaves a sibling link to another note", () => {
-    const out = rewriteLinksForRename({
-      text: "[d](diablo.md) and [o](other.md)",
-      notePath: "n.md",
-      oldPath: "diablo.md",
-      newPath: "diablo-2.md",
-      pathsBefore: vault("n.md", "diablo.md", "other.md"),
-      pathsAfter: vault("n.md", "diablo-2.md", "other.md"),
-    })
+    const out = rewriteLinksForRenames(
+      "[d](diablo.md) and [o](other.md)",
+      "n.md",
+      new Map([["diablo.md", "diablo-2.md"]]),
+      vault("n.md", "diablo.md", "other.md"),
+      vault("n.md", "diablo-2.md", "other.md"),
+    )
     expect(out).toBe("[d](diablo-2.md) and [o](other.md)")
   })
 })
@@ -275,27 +260,25 @@ describe("rewriteLinksForRenames — checking a note's links against several ren
 
 describe("rewriteLinksForRename — wikilink whitespace, aliases, case", () => {
   it("rewrites a bare wikilink that carries an alias, preserving the alias", () => {
-    const out = rewriteLinksForRename({
-      text: "see [[diablo|D]]",
-      notePath: "n.md",
-      oldPath: "diablo.md",
-      newPath: "diablo-2.md",
-      pathsBefore: vault("n.md", "diablo.md"),
-      pathsAfter: vault("n.md", "diablo-2.md"),
-    })
+    const out = rewriteLinksForRenames(
+      "see [[diablo|D]]",
+      "n.md",
+      new Map([["diablo.md", "diablo-2.md"]]),
+      vault("n.md", "diablo.md"),
+      vault("n.md", "diablo-2.md"),
+    )
     expect(out).toBe("see [[diablo-2|D]]")
   })
 
   it("resolves a bare wikilink with surrounding whitespace", () => {
     // resolveWikilink trims the target, so [[ diablo ]] still points at diablo.md.
-    const out = rewriteLinksForRename({
-      text: "see [[ diablo ]]",
-      notePath: "n.md",
-      oldPath: "diablo.md",
-      newPath: "diablo-2.md",
-      pathsBefore: vault("n.md", "diablo.md"),
-      pathsAfter: vault("n.md", "diablo-2.md"),
-    })
+    const out = rewriteLinksForRenames(
+      "see [[ diablo ]]",
+      "n.md",
+      new Map([["diablo.md", "diablo-2.md"]]),
+      vault("n.md", "diablo.md"),
+      vault("n.md", "diablo-2.md"),
+    )
     // Whatever the whitespace handling, the target must now point at diablo-2,
     // not the now-vanished diablo, and the link must not be left dangling.
     expect(out).not.toBeNull()
@@ -304,14 +287,13 @@ describe("rewriteLinksForRename — wikilink whitespace, aliases, case", () => {
   })
 
   it("resolves a bare wikilink case-insensitively ([[Diablo]] → diablo.md)", () => {
-    const out = rewriteLinksForRename({
-      text: "see [[Diablo]]",
-      notePath: "n.md",
-      oldPath: "diablo.md",
-      newPath: "diablo-2.md",
-      pathsBefore: vault("n.md", "diablo.md"),
-      pathsAfter: vault("n.md", "diablo-2.md"),
-    })
+    const out = rewriteLinksForRenames(
+      "see [[Diablo]]",
+      "n.md",
+      new Map([["diablo.md", "diablo-2.md"]]),
+      vault("n.md", "diablo.md"),
+      vault("n.md", "diablo-2.md"),
+    )
     // The link resolved to diablo.md and must be retargeted to the new note.
     expect(out).not.toBeNull()
     expect(out).toContain("diablo-2")
@@ -321,14 +303,13 @@ describe("rewriteLinksForRename — wikilink whitespace, aliases, case", () => {
     // [[diablo.md]] still resolves to the moved note by basename, so rewriting it
     // to [[diablo]] would be a needless edit of another note's bytes. The guard
     // compares by resolution (not spelling), so this returns null.
-    const out = rewriteLinksForRename({
-      text: "see [[diablo.md]]",
-      notePath: "n.md",
-      oldPath: "diablo.md",
-      newPath: "archive/diablo.md",
-      pathsBefore: vault("n.md", "diablo.md"),
-      pathsAfter: vault("n.md", "archive/diablo.md"),
-    })
+    const out = rewriteLinksForRenames(
+      "see [[diablo.md]]",
+      "n.md",
+      new Map([["diablo.md", "archive/diablo.md"]]),
+      vault("n.md", "diablo.md"),
+      vault("n.md", "archive/diablo.md"),
+    )
     expect(out).toBeNull()
   })
 })

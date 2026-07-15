@@ -916,6 +916,21 @@ describe("moveFolder (FEAT-0070)", () => {
     expect(view.state.doc.toString()).toBe("a body")
   })
 
+  it("still reports success and notifies onListChanged when loading the relocated active note fails", async () => {
+    // The move itself is already fully done at this point — a failure loading
+    // the relocated note into the editor must not read back as "the move failed."
+    const { view, controller, onListChanged } = await open("projects/a.md", ["projects/a.md"])
+    listNotes.mockResolvedValue(["archive/projects/a.md"])
+    readNote.mockImplementationOnce(async () => ({ content: "a body", lastModified: 1 })) // the move's own read
+    readNote.mockRejectedValueOnce(new Error("boom")) // activate's own load()
+
+    const result = await controller.moveFolder("projects", "archive/projects")
+
+    expect(result).toEqual({ ok: true })
+    expect(view.state.doc.toString()).toBe("projects/a.md body") // load() never reached setEditorText
+    expect(onListChanged).toHaveBeenLastCalledWith(["archive/projects/a.md"], "projects/a.md")
+  })
+
   it("resolves {ok:false} instead of rejecting when the active-note flush throws", async () => {
     const { view, controller } = await open("projects/a.md", ["projects/a.md"])
     type(view, " edited")
@@ -1018,7 +1033,10 @@ describe("renameActive (FEAT-0034)", () => {
 
     expect(result).toEqual({ ok: true })
     expect(view.state.doc.toString()).toBe("a.md body") // load() never reached setEditorText
-    expect(onListChanged).toHaveBeenLastCalledWith(["b.md"], "b.md")
+    // activeName never actually moved to "b.md" either — load() doesn't commit
+    // it until the read succeeds, so the fallback notification (and the
+    // controller's own state) correctly still names the old note as active.
+    expect(onListChanged).toHaveBeenLastCalledWith(["b.md"], "a.md")
   })
 
   it("flushes pending edits before moving, so the moved file has them (AC-7)", async () => {

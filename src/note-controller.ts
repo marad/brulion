@@ -383,14 +383,18 @@ export function createNoteController(
     name: string,
     prefetched?: NoteContent,
   ): Promise<void> => {
+    const cached = contentCache.get(name)
+    if (cached) mark(`cache hit: ${name}`)
+    const note = cached ?? prefetched ?? (await track(`readNote: ${name}`, () => readNote(folder, name)))
+    // Nothing below commits until the read above has actually succeeded — a
+    // mid-read failure (permission revoked, a transient FS error) must leave
+    // activeName/lastModified/dirty exactly as they were, not pointing at a
+    // note whose content was never actually loaded into the editor.
     activeName = name
     if (conflict) {
       conflict = false
       opts.onConflictResolved?.()
     }
-    const cached = contentCache.get(name)
-    if (cached) mark(`cache hit: ${name}`)
-    const note = cached ?? prefetched ?? (await track(`readNote: ${name}`, () => readNote(folder, name)))
     if (!cached) contentCache.set(name, note)
     lastModified = note.lastModified
     // Skip the redraw if the buffer already shows this exact content — e.g.
@@ -850,7 +854,17 @@ export function createNoteController(
             // with it even if this folder-listing walk itself failed
           }
           if (newActiveName) {
-            await activate(dir, newActiveName)
+            // The move itself is already done at this point — a failure
+            // loading the relocated active note into the editor isn't a
+            // move failure (same reasoning as renameActive's own activate
+            // call), and must still tell the UI about the accurate listing
+            // rather than silently leaving it stale.
+            try {
+              await activate(dir, newActiveName)
+            } catch (err) {
+              console.error("moveFolder: activate failed after a successful move:", err)
+              opts.onListChanged?.(notes, activeName)
+            }
           } else {
             opts.onListChanged?.(notes, activeName)
           }
