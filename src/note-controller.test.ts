@@ -419,6 +419,24 @@ describe("switchTo", () => {
     expect(saveActiveNote).not.toHaveBeenCalled()
     expect(readNote).toHaveBeenCalledTimes(1) // only the open() read, no reload
   })
+
+  it("is a no-op when switching to a note this controller doesn't know about (M35/FEAT-0073)", async () => {
+    // A caller's own existence check (main.ts's noteStillExists) reads a
+    // UI-side snapshot that can lag behind this controller's own queue — the
+    // authoritative check has to live here too, or a queued switchTo for an
+    // already-deleted note would flush the real active note and activate a
+    // phantom empty buffer for the gone one.
+    const { view, controller } = twoNoteController()
+    await controller.open(DIR) // active note is a.md
+    saveActiveNote.mockClear()
+    readNote.mockClear()
+
+    await controller.switchTo("gone.md")
+
+    expect(saveActiveNote).not.toHaveBeenCalled()
+    expect(readNote).not.toHaveBeenCalled()
+    expect(view.state.doc.toString()).toBe("A body") // untouched
+  })
 })
 
 describe("lazy start.md appears in the list (AC-8)", () => {
@@ -760,6 +778,15 @@ describe("moveFolder (FEAT-0070)", () => {
     expect(moveNote).toHaveBeenCalledWith(DIR, "projects/ideas/b.md", "archive/projects/ideas/b.md")
     expect(createFolder).toHaveBeenCalledWith(DIR, "archive/projects")
     expect(deleteFolder).toHaveBeenCalledWith(DIR, "projects")
+  })
+
+  it("resolves {ok:false} instead of rejecting when a step throws partway through", async () => {
+    const { controller } = await open("start.md", ["start.md", "projects/a.md", "projects/b.md"])
+    moveNote.mockRejectedValueOnce(new Error("boom")) // an unexpected failure, not a normal status
+
+    const result = await controller.moveFolder("projects", "archive/projects")
+
+    expect(result.ok).toBe(false)
   })
 
   it("relocates an empty subfolder that has no notes of its own", async () => {
@@ -1686,6 +1713,7 @@ describe("refreshFromDisk (FEAT-0014)", () => {
   it("doesn't block switchTo behind an in-flight relist", async () => {
     const view = mountView()
     listNotes.mockResolvedValue(["a.md", "start.md"])
+    sweepResult.mockReturnValue(["a.md", "start.md"]) // open()'s own listing, not the poll's later relist
     loadActiveNote.mockResolvedValue("start.md")
     readNote.mockResolvedValue({ content: "body", lastModified: 1 })
     statNote.mockResolvedValue(1)

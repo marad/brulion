@@ -644,6 +644,17 @@ export function createNoteController(
       abortPendingRelist() // don't make the user's switch wait behind our own background scan
       return serialize(async () => {
         if (!dir || name === activeName || conflict) return // conflict is modal
+        // The caller's own existence check (main.ts's noteStillExists) reads a
+        // UI-side snapshot that can still be stale once this is actually
+        // dequeued — e.g. a removeFolder for the same note's folder was
+        // already ahead of this in the queue. `notes` here is this
+        // controller's own authoritative listing, current as of the moment
+        // this runs (every queued operation ahead of it has already
+        // completed) — the one check that can't be raced by a same-session
+        // queue ordering, only reflecting reality slightly late for a true
+        // external change (which the existing existence-check callers
+        // already accept as this feature's known limit).
+        if (!notes.includes(name)) return
         mark(`switchTo: ${name}`)
         await track("flushAndWait", flushAndWait)
         await activate(dir, name)
@@ -763,71 +774,83 @@ export function createNoteController(
           toMove.length > 0 || allFolders.includes(fromPath) || allFolders.some((p) => p.startsWith(fromPath + "/"))
         if (!folderExists) return { ok: false, reason: "That folder no longer exists." }
 
-        const moves: { from: string; to: string }[] = []
-        let newActiveName: string | null = null
-        for (const oldPath of toMove) {
-          const newPath = toPath + oldPath.slice(fromPath.length)
-          const result = await moveNote(dir, oldPath, newPath)
-          if (result.status !== "moved") continue // occupied/missing — leave this one where it is
-          contentCache.delete(oldPath)
-          moves.push({ from: oldPath, to: newPath })
-          if (oldPath === activeName) newActiveName = newPath
-        }
-
-        // Rebase each moved note's own outbound links only once the *whole*
-        // batch is known — a link to a sibling that also moved must follow it
-        // to its own new path, not be rebased as if that sibling had stayed put
-        // (a real bug caught by the e2e suite: doing this inline in the loop
-        // above, one file at a time, meant later siblings' destinations weren't
-        // known yet when an earlier file's own links were rebased).
-        const movedTargets = new Map(moves.map((move) => [move.from, move.to]))
-        for (const { from, to } of moves) {
-          try {
-            await rebaseMovedNote(dir, from, to, movedTargets)
-          } catch {
-            // leave this note's own outbound links as-is rather than failing the move
-          }
-        }
-
-        // Candidate subfolders that never move on their own (nothing in the
-        // loop above touches a folder with no notes of its own) — deepest
-        // paths first so a parent's own emptiness check sees an already-
-        // resolved child, and so a skipped file two levels down correctly
-        // keeps every ancestor above it from being deleted too. Reuses the
-        // `allFolders` walk from the existence check above — the note-move
-        // loop only relocates files, never touches directory entries, so
-        // that snapshot is still accurate.
-        const candidateSubfolders = allFolders
-          .filter((path) => path.startsWith(fromPath + "/"))
-          .sort((a, b) => b.length - a.length)
-        for (const folder of candidateSubfolders) {
-          // An occupied-destination skip (AC-9) can leave a note behind in
-          // here — verify it's actually empty before recursively deleting it,
-          // never assume so just because we moved everything we knew about.
-          if (!(await isFolderEmpty(dir, folder))) continue
-          await createFolder(dir, toPath + folder.slice(fromPath.length))
-          await deleteFolder(dir, folder)
-        }
-        // The folder itself is moving — unlike an incidentally emptied folder
-        // (M35/FEAT-0069), it never lingers at the old path once relocated —
-        // but only once it's genuinely empty; a skipped file must not be
-        // destroyed by an unconditional recursive delete of the source.
-        await createFolder(dir, toPath)
-        if (await isFolderEmpty(dir, fromPath)) await deleteFolder(dir, fromPath)
-
-        notes = await listNotes(dir)
+        // The whole batch below is many sequential file-system calls; an
+        // unexpected mid-way failure (permission revoked, a transient FS
+        // error) must resolve {ok:false}, not reject — every other caller in
+        // this codebase already assumes a controller method never throws,
+        // and an uncaught rejection here would otherwise surface nowhere
+        // (main.ts's onMoveFolder/onDropFolder have no .catch()), leaving
+        // the vault silently half-migrated with no error shown at all.
         try {
-          await updateInboundLinksForMoves(dir, moves, pathsBefore)
-        } catch {
-          // leave inbound links as-is rather than failing the move
+          const moves: { from: string; to: string }[] = []
+          let newActiveName: string | null = null
+          for (const oldPath of toMove) {
+            const newPath = toPath + oldPath.slice(fromPath.length)
+            const result = await moveNote(dir, oldPath, newPath)
+            if (result.status !== "moved") continue // occupied/missing — leave this one where it is
+            contentCache.delete(oldPath)
+            moves.push({ from: oldPath, to: newPath })
+            if (oldPath === activeName) newActiveName = newPath
+          }
+
+          // Rebase each moved note's own outbound links only once the *whole*
+          // batch is known — a link to a sibling that also moved must follow it
+          // to its own new path, not be rebased as if that sibling had stayed put
+          // (a real bug caught by the e2e suite: doing this inline in the loop
+          // above, one file at a time, meant later siblings' destinations weren't
+          // known yet when an earlier file's own links were rebased).
+          const movedTargets = new Map(moves.map((move) => [move.from, move.to]))
+          for (const { from, to } of moves) {
+            try {
+              await rebaseMovedNote(dir, from, to, movedTargets)
+            } catch {
+              // leave this note's own outbound links as-is rather than failing the move
+            }
+          }
+
+          // Candidate subfolders that never move on their own (nothing in the
+          // loop above touches a folder with no notes of its own) — deepest
+          // paths first so a parent's own emptiness check sees an already-
+          // resolved child, and so a skipped file two levels down correctly
+          // keeps every ancestor above it from being deleted too. Reuses the
+          // `allFolders` walk from the existence check above — the note-move
+          // loop only relocates files, never touches directory entries, so
+          // that snapshot is still accurate.
+          const candidateSubfolders = allFolders
+            .filter((path) => path.startsWith(fromPath + "/"))
+            .sort((a, b) => b.length - a.length)
+          for (const folder of candidateSubfolders) {
+            // An occupied-destination skip (AC-9) can leave a note behind in
+            // here — verify it's actually empty before recursively deleting it,
+            // never assume so just because we moved everything we knew about.
+            if (!(await isFolderEmpty(dir, folder))) continue
+            await createFolder(dir, toPath + folder.slice(fromPath.length))
+            await deleteFolder(dir, folder)
+          }
+          // The folder itself is moving — unlike an incidentally emptied folder
+          // (M35/FEAT-0069), it never lingers at the old path once relocated —
+          // but only once it's genuinely empty; a skipped file must not be
+          // destroyed by an unconditional recursive delete of the source.
+          await createFolder(dir, toPath)
+          if (await isFolderEmpty(dir, fromPath)) await deleteFolder(dir, fromPath)
+
+          notes = await listNotes(dir)
+          try {
+            await updateInboundLinksForMoves(dir, moves, pathsBefore)
+          } catch {
+            // leave inbound links as-is rather than failing the move
+          }
+          opts.onFoldersChanged?.(await listFolders(dir))
+          if (newActiveName) {
+            await activate(dir, newActiveName)
+          } else {
+            opts.onListChanged?.(notes, activeName)
+          }
+          return { ok: true }
+        } catch (err) {
+          console.error("moveFolder failed partway through:", err)
+          return { ok: false, reason: "Something went wrong moving the folder. Some files may have already moved." }
         }
-        opts.onFoldersChanged?.(await listFolders(dir))
-        if (newActiveName) {
-          await activate(dir, newActiveName)
-        } else {
-          opts.onListChanged?.(notes, activeName)
-        }
-        return { ok: true }
       })
     },
     renameActive(name) {
