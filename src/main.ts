@@ -716,7 +716,8 @@ window.addEventListener(
       conflictBackdropEl.hidden && // the conflict modal must stay the only forward path
       settingsBackdropEl.hidden && // don't stack the switcher over an open settings modal
       paletteBackdropEl.hidden && // …nor over an open command palette (FEAT-0057)
-      dialogBackdropEl.hidden // …nor over a pending confirm/prompt/alert (M35/FEAT-0073)
+      dialogBackdropEl.hidden && // …nor over a pending confirm/prompt/alert (M35/FEAT-0073)
+      !movePicker.isOpen() // …nor over an open "Move to…" picker (M35/FEAT-0070)
     ) {
       event.preventDefault()
       switcher.open()
@@ -738,21 +739,20 @@ const openNote = async (dir: FileSystemDirectoryHandle) => {
   // freshly loaded value isn't clobbered and nothing is written to the old folder.
   loadingSettings = true
   settingsDir = dir
+  // Best-effort: empty folders (M35/FEAT-0069) are an opportunistic sidebar
+  // extra, not load-bearing for opening the vault — a transient failure here
+  // must not abort the whole open the way it would sharing a `Promise.all`
+  // (and thus a single failure path) with the settings read below. Started
+  // here, genuinely alongside the settings read rather than after it, and
+  // only awaited once that's done — a full recursive walk on a large vault
+  // otherwise doubled the wait before the workspace could reveal.
+  const foldersPromise = listFolders(dir).catch(() => [])
   try {
     currentSettings = await loadSettings(dir)
   } finally {
     loadingSettings = false
   }
-  // Best-effort: empty folders (M35/FEAT-0069) are an opportunistic sidebar
-  // extra, not load-bearing for opening the vault — a transient failure here
-  // must not abort the whole open the way it would if this shared a
-  // Promise.all (and thus a single failure path) with the settings read
-  // above. Empty folders just won't show until the next successful listing.
-  try {
-    currentFolders = await listFolders(dir)
-  } catch {
-    currentFolders = []
-  }
+  currentFolders = await foldersPromise
   applySettings(view, currentSettings)
   refreshActionBar() // paint this folder's pinned action bar (FEAT-0058)
   settingsModal?.sync() // reflect this folder's settings if the modal is open
@@ -1073,6 +1073,7 @@ window.addEventListener(
       switcherBackdropEl.hidden &&
       settingsBackdropEl.hidden &&
       dialogBackdropEl.hidden && // …nor over a pending confirm/prompt/alert (M35/FEAT-0073)
+      !movePicker.isOpen() && // …nor over an open "Move to…" picker (M35/FEAT-0070)
       !palette.isOpen()
     ) {
       event.preventDefault()
@@ -1099,7 +1100,14 @@ window.addEventListener(
     if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
     // Don't fire these chords behind an open modal: the conflict modal must stay the
     // only forward path, and the command palette (FEAT-0057) is modal too.
-    if (!workspaceShown || !conflictBackdropEl.hidden || !paletteBackdropEl.hidden || !dialogBackdropEl.hidden) return
+    if (
+      !workspaceShown ||
+      !conflictBackdropEl.hidden ||
+      !paletteBackdropEl.hidden ||
+      !dialogBackdropEl.hidden ||
+      movePicker.isOpen() // …nor over an open "Move to…" picker (M35/FEAT-0070)
+    )
+      return
     if (event.code === "Semicolon") {
       event.preventDefault()
       toggleVim()
