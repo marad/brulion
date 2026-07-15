@@ -916,19 +916,33 @@ describe("moveFolder (FEAT-0070)", () => {
     expect(view.state.doc.toString()).toBe("a body")
   })
 
-  it("still reports success and notifies onListChanged when loading the relocated active note fails", async () => {
+  it("falls back to a real, existing note instead of the stale pre-move path when loading the relocated active note fails", async () => {
     // The move itself is already fully done at this point — a failure loading
-    // the relocated note into the editor must not read back as "the move failed."
-    const { view, controller, onListChanged } = await open("projects/a.md", ["projects/a.md"])
-    listNotes.mockResolvedValue(["archive/projects/a.md"])
-    readNote.mockImplementationOnce(async () => ({ content: "a body", lastModified: 1 })) // the move's own read
-    readNote.mockRejectedValueOnce(new Error("boom")) // activate's own load()
+    // the relocated note into the editor must not read back as "the move
+    // failed," and must not leave the vanished "projects/a.md" reported as
+    // active either (that would let the next autosave silently resurrect a
+    // file at a path that no longer exists — round 14).
+    const { view, controller, onListChanged } = await open("projects/a.md", [
+      "projects/a.md",
+      "start.md",
+    ])
+    listNotes.mockResolvedValue(["archive/projects/a.md", "start.md"])
+    readNote.mockImplementation(async (_dir, name) =>
+      name === "archive/projects/a.md"
+        ? Promise.reject(new Error("boom")) // activate's own load()
+        : { content: `${name} body`, lastModified: 1 },
+    )
 
     const result = await controller.moveFolder("projects", "archive/projects")
 
     expect(result).toEqual({ ok: true })
-    expect(view.state.doc.toString()).toBe("projects/a.md body") // load() never reached setEditorText
-    expect(onListChanged).toHaveBeenLastCalledWith(["archive/projects/a.md"], "projects/a.md")
+    // Falls back to "start.md" (pickActiveNote's seed-note preference) — a
+    // real, successfully loaded note — not the vanished "projects/a.md".
+    expect(view.state.doc.toString()).toBe("start.md body")
+    expect(onListChanged).toHaveBeenLastCalledWith(
+      ["archive/projects/a.md", "start.md"],
+      "start.md",
+    )
   })
 
   it("resolves {ok:false} instead of rejecting when the active-note flush throws", async () => {
@@ -1022,21 +1036,27 @@ describe("renameActive (FEAT-0034)", () => {
     expect(saveActiveNote).toHaveBeenLastCalledWith("b.md")
   })
 
-  it("still reports success and notifies onListChanged when loading the renamed note fails", async () => {
+  it("falls back to a real, existing note instead of the stale renamed-from path when loading the renamed note fails", async () => {
     // The file is already renamed on disk by this point — a failure loading
-    // it into the editor must not read back as "the rename failed."
-    const { view, controller, onListChanged } = await open("a.md", ["a.md"])
-    listNotes.mockResolvedValue(["b.md"])
-    readNote.mockRejectedValueOnce(new Error("boom")) // activate's own load()
+    // it into the editor must not read back as "the rename failed," and must
+    // not leave the vanished "a.md" reported as active either (that would let
+    // the next autosave silently resurrect a file at a path that no longer
+    // exists — round 14).
+    const { view, controller, onListChanged } = await open("a.md", ["a.md", "start.md"])
+    listNotes.mockResolvedValue(["b.md", "start.md"])
+    readNote.mockImplementation(async (_dir, name) =>
+      name === "b.md"
+        ? Promise.reject(new Error("boom")) // activate's own load()
+        : { content: `${name} body`, lastModified: 1 },
+    )
 
     const result = await controller.renameActive("b")
 
     expect(result).toEqual({ ok: true })
-    expect(view.state.doc.toString()).toBe("a.md body") // load() never reached setEditorText
-    // activeName never actually moved to "b.md" either — load() doesn't commit
-    // it until the read succeeds, so the fallback notification (and the
-    // controller's own state) correctly still names the old note as active.
-    expect(onListChanged).toHaveBeenLastCalledWith(["b.md"], "a.md")
+    // Falls back to "start.md" (pickActiveNote's seed-note preference) — a
+    // real, successfully loaded note — not the vanished "a.md".
+    expect(view.state.doc.toString()).toBe("start.md body")
+    expect(onListChanged).toHaveBeenLastCalledWith(["b.md", "start.md"], "start.md")
   })
 
   it("flushes pending edits before moving, so the moved file has them (AC-7)", async () => {
