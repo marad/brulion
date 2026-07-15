@@ -51,6 +51,13 @@ no valid-drop indicator and, if forced, changes nothing. Dragging is a
 mouse-only affordance; touch keeps reaching every move through the picker
 (via long-press → "Move…", FEAT-0071).
 
+Dropping onto a *note* row (rather than a folder header) targets that note's
+own containing folder — a note isn't a container, but its row is by far the
+easiest target to hit when the intent is "put this alongside that note,"
+exactly the way dropping on the empty root zone already targets the vault
+root rather than requiring an empty patch of the tree. The self-nest refusal
+above still applies against the retargeted destination.
+
 ## Constraints
 
 - No new file-system primitive: "New note…" reuses the existing quick-
@@ -124,3 +131,11 @@ combination.
 Given the tree after this phase ships,
 When the user opens any row's context menu without ever dragging anything,
 Then "Move…" (and its picker) still works exactly as FEAT-0070/0071 left it.
+
+**AC-9** — Dropping onto a note row targets that note's containing folder.
+Given a note at `a/b/c.md`,
+When another note or folder is dragged and dropped onto `c.md`'s row,
+Then the dragged item moves into `a/b` — the same destination dropping it
+directly on `b`'s folder header would give — refused the same way a drop on
+`b`'s header would be refused (e.g. a dragged folder that would nest into
+itself via that destination).

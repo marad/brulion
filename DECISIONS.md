@@ -2709,6 +2709,30 @@ outside-click dismissal) so it's one more instance of an established family,
 not a new one. No controller/file-system logic changes — only the trigger
 surface for confirmation/naming/feedback.
 
+## Dropping onto a note row targets its containing folder, not a no-op (M35 → FEAT-0072 AC-9)
+Live testing after P1-P5 shipped surfaced that dropping a note/folder onto a
+note row did nothing (`blockDropBubbling` only prevented the drop from
+bubbling to an ancestor zone — a note row was deliberately not a drop target
+at all, on the reasoning that a note isn't a container). Reversed: a note
+row is by far the easiest target to hit when the intent is "put this
+alongside that note," so a drop there now redirects to the note's own
+containing folder — the exact destination dropping directly on that
+folder's header would give, reusing `wireDropTarget` unchanged, just with a
+different computed destination. The self-nest refusal already used by
+folder-header drops applies unchanged.
+
+## Password-manager anti-autofill hints go on every text input, not just the one that was noticed (M35 → FEAT-0074)
+The trigger was a single observation — Bitwarden offering to fill a blank
+rename-dialog input — but the fix scopes to every plain text field in the
+app (switcher, palette, move picker, dialog, header rename, journal path),
+per the user's own framing ("the browser shouldn't suggest anything inside
+Brulion's text fields"). `autocomplete="off"` alone doesn't reliably stop
+extensions like Bitwarden, which by design override it for fields that look
+like login prompts; the standard mitigation is the vendor-specific ignore
+attributes (`data-lpignore`, `data-1p-ignore`, `data-bwignore`) plus a
+generic `data-form-type="other"` hint, applied uniformly rather than
+field-by-field as each one gets noticed.
+
 ## Rename is a distinct verb from Move, not a special case of the picker (M35 → FEAT-0072)
 "Move…" already lets a destination equal the current parent (a no-op), so a
 rename *could* have been "open the picker, pick the same folder, then also
