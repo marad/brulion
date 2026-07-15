@@ -2692,6 +2692,23 @@ leaf name. One creation path, one place `normalizeNoteName` validation lives,
 consistent with FEAT-0012's own reasoning for reusing `createNote` rather
 than a parallel folder-scoped variant.
 
+## Reversal: native confirm/prompt/alert give way to in-app dialogs (M35 → FEAT-0073)
+P1 through P4 all used `window.confirm`/`window.prompt`/`window.alert` for
+delete confirmation, rename/new-folder naming, and move-failure feedback —
+reasoning each time "match the pattern the pre-existing note delete already
+uses, no new modal component." Flagged live, after testing the shipped
+milestone, as the wrong call: the app already has a themed, animated overlay
+family (quick switcher, command palette, move picker, conflict modal) native
+dialogs ignore completely — they render in browser chrome, ignore light/dark
+theme, and clash with the motion language M34 built. Reversed: a new
+`dialog.ts`, mirroring `move-picker.ts`'s `mount(els)` shape over a
+pre-declared `#dialog-backdrop`/`#dialog` pair, exposes `confirmDialog`/
+`promptDialog`/`alertDialog`, styled like the existing `#conflict`/
+`.settings-dialog` pair (same backdrop, motion, focus-restore, Escape/
+outside-click dismissal) so it's one more instance of an established family,
+not a new one. No controller/file-system logic changes — only the trigger
+surface for confirmation/naming/feedback.
+
 ## Rename is a distinct verb from Move, not a special case of the picker (M35 → FEAT-0072)
 "Move…" already lets a destination equal the current parent (a no-op), so a
 rename *could* have been "open the picker, pick the same folder, then also
