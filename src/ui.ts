@@ -447,6 +447,10 @@ export function mountNoteIdentity(
   input.className = "note-identity-edit"
   input.setAttribute("aria-label", "Rename note")
   input.autocomplete = "off"
+  input.setAttribute("data-lpignore", "true")
+  input.setAttribute("data-1p-ignore", "")
+  input.setAttribute("data-bwignore", "true")
+  input.setAttribute("data-form-type", "other")
   input.hidden = true
 
   const error = document.createElement("span")

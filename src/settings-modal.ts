@@ -197,6 +197,11 @@ export function mountSettingsModal(
   journalInput.type = "text"
   journalInput.className = "settings-journal"
   journalInput.placeholder = "e.g. Journal/Week/{mondayOfTheWeek}"
+  journalInput.autocomplete = "off"
+  journalInput.setAttribute("data-lpignore", "true")
+  journalInput.setAttribute("data-1p-ignore", "")
+  journalInput.setAttribute("data-bwignore", "true")
+  journalInput.setAttribute("data-form-type", "other")
   journalInput.addEventListener("input", () => emit({ journalPath: journalInput.value }))
   const journalHint = document.createElement("p")
   journalHint.className = "settings-section-hint"
