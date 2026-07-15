@@ -5,6 +5,7 @@ import { displayName } from "./note-name"
 import { openTreeMenu, type TreeMenuItem } from "./tree-menu"
 import { wireLongPress } from "./long-press"
 import { isWithin, type AddNoteResult } from "./note-controller"
+import { applyAntiAutofillAttrs } from "./anti-autofill"
 import type { Action } from "./actions"
 import type { Vault } from "./vaults"
 
@@ -486,11 +487,7 @@ export function mountNoteIdentity(
   input.type = "text"
   input.className = "note-identity-edit"
   input.setAttribute("aria-label", "Rename note")
-  input.autocomplete = "off"
-  input.setAttribute("data-lpignore", "true")
-  input.setAttribute("data-1p-ignore", "")
-  input.setAttribute("data-bwignore", "true")
-  input.setAttribute("data-form-type", "other")
+  applyAntiAutofillAttrs(input)
   input.hidden = true
 
   const error = document.createElement("span")
