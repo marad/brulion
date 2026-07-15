@@ -765,6 +765,20 @@ describe("renderNoteList drag-and-drop (FEAT-0072)", () => {
     expect(h.onDropFolder).not.toHaveBeenCalled()
   })
 
+  it("dropping a folder onto a note that is its own direct child does not call onDropFolder (self-nest guard, AC-9)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["sub/a.md"], "sub/a.md", h)
+    const subHeader = container.querySelector<HTMLElement>(".folder-header")!
+    const aRow = container.querySelector<HTMLElement>(".note-row")! // parentOf("sub/a.md") === "sub" exactly
+
+    subHeader.dispatchEvent(dragEvent("dragstart"))
+    aRow.dispatchEvent(dragEvent("dragover"))
+    aRow.dispatchEvent(dragEvent("drop"))
+
+    expect(h.onDropFolder).not.toHaveBeenCalled()
+  })
+
   it("a row's own drop does not also trigger the root zone's drop", () => {
     const container = document.createElement("div")
     const h = handlers()
