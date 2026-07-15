@@ -46,6 +46,15 @@ currently has focus (a folder header is itself focusable; a note row's
 keydown bubbles up from its focusable name button), positioned at that row's
 own location rather than a click point.
 
+A menu opened this way must also be *operable* from the keyboard, not just
+summoned: focus moves into the menu on open (onto its first item), Up/Down
+arrows move between items (wrapping at the ends), Enter/Space activates the
+focused item, and Esc closes the menu and returns focus to the row it was
+opened from — so a keyboard user is never stranded on a visible-but-unreachable
+menu, and never loses their place in the tree afterward. A mouse- or
+touch-opened menu is unaffected: it keeps its existing behavior (no forced
+focus move), since the pointer is already the way in.
+
 ## Constraints
 
 - One right-click (or long-press) always opens exactly the menu for that
@@ -113,3 +122,10 @@ has keyboard focus,
 When the user presses Shift+F10 or the keyboard's dedicated "Menu"/
 "ContextMenu" key,
 Then the same menu for that row's kind opens, positioned at the row.
+
+**AC-8** — A keyboard-opened menu is fully operable and returns focus on close.
+Given a row's context menu was opened from the keyboard (AC-7),
+When the menu appears,
+Then focus is on its first item; Up/Down arrows move focus between items
+(wrapping at the ends); Enter or Space activates the focused item; and Esc
+closes the menu and returns focus to the row it was opened from.
