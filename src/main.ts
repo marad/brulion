@@ -453,6 +453,12 @@ const noteListHandlers = {
       })
   },
   onMoveNote: (path: string) => {
+    // The tree menu can stay open indefinitely before this fires — re-check
+    // existence first, since switchTo has none of its own (noteStillExists).
+    if (!noteStillExists(path)) {
+      void dialog.alert(`"${displayName(path)}" no longer exists.`)
+      return
+    }
     // renameActive is active-note-scoped — switch to this note first, exactly
     // like clicking its name already does, then let the picker apply the move.
     void controller.switchTo(path).then(() => {
@@ -466,7 +472,11 @@ const noteListHandlers = {
   onRenameNote: (path: string) => promptRenameNote(path),
   onRenameFolder: (path: string) => promptRenameFolder(path),
   onDropNote: (path: string, destination: string) => {
-    // Same active-note constraint as onMoveNote above.
+    // Same active-note constraint (and existence re-check) as onMoveNote above.
+    if (!noteStillExists(path)) {
+      void dialog.alert(`"${displayName(path)}" no longer exists.`)
+      return
+    }
     void controller.switchTo(path).then(() =>
       moveNoteTo(path, destination).then((result) => {
         if (!result.ok) void dialog.alert(result.reason)
@@ -490,6 +500,18 @@ function folderStillExists(path: string): boolean {
   return currentFolders.includes(path) || currentNotes.some((n) => n.startsWith(`${path}/`))
 }
 
+/** Whether `path` still names a real note — same re-check as
+ * {@link folderStillExists}, for a note. `switchTo` has no existence check
+ * of its own (unlike `onSelect`/`openNotePath`'s wikilink-follow, which
+ * already gate on this), so calling it on a vanished path doesn't just fail
+ * — it flushes the *actually* active note and silently activates an empty
+ * phantom buffer for the deleted target. Any handler that calls `switchTo`
+ * for a specific path a menu/picker/drag held onto across an async wait
+ * must check this first. */
+function noteStillExists(path: string): boolean {
+  return currentNotes.includes(path)
+}
+
 /** The folder-relative path one level up from `path` (`""` at the root) —
  * mirrors `note-controller.ts`'s private `folderOf`; duplicated rather than
  * exported since it's a one-liner and that version is intentionally private. */
@@ -510,7 +532,7 @@ function moveNoteTo(path: string, destination: string): Promise<AddNoteResult> {
   // a gone note wouldn't just fail the move, it would flush the *actually*
   // active note and silently replace the editor with a phantom empty buffer
   // for the deleted target. Checked here, before touching any state.
-  if (!currentNotes.includes(path)) {
+  if (!noteStillExists(path)) {
     return Promise.resolve({ ok: false, reason: `"${displayName(path)}" no longer exists.` })
   }
   const name = displayName(path).split("/").pop() as string
@@ -577,7 +599,7 @@ function promptRenameNote(path: string): void {
     // enough for `path` to vanish externally — switchTo has no existence
     // check of its own, so calling it here would silently replace the
     // actually-active note's editor with a phantom empty buffer.
-    if (!currentNotes.includes(path)) {
+    if (!noteStillExists(path)) {
       return Promise.resolve({ ok: false, reason: `"${displayName(path)}" no longer exists.` })
     }
     return controller.switchTo(path).then(() => controller.renameActive(target))
