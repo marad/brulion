@@ -420,7 +420,7 @@ const noteListHandlers = {
         // renamed/deleted by the time the user confirms. removeNote is a
         // no-op for an already-missing path, which would otherwise look
         // like a successful delete with no feedback at all.
-        if (!currentNotes.includes(name)) {
+        if (!noteStillExists(name)) {
           void dialog.alert(`"${displayName(name)}" no longer exists.`)
           return
         }

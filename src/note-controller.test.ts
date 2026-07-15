@@ -916,6 +916,17 @@ describe("moveFolder (FEAT-0070)", () => {
     expect(view.state.doc.toString()).toBe("a body")
   })
 
+  it("resolves {ok:false} instead of rejecting when the active-note flush throws", async () => {
+    const { view, controller } = await open("projects/a.md", ["projects/a.md"])
+    type(view, " edited")
+    controller.handleChange() // dirty — moveFolder's flush will try to save it
+    saveNote.mockRejectedValueOnce(new Error("boom"))
+
+    const result = await controller.moveFolder("projects", "archive/projects")
+
+    expect(result.ok).toBe(false)
+  })
+
   it("skips a file whose destination is already occupied, without failing the whole move (AC-9)", async () => {
     const { controller } = await open("start.md", ["start.md", "projects/a.md", "projects/b.md"])
     moveNote.mockImplementation(async (_dir, from) =>
@@ -994,6 +1005,20 @@ describe("renameActive (FEAT-0034)", () => {
     expect(moveNote).toHaveBeenCalledWith(DIR, "a.md", "b.md")
     expect(onListChanged.mock.calls.at(-1)).toEqual([["b.md"], "b.md"])
     expect(saveActiveNote).toHaveBeenLastCalledWith("b.md")
+  })
+
+  it("still reports success and notifies onListChanged when loading the renamed note fails", async () => {
+    // The file is already renamed on disk by this point — a failure loading
+    // it into the editor must not read back as "the rename failed."
+    const { view, controller, onListChanged } = await open("a.md", ["a.md"])
+    listNotes.mockResolvedValue(["b.md"])
+    readNote.mockRejectedValueOnce(new Error("boom")) // activate's own load()
+
+    const result = await controller.renameActive("b")
+
+    expect(result).toEqual({ ok: true })
+    expect(view.state.doc.toString()).toBe("a.md body") // load() never reached setEditorText
+    expect(onListChanged).toHaveBeenLastCalledWith(["b.md"], "b.md")
   })
 
   it("flushes pending edits before moving, so the moved file has them (AC-7)", async () => {

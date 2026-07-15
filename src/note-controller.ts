@@ -752,17 +752,8 @@ export function createNoteController(
           return { ok: false, reason: "Can't move a folder into itself or one of its own subfolders." }
         }
 
-        // A flush can reassign `notes` (a not-yet-listed active note gets
-        // written and its fresh listing picked up) — done *before* snapshotting
-        // below, so that snapshot never goes stale the moment it's taken.
-        const activeInsideFolder = isWithin(activeName, fromPath)
-        if (activeInsideFolder) {
-          await flushAndWait()
-          if (conflict) return { ok: false, reason: "Resolve the conflict first." }
-        }
-
-        // Everything below is many sequential file-system calls (including
-        // the existence-check walk itself); an unexpected mid-way failure
+        // Everything below is many sequential file-system calls, starting
+        // with the active-note flush; an unexpected mid-way failure
         // (permission revoked, a transient FS error) must resolve
         // {ok:false}, not reject — every other caller in this codebase
         // already assumes a controller method never throws, and an
@@ -770,6 +761,16 @@ export function createNoteController(
         // onMoveFolder/onDropFolder have no .catch()), leaving the vault
         // silently half-migrated with no error shown at all.
         try {
+          // A flush can reassign `notes` (a not-yet-listed active note gets
+          // written and its fresh listing picked up) — done *before*
+          // snapshotting below, so that snapshot never goes stale the moment
+          // it's taken.
+          const activeInsideFolder = isWithin(activeName, fromPath)
+          if (activeInsideFolder) {
+            await flushAndWait()
+            if (conflict) return { ok: false, reason: "Resolve the conflict first." }
+          }
+
           const pathsBefore = new Set(notes)
           const toMove = notes.filter((path) => path.startsWith(fromPath + "/"))
           // One walk answers both "does fromPath still exist at all" (a stale
@@ -915,7 +916,18 @@ export function createNoteController(
           } catch {
             // leave the moved note's own outbound links as-is rather than failing
           }
-          await activate(dir, normalized.filename)
+          // The file is already renamed on disk at this point — a failure
+          // loading it into the editor (activate → load/saveActiveNote) must
+          // not read back as "the rename failed" (it didn't), and must still
+          // tell the UI the listing changed — activate's own onListChanged
+          // call is what a thrown exception here would otherwise skip,
+          // leaving the sidebar showing the old, now-deleted name.
+          try {
+            await activate(dir, normalized.filename)
+          } catch (err) {
+            console.error("renameActive: activate failed after a successful move:", err)
+            opts.onListChanged?.(notes, activeName)
+          }
           try {
             await updateInboundLinksForMoves(dir, [{ from, to: normalized.filename }], pathsBefore)
           } catch {
