@@ -501,15 +501,28 @@ function folderStillExists(path: string): boolean {
 }
 
 /** Whether `path` still names a real note — same re-check as
- * {@link folderStillExists}, for a note. `switchTo` has no existence check
- * of its own (unlike `onSelect`/`openNotePath`'s wikilink-follow, which
- * already gate on this), so calling it on a vanished path doesn't just fail
- * — it flushes the *actually* active note and silently activates an empty
- * phantom buffer for the deleted target. Any handler that calls `switchTo`
- * for a specific path a menu/picker/drag held onto across an async wait
- * must check this first. */
+ * {@link folderStillExists}, for a note. Checked here for the same reason a
+ * menu/picker/drag holds a path across an async wait long enough for it to
+ * vanish externally; `switchTo` itself also re-checks against its own
+ * authoritative state before activating anything (note-controller.ts), so
+ * this UI-side check is the first, friendlier line of defense, not the only
+ * one. */
 function noteStillExists(path: string): boolean {
   return currentNotes.includes(path)
+}
+
+/** `switchTo(path)`, then run `fn()` only if the switch actually landed on
+ * `path` — `switchTo` can silently no-op (its own authoritative check,
+ * M35/FEAT-0073) if `path` vanished by the time it was dequeued, in which
+ * case `fn` blindly proceeding would act on whatever note ended up active
+ * instead, since `renameActive` is active-note-scoped. */
+function switchToThenIfLanded(path: string, fn: () => Promise<AddNoteResult>): Promise<AddNoteResult> {
+  return controller.switchTo(path).then(() => {
+    if (currentActive !== path) {
+      return { ok: false, reason: `"${displayName(path)}" no longer exists.` }
+    }
+    return fn()
+  })
 }
 
 /** The folder-relative path one level up from `path` (`""` at the root) —
@@ -527,19 +540,14 @@ function moveNoteTo(path: string, destination: string): Promise<AddNoteResult> {
   // The picker (or a drag) can sit open for a while (a real person deciding,
   // unlike the blocking window.confirm this dialog replaced, M35/FEAT-0073),
   // during which the background poll can notice `path` was deleted
-  // externally. switchTo has no existence check of its own (unlike every
-  // other caller, which already gates on currentNotes first) — calling it on
-  // a gone note wouldn't just fail the move, it would flush the *actually*
-  // active note and silently replace the editor with a phantom empty buffer
-  // for the deleted target. Checked here, before touching any state.
+  // externally. Checked here, before touching any state; switchToThenIfLanded
+  // covers the narrower race switchTo silently no-opping would otherwise open
+  // (renameActive would then act on whatever note ended up active instead).
   if (!noteStillExists(path)) {
     return Promise.resolve({ ok: false, reason: `"${displayName(path)}" no longer exists.` })
   }
   const name = displayName(path).split("/").pop() as string
-  // Re-affirm `path` as active right before the move, not just once when the
-  // picker opened — renameActive only ever acts on *whatever's currently
-  // active*, so without this it could silently rename the wrong note.
-  return controller.switchTo(path).then(() =>
+  return switchToThenIfLanded(path, () =>
     controller.renameActive(destination ? `${destination}/${name}` : name),
   )
 }
@@ -596,13 +604,11 @@ function promptRenameNote(path: string): void {
   const current = displayName(path).split("/").pop() as string
   promptRenameTo(path, current, (target) => {
     // Same check as moveNoteTo above: the rename dialog can sit open long
-    // enough for `path` to vanish externally — switchTo has no existence
-    // check of its own, so calling it here would silently replace the
-    // actually-active note's editor with a phantom empty buffer.
+    // enough for `path` to vanish externally.
     if (!noteStillExists(path)) {
       return Promise.resolve({ ok: false, reason: `"${displayName(path)}" no longer exists.` })
     }
-    return controller.switchTo(path).then(() => controller.renameActive(target))
+    return switchToThenIfLanded(path, () => controller.renameActive(target))
   })
 }
 
