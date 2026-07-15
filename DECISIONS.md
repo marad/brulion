@@ -2858,3 +2858,32 @@ calls in between had none, so a transient failure there fell through to
 as failed (the exact class of bug `addNote`/`addFolder`'s post-create steps
 were already protected against). Fixed by wrapping each method's whole
 post-delete sequence in its own try/catch, mirroring `addNote`'s shape.
+
+**Round-18 follow-up:** an exhaustive symmetry check across all six mutating
+methods (addNote, addFolder, removeNote, removeFolder, moveFolder,
+renameActive) found two more real gaps:
+- `removeNote`/`removeFolder` never re-checked `conflict` after their own
+  `flushAndWait()`, unlike `moveFolder`/`renameActive` — a save already in
+  flight from an earlier autosave tick that resolves to a stale-write
+  conflict during that flush would previously fall straight through to the
+  delete, permanently destroying the externally-edited content the conflict
+  modal was about to let the user review. Fixed by adding the same
+  post-flush `conflict` check (scoped to when the note being deleted is, or
+  contains, the active note — the only case a flush can raise a conflict at
+  all).
+- `moveFolder`'s and `renameActive`'s own post-mutation `notes = await
+  listNotes(dir)` calls were themselves unprotected — the exact same gap
+  round 17 fixed for `removeNote`/`removeFolder`, just not yet applied to
+  these two. A transient relist failure right after every file had already
+  moved/renamed on disk fell through to the outer catch and reported the
+  whole operation as failed. Fixed by wrapping each method's whole
+  post-mutation sequence (relist, link maintenance, activate, notify) in its
+  own try/catch, matching the shape used everywhere else.
+
+This is the fourth consecutive round to find the same class of gap in one
+more of these six methods or one more step within them — a real pattern,
+not noise, and each fix has been mechanical once found. If a future round
+finds yet another instance of this exact shape, that's a signal the fix
+belongs at a more structural level (e.g. a shared helper that every method's
+post-mutation block routes through) rather than another one-off local
+try/catch.

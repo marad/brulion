@@ -642,6 +642,37 @@ describe("removeNote (FEAT-0012)", () => {
     expect(deleteNote).toHaveBeenCalledWith(DIR, "a.md")
   })
 
+  it("refuses to delete the active note when an already-in-flight save surfaces a conflict", async () => {
+    // The delete itself clears the deleted note's own dirty flag before the
+    // flush (so its edits never get written back), so a conflict can only
+    // come from a save already in flight from an earlier autosave tick —
+    // deleteNote must never run over content the conflict modal was about to
+    // let the user review (renameActive/moveFolder already refuse the same
+    // way after their own flush).
+    let resolveSave: (result: { status: "conflict" }) => void = () => {}
+    saveNote.mockImplementation(() => new Promise((resolve) => (resolveSave = resolve)))
+    const view = mountView()
+    const onConflict = vi.fn()
+    sweepResult.mockReturnValue(["a.md"])
+    listNotes.mockResolvedValue(["a.md"])
+    loadActiveNote.mockResolvedValue("a.md")
+    readNote.mockResolvedValue({ content: "a.md body", lastModified: 1 })
+    const controller = createNoteController(view, { onConflict, debounceMs: 5 })
+    await controller.open(DIR)
+
+    type(view, " edit")
+    controller.handleChange()
+    await vi.waitFor(() => expect(saveNote).toHaveBeenCalled()) // autosave in flight
+
+    const removed = controller.removeNote("a.md") // its flushAndWait awaits the in-flight save
+    resolveSave({ status: "conflict" })
+    const result = await removed
+
+    expect(result).toEqual({ ok: false, reason: "Resolve the conflict first." })
+    expect(deleteNote).not.toHaveBeenCalled()
+    expect(onConflict).toHaveBeenCalled()
+  })
+
   it("falls back to an empty start buffer when the last note is deleted (AC-7)", async () => {
     const { view, controller, onListChanged } = await open("only.md", ["only.md"])
     listNotes.mockResolvedValue([])
@@ -861,6 +892,34 @@ describe("removeFolder (FEAT-0069)", () => {
 
     expect(result).toEqual({ ok: true })
     expect(deleteFolder).toHaveBeenCalledWith(DIR, "projects")
+  })
+
+  it("refuses to delete when an already-in-flight save for the active note surfaces a conflict", async () => {
+    // Same reasoning as removeNote's equivalent test: the delete clears the
+    // active note's dirty flag before the flush, so a conflict can only come
+    // from a save already in flight from an earlier autosave tick.
+    let resolveSave: (result: { status: "conflict" }) => void = () => {}
+    saveNote.mockImplementation(() => new Promise((resolve) => (resolveSave = resolve)))
+    const view = mountView()
+    const onConflict = vi.fn()
+    sweepResult.mockReturnValue(["projects/a.md"])
+    listNotes.mockResolvedValue(["projects/a.md"])
+    loadActiveNote.mockResolvedValue("projects/a.md")
+    readNote.mockResolvedValue({ content: "a.md body", lastModified: 1 })
+    const controller = createNoteController(view, { onConflict, debounceMs: 5 })
+    await controller.open(DIR)
+
+    type(view, " edit")
+    controller.handleChange()
+    await vi.waitFor(() => expect(saveNote).toHaveBeenCalled()) // autosave in flight
+
+    const removed = controller.removeFolder("projects") // its flushAndWait awaits the in-flight save
+    resolveSave({ status: "conflict" })
+    const result = await removed
+
+    expect(result).toEqual({ ok: false, reason: "Resolve the conflict first." })
+    expect(deleteFolder).not.toHaveBeenCalled()
+    expect(onConflict).toHaveBeenCalled()
   })
 
   it("falls back to an empty start buffer when the active note's folder held everything (AC-7)", async () => {
@@ -1095,6 +1154,18 @@ describe("moveFolder (FEAT-0070)", () => {
     )
   })
 
+  it("still reports success when the move is done on disk but relisting afterward fails", async () => {
+    // Every file is already moved on disk at this point — a failure relisting
+    // isn't a move failure and must not read back as one.
+    const { controller } = await open("start.md", ["start.md", "projects/a.md"])
+    listNotes.mockRejectedValueOnce(new Error("boom"))
+
+    const result = await controller.moveFolder("projects", "archive/projects")
+
+    expect(result).toEqual({ ok: true })
+    expect(moveNote).toHaveBeenCalledWith(DIR, "projects/a.md", "archive/projects/a.md")
+  })
+
   it("resolves {ok:false} instead of rejecting when the active-note flush throws", async () => {
     const { view, controller } = await open("projects/a.md", ["projects/a.md"])
     type(view, " edited")
@@ -1221,6 +1292,18 @@ describe("renameActive (FEAT-0034)", () => {
 
     expect(result).toEqual({ ok: true })
     expect(onListChanged).toHaveBeenLastCalledWith(["b.md", "start.md"], "a.md")
+  })
+
+  it("still reports success when the rename is done on disk but relisting afterward fails", async () => {
+    // The file is already renamed on disk at this point — a failure
+    // relisting isn't a rename failure and must not read back as one.
+    const { controller } = await open("a.md", ["a.md"])
+    listNotes.mockRejectedValueOnce(new Error("boom"))
+
+    const result = await controller.renameActive("b")
+
+    expect(result).toEqual({ ok: true })
+    expect(moveNote).toHaveBeenCalledWith(DIR, "a.md", "b.md")
   })
 
   it("flushes pending edits before moving, so the moved file has them (AC-7)", async () => {

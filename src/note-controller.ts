@@ -721,6 +721,14 @@ export function createNoteController(
         // already mid-flight.
         if (name === activeName) dirty = false
         await flushAndWait()
+        // A flush of the note being deleted can surface a conflict (the
+        // stale-write guard, raised only against the active note) — refuse
+        // rather than silently discarding the externally-edited content the
+        // conflict modal was about to let the user review (same check
+        // renameActive/moveFolder already do after their own flush).
+        if (name === activeName && conflict) {
+          return { ok: false, reason: "Resolve the conflict first." }
+        }
         await deleteNote(dir, name)
         // The note is already deleted on disk at this point — a failure
         // below (relisting, or loading a fallback note into the editor)
@@ -790,6 +798,13 @@ export function createNoteController(
         // settle anything already mid-write before we delete.
         if (activeInsideFolder) dirty = false
         await flushAndWait()
+        // Same check as removeNote above: a flush of the active note (when
+        // it lives inside the folder being deleted) can surface a conflict —
+        // refuse rather than silently discarding the externally-edited
+        // content the conflict modal was about to let the user review.
+        if (activeInsideFolder && conflict) {
+          return { ok: false, reason: "Resolve the conflict first." }
+        }
         await deleteFolder(dir, path)
         // The folder (and everything beneath it) is already deleted on disk
         // at this point — a failure below isn't a delete failure, and must
@@ -921,43 +936,48 @@ export function createNoteController(
           await createFolder(dir, toPath)
           if (await isFolderEmpty(dir, fromPath)) await deleteFolder(dir, fromPath)
 
-          notes = await listNotes(dir)
+          // The move is fully done on disk at this point — a failure below
+          // (relisting, link maintenance, notifying, or loading the relocated
+          // note) isn't a move failure, and must not read back as one (same
+          // reasoning as addNote's/removeNote's post-mutation steps).
           try {
-            await updateInboundLinksForMoves(dir, moves, pathsBefore)
-          } catch {
-            // leave inbound links as-is rather than failing the move
-          }
-          try {
-            opts.onFoldersChanged?.(await listFolders(dir))
-          } catch {
-            // best-effort — `notes` above is already the accurate post-move
-            // listing, and the note-level notification below still fires
-            // with it even if this folder-listing walk itself failed
-          }
-          if (newActiveName) {
-            // The move itself is already done at this point — a failure
-            // loading the relocated active note into the editor isn't a
-            // move failure (same reasoning as renameActive's own activate
-            // call). `activeName` still names the pre-move path, which no
-            // longer exists anywhere under the new tree — reporting that as
-            // active would let the next autosave silently recreate a file
-            // there. Fall back to a real note instead, the same recovery
-            // removeNote/removeFolder already use for a vanished active note.
+            notes = await listNotes(dir)
             try {
-              await activate(dir, newActiveName)
-            } catch (err) {
-              console.error("moveFolder: activate failed after a successful move:", err)
-              try {
-                await activate(dir, pickActiveNote(notes, null))
-              } catch {
-                // Last resort exhausted — activeName is stuck stale either
-                // way, but `notes` itself is already accurate, so the
-                // sidebar still hears about the move instead of going silent.
-                opts.onListChanged?.(notes, activeName)
-              }
+              await updateInboundLinksForMoves(dir, moves, pathsBefore)
+            } catch {
+              // leave inbound links as-is rather than failing the move
             }
-          } else {
-            opts.onListChanged?.(notes, activeName)
+            try {
+              opts.onFoldersChanged?.(await listFolders(dir))
+            } catch {
+              // best-effort — `notes` above is already the accurate post-move
+              // listing, and the note-level notification below still fires
+              // with it even if this folder-listing walk itself failed
+            }
+            if (newActiveName) {
+              // `activeName` still names the pre-move path, which no longer
+              // exists anywhere under the new tree — reporting that as
+              // active would let the next autosave silently recreate a file
+              // there. Fall back to a real note instead, the same recovery
+              // removeNote/removeFolder already use for a vanished active note.
+              try {
+                await activate(dir, newActiveName)
+              } catch (err) {
+                console.error("moveFolder: activate failed after a successful move:", err)
+                try {
+                  await activate(dir, pickActiveNote(notes, null))
+                } catch {
+                  // Last resort exhausted — activeName is stuck stale either
+                  // way, but `notes` itself is already accurate, so the
+                  // sidebar still hears about the move instead of going silent.
+                  opts.onListChanged?.(notes, activeName)
+                }
+              }
+            } else {
+              opts.onListChanged?.(notes, activeName)
+            }
+          } catch (err) {
+            console.error("moveFolder: post-move steps failed after a successful move:", err)
           }
           return { ok: true }
         } catch (err) {
@@ -1011,43 +1031,49 @@ export function createNoteController(
           // persists it as active, and announces so the UI tracks the new identity.
           const pathsBefore = new Set(notes) // pre-move listing — still names `from`
           contentCache.delete(from)
-          notes = await listNotes(dir)
-          // Follow-on link maintenance (FEAT-0040/0041). Both passes are best-effort:
-          // the move already succeeded, so a failure here (an I/O error part-way) must
-          // not report the rename as failed — the affected links simply stay as they
-          // were (dangling), which the existing missing-target handling covers.
-          try {
-            await rebaseMovedNote(dir, from, normalized.filename) // before activate: editor loads the rebased content
-          } catch {
-            // leave the moved note's own outbound links as-is rather than failing
-          }
           // The file is already renamed on disk at this point — a failure
-          // loading it into the editor (activate → load/saveActiveNote) must
-          // not read back as "the rename failed" (it didn't). `activeName`
-          // still names `from`, which no longer exists (load() doesn't
-          // commit it until its read succeeds) — reporting that as active
-          // would let the next autosave silently recreate a file there.
-          // Fall back to a real note instead, the same recovery
-          // removeNote/removeFolder already use when the active note
-          // vanishes out from under the editor.
+          // below (relisting, link maintenance, or loading it into the
+          // editor) isn't a rename failure, and must not read back as one
+          // (same reasoning as addNote's/removeNote's post-mutation steps).
           try {
-            await activate(dir, normalized.filename)
-          } catch (err) {
-            console.error("renameActive: activate failed after a successful move:", err)
+            notes = await listNotes(dir)
+            // Follow-on link maintenance (FEAT-0040/0041). Both passes are
+            // best-effort: the move already succeeded, so a failure here (an
+            // I/O error part-way) must not report the rename as failed — the
+            // affected links simply stay as they were (dangling), which the
+            // existing missing-target handling covers.
             try {
-              await activate(dir, pickActiveNote(notes, null))
+              await rebaseMovedNote(dir, from, normalized.filename) // before activate: editor loads the rebased content
             } catch {
-              // Last resort exhausted (e.g. the whole folder's unreadable) —
-              // activeName is stuck stale either way, but `notes` itself is
-              // already accurate, so the sidebar still hears about the
-              // rename instead of going silent.
-              opts.onListChanged?.(notes, activeName)
+              // leave the moved note's own outbound links as-is rather than failing
             }
-          }
-          try {
-            await updateInboundLinksForMoves(dir, [{ from, to: normalized.filename }], pathsBefore)
-          } catch {
-            // leave inbound links as-is rather than failing the rename
+            // `activeName` still names `from`, which no longer exists
+            // (load() doesn't commit it until its read succeeds) —
+            // reporting that as active would let the next autosave silently
+            // recreate a file there. Fall back to a real note instead, the
+            // same recovery removeNote/removeFolder already use when the
+            // active note vanishes out from under the editor.
+            try {
+              await activate(dir, normalized.filename)
+            } catch (err) {
+              console.error("renameActive: activate failed after a successful move:", err)
+              try {
+                await activate(dir, pickActiveNote(notes, null))
+              } catch {
+                // Last resort exhausted (e.g. the whole folder's unreadable) —
+                // activeName is stuck stale either way, but `notes` itself is
+                // already accurate, so the sidebar still hears about the
+                // rename instead of going silent.
+                opts.onListChanged?.(notes, activeName)
+              }
+            }
+            try {
+              await updateInboundLinksForMoves(dir, [{ from, to: normalized.filename }], pathsBefore)
+            } catch {
+              // leave inbound links as-is rather than failing the rename
+            }
+          } catch (err) {
+            console.error("renameActive: post-rename steps failed after a successful rename:", err)
           }
           return { ok: true }
         } catch (err) {
