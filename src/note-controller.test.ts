@@ -789,6 +789,27 @@ describe("moveFolder (FEAT-0070)", () => {
     expect(result.ok).toBe(false)
   })
 
+  it("resolves {ok:false} instead of rejecting when the existence-check walk itself throws", async () => {
+    const { controller } = await open("start.md", ["start.md", "projects/a.md"])
+    listFolders.mockRejectedValueOnce(new Error("boom")) // the folderExists check's own listFolders call
+
+    const result = await controller.moveFolder("projects", "archive/projects")
+
+    expect(result.ok).toBe(false)
+  })
+
+  it("still notifies onListChanged with the accurate post-move listing even if onFoldersChanged's own walk throws", async () => {
+    const { controller, onListChanged } = await open("start.md", ["start.md", "projects/a.md"])
+    listNotes.mockResolvedValue(["start.md", "archive/projects/a.md"])
+    listFolders.mockResolvedValueOnce([]) // the existence-check walk succeeds
+    listFolders.mockRejectedValueOnce(new Error("boom")) // onFoldersChanged's own walk fails
+
+    const result = await controller.moveFolder("projects", "archive/projects")
+
+    expect(result).toEqual({ ok: true })
+    expect(onListChanged).toHaveBeenCalledWith(["start.md", "archive/projects/a.md"], "start.md")
+  })
+
   it("relocates an empty subfolder that has no notes of its own", async () => {
     const { controller } = await open("start.md", ["start.md", "projects/a.md"])
     listFolders.mockResolvedValue(["projects/empty-sub"])
@@ -1072,6 +1093,15 @@ describe("renameActive (FEAT-0034)", () => {
     expect(result.ok).toBe(false)
     expect(result.ok === false && result.reason).toMatch(/saved|type something/i)
     expect(result.ok === false && result.reason).not.toMatch(/no longer exists/i)
+  })
+
+  it("resolves {ok:false} instead of rejecting when a step throws partway through", async () => {
+    const { controller } = await open("a.md", ["a.md"])
+    moveNote.mockRejectedValueOnce(new Error("boom")) // an unexpected failure, not a normal status
+
+    const result = await controller.renameActive("b")
+
+    expect(result.ok).toBe(false)
   })
 })
 

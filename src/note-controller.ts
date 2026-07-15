@@ -761,27 +761,28 @@ export function createNoteController(
           if (conflict) return { ok: false, reason: "Resolve the conflict first." }
         }
 
-        const pathsBefore = new Set(notes)
-        const toMove = notes.filter((path) => path.startsWith(fromPath + "/"))
-        // One walk answers both "does fromPath still exist at all" (a stale
-        // row — e.g. deleted or already moved elsewhere — must refuse rather
-        // than silently fabricating an empty folder at the destination) and,
-        // reused below, "which subfolders need to follow." `toMove` alone
-        // isn't enough: a folder with only empty subfolders and no files
-        // would otherwise look identical to one that never existed.
-        const allFolders = await listFolders(dir)
-        const folderExists =
-          toMove.length > 0 || allFolders.includes(fromPath) || allFolders.some((p) => p.startsWith(fromPath + "/"))
-        if (!folderExists) return { ok: false, reason: "That folder no longer exists." }
-
-        // The whole batch below is many sequential file-system calls; an
-        // unexpected mid-way failure (permission revoked, a transient FS
-        // error) must resolve {ok:false}, not reject — every other caller in
-        // this codebase already assumes a controller method never throws,
-        // and an uncaught rejection here would otherwise surface nowhere
-        // (main.ts's onMoveFolder/onDropFolder have no .catch()), leaving
-        // the vault silently half-migrated with no error shown at all.
+        // Everything below is many sequential file-system calls (including
+        // the existence-check walk itself); an unexpected mid-way failure
+        // (permission revoked, a transient FS error) must resolve
+        // {ok:false}, not reject — every other caller in this codebase
+        // already assumes a controller method never throws, and an
+        // uncaught rejection here would otherwise surface nowhere (main.ts's
+        // onMoveFolder/onDropFolder have no .catch()), leaving the vault
+        // silently half-migrated with no error shown at all.
         try {
+          const pathsBefore = new Set(notes)
+          const toMove = notes.filter((path) => path.startsWith(fromPath + "/"))
+          // One walk answers both "does fromPath still exist at all" (a stale
+          // row — e.g. deleted or already moved elsewhere — must refuse rather
+          // than silently fabricating an empty folder at the destination) and,
+          // reused below, "which subfolders need to follow." `toMove` alone
+          // isn't enough: a folder with only empty subfolders and no files
+          // would otherwise look identical to one that never existed.
+          const allFolders = await listFolders(dir)
+          const folderExists =
+            toMove.length > 0 || allFolders.includes(fromPath) || allFolders.some((p) => p.startsWith(fromPath + "/"))
+          if (!folderExists) return { ok: false, reason: "That folder no longer exists." }
+
           const moves: { from: string; to: string }[] = []
           let newActiveName: string | null = null
           for (const oldPath of toMove) {
@@ -840,7 +841,13 @@ export function createNoteController(
           } catch {
             // leave inbound links as-is rather than failing the move
           }
-          opts.onFoldersChanged?.(await listFolders(dir))
+          try {
+            opts.onFoldersChanged?.(await listFolders(dir))
+          } catch {
+            // best-effort — `notes` above is already the accurate post-move
+            // listing, and the note-level notification below still fires
+            // with it even if this folder-listing walk itself failed
+          }
           if (newActiveName) {
             await activate(dir, newActiveName)
           } else {
@@ -862,51 +869,63 @@ export function createNoteController(
         if (!normalized.ok) return { ok: false, reason: normalized.reason }
         if (normalized.filename === activeName) return { ok: true } // no-op rename
 
-        // Flush the open note before moving so its file carries the latest edits.
-        // A flush can surface a conflict (the stale-write guard); if so, refuse.
-        await flushAndWait()
-        if (conflict) return { ok: false, reason: "Resolve the conflict first." }
+        // An unexpected mid-way failure (permission revoked, a transient FS
+        // error) must resolve {ok:false}, not reject — every caller in this
+        // codebase assumes a controller method never throws (the same reason
+        // moveFolder got this same guard), and an uncaught rejection here
+        // would otherwise surface nowhere (none of main.ts's callers attach a
+        // .catch()), leaving the UI stuck with no error shown at all.
+        try {
+          // Flush the open note before moving so its file carries the latest
+          // edits. A flush can surface a conflict (the stale-write guard); if
+          // so, refuse.
+          await flushAndWait()
+          if (conflict) return { ok: false, reason: "Resolve the conflict first." }
 
-        const from = activeName
-        const result = await moveNote(dir, from, normalized.filename)
-        if (result.status === "missing") {
-          // `lastModified === null` means this note was never written to disk (a
-          // lazy seed nobody has typed into yet) — so there is no file to move.
-          // Say that, rather than the misleading "no longer exists" that fits the
-          // other case (a file we did have, now gone from disk).
-          return {
-            ok: false,
-            reason:
-              lastModified === null
-                ? "Type something into this note before renaming it — it hasn't been saved yet."
-                : "The note no longer exists.",
+          const from = activeName
+          const result = await moveNote(dir, from, normalized.filename)
+          if (result.status === "missing") {
+            // `lastModified === null` means this note was never written to disk (a
+            // lazy seed nobody has typed into yet) — so there is no file to move.
+            // Say that, rather than the misleading "no longer exists" that fits the
+            // other case (a file we did have, now gone from disk).
+            return {
+              ok: false,
+              reason:
+                lastModified === null
+                  ? "Type something into this note before renaming it — it hasn't been saved yet."
+                  : "The note no longer exists.",
+            }
           }
+          if (result.status === "exists") {
+            return { ok: false, reason: "A note with that name already exists." }
+          }
+          // Follow the file: refresh the list, then re-point the editor at the new
+          // path. `activate` → `load` re-reads it (adopting the new lastModified),
+          // persists it as active, and announces so the UI tracks the new identity.
+          const pathsBefore = new Set(notes) // pre-move listing — still names `from`
+          contentCache.delete(from)
+          notes = await listNotes(dir)
+          // Follow-on link maintenance (FEAT-0040/0041). Both passes are best-effort:
+          // the move already succeeded, so a failure here (an I/O error part-way) must
+          // not report the rename as failed — the affected links simply stay as they
+          // were (dangling), which the existing missing-target handling covers.
+          try {
+            await rebaseMovedNote(dir, from, normalized.filename) // before activate: editor loads the rebased content
+          } catch {
+            // leave the moved note's own outbound links as-is rather than failing
+          }
+          await activate(dir, normalized.filename)
+          try {
+            await updateInboundLinksForMoves(dir, [{ from, to: normalized.filename }], pathsBefore)
+          } catch {
+            // leave inbound links as-is rather than failing the rename
+          }
+          return { ok: true }
+        } catch (err) {
+          console.error("renameActive failed partway through:", err)
+          return { ok: false, reason: "Something went wrong renaming the note. It may have already moved on disk." }
         }
-        if (result.status === "exists") {
-          return { ok: false, reason: "A note with that name already exists." }
-        }
-        // Follow the file: refresh the list, then re-point the editor at the new
-        // path. `activate` → `load` re-reads it (adopting the new lastModified),
-        // persists it as active, and announces so the UI tracks the new identity.
-        const pathsBefore = new Set(notes) // pre-move listing — still names `from`
-        contentCache.delete(from)
-        notes = await listNotes(dir)
-        // Follow-on link maintenance (FEAT-0040/0041). Both passes are best-effort:
-        // the move already succeeded, so a failure here (an I/O error part-way) must
-        // not report the rename as failed — the affected links simply stay as they
-        // were (dangling), which the existing missing-target handling covers.
-        try {
-          await rebaseMovedNote(dir, from, normalized.filename) // before activate: editor loads the rebased content
-        } catch {
-          // leave the moved note's own outbound links as-is rather than failing
-        }
-        await activate(dir, normalized.filename)
-        try {
-          await updateInboundLinksForMoves(dir, [{ from, to: normalized.filename }], pathsBefore)
-        } catch {
-          // leave inbound links as-is rather than failing the rename
-        }
-        return { ok: true }
       })
     },
     handleChange() {
