@@ -1165,6 +1165,17 @@ describe("mountNoteIdentity (FEAT-0035)", () => {
     expect(onRename).not.toHaveBeenCalled()
     expect(display(c).textContent).toContain("a")
   })
+
+  it("the rename input carries the anti-autofill attributes (FEAT-0074/AC-2)", () => {
+    const c = document.createElement("div")
+    mountNoteIdentity(c, vi.fn())
+    const el = input(c)
+    expect(el.autocomplete).toBe("off")
+    expect(el.getAttribute("data-lpignore")).toBe("true")
+    expect(el.getAttribute("data-1p-ignore")).not.toBeNull()
+    expect(el.getAttribute("data-bwignore")).toBe("true")
+    expect(el.getAttribute("data-form-type")).toBe("other")
+  })
 })
 
 describe("mountMissingNoteBanner (FEAT-0036)", () => {
