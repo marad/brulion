@@ -194,6 +194,18 @@ export interface NoteListHandlers {
  * the source of truth for "can I drop here" and "what am I dropping". */
 let draggedItem: { kind: "note" | "folder"; path: string } | null = null
 
+/** Whether `item` still corresponds to something in this render's data — a
+ * note must still be in `notes`; a folder must either be listed explicitly
+ * (an empty one) or still contain at least one note (M35/FEAT-0072). */
+function draggedItemStillExists(
+  item: { kind: "note" | "folder"; path: string },
+  notes: string[],
+  folders: string[],
+): boolean {
+  if (item.kind === "note") return notes.includes(item.path)
+  return folders.includes(item.path) || notes.some((path) => path.startsWith(item.path + "/"))
+}
+
 /**
  * Every unique folder path implied by `notes` (the same prefix-walk
  * {@link buildNoteTree} does internally, collected instead of built into
@@ -237,13 +249,16 @@ export function renderNoteList(
   folders: string[] = [],
 ): void {
   container.replaceChildren()
-  // A rebuild mid-drag (e.g. the background poller repainting the list while
-  // the user is holding a native drag) detaches the dragged row — the browser
-  // may never fire its `dragend` on an element no longer in the DOM, which
-  // would otherwise leave `draggedItem` stuck pointing at a stale path for
-  // whatever drop lands next. Safe to always clear: a real drag's own
-  // `dragstart` re-populates it, and nothing reads it between renders.
-  draggedItem = null
+  // A rebuild mid-drag (e.g. the background poller repainting the list after
+  // a genuine external change while the user is still holding a drag) always
+  // detaches the dragged row, and the browser may never fire its `dragend` on
+  // an element no longer in the DOM — but the drag itself is still perfectly
+  // valid as long as whatever's being dragged still exists; only clearing
+  // `draggedItem` unconditionally here would silently kill an in-progress
+  // drag over an unrelated, still-valid re-render. Clear it only when the
+  // dragged path is actually gone from this render's data (deleted, or moved
+  // out from under the drag by whatever triggered the rebuild).
+  if (draggedItem && !draggedItemStillExists(draggedItem, notes, folders)) draggedItem = null
   for (const node of buildNoteTree(notes, folders)) {
     container.append(renderNode(node, active, handlers, expanded))
   }

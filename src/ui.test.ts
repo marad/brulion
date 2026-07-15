@@ -866,16 +866,34 @@ describe("renderNoteList drag-and-drop (FEAT-0072)", () => {
     expect(h.onDropFolder).not.toHaveBeenCalled()
   })
 
-  it("a re-render mid-drag (e.g. the poller repainting the list) clears the stale drag state", () => {
+  it("a re-render mid-drag survives if the dragged item still exists (e.g. an unrelated poller repaint)", () => {
     const container = document.createElement("div")
     const h = handlers()
     renderNoteList(container, ["a.md", "sub/b.md"], "a.md", h)
     container.querySelector<HTMLElement>(".note-row")!.dispatchEvent(dragEvent("dragstart"))
 
     // The list rebuilds while the drag is still "in flight" (the dragged
-    // row's own dragend never fires — it's already detached) — the next
-    // drop anywhere must not act on the now-stale draggedItem.
+    // row's own dragend never fires — it's already detached), but "a.md" is
+    // still present in this render's data — the drag must not be silently
+    // dropped just because a re-render happened.
     renderNoteList(container, ["a.md", "sub/b.md"], "a.md", h)
+    const folderHeader = container.querySelector<HTMLElement>(".folder-header")!
+    folderHeader.dispatchEvent(dragEvent("dragover"))
+    folderHeader.dispatchEvent(dragEvent("drop"))
+
+    expect(h.onDropNote).toHaveBeenCalledWith("a.md", "sub")
+  })
+
+  it("a re-render mid-drag clears the drag if the dragged item is actually gone", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["a.md", "sub/b.md"], "a.md", h)
+    container.querySelector<HTMLElement>(".note-row")!.dispatchEvent(dragEvent("dragstart"))
+
+    // The rebuild reflects "a.md" no longer existing (deleted, or moved away
+    // by whatever triggered the rebuild) — the stale drag must not act on a
+    // path that no longer corresponds to anything.
+    renderNoteList(container, ["sub/b.md"], "sub/b.md", h)
     const folderHeader = container.querySelector<HTMLElement>(".folder-header")!
     folderHeader.dispatchEvent(dragEvent("dragover"))
     folderHeader.dispatchEvent(dragEvent("drop"))
