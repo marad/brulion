@@ -933,6 +933,68 @@ describe("renderNoteList drag-and-drop (FEAT-0072)", () => {
 
     expect(h.onDropNote).not.toHaveBeenCalled()
   })
+
+  it("dragging over a note row highlights its whole containing folder, not the row (AC-10)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["todo.md", "archive/keep.md"], "todo.md", h)
+    const rows = [...container.querySelectorAll<HTMLElement>(".note-row")]
+    const todoRow = rows.find((el) => el.textContent === "todo")!
+    const keepRow = rows.find((el) => el.textContent === "keep")! // inside "archive"
+    const archiveFolder = keepRow.closest<HTMLElement>(".note-folder")!
+
+    todoRow.dispatchEvent(dragEvent("dragstart"))
+    keepRow.dispatchEvent(dragEvent("dragover"))
+
+    expect(keepRow.classList.contains("tree-drop-target")).toBe(false)
+    expect(archiveFolder.classList.contains("tree-drop-target")).toBe(true)
+  })
+
+  it("dragging over a folder header highlights the whole folder block, not just the header (AC-10)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["a.md", "sub/b.md"], "a.md", h)
+    const aRow = container.querySelector<HTMLElement>(".note-row")!
+    const subHeader = container.querySelector<HTMLElement>(".folder-header")!
+    const subFolder = subHeader.closest<HTMLElement>(".note-folder")!
+
+    aRow.dispatchEvent(dragEvent("dragstart"))
+    subHeader.dispatchEvent(dragEvent("dragover"))
+
+    expect(subHeader.classList.contains("tree-drop-target")).toBe(false)
+    expect(subFolder.classList.contains("tree-drop-target")).toBe(true)
+  })
+
+  it("dragging over a root-level note row highlights the root zone, not the row (AC-10)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["a.md", "b.md"], "a.md", h)
+    const rows = [...container.querySelectorAll<HTMLElement>(".note-row")]
+    const aRow = rows.find((el) => el.textContent === "a")!
+    const bRow = rows.find((el) => el.textContent === "b")!
+
+    aRow.dispatchEvent(dragEvent("dragstart"))
+    bRow.dispatchEvent(dragEvent("dragover"))
+
+    expect(bRow.classList.contains("tree-drop-target")).toBe(false)
+    expect(container.classList.contains("tree-drop-target")).toBe(true) // the root zone
+  })
+
+  it("dragleave clears the folder-block highlight (AC-10)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["a.md", "sub/b.md"], "a.md", h)
+    const aRow = container.querySelector<HTMLElement>(".note-row")!
+    const subHeader = container.querySelector<HTMLElement>(".folder-header")!
+    const subFolder = subHeader.closest<HTMLElement>(".note-folder")!
+
+    aRow.dispatchEvent(dragEvent("dragstart"))
+    subHeader.dispatchEvent(dragEvent("dragover"))
+    expect(subFolder.classList.contains("tree-drop-target")).toBe(true)
+
+    subHeader.dispatchEvent(dragEvent("dragleave"))
+    expect(subFolder.classList.contains("tree-drop-target")).toBe(false)
+  })
 })
 
 describe("wireToggle", () => {

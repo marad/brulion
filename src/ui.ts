@@ -288,8 +288,15 @@ function wireTreeMenu(el: HTMLElement, items: () => TreeMenuItem[]): void {
   el.addEventListener("keydown", (event) => {
     if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey)) return
     event.preventDefault()
+    // The element actually holding focus (a folder header, or a note row's name
+    // button) — refocus it when the keyboard-opened menu closes, so the user
+    // lands back where they were (M35/FEAT-0071/AC-8) instead of on <body>.
+    const opener = document.activeElement as HTMLElement | null
     const rect = el.getBoundingClientRect()
-    openTreeMenu(rect.left, rect.bottom, items())
+    openTreeMenu(rect.left, rect.bottom, items(), {
+      fromKeyboard: true,
+      onDismiss: () => opener?.focus(),
+    })
   })
 }
 
@@ -337,6 +344,19 @@ function parentOf(path: string): string {
  * stop propagating once accepted, so a drop on a specific row's target never
  * also fires an ancestor's (e.g. the root zone's). */
 function wireDropTarget(el: HTMLElement, getDestination: () => string, handlers: NoteListHandlers): void {
+  // The drop indicator highlights the whole destination *folder block* (its
+  // header plus everything nested under it), not just the row the pointer is
+  // over: a drop on a note row targets that note's containing folder (AC-9),
+  // so highlighting only the hovered row would point at the wrong place
+  // (M35/FEAT-0072/AC-10). A drop targeting the vault root (a root-level note
+  // row, or the root zone itself) has no folder block, so it highlights the
+  // whole tree container — the element the root drop zone is wired on
+  // (`[data-drop-zone-wired]`). Computed at event time (not render time) so a
+  // root-level row, appended after wiring, still resolves its container.
+  const highlightEl = (): HTMLElement =>
+    el.closest<HTMLElement>(".note-folder") ??
+    el.closest<HTMLElement>("[data-drop-zone-wired]") ??
+    el
   el.addEventListener("dragover", (event) => {
     // This element is the intended drop target for anything hovering over
     // it — never an ancestor drop zone (e.g. the root) — regardless of
@@ -344,13 +364,13 @@ function wireDropTarget(el: HTMLElement, getDestination: () => string, handlers:
     event.stopPropagation()
     if (!isValidDropTarget(getDestination())) return // no valid-drop indicator (AC-7)
     event.preventDefault() // required to permit a drop here at all
-    el.classList.add("tree-drop-target")
+    highlightEl().classList.add("tree-drop-target")
   })
   el.addEventListener("dragleave", () => {
-    el.classList.remove("tree-drop-target")
+    highlightEl().classList.remove("tree-drop-target")
   })
   el.addEventListener("drop", (event) => {
-    el.classList.remove("tree-drop-target")
+    highlightEl().classList.remove("tree-drop-target")
     // Same reasoning as dragover: claim the event so an invalid drop here
     // doesn't bubble up and get silently reinterpreted by an ancestor zone.
     event.preventDefault()

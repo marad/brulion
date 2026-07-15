@@ -746,9 +746,9 @@ header button:hover {
  * mouse-only path. Draggable rows keep their ordinary pointer cursor at rest
  * (an open hand read as "already grabbing" rather than "grabbable" — M35
  * milestone-review feedback) and switch to a closed hand only while a drag
- * is actually initiated; a valid drop target (a folder header, a note row,
- * or the tree root while something's dragged over it) highlights so the
- * pointer's target is unambiguous. */
+ * is actually initiated; a valid drop target highlights the whole destination
+ * folder block (header + nested contents), or the tree root for a root-targeted
+ * drop, so the pointer's target is unambiguous (M35/FEAT-0072/AC-10). */
 [draggable="true"] {
   cursor: pointer;
 }

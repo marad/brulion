@@ -73,6 +73,43 @@ test("Shift+F10 opens the context menu for the focused note row (AC-7)", async (
   await expect(menuItems(page)).toHaveText(["Rename…", "Move…", "Delete"])
 })
 
+test("a keyboard-opened menu is arrow-navigable and Enter activates an item (AC-8)", async ({
+  page,
+}) => {
+  await stubPicker(page)
+  await page.goto("/brulion/")
+  await writeNote(page, "alpha.md", "alpha body")
+  await page.locator("#open-folder").click()
+
+  await row(page, "alpha").locator(".note-name").focus()
+  await page.keyboard.press("Shift+F10")
+  await expect(menu(page)).toBeVisible()
+
+  await expect(menuItems(page).nth(0)).toBeFocused() // first item focused on open
+  await page.keyboard.press("ArrowDown")
+  await expect(menuItems(page).nth(1)).toBeFocused() // "Move…"
+  await page.keyboard.press("ArrowUp")
+  await expect(menuItems(page).nth(0)).toBeFocused() // back to "Rename…"
+
+  await page.keyboard.press("Enter") // activate "Rename…"
+  await expect(page.locator("#dialog-input")).toBeVisible() // its prompt opened
+})
+
+test("Esc on a keyboard-opened menu returns focus to the row (AC-8)", async ({ page }) => {
+  await stubPicker(page)
+  await page.goto("/brulion/")
+  await writeNote(page, "alpha.md", "alpha body")
+  await page.locator("#open-folder").click()
+
+  await row(page, "alpha").locator(".note-name").focus()
+  await page.keyboard.press("Shift+F10")
+  await expect(menuItems(page).nth(0)).toBeFocused()
+
+  await page.keyboard.press("Escape")
+  await expect(menu(page)).toBeHidden()
+  await expect(row(page, "alpha").locator(".note-name")).toBeFocused() // focus handed back
+})
+
 test("Shift+F10 opens the context menu for the focused folder header (AC-7)", async ({ page }) => {
   await stubPicker(page)
   await page.goto("/brulion/")

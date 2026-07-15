@@ -44,7 +44,7 @@ function openMenu(view: EditorView, x: number, y: number, items: MenuItem[]) {
         view.focus()
       },
     })),
-    () => view.focus(), // Escape also returns focus to the editor
+    { onDismiss: () => view.focus() }, // Escape/Tab also returns focus to the editor
   )
 }
 

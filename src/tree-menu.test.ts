@@ -77,6 +77,71 @@ describe("openTreeMenu", () => {
   })
 })
 
+describe("openTreeMenu keyboard operation (FEAT-0071/AC-8)", () => {
+  const key = (k: string) =>
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true }))
+
+  it("a keyboard-opened menu focuses its first item", () => {
+    openTreeMenu(10, 10, [{ label: "A", run: vi.fn() }, { label: "B", run: vi.fn() }], {
+      fromKeyboard: true,
+    })
+    expect(document.activeElement).toBe(items()[0])
+  })
+
+  it("ArrowDown/ArrowUp move focus between items, wrapping at both ends", () => {
+    openTreeMenu(
+      10,
+      10,
+      [{ label: "A", run: vi.fn() }, { label: "B", run: vi.fn() }, { label: "C", run: vi.fn() }],
+      { fromKeyboard: true },
+    )
+    key("ArrowDown")
+    expect(document.activeElement).toBe(items()[1])
+    key("ArrowDown")
+    expect(document.activeElement).toBe(items()[2])
+    key("ArrowDown") // wraps to first
+    expect(document.activeElement).toBe(items()[0])
+    key("ArrowUp") // wraps to last
+    expect(document.activeElement).toBe(items()[2])
+  })
+
+  it("Enter activates the focused item and closes the menu", () => {
+    const run = vi.fn()
+    openTreeMenu(10, 10, [{ label: "A", run: vi.fn() }, { label: "B", run }], {
+      fromKeyboard: true,
+    })
+    key("ArrowDown") // focus B
+    key("Enter")
+    expect(run).toHaveBeenCalledOnce()
+    expect(menu()).toBeNull()
+  })
+
+  it("Escape returns focus to the opener via onDismiss", () => {
+    const opener = document.createElement("button")
+    document.body.append(opener)
+    const onDismiss = vi.fn(() => opener.focus())
+    openTreeMenu(10, 10, [{ label: "A", run: vi.fn() }], { fromKeyboard: true, onDismiss })
+
+    key("Escape")
+
+    expect(onDismiss).toHaveBeenCalledOnce()
+    expect(document.activeElement).toBe(opener)
+    expect(menu()).toBeNull()
+  })
+
+  it("a pointer-opened menu (no fromKeyboard) does not steal focus, and arrows are ignored", () => {
+    const elsewhere = document.createElement("input")
+    document.body.append(elsewhere)
+    elsewhere.focus()
+
+    openTreeMenu(10, 10, [{ label: "A", run: vi.fn() }, { label: "B", run: vi.fn() }])
+    expect(document.activeElement).toBe(elsewhere) // focus untouched — pointer is the way in
+
+    key("ArrowDown") // focus is outside the menu, so navigation must not hijack it
+    expect(document.activeElement).toBe(elsewhere)
+  })
+})
+
 describe("closeTreeMenu", () => {
   it("closes an open menu", () => {
     openTreeMenu(10, 10, [{ label: "Delete", run: vi.fn() }])
