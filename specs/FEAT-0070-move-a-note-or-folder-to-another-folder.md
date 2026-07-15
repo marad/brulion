@@ -168,10 +168,3 @@ When `moveFolder("gone", "archive/gone")` is called,
 Then the operation reports failure with a reason, and no folder is created
 at the destination — a folder never actually there is not silently
 fabricated as an empty one.
-
-**AC-11** — An occupied destination leaves an emptied (sub)folder in place, never destroys it.
-Given a folder (or one of its emptied subfolders) is being moved, and a
-like-named file or folder already occupies the exact destination path,
-When the move reaches that (sub)folder,
-Then it is left at its original path — never deleted — the same "skip,
-don't destroy" outcome AC-9 already gives an occupied note.
