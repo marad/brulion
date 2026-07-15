@@ -2773,3 +2773,26 @@ without reappearing at the destination), too small to justify the
 complexity a correct fix would need to safely distinguish "blocked by a
 genuine conflict" from "already there because this exact move's own note
 writes put it there."
+
+## Round-5 review findings deliberately not acted on (M35 → FEAT-0070)
+Three findings from a 5th `/code-review` pass were left as-is:
+- The "Move…" picker's destination list (`destinationChoices`) doesn't
+  filter out a folder's own subtree the way drag-and-drop's drop-target
+  highlight does — picking it round-trips to a refusal message instead of
+  never being offered. This is the exact, already-documented "Out of scope"
+  decision in FEAT-0070's spec ("filtering the destination picker's folder
+  list to exclude invalid targets up front... the operation is refused with
+  a message if picked anyway, same pattern as an invalid/duplicate folder
+  name") — not a new gap, a standing choice.
+- `collect`/`collectFolders` (`note.ts`) duplicate the same semaphore-walk
+  shape almost verbatim. A real DRY concern, but `moveFolder` has been the
+  single most bug-prone area across all five review rounds on this branch —
+  refactoring the directory-walk primitives underneath it at the tail end of
+  this loop is more risk than the duplication currently costs.
+- `moveFolder`'s per-note move loop awaits each `moveNote` sequentially
+  instead of using the existing `Semaphore`-bounded concurrency `listNotes`/
+  `listFolders` already use. A real perf win for a folder with many notes,
+  but the loop's ordering already carries several hard-won correctness
+  guarantees (rebase only once the whole batch is known, occupied-
+  destination skips, etc.) that concurrent moves would have to re-prove —
+  deferred for the same reason as the walk duplication above.
