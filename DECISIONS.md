@@ -2832,4 +2832,20 @@ a failure when a best-effort follow-up step throws. Two others were left as-is:
   (or blank) when every recovery attempt fails, changing what the user sees
   rather than just how errors propagate — a bigger, more user-visible change
   than this loop's scope.
+
+**Round-16 follow-up:** the 16th pass caught that this entry's own fix was
+incomplete on both counts. `removeNote`/`removeFolder` still used bare
+`serialize` (not `serializeResult`) with only their tail `activate()` call
+protected — `deleteNote`/`deleteFolder`/`listNotes`/`flushAndWait` themselves
+could still reject, and both `main.ts` call sites discarded the promise with
+a bare `void`, so a failure there was a silent unhandled rejection with zero
+user feedback (unlike every sibling mutation). Fixed by giving them the same
+`AddNoteResult`/`serializeResult` treatment as `addNote`/`addFolder`, and
+updating `onDelete`/`onDeleteFolder` in `main.ts` to alert on `{ok:false}`.
+Separately, the "last resort exhausted" branches (now in four places:
+`removeNote`, `removeFolder`, `moveFolder`, `renameActive`) never called
+`onListChanged` even though `notes` was already accurate — fixed by adding
+that call to each. This does *not* change the accepted `activeName`-staleness
+risk above (that's still a real, documented residual risk); it only stops
+the sidebar's file listing from silently going stale on top of it.
   deferred for the same reason as the walk duplication above.

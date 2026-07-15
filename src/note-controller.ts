@@ -205,15 +205,16 @@ export interface NoteController {
   switchTo(name: string): Promise<void>
   /** Create a note from a user-typed name and open it. Reports why it failed. */
   addNote(name: string): Promise<AddNoteResult>
-  /** Delete `name`'s file; if it was active, switch to another note. */
-  removeNote(name: string): Promise<void>
+  /** Delete `name`'s file; if it was active, switch to another note. Reports
+   * why it failed (never rejects). */
+  removeNote(name: string): Promise<AddNoteResult>
   /** Create an empty folder from a user-typed path (M35/FEAT-0069). Reports why
    * it failed; never touches the active note. */
   addFolder(path: string): Promise<AddNoteResult>
   /** Delete the folder at `path` and everything beneath it (M35/FEAT-0069); if
    * the active note lived inside it, switch to another note the same way
-   * {@link removeNote} does. */
-  removeFolder(path: string): Promise<void>
+   * {@link removeNote} does. Reports why it failed (never rejects). */
+  removeFolder(path: string): Promise<AddNoteResult>
   /**
    * Move the folder at `fromPath` (and everything beneath it) to `toPath`
    * (M35/FEAT-0070): every note in the subtree relocates via `moveNote`, its
@@ -709,8 +710,9 @@ export function createNoteController(
     },
     removeNote(name) {
       abortPendingRelist()
-      return serialize(async () => {
-        if (!dir || conflict) return // conflict is modal — resolve it first
+      return serializeResult(async () => {
+        if (!dir) return { ok: false, reason: "Open a folder first." }
+        if (conflict) return { ok: false, reason: "Resolve the conflict first." }
         // Drop the deleted note's unsaved edits so the flush below won't write
         // them back. Then await flushAndWait regardless: it settles any save
         // already in flight (which would otherwise complete and re-create the
@@ -731,15 +733,19 @@ export function createNoteController(
           // moveFolder/renameActive's two-step recovery, pickActiveNote
           // already picked the best candidate — so this can only log and
           // accept the same residual risk moveFolder/renameActive's own
-          // "last resort exhausted" case already carries.
+          // "last resort exhausted" case already carries. `notes` is already
+          // accurate regardless, so the sidebar still hears about it even
+          // when the fallback load itself fails.
           try {
             await activate(dir, pickActiveNote(notes, null))
           } catch (err) {
             console.error("removeNote: activate failed after a successful delete:", err)
+            opts.onListChanged?.(notes, activeName)
           }
         } else {
           opts.onListChanged?.(notes, activeName)
         }
+        return { ok: true }
       })
     },
     addFolder(path) {
@@ -768,8 +774,9 @@ export function createNoteController(
     },
     removeFolder(path) {
       abortPendingRelist()
-      return serialize(async () => {
-        if (!dir || conflict) return // conflict is modal — resolve it first
+      return serializeResult(async () => {
+        if (!dir) return { ok: false, reason: "Open a folder first." }
+        if (conflict) return { ok: false, reason: "Resolve the conflict first." }
         const activeInsideFolder = isWithin(activeName, path)
         // Same reasoning as removeNote: drop the active note's unsaved edits
         // before it's yanked out from under an in-flight save, then flush to
@@ -785,15 +792,18 @@ export function createNoteController(
         if (activeInsideFolder) {
           // Same reasoning as removeNote above: the delete already
           // succeeded, and there's no further fallback beyond pickActiveNote
-          // to try.
+          // to try. `notes` is already accurate regardless, so the sidebar
+          // still hears about it even when the fallback load itself fails.
           try {
             await activate(dir, pickActiveNote(notes, null))
           } catch (err) {
             console.error("removeFolder: activate failed after a successful delete:", err)
+            opts.onListChanged?.(notes, activeName)
           }
         } else {
           opts.onListChanged?.(notes, activeName)
         }
+        return { ok: true }
       })
     },
     moveFolder(fromPath, toPath) {
@@ -921,7 +931,10 @@ export function createNoteController(
               try {
                 await activate(dir, pickActiveNote(notes, null))
               } catch {
-                // Last resort exhausted — nothing safe left to do here.
+                // Last resort exhausted — activeName is stuck stale either
+                // way, but `notes` itself is already accurate, so the
+                // sidebar still hears about the move instead of going silent.
+                opts.onListChanged?.(notes, activeName)
               }
             }
           } else {
@@ -1006,7 +1019,10 @@ export function createNoteController(
               await activate(dir, pickActiveNote(notes, null))
             } catch {
               // Last resort exhausted (e.g. the whole folder's unreadable) —
-              // nothing safe left to do here.
+              // activeName is stuck stale either way, but `notes` itself is
+              // already accurate, so the sidebar still hears about the
+              // rename instead of going silent.
+              opts.onListChanged?.(notes, activeName)
             }
           }
           try {

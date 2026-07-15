@@ -420,7 +420,11 @@ const noteListHandlers = {
         // renamed/deleted by the time the user confirms. removeNote is a
         // no-op for an already-missing path, which would otherwise look
         // like a successful delete with no feedback at all.
-        ifExists(name, noteStillExists, () => void controller.removeNote(name))
+        ifExists(name, noteStillExists, () => {
+          void controller.removeNote(name).then((result) => {
+            if (!result.ok) void dialog.alert(result.reason)
+          })
+        })
       })
   },
   onToggleFolder: (path: string, collapsed: boolean) => {
@@ -441,7 +445,11 @@ const noteListHandlers = {
         if (!ok) return
         // Same race as onDelete above: the folder may have been externally
         // removed/moved while the (now async) confirmation sat open.
-        ifExists(path, folderStillExists, () => void controller.removeFolder(path))
+        ifExists(path, folderStillExists, () => {
+          void controller.removeFolder(path).then((result) => {
+            if (!result.ok) void dialog.alert(result.reason)
+          })
+        })
       })
   },
   onMoveNote: (path: string) => {

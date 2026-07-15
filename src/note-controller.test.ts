@@ -607,8 +607,27 @@ describe("removeNote (FEAT-0012)", () => {
     listNotes.mockResolvedValue(["b.md"])
     readNote.mockRejectedValueOnce(new Error("boom")) // the fallback note's own load()
 
-    await expect(controller.removeNote("a.md")).resolves.toBeUndefined()
+    await expect(controller.removeNote("a.md")).resolves.toEqual({ ok: true })
     expect(deleteNote).toHaveBeenCalledWith(DIR, "a.md")
+  })
+
+  it("still notifies onListChanged with the accurate listing even when the fallback load itself fails", async () => {
+    const { controller, onListChanged } = await open("a.md", ["a.md", "b.md"])
+    listNotes.mockResolvedValue(["b.md"])
+    readNote.mockRejectedValueOnce(new Error("boom")) // the fallback note's own load()
+
+    await controller.removeNote("a.md")
+
+    expect(onListChanged).toHaveBeenLastCalledWith(["b.md"], "a.md")
+  })
+
+  it("resolves {ok:false} instead of rejecting when the delete itself throws", async () => {
+    const { controller } = await open("a.md", ["a.md", "b.md"])
+    deleteNote.mockRejectedValueOnce(new Error("boom"))
+
+    const result = await controller.removeNote("a.md")
+
+    expect(result).toEqual({ ok: false, reason: "Something went wrong. Please try again." })
   })
 
   it("falls back to an empty start buffer when the last note is deleted (AC-7)", async () => {
@@ -797,8 +816,27 @@ describe("removeFolder (FEAT-0069)", () => {
     listNotes.mockResolvedValue(["start.md"])
     readNote.mockRejectedValueOnce(new Error("boom")) // the fallback note's own load()
 
-    await expect(controller.removeFolder("projects")).resolves.toBeUndefined()
+    await expect(controller.removeFolder("projects")).resolves.toEqual({ ok: true })
     expect(deleteFolder).toHaveBeenCalledWith(DIR, "projects")
+  })
+
+  it("still notifies onListChanged with the accurate listing even when the fallback load itself fails", async () => {
+    const { controller, onListChanged } = await open("projects/a.md", ["start.md", "projects/a.md"])
+    listNotes.mockResolvedValue(["start.md"])
+    readNote.mockRejectedValueOnce(new Error("boom")) // the fallback note's own load()
+
+    await controller.removeFolder("projects")
+
+    expect(onListChanged).toHaveBeenLastCalledWith(["start.md"], "projects/a.md")
+  })
+
+  it("resolves {ok:false} instead of rejecting when the delete itself throws", async () => {
+    const { controller } = await open("start.md", ["start.md", "projects/a.md"])
+    deleteFolder.mockRejectedValueOnce(new Error("boom"))
+
+    const result = await controller.removeFolder("projects")
+
+    expect(result).toEqual({ ok: false, reason: "Something went wrong. Please try again." })
   })
 
   it("falls back to an empty start buffer when the active note's folder held everything (AC-7)", async () => {
@@ -1016,6 +1054,23 @@ describe("moveFolder (FEAT-0070)", () => {
     )
   })
 
+  it("still notifies onListChanged with the accurate listing even when the fallback load also fails", async () => {
+    // Both the primary relocated-note load and its pickActiveNote fallback
+    // fail here — the "last resort exhausted" case. activeName is stuck
+    // stale either way, but the sidebar must still hear about the move.
+    const { controller, onListChanged } = await open("projects/a.md", ["projects/a.md", "start.md"])
+    listNotes.mockResolvedValue(["archive/projects/a.md", "start.md"])
+    readNote.mockRejectedValue(new Error("boom")) // every load() fails
+
+    const result = await controller.moveFolder("projects", "archive/projects")
+
+    expect(result).toEqual({ ok: true })
+    expect(onListChanged).toHaveBeenLastCalledWith(
+      ["archive/projects/a.md", "start.md"],
+      "projects/a.md",
+    )
+  })
+
   it("resolves {ok:false} instead of rejecting when the active-note flush throws", async () => {
     const { view, controller } = await open("projects/a.md", ["projects/a.md"])
     type(view, " edited")
@@ -1128,6 +1183,20 @@ describe("renameActive (FEAT-0034)", () => {
     // real, successfully loaded note — not the vanished "a.md".
     expect(view.state.doc.toString()).toBe("start.md body")
     expect(onListChanged).toHaveBeenLastCalledWith(["b.md", "start.md"], "start.md")
+  })
+
+  it("still notifies onListChanged with the accurate listing even when the fallback load also fails", async () => {
+    // Both the primary renamed-note load and its pickActiveNote fallback
+    // fail here — the "last resort exhausted" case. activeName is stuck
+    // stale either way, but the sidebar must still hear about the rename.
+    const { controller, onListChanged } = await open("a.md", ["a.md", "start.md"])
+    listNotes.mockResolvedValue(["b.md", "start.md"])
+    readNote.mockRejectedValue(new Error("boom")) // every load() fails
+
+    const result = await controller.renameActive("b")
+
+    expect(result).toEqual({ ok: true })
+    expect(onListChanged).toHaveBeenLastCalledWith(["b.md", "start.md"], "a.md")
   })
 
   it("flushes pending edits before moving, so the moved file has them (AC-7)", async () => {
