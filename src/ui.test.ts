@@ -703,7 +703,7 @@ describe("renderNoteList drag-and-drop (FEAT-0072)", () => {
     expect(h.onDropNote).toHaveBeenCalledWith("sub/a.md", "")
   })
 
-  it("dropping onto a nested note row does not bubble to the root zone (a note isn't a container)", () => {
+  it("dropping onto a note row targets that note's containing folder, not the root (AC-9)", () => {
     const container = document.createElement("div")
     const h = handlers()
     renderNoteList(container, ["todo.md", "archive/keep.md"], "todo.md", h)
@@ -715,7 +715,54 @@ describe("renderNoteList drag-and-drop (FEAT-0072)", () => {
     keepRow.dispatchEvent(dragEvent("dragover"))
     keepRow.dispatchEvent(dragEvent("drop"))
 
-    expect(h.onDropNote).not.toHaveBeenCalled()
+    expect(h.onDropNote).toHaveBeenCalledWith("todo.md", "archive") // not "" (root)
+  })
+
+  it("dropping a dragged folder onto a note row targets that note's containing folder (AC-9)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["sub/a.md", "archive/keep.md"], "sub/a.md", h)
+    const subHeader = container.querySelector<HTMLElement>(".folder-header")!
+    const keepRow = [...container.querySelectorAll<HTMLElement>(".note-row")].find(
+      (el) => el.textContent === "keep",
+    )!
+
+    subHeader.dispatchEvent(dragEvent("dragstart"))
+    keepRow.dispatchEvent(dragEvent("dragover"))
+    keepRow.dispatchEvent(dragEvent("drop"))
+
+    expect(h.onDropFolder).toHaveBeenCalledWith("sub", "archive")
+  })
+
+  it("dropping onto a root-level note row targets the root (AC-9)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["a.md", "b.md"], "a.md", h)
+    const rows = [...container.querySelectorAll<HTMLElement>(".note-row")]
+    const aRow = rows.find((el) => el.textContent === "a")!
+    const bRow = rows.find((el) => el.textContent === "b")!
+
+    aRow.dispatchEvent(dragEvent("dragstart"))
+    bRow.dispatchEvent(dragEvent("dragover"))
+    bRow.dispatchEvent(dragEvent("drop"))
+
+    expect(h.onDropNote).toHaveBeenCalledWith("a.md", "")
+  })
+
+  it("dropping a folder onto a note inside itself does not call onDropFolder (self-nest guard, AC-9)", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["sub/ideas/a.md"], "sub/ideas/a.md", h)
+    const subHeader = [...container.querySelectorAll<HTMLElement>(".folder-header")].find(
+      (el) => el.textContent === "sub",
+    )!
+    const aRow = container.querySelector<HTMLElement>(".note-row")!
+
+    subHeader.dispatchEvent(dragEvent("dragstart"))
+    aRow.dispatchEvent(dragEvent("dragover"))
+    aRow.dispatchEvent(dragEvent("drop"))
+
+    expect(h.onDropFolder).not.toHaveBeenCalled()
   })
 
   it("a row's own drop does not also trigger the root zone's drop", () => {
