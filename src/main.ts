@@ -843,11 +843,11 @@ const attachVault = (vault: Vault): Promise<void> => {
 }
 const attachVaultNow = async (vault: Vault) => {
   // Snapshot the currently attached vault so a failed attach can fall back to it
-  // instead of leaving the window pinned to a vault it couldn't open. Includes the
-  // settings state openNote mutates (settingsDir/currentSettings) — those are applied
-  // to the editor *before* controller.open can throw, so the rollback must restore
-  // them too, or a failed switch would leave default settings applied and route the
-  // next settings write to the dead folder.
+  // instead of leaving the window pinned to a vault it couldn't open. Includes every
+  // bit of state openNote mutates before controller.open can throw — settings
+  // (settingsDir/currentSettings) and the M35 folder listing (currentFolders) — or a
+  // failed switch would leave the dead vault's settings/folder tree applied and route
+  // the next settings write, or the sidebar's folder rows, to a vault that's gone.
   const prev = {
     vaultId: currentVaultId,
     recency,
@@ -855,6 +855,7 @@ const attachVaultNow = async (vault: Vault) => {
     cachedNoteList,
     settingsDir,
     currentSettings,
+    currentFolders,
   }
   // Load the vault's session first, so a transient idb error can't leave `?ws` +
   // currentVaultId pointing at a vault we never actually opened.
@@ -877,6 +878,7 @@ const attachVaultNow = async (vault: Vault) => {
     cachedNoteList = prev.cachedNoteList
     settingsDir = prev.settingsDir
     currentSettings = prev.currentSettings
+    currentFolders = prev.currentFolders
     applySettings(view, currentSettings) // undo the dead folder's settings applied in openNote
     refreshActionBar()
     settingsModal?.sync()
