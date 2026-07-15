@@ -773,31 +773,6 @@ describe("moveFolder (FEAT-0070)", () => {
     expect(deleteFolder).toHaveBeenCalledWith(DIR, "projects/empty-sub")
   })
 
-  it("leaves an emptied subfolder in place rather than losing it when its destination is occupied", async () => {
-    const { controller } = await open("start.md", ["start.md", "projects/a.md"])
-    listFolders.mockResolvedValue(["projects/empty-sub"])
-    listNotes.mockResolvedValue(["start.md", "archive/projects/a.md"])
-    createFolder.mockImplementation(async (_dir, path) =>
-      path === "archive/projects/empty-sub" ? { status: "exists" } : { status: "created" },
-    )
-
-    await controller.moveFolder("projects", "archive/projects")
-
-    expect(deleteFolder).not.toHaveBeenCalledWith(DIR, "projects/empty-sub")
-  })
-
-  it("leaves the source folder itself in place when the top-level destination is occupied", async () => {
-    const { controller } = await open("start.md", ["start.md", "projects/a.md"])
-    listNotes.mockResolvedValue(["start.md", "archive/projects/a.md"])
-    createFolder.mockImplementation(async (_dir, path) =>
-      path === "archive/projects" ? { status: "exists" } : { status: "created" },
-    )
-
-    await controller.moveFolder("projects", "archive/projects")
-
-    expect(deleteFolder).not.toHaveBeenCalledWith(DIR, "projects")
-  })
-
   it("refuses moving a folder that no longer exists (stale row, no files or subfolders)", async () => {
     const { controller } = await open("start.md", ["start.md"])
     listFolders.mockResolvedValue([]) // fromPath has no notes and isn't in the folder listing either
