@@ -743,11 +743,14 @@ header button:hover {
 }
 
 /* Drag-and-drop (M35/FEAT-0072) — additive to the "Move…" picker, a faster
- * mouse-only path. Draggable rows show a grab cursor; a valid drop target
- * (a folder header, or the tree root while something's dragged over it)
- * highlights so the pointer's target is unambiguous. */
+ * mouse-only path. Draggable rows keep their ordinary pointer cursor at rest
+ * (an open hand read as "already grabbing" rather than "grabbable" — M35
+ * milestone-review feedback) and switch to a closed hand only while a drag
+ * is actually initiated; a valid drop target (a folder header, a note row,
+ * or the tree root while something's dragged over it) highlights so the
+ * pointer's target is unambiguous. */
 [draggable="true"] {
-  cursor: grab;
+  cursor: pointer;
 }
 
 [draggable="true"]:active {

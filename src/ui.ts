@@ -284,17 +284,11 @@ function isValidDropTarget(destination: string): boolean {
   return true
 }
 
-/** Claim drag events on `el` without ever acting on them — a note row is
- * never a drop target (a note isn't a container), but it still must stop a
- * drop from bubbling past it to an ancestor drop zone (e.g. the root), which
- * would otherwise silently reinterpret "dropped on this note" as "dropped at
- * the root" (M35/FEAT-0072). */
-function blockDropBubbling(el: HTMLElement): void {
-  el.addEventListener("dragover", (event) => event.stopPropagation())
-  el.addEventListener("drop", (event) => {
-    event.preventDefault()
-    event.stopPropagation()
-  })
+/** The folder-relative parent of `path` ("" at the root) — mirrors
+ * `note-controller.ts`'s private `folderOf`/`main.ts`'s `parentOf`. */
+function parentOf(path: string): string {
+  const slash = path.lastIndexOf("/")
+  return slash === -1 ? "" : path.slice(0, slash)
 }
 
 /** Make `el` a drop target that moves whatever's dragged onto
@@ -408,7 +402,11 @@ function renderNoteRow(node: NoteLeaf, active: string, handlers: NoteListHandler
     { label: "Delete", run: () => handlers.onDelete(node.path) },
   ])
   wireDragSource(row, "note", node.path)
-  blockDropBubbling(row) // a note isn't a drop target, but must still claim the event
+  // A note isn't a container, but its row is the easiest target to hit when
+  // the intent is "put this alongside that note" — drop here targets its
+  // own containing folder, same as dropping directly on that folder's
+  // header would (M35/FEAT-0072/AC-9).
+  wireDropTarget(row, () => parentOf(node.path), handlers)
 
   return row
 }
