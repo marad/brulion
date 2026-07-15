@@ -60,6 +60,32 @@ test("right-clicking a folder row opens exactly New subfolder…/New note…/Ren
   await expect(menuItems(page)).toHaveText(["New subfolder…", "New note…", "Rename…", "Move…", "Delete"])
 })
 
+test("Shift+F10 opens the context menu for the focused note row (AC-7)", async ({ page }) => {
+  await stubPicker(page)
+  await page.goto("/brulion/")
+  await writeNote(page, "alpha.md", "alpha body")
+  await page.locator("#open-folder").click()
+
+  await row(page, "alpha").locator(".note-name").focus()
+  await page.keyboard.press("Shift+F10")
+
+  await expect(menu(page)).toBeVisible()
+  await expect(menuItems(page)).toHaveText(["Rename…", "Move…", "Delete"])
+})
+
+test("Shift+F10 opens the context menu for the focused folder header (AC-7)", async ({ page }) => {
+  await stubPicker(page)
+  await page.goto("/brulion/")
+  await writeNote(page, "projects/a.md", "a body")
+  await page.locator("#open-folder").click()
+
+  await folderHeader(page, "projects").focus()
+  await page.keyboard.press("Shift+F10")
+
+  await expect(menu(page)).toBeVisible()
+  await expect(menuItems(page)).toHaveText(["New subfolder…", "New note…", "Rename…", "Move…", "Delete"])
+})
+
 test("Esc dismisses the menu without acting (AC-4)", async ({ page }) => {
   await stubPicker(page)
   await page.goto("/brulion/")

@@ -2742,3 +2742,15 @@ prompts for a bare name (mirroring "New subfolder…"'s prompt shape) and
 recomputes the target by keeping the parent and swapping only the leaf
 segment — `moveFolder`/`renameActive` underneath, unchanged; only what target
 path gets computed is new.
+
+## Reversal: the tree's context menu gets a keyboard path after all (M35 → FEAT-0071/AC-7)
+FEAT-0071 explicitly deferred keyboard reachability ("mouse right-click and
+touch long-press are the two paths in") — reasonable at the time, but a
+high-effort code-review pass flagged it as a real accessibility gap: a
+keyboard-only user had no way at all to delete, rename, or move a note or
+folder once P3 replaced the old inline buttons with the menu. Reversed:
+Shift+F10 / the keyboard's dedicated "Menu"/"ContextMenu" key opens the same
+menu for whichever row has focus. No new focusability needed — a folder
+header is already a `<button>`, and a note row's keydown bubbles up from its
+own focusable name button — so `wireTreeMenu`'s existing per-row wiring
+just gained one more event listener, not a new focus model.

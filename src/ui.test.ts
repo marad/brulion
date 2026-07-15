@@ -584,6 +584,47 @@ describe("tree row context menu shape (FEAT-0071)", () => {
     expect(menuLabels()).toEqual([])
     vi.useRealTimers()
   })
+
+  it("opens the same menu via Shift+F10 on a note row (keyboard access)", () => {
+    const container = document.createElement("div")
+    renderNoteList(container, ["a.md"], "a.md", handlers())
+    const row = container.querySelector<HTMLElement>(".note-row")!
+
+    row.dispatchEvent(new KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true }))
+
+    expect(menuLabels()).toEqual(["Rename…", "Move…", "Delete"])
+  })
+
+  it("opens the same menu via the ContextMenu key on a folder row (keyboard access)", () => {
+    const container = document.createElement("div")
+    renderNoteList(container, ["sub/a.md"], "sub/a.md", handlers())
+    const header = container.querySelector<HTMLElement>(".folder-header")!
+
+    header.dispatchEvent(new KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true }))
+
+    expect(menuLabels()).toEqual(["New subfolder…", "New note…", "Rename…", "Move…", "Delete"])
+  })
+
+  it("a keydown that bubbles up from the note's own name button also opens the menu", () => {
+    const container = document.createElement("div")
+    renderNoteList(container, ["a.md"], "a.md", handlers())
+    const nameButton = container.querySelector<HTMLElement>(".note-name")!
+
+    nameButton.dispatchEvent(new KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true }))
+
+    expect(menuLabels()).toEqual(["Rename…", "Move…", "Delete"])
+  })
+
+  it("does not open on a plain F10 or an unrelated key", () => {
+    const container = document.createElement("div")
+    renderNoteList(container, ["a.md"], "a.md", handlers())
+    const row = container.querySelector<HTMLElement>(".note-row")!
+
+    row.dispatchEvent(new KeyboardEvent("keydown", { key: "F10", bubbles: true }))
+    row.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+
+    expect(menuLabels()).toEqual([])
+  })
 })
 
 describe("renderNoteList create-in-folder and rename menu items (FEAT-0072)", () => {
@@ -823,6 +864,23 @@ describe("renderNoteList drag-and-drop (FEAT-0072)", () => {
     ideasHeader.dispatchEvent(dragEvent("drop"))
 
     expect(h.onDropFolder).not.toHaveBeenCalled()
+  })
+
+  it("a re-render mid-drag (e.g. the poller repainting the list) clears the stale drag state", () => {
+    const container = document.createElement("div")
+    const h = handlers()
+    renderNoteList(container, ["a.md", "sub/b.md"], "a.md", h)
+    container.querySelector<HTMLElement>(".note-row")!.dispatchEvent(dragEvent("dragstart"))
+
+    // The list rebuilds while the drag is still "in flight" (the dragged
+    // row's own dragend never fires — it's already detached) — the next
+    // drop anywhere must not act on the now-stale draggedItem.
+    renderNoteList(container, ["a.md", "sub/b.md"], "a.md", h)
+    const folderHeader = container.querySelector<HTMLElement>(".folder-header")!
+    folderHeader.dispatchEvent(dragEvent("dragover"))
+    folderHeader.dispatchEvent(dragEvent("drop"))
+
+    expect(h.onDropNote).not.toHaveBeenCalled()
   })
 })
 

@@ -237,6 +237,13 @@ export function renderNoteList(
   folders: string[] = [],
 ): void {
   container.replaceChildren()
+  // A rebuild mid-drag (e.g. the background poller repainting the list while
+  // the user is holding a native drag) detaches the dragged row — the browser
+  // may never fire its `dragend` on an element no longer in the DOM, which
+  // would otherwise leave `draggedItem` stuck pointing at a stale path for
+  // whatever drop lands next. Safe to always clear: a real drag's own
+  // `dragstart` re-populates it, and nothing reads it between renders.
+  draggedItem = null
   for (const node of buildNoteTree(notes, folders)) {
     container.append(renderNode(node, active, handlers, expanded))
   }
@@ -249,15 +256,25 @@ export function renderNoteList(
   }
 }
 
-/** Wire a row/header element to open `items` on right-click and on long-press
- * (M35/FEAT-0071) — the single reachability path for every tree row action,
- * replacing what used to be a permanent inline button per action. */
+/** Wire a row/header element to open `items` on right-click, on long-press
+ * (M35/FEAT-0071), and on the standard keyboard context-menu shortcut
+ * (Shift+F10, or a keyboard's dedicated "Menu"/"ContextMenu" key) — the only
+ * way a keyboard-only user can reach these actions, since right-click and
+ * long-press both require a pointer. A folder header is itself focusable; a
+ * note row isn't, but its keydown bubbles up from its focusable name button,
+ * so listening on `el` catches both without any extra wiring. */
 function wireTreeMenu(el: HTMLElement, items: () => TreeMenuItem[]): void {
   el.addEventListener("contextmenu", (event) => {
     event.preventDefault()
     openTreeMenu(event.clientX, event.clientY, items())
   })
   wireLongPress(el, (x, y) => openTreeMenu(x, y, items()))
+  el.addEventListener("keydown", (event) => {
+    if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey)) return
+    event.preventDefault()
+    const rect = el.getBoundingClientRect()
+    openTreeMenu(rect.left, rect.bottom, items())
+  })
 }
 
 /** Make `el` a drag source (M35/FEAT-0072) — `dragstart` records what's being
