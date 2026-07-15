@@ -58,6 +58,12 @@ async function createNote(page: Page, name: string) {
   await page.locator("#switcher-input").press("Enter")
 }
 
+// The confirm/prompt/alert dialog (M35/FEAT-0073) replaces window.confirm/
+// prompt/alert — interact with its DOM instead of Playwright's page.on("dialog").
+async function confirmDialog(page: Page) {
+  await page.locator("#dialog-confirm").click()
+}
+
 test("creates a subfolder note, switches, and removes the folder on delete (AC-7, AC-8)", async ({
   page,
 }) => {
@@ -95,9 +101,9 @@ test("creates a subfolder note, switches, and removes the folder on delete (AC-7
   await expect(editor(page)).toHaveText("one body")
 
   // Delete the only note in `sub`: the folder header disappears.
-  page.once("dialog", (d) => d.accept())
   await nested.click({ button: "right" })
   await page.locator(".cm-context-menu button[role=menuitem]", { hasText: "Delete" }).click()
+  await confirmDialog(page)
 
   await expect(folderHeader(page, "sub")).toHaveCount(0)
   expect(await noteExists(page, "sub/one.md")).toBe(false)

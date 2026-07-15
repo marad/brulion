@@ -64,6 +64,25 @@ async function noteExists(page: Page, path: string): Promise<boolean> {
 const editor = (page: Page) => page.locator(".cm-content")
 const folderHeader = (page: Page, name: string) => page.locator(".folder-header", { hasText: name })
 
+// The confirm/prompt/alert dialog (M35/FEAT-0073) replaces window.confirm/
+// prompt/alert — interact with its DOM instead of Playwright's page.on("dialog").
+async function submitPrompt(page: Page, value: string) {
+  await page.locator("#dialog-input").fill(value)
+  await page.locator("#dialog-confirm").click()
+}
+async function confirmDialog(page: Page) {
+  await page.locator("#dialog-confirm").click()
+}
+async function cancelDialog(page: Page) {
+  await page.locator("#dialog-cancel").click()
+}
+// After a prompt is submitted and refused, the same dialog re-opens as a
+// one-button alert (input and Cancel hidden) carrying the failure reason.
+async function expectAlert(page: Page) {
+  await expect(page.locator("#dialog-cancel")).toBeHidden()
+  await expect(page.locator("#dialog-message")).not.toBeEmpty()
+}
+
 // Every folder action lives behind the header's context menu now
 // (M35/FEAT-0071), not an inline button — right-click it, then pick the item.
 async function createSubfolder(page: Page, parentName: string) {
@@ -80,8 +99,8 @@ test("creates an empty folder at the root (AC-1)", async ({ page }) => {
   await page.goto("/brulion/")
   await page.locator("#open-folder").click()
 
-  page.on("dialog", (d) => void d.accept("ideas"))
   await page.locator("#sidebar-new-folder").click()
+  await submitPrompt(page, "ideas")
 
   await expect(folderHeader(page, "ideas")).toBeVisible()
   expect(await folderExists(page, "ideas")).toBe(true)
@@ -94,8 +113,8 @@ test("creates a subfolder inside an existing folder (AC-2)", async ({ page }) =>
   await page.locator("#open-folder").click()
   await folderHeader(page, "projects").click() // collapsed by default — expand it
 
-  page.on("dialog", (d) => void d.accept("ideas"))
   await createSubfolder(page, "projects")
+  await submitPrompt(page, "ideas")
 
   const nestedFolder = page.locator(".folder-children .folder-header", { hasText: "ideas" })
   await expect(nestedFolder).toBeVisible()
@@ -107,17 +126,11 @@ test("an invalid folder name is refused with a message, nothing created (AC-3)",
   await page.goto("/brulion/")
   await page.locator("#open-folder").click()
 
-  let sawAlert = false
-  page.on("dialog", (d) => {
-    if (d.type() === "prompt") void d.accept("../escape")
-    else {
-      sawAlert = true
-      void d.accept()
-    }
-  })
   await page.locator("#sidebar-new-folder").click()
+  await submitPrompt(page, "../escape")
 
-  await expect.poll(() => sawAlert).toBe(true)
+  await expectAlert(page)
+  await confirmDialog(page)
   await expect(page.locator(".folder-header")).toHaveCount(0)
 })
 
@@ -128,17 +141,11 @@ test("a duplicate folder name is refused with a message (AC-4)", async ({ page }
   await page.locator("#open-folder").click()
   await expect(folderHeader(page, "projects")).toBeVisible()
 
-  let sawAlert = false
-  page.on("dialog", (d) => {
-    if (d.type() === "prompt") void d.accept("projects")
-    else {
-      sawAlert = true
-      void d.accept()
-    }
-  })
   await page.locator("#sidebar-new-folder").click()
+  await submitPrompt(page, "projects")
 
-  await expect.poll(() => sawAlert).toBe(true)
+  await expectAlert(page)
+  await confirmDialog(page)
   await expect(page.locator(".folder-header", { hasText: "projects" })).toHaveCount(1) // no duplicate
 })
 
@@ -148,8 +155,8 @@ test("deleting a folder asks for confirmation; declining leaves it untouched (AC
   await writeNote(page, "projects/a.md", "a body")
   await page.locator("#open-folder").click()
 
-  page.once("dialog", (d) => d.dismiss())
   await deleteFolder(page, "projects")
+  await cancelDialog(page)
 
   await expect(folderHeader(page, "projects")).toBeVisible()
   expect(await folderExists(page, "projects")).toBe(true)
@@ -163,8 +170,8 @@ test("confirmed deletion removes the folder and every note beneath it (AC-6)", a
   await writeNote(page, "projects/ideas/b.md", "b body")
   await page.locator("#open-folder").click()
 
-  page.once("dialog", (d) => d.accept())
   await deleteFolder(page, "projects")
+  await confirmDialog(page)
 
   await expect(folderHeader(page, "projects")).toHaveCount(0)
   expect(await folderExists(page, "projects")).toBe(false)
@@ -184,8 +191,8 @@ test("deleting the active note's folder falls back to another note (AC-7)", asyn
   await page.locator(".folder-children .note-row", { hasText: "a" }).locator(".note-name").click()
   await expect(editor(page)).toHaveText("a body")
 
-  page.once("dialog", (d) => d.accept())
   await deleteFolder(page, "projects")
+  await confirmDialog(page)
 
   await expect(editor(page)).toHaveText("start body") // fell back to start.md
 })
@@ -200,8 +207,8 @@ test("leaves the editor in place when the active note is outside the deleted fol
   await page.locator("#open-folder").click()
   await expect(editor(page)).toHaveText("start body") // start.md picked active by default
 
-  page.once("dialog", (d) => d.accept())
   await deleteFolder(page, "projects")
+  await confirmDialog(page)
 
   await expect(folderHeader(page, "projects")).toHaveCount(0)
   await expect(editor(page)).toHaveText("start body") // unchanged

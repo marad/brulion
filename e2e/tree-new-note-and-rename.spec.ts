@@ -55,6 +55,13 @@ async function clickMenuItem(page: Page, label: string) {
   await page.locator(".cm-context-menu button[role=menuitem]", { hasText: label }).click()
 }
 
+// The confirm/prompt/alert dialog (M35/FEAT-0073) replaces window.confirm/
+// prompt/alert — interact with its DOM instead of Playwright's page.on("dialog").
+async function submitPrompt(page: Page, value: string) {
+  await page.locator("#dialog-input").fill(value)
+  await page.locator("#dialog-confirm").click()
+}
+
 test("a folder's New note… opens the switcher pre-filled with its path (AC-1, AC-2)", async ({ page }) => {
   await stubPicker(page)
   await page.goto("/brulion/")
@@ -79,10 +86,10 @@ test("renaming a note changes only its own leaf segment (AC-4)", async ({ page }
   await page.locator("#open-folder").click()
   await expect(editor(page)).toHaveText("start body") // a.md is not the active note
 
-  page.once("dialog", (d) => d.accept("b"))
   await folderHeader(page, "projects").click() // collapsed by default — expand it
   await page.locator(".folder-children .note-row", { hasText: "a" }).click({ button: "right" })
   await clickMenuItem(page, "Rename…")
+  await submitPrompt(page, "b")
 
   await expect.poll(() => noteExists(page, "projects/b.md")).toBe(true)
   expect(await noteExists(page, "projects/a.md")).toBe(false)
@@ -96,9 +103,9 @@ test("renaming a folder changes only its own leaf segment (AC-3)", async ({ page
   // The only note is auto-active, so both "archive" and "archive/projects"
   // are already expanded as its ancestors (FEAT-0043) — no click needed.
 
-  page.once("dialog", (d) => d.accept("work"))
   await folderHeader(page, "projects").click({ button: "right" })
   await clickMenuItem(page, "Rename…")
+  await submitPrompt(page, "work")
 
   await expect.poll(() => noteExists(page, "archive/work/a.md")).toBe(true)
   expect(await noteExists(page, "archive/projects/a.md")).toBe(false)

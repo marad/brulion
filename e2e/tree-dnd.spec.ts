@@ -125,11 +125,6 @@ test("dropping a note onto an occupied destination shows an error and leaves it 
   await writeNote(page, "alpha.md", "root body")
   await writeNote(page, "projects/alpha.md", "projects body") // same name already there
 
-  let sawAlert = false
-  page.on("dialog", (d) => {
-    if (d.type() === "alert") sawAlert = true
-    void d.accept()
-  })
   await page.locator("#open-folder").click()
 
   // "alpha" exists at both the root and inside "projects" — scope to the
@@ -137,7 +132,10 @@ test("dropping a note onto an occupied destination shows an error and leaves it 
   const rootAlpha = page.locator("#note-list > .note-row", { hasText: "alpha" })
   await rootAlpha.dragTo(folderHeader(page, "projects"))
 
-  await expect.poll(() => sawAlert).toBe(true) // the refusal must surface, not fail silently
+  // The refusal must surface as the in-app alert (M35/FEAT-0073), not fail silently.
+  await expect(page.locator("#dialog-message")).not.toBeEmpty()
+  await expect(page.locator("#dialog-cancel")).toBeHidden()
+  await page.locator("#dialog-confirm").click()
   expect(await noteExists(page, "alpha.md")).toBe(true) // the drop was refused
   expect(await readNoteContent(page, "projects/alpha.md")).toBe("projects body") // untouched
 })
