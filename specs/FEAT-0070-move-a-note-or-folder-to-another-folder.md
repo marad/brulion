@@ -168,3 +168,10 @@ When `moveFolder("gone", "archive/gone")` is called,
 Then the operation reports failure with a reason, and no folder is created
 at the destination — a folder never actually there is not silently
 fabricated as an empty one.
+
+**AC-11** — An invalid destination path is refused, not sent to the file system.
+Given a folder move whose destination fails the same validation
+`normalizeFolderPath` already applies to a new folder's name,
+When `moveFolder` is called with that destination,
+Then the operation reports failure with a reason and nothing is moved —
+never an unhandled rejection from the underlying file-system call.
