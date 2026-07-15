@@ -38,6 +38,10 @@ export function wireLongPress(
     startX = touches[0].clientX
     startY = touches[0].clientY
     timer = setTimeout(() => {
+      // A re-render (e.g. the background poller repainting the list) can
+      // detach `el` mid-gesture without ever cancelling this timer — don't
+      // fire a menu for a row the user can no longer see.
+      if (!el.isConnected) return
       fired = true
       onLongPress(startX, startY)
     }, ms)

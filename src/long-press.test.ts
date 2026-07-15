@@ -151,4 +151,15 @@ describe("wireLongPress", () => {
 
     expect(onLongPress).not.toHaveBeenCalled()
   })
+
+  it("does not fire if the element is detached from the DOM before the threshold elapses", () => {
+    const onLongPress = vi.fn()
+    wireLongPress(el, onLongPress)
+
+    el.dispatchEvent(touchEvent("touchstart", [{ clientX: 10, clientY: 20 }]))
+    el.remove() // a re-render (e.g. the background poller) detaches the row mid-gesture
+    vi.advanceTimersByTime(500)
+
+    expect(onLongPress).not.toHaveBeenCalled()
+  })
 })
