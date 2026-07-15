@@ -133,27 +133,45 @@ function applyEdits(
   return out
 }
 
-export function rewriteLinksForRename(args: RenameRewrite): string | null {
-  const { text, notePath, oldPath, newPath, pathsBefore, pathsAfter } = args
+/**
+ * Rewrite every link in `text` that points at any of `renames`' old paths so it
+ * points at the corresponding new path — one parse of `text` regardless of how
+ * many renames are checked (M35: `moveFolder` relocates many notes at once;
+ * checking each of a note's links against a map, instead of re-parsing the same
+ * text once per moved file, keeps a folder move's link-rewrite pass O(vault
+ * size) rather than O(vault size × moved-folder size)). Returns `null` when
+ * nothing changed.
+ */
+export function rewriteLinksForRenames(
+  text: string,
+  notePath: string,
+  renames: ReadonlyMap<string, string>,
+  pathsBefore: ReadonlySet<string>,
+  pathsAfter: ReadonlySet<string>,
+): string | null {
   const edits: Array<{ from: number; to: number; insert: string }> = []
 
   // Markdown inline links: a link whose destination resolves, relative to this
-  // note's folder, to the renamed note is re-pointed at its new path.
+  // note's folder, to one of the renamed notes is re-pointed at its new path.
   for (const { from, to, dest } of markdownLinkDests(text)) {
     if (isExternalDest(dest)) continue
-    if (resolveNotePath(notePath, dest) !== oldPath) continue
+    const resolved = resolveNotePath(notePath, dest)
+    const newPath = resolved === null ? undefined : renames.get(resolved)
+    if (newPath === undefined) continue
     edits.push({ from, to, insert: markdownDest(relativeLink(notePath, newPath)) })
   }
 
   // Wikilinks, via the renderer's `[[…]]` scan (not the CommonMark tree). A link
-  // that pointed at the renamed note is re-pointed; bare links keep the shortest
+  // that pointed at a renamed note is re-pointed; bare links keep the shortest
   // unambiguous form (so a folder move that keeps the basename unique needs no
   // rewrite), slashed links keep their full-path form. Detection uses the
   // pre-rename set (the old note still exists there); the new form uses the
   // post-rename set for the ambiguity check.
   for (const w of findWikilinks(text)) {
     const target = w.target.trim()
-    if (resolveWikilink(target, pathsBefore).resolved !== oldPath) continue
+    const resolved = resolveWikilink(target, pathsBefore).resolved
+    const newPath = resolved === null ? undefined : renames.get(resolved)
+    if (newPath === undefined) continue
     const insert = target.includes("/")
       ? displayName(newPath) // slashed → keep a full root-relative path
       : shortestLinkText(newPath, pathsAfter) // bare → bare when unique, else full path
@@ -169,6 +187,11 @@ export function rewriteLinksForRename(args: RenameRewrite): string | null {
   }
 
   return applyEdits(text, edits)
+}
+
+export function rewriteLinksForRename(args: RenameRewrite): string | null {
+  const { text, notePath, oldPath, newPath, pathsBefore, pathsAfter } = args
+  return rewriteLinksForRenames(text, notePath, new Map([[oldPath, newPath]]), pathsBefore, pathsAfter)
 }
 
 /**

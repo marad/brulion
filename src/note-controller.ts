@@ -20,7 +20,7 @@ import {
 } from "./note"
 import { track, trackSync, mark } from "./perf"
 import { normalizeNoteName, normalizeFolderPath } from "./note-name"
-import { rewriteLinksForRename, rebaseOutboundLinks } from "./link-rewrite"
+import { rewriteLinksForRenames, rebaseOutboundLinks } from "./link-rewrite"
 import { saveActiveNote, loadActiveNote } from "./session"
 import { debounce } from "./debounce"
 
@@ -492,17 +492,18 @@ export function createNoteController(
   ): Promise<void> => {
     const pathsAfter = new Set(notes) // the post-move listing (set by the caller)
     const movedTo = new Set(moves.map((move) => move.to))
+    // A single map (rather than looping `moves` per note) so `rewriteLinksForRenames`
+    // parses each unmoved note's text exactly once regardless of how many files
+    // moved — a folder move relocating dozens of notes would otherwise re-parse
+    // every other note in the vault once per moved file.
+    const renames = new Map(moves.map((move) => [move.from, move.to]))
     for (const path of notes) {
       if (movedTo.has(path)) continue
       const { content, lastModified } = await readNote(folder, path)
-      let text = content
-      for (const { from, to } of moves) {
-        const rewritten = rewriteLinksForRename({ text, notePath: path, oldPath: from, newPath: to, pathsBefore, pathsAfter })
-        if (rewritten !== null) text = rewritten
-      }
+      const rewritten = rewriteLinksForRenames(content, path, renames, pathsBefore, pathsAfter)
       // A conflict (the file changed on disk since we read it) is skipped — the
       // rewrite is dropped for that file, never overwriting an external edit.
-      if (text !== content) await saveNote(folder, path, text, lastModified)
+      if (rewritten !== null && rewritten !== content) await saveNote(folder, path, rewritten, lastModified)
     }
   }
 

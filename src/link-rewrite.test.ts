@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { relativeLink, rewriteLinksForRename, rebaseOutboundLinks } from "./link-rewrite"
+import { relativeLink, rewriteLinksForRename, rewriteLinksForRenames, rebaseOutboundLinks } from "./link-rewrite"
 import { resolveNotePath } from "./note-name"
 
 /** Build a path set the way the contract expects (ReadonlySet<string>). */
@@ -232,6 +232,44 @@ describe("rewriteLinksForRename — multiple matches in one note", () => {
       pathsAfter: vault("n.md", "diablo-2.md", "other.md"),
     })
     expect(out).toBe("[d](diablo-2.md) and [o](other.md)")
+  })
+})
+
+describe("rewriteLinksForRenames — checking a note's links against several renames in one pass (M35/FEAT-0070)", () => {
+  it("rewrites a markdown link and a wikilink to two different renamed notes in one call", () => {
+    const out = rewriteLinksForRenames(
+      "md [d](diablo.md) and wiki [[other]]",
+      "n.md",
+      new Map([
+        ["diablo.md", "diablo-2.md"],
+        ["other.md", "other-2.md"],
+      ]),
+      vault("n.md", "diablo.md", "other.md"),
+      vault("n.md", "diablo-2.md", "other-2.md"),
+    )
+    expect(out).toBe("md [d](diablo-2.md) and wiki [[other-2]]")
+  })
+
+  it("leaves a link to a note that isn't in the rename map untouched", () => {
+    const out = rewriteLinksForRenames(
+      "[d](diablo.md) and [o](other.md)",
+      "n.md",
+      new Map([["diablo.md", "diablo-2.md"]]),
+      vault("n.md", "diablo.md", "other.md"),
+      vault("n.md", "diablo-2.md", "other.md"),
+    )
+    expect(out).toBe("[d](diablo-2.md) and [o](other.md)")
+  })
+
+  it("returns null when nothing in the text matches any rename", () => {
+    const out = rewriteLinksForRenames(
+      "[o](other.md)",
+      "n.md",
+      new Map([["diablo.md", "diablo-2.md"]]),
+      vault("n.md", "diablo.md", "other.md"),
+      vault("n.md", "diablo-2.md", "other.md"),
+    )
+    expect(out).toBe(null)
   })
 })
 

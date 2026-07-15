@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import { describe, it, expect } from "vitest"
 import indexHtml from "../index.html?raw"
+import { applyAntiAutofillAttrs } from "./anti-autofill"
 
 // FEAT-0074 — the switcher/palette/move-picker/dialog inputs are declared
 // statically in index.html (unlike the note-identity rename input and the
@@ -23,4 +24,17 @@ describe("FEAT-0074 anti-autofill attributes on static text inputs", () => {
       expect(tag).toContain('data-form-type="other"')
     })
   }
+})
+
+describe("applyAntiAutofillAttrs (AC-2)", () => {
+  it("sets autocomplete=off plus every vendor ignore attribute", () => {
+    const input = document.createElement("input")
+    applyAntiAutofillAttrs(input)
+
+    expect(input.autocomplete).toBe("off")
+    expect(input.getAttribute("data-lpignore")).toBe("true")
+    expect(input.getAttribute("data-1p-ignore")).not.toBeNull()
+    expect(input.getAttribute("data-bwignore")).toBe("true")
+    expect(input.getAttribute("data-form-type")).toBe("other")
+  })
 })
