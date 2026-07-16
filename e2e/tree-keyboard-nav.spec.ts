@@ -125,6 +125,30 @@ test("F2 on a focused note row opens the rename prompt seeded with its name (FEA
   expect(stillAlpha).toEqual(["alpha.md", "beta.md"])
 })
 
+test("typing a letter moves focus to the matching row without opening it (FEAT-0077/AC-1, AC-6)", async ({
+  page,
+}) => {
+  await stubPicker(page)
+  await page.goto("/brulion/")
+  await writeNote(page, "alpha.md", "alpha body")
+  await writeNote(page, "mango.md", "mango body")
+  await writeNote(page, "melon.md", "melon body")
+  await page.locator("#open-folder").click()
+
+  await noteName(page, "alpha").click() // open alpha so the editor is deterministic
+  await expect(page.locator("#editor .cm-content")).toContainText("alpha body")
+
+  await noteName(page, "alpha").focus()
+  await page.keyboard.press("m") // → mango (first m-row)
+  await expect(noteName(page, "mango")).toBeFocused()
+  // Movement only: typeahead did not open mango — the editor still shows alpha.
+  await expect(page.locator("#editor .cm-content")).toContainText("alpha body")
+
+  await page.waitForTimeout(600) // let the typeahead buffer reset
+  await page.keyboard.press("m") // cycle → melon
+  await expect(noteName(page, "melon")).toBeFocused()
+})
+
 test("a folder expanded by keyboard stays expanded after reload (AC-9)", async ({ page }) => {
   await stubPicker(page)
   await page.goto("/brulion/")

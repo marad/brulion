@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { resolveTreeKey, treeDepth, type TreeRow } from "./tree-nav"
+import { isTypeaheadKey, resolveTreeKey, treeDepth, typeaheadMatch, type TreeRow } from "./tree-nav"
 
 // Build a visible-row list compactly. Each spec is [path, kind, expanded?];
 // depth is derived from the path exactly as the real glue does.
@@ -194,6 +194,69 @@ describe("resolveTreeKey — F2 rename (FEAT-0076)", () => {
     expect(resolveTreeKey("ArrowLeft", r, 0)).toEqual({ type: "collapse", index: 0 })
     expect(resolveTreeKey("Enter", r, 1)).toEqual({ type: "activate", index: 1 })
     expect(resolveTreeKey(" ", r, 0)).toEqual({ type: "activate", index: 0 })
+  })
+})
+
+describe("typeaheadMatch (FEAT-0077)", () => {
+  const labels = ["apple", "Banana", "berry", "cherry"]
+
+  it("jumps to the next label starting with the buffer, after current (AC-1)", () => {
+    expect(typeaheadMatch(labels, 0, "b")).toBe(1) // Banana
+  })
+
+  it("is case-insensitive on both the buffer and the label", () => {
+    expect(typeaheadMatch(labels, 0, "B")).toBe(1)
+    expect(typeaheadMatch(["Apple"], 0, "a")).toBe(0)
+  })
+
+  it("wraps around past the end (AC-1)", () => {
+    expect(typeaheadMatch(labels, 3, "a")).toBe(0) // from cherry, wrap to apple
+  })
+
+  it("cycles through same-initial rows on repeated single-char calls (AC-4)", () => {
+    // Only Banana(1) and berry(2) start with b; cycling bounces between them.
+    expect(typeaheadMatch(labels, 1, "b")).toBe(2)
+    expect(typeaheadMatch(labels, 2, "b")).toBe(1)
+  })
+
+  it("matches a multi-character prefix (AC-2)", () => {
+    expect(typeaheadMatch(labels, 0, "ch")).toBe(3)
+    expect(typeaheadMatch(labels, 0, "be")).toBe(2)
+  })
+
+  it("returns the current row when only it matches", () => {
+    expect(typeaheadMatch(["apple", "banana"], 0, "ap")).toBe(0)
+  })
+
+  it("returns -1 on no match, an empty buffer, or empty labels (AC-5)", () => {
+    expect(typeaheadMatch(labels, 0, "z")).toBe(-1)
+    expect(typeaheadMatch(labels, 0, "")).toBe(-1)
+    expect(typeaheadMatch([], 0, "a")).toBe(-1)
+  })
+})
+
+describe("isTypeaheadKey (FEAT-0077)", () => {
+  const k = (
+    key: string,
+    mods: { ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean } = {},
+  ) => ({ key, ctrlKey: false, metaKey: false, altKey: false, ...mods })
+
+  it("is true for a printable single character", () => {
+    expect(isTypeaheadKey(k("a"))).toBe(true)
+    expect(isTypeaheadKey(k("7"))).toBe(true)
+    expect(isTypeaheadKey(k("-"))).toBe(true)
+  })
+
+  it("is false for named (multi-character) keys (AC-7)", () => {
+    expect(isTypeaheadKey(k("ArrowDown"))).toBe(false)
+    expect(isTypeaheadKey(k("F2"))).toBe(false)
+    expect(isTypeaheadKey(k("Enter"))).toBe(false)
+  })
+
+  it("is false when a Ctrl/Cmd/Alt modifier is held", () => {
+    expect(isTypeaheadKey(k("a", { ctrlKey: true }))).toBe(false)
+    expect(isTypeaheadKey(k("a", { metaKey: true }))).toBe(false)
+    expect(isTypeaheadKey(k("a", { altKey: true }))).toBe(false)
   })
 })
 

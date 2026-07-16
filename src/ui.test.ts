@@ -1200,6 +1200,85 @@ describe("renderNoteList F2 rename (FEAT-0076)", () => {
   })
 })
 
+describe("renderNoteList typeahead (FEAT-0077)", () => {
+  const handlers = () => ({ onSelect: vi.fn(), onDelete: vi.fn(), onToggleFolder: vi.fn() })
+  const key = (el: HTMLElement, k: string) =>
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }))
+  const names = (c: HTMLElement) => [...c.querySelectorAll<HTMLElement>(".note-name")]
+
+  function mount(notes: string[], active: string, h = handlers()) {
+    const container = document.createElement("div")
+    document.body.append(container) // focus() needs a connected element
+    renderNoteList(container, notes, active, h)
+    return container
+  }
+
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it("a printable key focuses the next matching visible row (AC-1)", () => {
+    const c = mount(["apple.md", "banana.md", "cherry.md"], "apple.md")
+    const rows = names(c)
+    rows[0].focus()
+    key(rows[0], "b")
+    expect(document.activeElement).toBe(rows[1])
+    expect(rows[1].tabIndex).toBe(0)
+  })
+
+  it("characters typed within the window extend the buffer (AC-2)", () => {
+    // ant, apple, axe all start with "a"; only axe starts with "ax".
+    const c = mount(["ant.md", "apple.md", "axe.md"], "ant.md")
+    const rows = names(c)
+    rows[0].focus()
+    key(rows[0], "a") // → apple (next a-row)
+    expect(document.activeElement).toBe(rows[1])
+    key(rows[1], "x") // buffer "ax" → axe; a bare "x" matches nothing
+    expect(document.activeElement).toBe(rows[2])
+  })
+
+  it("the buffer resets after the timeout lapses (AC-3)", () => {
+    const c = mount(["ant.md", "apple.md", "axe.md"], "ant.md")
+    const rows = names(c)
+    rows[0].focus()
+    key(rows[0], "a") // → apple
+    expect(document.activeElement).toBe(rows[1])
+    vi.advanceTimersByTime(600) // window lapses → buffer resets
+    key(rows[1], "x") // fresh buffer "x" → no match → focus stays
+    expect(document.activeElement).toBe(rows[1])
+  })
+
+  it("repeating a letter cycles through matching rows and wraps (AC-4)", () => {
+    const c = mount(["ant.md", "apple.md", "zed.md"], "ant.md")
+    const rows = names(c)
+    rows[0].focus()
+    key(rows[0], "a") // → apple
+    expect(document.activeElement).toBe(rows[1])
+    vi.advanceTimersByTime(600)
+    key(rows[1], "a") // → wraps back to ant
+    expect(document.activeElement).toBe(rows[0])
+  })
+
+  it("no match leaves focus unchanged and opens nothing (AC-5)", () => {
+    const h = handlers()
+    const c = mount(["apple.md", "banana.md"], "apple.md", h)
+    const rows = names(c)
+    rows[0].focus()
+    key(rows[0], "z")
+    expect(document.activeElement).toBe(rows[0])
+    expect(h.onSelect).not.toHaveBeenCalled()
+  })
+
+  it("typeahead opens no note and toggles no folder (AC-6)", () => {
+    const h = handlers()
+    const c = mount(["apple.md", "apricot.md"], "apple.md", h)
+    const rows = names(c)
+    rows[0].focus()
+    key(rows[0], "a") // moves focus to apricot
+    expect(h.onSelect).not.toHaveBeenCalled()
+    expect(h.onToggleFolder).not.toHaveBeenCalled()
+  })
+})
+
 describe("wireToggle", () => {
   function toggleFixture(initialOn = false) {
     const button = document.createElement("button")
