@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import {
-  isModifierKey,
+  isTreeActionKey,
   isTypeaheadKey,
   resolveTreeKey,
   treeDepth,
@@ -260,25 +260,43 @@ describe("isTypeaheadKey (FEAT-0077)", () => {
     expect(isTypeaheadKey(k("Enter"))).toBe(false)
   })
 
-  it("is false when a Ctrl/Cmd/Alt modifier is held", () => {
+  it("is false for a real Ctrl-only, Alt-only, or Cmd chord (a shortcut)", () => {
     expect(isTypeaheadKey(k("a", { ctrlKey: true }))).toBe(false)
     expect(isTypeaheadKey(k("a", { metaKey: true }))).toBe(false)
     expect(isTypeaheadKey(k("a", { altKey: true }))).toBe(false)
   })
+
+  it("is true for an AltGr-composed character (Ctrl+Alt together)", () => {
+    // Windows/Chrome reports AltGr as ctrlKey && altKey; e.g. AltGr+L → "ł".
+    expect(isTypeaheadKey(k("ł", { ctrlKey: true, altKey: true }))).toBe(true)
+    // …but not if Cmd is also somehow held.
+    expect(isTypeaheadKey(k("ł", { ctrlKey: true, altKey: true, metaKey: true }))).toBe(false)
+  })
 })
 
-describe("isModifierKey (FEAT-0077)", () => {
-  it("is true for the bare modifier keys", () => {
-    for (const key of ["Shift", "Control", "Alt", "Meta", "AltGraph", "CapsLock"]) {
-      expect(isModifierKey(key)).toBe(true)
+describe("isTreeActionKey (FEAT-0077)", () => {
+  it("is true for every key resolveTreeKey handles", () => {
+    for (const key of [
+      "ArrowUp",
+      "ArrowDown",
+      "ArrowLeft",
+      "ArrowRight",
+      "Home",
+      "End",
+      "Enter",
+      " ",
+      "F2",
+    ]) {
+      expect(isTreeActionKey(key)).toBe(true)
     }
   })
 
-  it("is false for printable and named non-modifier keys", () => {
-    expect(isModifierKey("a")).toBe(false)
-    expect(isModifierKey("ArrowDown")).toBe(false)
-    expect(isModifierKey("Enter")).toBe(false)
-    expect(isModifierKey("Escape")).toBe(false)
+  it("is false for printable and other non-tree keys (they never end a session)", () => {
+    expect(isTreeActionKey("a")).toBe(false)
+    expect(isTreeActionKey("Shift")).toBe(false)
+    expect(isTreeActionKey("NumLock")).toBe(false)
+    expect(isTreeActionKey("Dead")).toBe(false)
+    expect(isTreeActionKey("Escape")).toBe(false)
   })
 })
 

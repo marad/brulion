@@ -1296,6 +1296,28 @@ describe("renderNoteList typeahead (FEAT-0077)", () => {
     expect(document.activeElement).toBe(rows[1])
   })
 
+  it("same-letter cycling is case-insensitive — M then m still cycles (AC-4)", () => {
+    const c = mount(["Mango.md", "Melon.md"], "Mango.md")
+    const rows = names(c)
+    rows[0].focus()
+    key(rows[0], "m") // → Melon
+    expect(document.activeElement).toBe(rows[1])
+    key(rows[1], "M") // different case, same letter → cycle back (not a "mM" buffer)
+    expect(document.activeElement).toBe(rows[0])
+  })
+
+  it("a lock or dead/IME key does not end the session — buffer survives (AC-8)", () => {
+    const c = mount(["ant.md", "apple.md", "axe.md"], "ant.md")
+    const rows = names(c)
+    rows[0].focus()
+    key(rows[0], "a") // → apple (buffer "a")
+    expect(document.activeElement).toBe(rows[1])
+    key(rows[1], "NumLock") // not a tree key, not printable → ignored, buffer kept
+    key(rows[1], "Dead") // dead/IME keydown → ditto
+    key(rows[1], "x") // buffer still "a" → "ax" → axe; a reset would leave a bare "x"
+    expect(document.activeElement).toBe(rows[2])
+  })
+
   it("a bare modifier press does not end the session — Shift+letter composes (AC-8)", () => {
     const c = mount(["ant.md", "apple.md", "axe.md"], "ant.md")
     const rows = names(c)

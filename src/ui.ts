@@ -4,7 +4,7 @@ import { hasPermission, requestAccess } from "./session"
 import { displayName } from "./note-name"
 import { openTreeMenu, type TreeMenuItem } from "./tree-menu"
 import {
-  isModifierKey,
+  isTreeActionKey,
   isTypeaheadKey,
   resolveTreeKey,
   treeDepth,
@@ -382,22 +382,25 @@ function wireTreeKeyNav(container: HTMLElement, handlers: NoteListHandlers): voi
       // A printable key that no tree action claims drives typeahead — move focus
       // to the next visible row whose shown label matches the buffer (FEAT-0077).
       if (isTypeaheadKey(event)) {
-        // A repeat of the single buffered character keeps the buffer one char so
-        // the same letter cycles through matches instead of growing to "aa"
-        // (which would match nothing) — file-explorer behavior (AC-4).
-        if (typeaheadBuffer !== event.key) typeaheadBuffer += event.key
+        // The focused tree owns printable keys while it has focus, so the
+        // browser's own find-as-you-type never steals them — prevent the default
+        // for every typeahead key, matched or not.
+        event.preventDefault()
+        // A repeat of the single buffered character (case-insensitively, to match
+        // typeaheadMatch) keeps the buffer one char so the same letter cycles
+        // instead of growing to "aa" (which would match nothing) — file-explorer
+        // behavior (AC-4).
+        if (typeaheadBuffer.toLowerCase() !== event.key.toLowerCase()) typeaheadBuffer += event.key
         clearTimeout(typeaheadTimer)
         typeaheadTimer = setTimeout(resetTypeahead, TYPEAHEAD_TIMEOUT_MS)
         const labels = els.map((el) => el.textContent ?? "")
         const idx = typeaheadMatch(labels, current, typeaheadBuffer)
-        if (idx !== -1) {
-          event.preventDefault()
-          focusRow(container, els[idx])
-        }
-      } else if (!isModifierKey(event.key)) {
-        // A non-typeahead key that claims no action (a boundary arrow, Escape,
-        // Tab) ends the session; a bare modifier press does not, so Shift+letter
-        // still composes a two-character search (AC-8).
+        if (idx !== -1) focusRow(container, els[idx])
+      } else if (isTreeActionKey(event.key)) {
+        // A tree key that no-op'd at a boundary (an arrow at the ends, Left at
+        // the root) still ends the session, so a following letter starts fresh
+        // (AC-8). Every other non-printable key — a lock key, a dead/IME key, a
+        // function key — is left alone and never wipes the buffer.
         resetTypeahead()
       }
       return

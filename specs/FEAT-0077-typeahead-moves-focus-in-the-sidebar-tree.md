@@ -59,8 +59,10 @@ from the editor or any overlay.
 
 ## Constraints
 
-- Only printable single characters with no Ctrl/Cmd/Alt modifier drive typeahead;
-  every navigation/activation/rename key keeps its existing meaning.
+- Only printable single characters drive typeahead — including AltGr-composed
+  characters (accented letters like `ł`), but not a real Ctrl-only, Alt-only, or
+  Cmd shortcut chord; every navigation/activation/rename key keeps its existing
+  meaning.
 - Matching is over the *visible* rows only and by the row's displayed label
   (the note/folder name as shown, not its full path), case-insensitively, by
   prefix.
