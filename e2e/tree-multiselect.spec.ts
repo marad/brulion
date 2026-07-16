@@ -120,11 +120,13 @@ test("a batch move where one item conflicts still moves the rest (FEAT-0078/AC-9
     .click()
   await page.locator(".move-row", { hasText: "dest" }).click()
 
-  // A failure alert names the refusal, and the picker closes once it's dismissed
-  // (the batch does not reuse the single-move stay-open-and-retry contract).
+  // A failure alert names the refusal. The picker is still up *behind* the alert
+  // (the await keeps it open until the alert is dismissed — the focus-race fix);
+  // with the buggy fire-and-forget alert the picker would already be closed here.
   await expect(page.locator("#dialog-message")).toContainText("could not be moved")
+  await expect(page.locator("#move-backdrop")).toBeVisible()
   await page.locator("#dialog-confirm").click()
-  await expect(page.locator("#move-backdrop")).toBeHidden()
+  await expect(page.locator("#move-backdrop")).toBeHidden() // closes only after dismissal
 
   // b.md moved in; a.md was refused (won't clobber the existing dest/a.md) but did
   // not abort the batch — it stays at the root.
