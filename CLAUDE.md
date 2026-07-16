@@ -67,10 +67,13 @@ report instead).
    module). Do **not** hand-write a module straight into existence. **Tests come
    before bodies** — write the failing test first, then the implementation
    (`excavate`/`chisel` enforce this; honor it even on the rare direct edit).
-4. **Review**: run **`/code-review --fix`** (the skill, every phase — not an
-   ad-hoc reviewer) in a loop until no noteworthy findings remain (it has caught
-   real concurrency bugs and weak tests here — take it seriously, and improve
-   tests it flags).
+4. **Review**: run the loop via **`/review-until-clean`** (which loops
+   **`/code-review --fix`**, every phase — not an ad-hoc reviewer) until no
+   noteworthy findings remain (it has caught real concurrency bugs, data-loss
+   bugs, and weak tests here — take it seriously, and improve tests it flags).
+   Honor that skill's two rules: **restructure after 2 rounds of the same class
+   of finding** (stop patching effects, fix the cause), and make every test added
+   for a fix **discriminating** (it must fail against the pre-fix behavior).
 5. **Verify & seal**: `specman verify` then `specman seal`. Every implementation
    commit carries a `Spec: FEAT-000N/AC-M` trailer.
 6. **Ship**: push to `main` → GitHub Actions redeploys to Pages. Tick the phase
