@@ -3049,3 +3049,38 @@ redundant movement gesture.
 descope is the headline item for the M37 review; if the user does want a distinct
 touch-movement gesture, it comes back with a concrete behavior to implement
 rather than an open "make touch move somehow."
+
+## Tree typeahead: what drives it, when the buffer resets, and one deferred edge (M37 → FEAT-0077)
+
+**What:** three non-obvious calls settled over a long code-review loop (6 rounds),
+recorded so they aren't re-litigated. **(1) A typeahead key is a single character
+with no Ctrl/Alt/Cmd** (Shift still counts). Modifier flags can't classify
+"text vs shortcut" the same way on every OS — Alt+letter is a Windows/Linux menu
+accelerator but composes real text on macOS (Option), and AltGr is reported as
+Ctrl+Alt, indistinguishable from a genuine Ctrl+Alt shortcut. Every non-conservative
+rule swallows a real shortcut on some platform, so all chords are rejected. The
+cost — characters that *need* a modifier to type (accented/composed letters) don't
+drive typeahead — is accepted; plain letters work everywhere and such notes stay
+reachable via the arrows or the Ctrl+K switcher. **(2) The search buffer resets on
+exactly two things: the 500ms coalescing timeout, and a completed tree action**
+(`action.type !== "none"`). It deliberately does **not** try to classify which
+*other* keys end a session — earlier attempts (a modifier blocklist, then a
+tree-key allowlist, then a focusout listener) each kept springing a new leak
+(NumLock/Dead keys wiping it; a background repaint's `focusout` wiping it). Not
+enumerating is the fix. **(3) Same-letter mash cycles** (a repeat of the single
+buffered char keeps it one char instead of growing to "aa"), case-insensitively.
+
+**Why:** the recurring review findings were all the same shape — an incomplete
+key classification. The lean, correct answer is to classify only the two things
+that have crisp definitions (a printable char; a resolved tree action) and ignore
+everything else, letting the timeout be the backstop.
+
+**Consequence (UI/project):** typeahead is robust across odd keys, IME/dead keys,
+lock keys, and background repaints, at the cost of no accented-character typeahead.
+**One known, deferred edge:** a background list re-render restores keyboard focus
+to the *active note's* row (pre-existing M36/FEAT-0075 behavior), so a repaint that
+lands mid-typeahead-cycle can desync the surviving buffer from where focus went
+(the cycle restarts from the first match). It is niche and self-correcting; the
+proper fix — restoring focus to the previously-focused row by path — is an M36
+change with its own edge cases (hidden/deleted rows) and is left for a focused
+follow-up if it bites in real use. Raised at the M37 review.
