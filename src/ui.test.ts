@@ -1270,16 +1270,33 @@ describe("renderNoteList typeahead (FEAT-0077)", () => {
     expect(document.activeElement).toBe(rows[0])
   })
 
-  it("a real tree action ends the session, so a following letter starts fresh (AC-8)", () => {
-    const c = mount(["ant.md", "apple.md", "cherry.md"], "ant.md")
+  it("a completed tree action discards a multi-character buffer (AC-8)", () => {
+    const c = mount(["apple.md", "apricot.md", "box.md"], "apple.md")
     const rows = names(c)
     rows[0].focus()
-    key(rows[0], "a") // → apple
+    key(rows[0], "a") // → apricot (next a-row); buffer "a"
     expect(document.activeElement).toBe(rows[1])
-    key(rows[1], "ArrowDown") // → cherry; ends the typeahead session
-    expect(document.activeElement).toBe(rows[2])
-    key(rows[2], "a") // a fresh "a" (not a stale "aa") → wraps back to ant
+    key(rows[1], "p") // buffer "ap" → wraps to apple (the only "ap…" label)
     expect(document.activeElement).toBe(rows[0])
+    key(rows[0], "ArrowDown") // real action: moves to apricot AND resets the buffer
+    expect(document.activeElement).toBe(rows[1])
+    // A stale "ap" + "p" = "app" would jump back to apple; a reset makes this a
+    // bare "p", which matches no label → focus stays on apricot. This is what
+    // makes the test non-vacuous: it fails if resetTypeahead() stops running.
+    key(rows[1], "p")
+    expect(document.activeElement).toBe(rows[1])
+  })
+
+  it("the typeahead buffer survives a background re-render — no wipe (round-5 guard)", () => {
+    const c = mount(["ant.md", "apple.md", "axe.md"], "apple.md")
+    names(c)[1].focus() // apple (the active row / roving tab stop)
+    key(names(c)[1], "a") // from apple → axe (next a-row); buffer "a"
+    expect(document.activeElement).toBe(names(c)[2])
+    // A background poll repaints the list (same data). renderNoteList restores
+    // focus to the active row (apple); the in-progress buffer must NOT be wiped.
+    renderNoteList(c, ["ant.md", "apple.md", "axe.md"], "apple.md", handlers())
+    key(document.activeElement as HTMLElement, "x") // buffer "a" survived → "ax" → axe
+    expect(document.activeElement).toBe(names(c)[2]) // a wiped buffer would leave a bare "x" → no move
   })
 
   it("same-letter cycling is case-insensitive — M then m still cycles (AC-4)", () => {
