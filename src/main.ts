@@ -507,8 +507,8 @@ const noteListHandlers = {
   onBatchMove: (paths: string[]) => {
     movePicker.open(destinationChoices(), async (dest) => {
       // Remember the note the user actually has open: each moveNoteTo switchTo()s
-      // its own note (renameActive is active-note-scoped), so without restoring it
-      // the editor would be left on the last moved note (FEAT-0078 review).
+      // its own note (renameActive is active-note-scoped), so the editor ends on
+      // the last moved note (FEAT-0078 review).
       const openBefore = currentActive
       commitSelectionCleared()
       // moveNoteTo carries the switchTo + existence/conflict guards a single move
@@ -516,12 +516,13 @@ const noteListHandlers = {
       const failures = await runBatch(paths, (path, isNote) =>
         isNote ? moveNoteTo(path, dest) : moveFolderTo(path, dest),
       )
-      // Restore the pre-batch open note — at its new path if it was one of the
-      // moved items, else where it was.
-      const restored = paths.includes(openBefore)
-        ? joinDest(dest, openBefore.split("/").pop() as string)
-        : openBefore
-      if (currentNotes.includes(restored)) void controller.switchTo(restored)
+      // Restore the open note only if it survived the batch unmoved (still exists
+      // at its old path) — the common case where the user was editing a note that
+      // wasn't part of the selection. If it was moved (or lived in a moved
+      // folder) we don't guess its new path — that depends on per-item success
+      // and is exactly where the previous restore opened the wrong note — the
+      // editor simply stays where the batch left it.
+      if (currentNotes.includes(openBefore)) void controller.switchTo(openBefore)
       // The picker closes on ok and shows the reason (staying open) otherwise —
       // report the aggregate through it rather than a separate alert.
       return failures.length === 0
@@ -537,11 +538,6 @@ const noteListHandlers = {
 function commitSelectionCleared(): void {
   clearTreeSelection()
   if (listEl) repaintTreeSelection(listEl)
-}
-
-/** `destination`-relative join for a moved leaf (`""` destination = root). */
-function joinDest(destination: string, name: string): string {
-  return destination ? `${destination}/${name}` : name
 }
 
 /** Run a batch action (M37/FEAT-0078) over `paths` sequentially — so the shared

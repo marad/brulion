@@ -174,3 +174,34 @@ test("a batch move keeps the note you had open (FEAT-0078)", async ({ page }) =>
   // The editor was not yanked to the last moved note — x is still open.
   await expect(page.locator("#editor .cm-content")).toContainText("x body")
 })
+
+test("a failed move of the open note never opens a foreign same-named note (FEAT-0078)", async ({
+  page,
+}) => {
+  await stubPicker(page)
+  await page.goto("/brulion/")
+  await writeNote(page, "a.md", "my a")
+  await writeNote(page, "b.md", "bb")
+  await writeNote(page, "dest/a.md", "foreign a") // a.md can't move here (name clash)
+  await page.locator("#open-folder").click()
+  const rootA = page.locator('.note-name[data-path="a.md"]')
+  const rootB = page.locator('.note-name[data-path="b.md"]')
+  await expect(rootA).toBeVisible()
+
+  await rootA.click() // open the root a.md
+  await expect(page.locator("#editor .cm-content")).toContainText("my a")
+
+  await rootA.click({ modifiers: ["Control"] })
+  await rootB.click({ modifiers: ["Control"] })
+  await rootA.click({ button: "right" })
+  await page
+    .locator(".cm-context-menu button[role=menuitem]", { hasText: "Move 2 items" })
+    .click()
+  await page.locator(".move-row", { hasText: "dest" }).click()
+
+  // a.md's move was refused, so it stays open showing its own content — the
+  // restore must never switch to the pre-existing dest/a.md ("foreign a").
+  await expect.poll(() => entriesOf(page, "")).toEqual(["a.md", "dest"])
+  await expect(page.locator("#editor .cm-content")).toContainText("my a")
+  await expect(page.locator("#editor .cm-content")).not.toContainText("foreign a")
+})
