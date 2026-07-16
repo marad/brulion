@@ -132,10 +132,25 @@ export function isTypeaheadKey(e: {
  * focus there rather than reporting no match. */
 export function typeaheadMatch(labels: string[], current: number, buffer: string): number {
   if (buffer === "") return -1
-  const needle = buffer.toLowerCase()
+  const needle = foldForMatch(buffer)
   for (let i = 1; i <= labels.length; i++) {
     const idx = (current + i) % labels.length
-    if (labels[idx].toLowerCase().startsWith(needle)) return idx
+    if (foldForMatch(labels[idx]).startsWith(needle)) return idx
   }
   return -1
+}
+
+/** Normalize a string for typeahead comparison (M37/FEAT-0077/AC-10): lowercase
+ * and fold accents to their base letter, so typing plain ASCII reaches a note
+ * with an accented name (`l` → `łódka`, `a` → `ątek`) — useful because the
+ * accented character itself needs an AltGr/Option chord, which typeahead doesn't
+ * accept. NFD decomposition + stripping combining marks handles most accents
+ * (`ą`→a, `ó`→o, `é`→e, `ż`→z…); `ł` is a distinct letter that does NOT
+ * decompose, so it's mapped explicitly. */
+export function foldForMatch(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/ł/gi, "l")
+    .toLowerCase()
 }

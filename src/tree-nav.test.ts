@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest"
-import { isTypeaheadKey, resolveTreeKey, treeDepth, typeaheadMatch, type TreeRow } from "./tree-nav"
+import {
+  foldForMatch,
+  isTypeaheadKey,
+  resolveTreeKey,
+  treeDepth,
+  typeaheadMatch,
+  type TreeRow,
+} from "./tree-nav"
 
 // Build a visible-row list compactly. Each spec is [path, kind, expanded?];
 // depth is derived from the path exactly as the real glue does.
@@ -232,6 +239,30 @@ describe("typeaheadMatch (FEAT-0077)", () => {
     expect(typeaheadMatch(labels, 0, "z")).toBe(-1)
     expect(typeaheadMatch(labels, 0, "")).toBe(-1)
     expect(typeaheadMatch([], 0, "a")).toBe(-1)
+  })
+})
+
+describe("foldForMatch (FEAT-0077 AC-10)", () => {
+  it("folds Polish and common accents to base ASCII, lowercased", () => {
+    expect(foldForMatch("łódka")).toBe("lodka")
+    expect(foldForMatch("Ątek")).toBe("atek")
+    expect(foldForMatch("café")).toBe("cafe")
+    expect(foldForMatch("ŻÓŁW")).toBe("zolw")
+  })
+
+  it("leaves plain ASCII unchanged apart from case", () => {
+    expect(foldForMatch("Alpha")).toBe("alpha")
+  })
+})
+
+describe("typeaheadMatch — diacritic-insensitive (FEAT-0077 AC-10)", () => {
+  it("matches an accented label by its plain base letter", () => {
+    expect(typeaheadMatch(["ant", "łódka"], 0, "l")).toBe(1)
+    expect(typeaheadMatch(["bee", "ątek"], 0, "a")).toBe(1)
+  })
+
+  it("matches a multi-character plain prefix against an accented label", () => {
+    expect(typeaheadMatch(["x", "łódka"], 0, "lo")).toBe(1)
   })
 })
 

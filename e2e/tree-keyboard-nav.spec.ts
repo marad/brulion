@@ -148,6 +148,20 @@ test("typing a letter moves focus to the matching row without opening it (FEAT-0
   await expect(noteName(page, "melon")).toBeFocused()
 })
 
+test("typeahead reaches an accented name by its plain base letter (FEAT-0077/AC-10)", async ({
+  page,
+}) => {
+  await stubPicker(page)
+  await page.goto("/brulion/")
+  await writeNote(page, "alpha.md", "alpha body")
+  await writeNote(page, "łódka.md", "boat body")
+  await page.locator("#open-folder").click()
+
+  await noteName(page, "alpha").focus()
+  await page.keyboard.press("l") // plain "l" → folds to reach "łódka"
+  await expect(noteName(page, "łódka")).toBeFocused()
+})
+
 test("a folder expanded by keyboard stays expanded after reload (AC-9)", async ({ page }) => {
   await stubPicker(page)
   await page.goto("/brulion/")
