@@ -42,12 +42,13 @@ search and moves focus to the matching row:
   file explorers behave.
 
 The typeahead session **ends** — the buffer is discarded — when the coalescing
-window lapses, when any real tree action runs (a navigation/activation/rename
-key), when a non-typeahead key that claims no action is pressed (e.g. an
-arrow at a boundary, Escape, Tab — but *not* a bare modifier press, so
-Shift+letter still composes), and when focus leaves the tree. So a letter typed
-to start a new search never silently extends a stale buffer left over from an
-earlier, interrupted one.
+window lapses, when a tree action completes (an arrow that moves, Enter, Space,
+F2), or when focus leaves the tree. Every other key that is not a printable
+character — a boundary arrow that did nothing, Escape, a lock key, a dead/IME
+key, a bare modifier — is simply ignored and leaves the buffer untouched
+(the timeout still governs it); the design classifies only *printable input* and
+*completed tree actions*, never trying to enumerate which of every other key
+should or should not end a session.
 
 Typeahead never opens a note, toggles a folder, or writes a file — it only moves
 focus. It composes with, and does not disturb, the existing tree keys: the
@@ -59,9 +60,9 @@ from the editor or any overlay.
 
 ## Constraints
 
-- Only printable single characters drive typeahead — including AltGr-composed
-  characters (accented letters like `ł`), but not a real Ctrl-only, Alt-only, or
-  Cmd shortcut chord; every navigation/activation/rename key keeps its existing
+- Only printable single characters drive typeahead — a Ctrl or Cmd chord is a
+  shortcut and is excluded (Alt/Option is allowed, since macOS composes real
+  characters with it); every navigation/activation/rename key keeps its existing
   meaning.
 - Matching is over the *visible* rows only and by the row's displayed label
   (the note/folder name as shown, not its full path), case-insensitively, by
@@ -82,6 +83,10 @@ from the editor or any overlay.
 - Expanding a collapsed folder to reach a match inside it — typeahead only lands
   on already-visible rows.
 - A visible "search string" indicator or any persistent UI.
+- Driving typeahead from Windows AltGr-composed characters (reported by the
+  browser as Ctrl+Alt, indistinguishable from a genuine Ctrl+Alt shortcut) —
+  excluded so no real shortcut is swallowed; such names stay reachable via the
+  arrows or the Ctrl+K switcher.
 
 ## Acceptance criteria
 
@@ -114,15 +119,23 @@ Then focus advances to the next `a`-row on each press and wraps back to the firs
 after the last — repeating the same character cycles rather than accumulating
 into a multi-letter buffer (`aa`) that matches nothing.
 
-**AC-8** — A non-typeahead key or leaving the tree ends the search session.
+**AC-8** — A completed tree action or leaving the tree ends the search session.
 Given the user has typed a character `a` (moving focus to an `a`-row) within the
 coalescing window,
-When, still within that window, the user presses a key that is not a typeahead
-character (an arrow at a boundary, Escape, Tab) or moves focus out of the tree
-and back, and then presses a different character `b`,
+When, still within that window, the user completes a tree action (an arrow that
+moves focus, Enter, Space, or F2) or moves focus out of the tree and back, and
+then presses a different character `b`,
 Then the `b` search starts fresh (matches labels starting with `b`, not `ab`) —
-the earlier buffer was discarded; a bare modifier press (Shift/Ctrl/Alt/Meta)
-does not end the session, so Shift+letter still composes a two-character search.
+the earlier buffer was discarded.
+
+**AC-9** — A non-printable, non-action key leaves the buffer intact.
+Given the user has typed a character `a` within the coalescing window,
+When, still within that window, the user presses a key that is neither a
+printable character nor a completed tree action — a bare modifier
+(Shift/Ctrl/Alt/Meta), a lock key (NumLock/CapsLock), or a dead/IME key — and
+then presses a second printable character `x`,
+Then the buffer is `ax` (the interruptor did not discard it), so Shift+letter and
+similar compositions still build a multi-character search.
 
 **AC-5** — No match leaves focus unchanged.
 Given no visible row's label starts with the typed buffer,

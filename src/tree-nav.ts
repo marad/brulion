@@ -99,45 +99,18 @@ export function resolveTreeKey(key: string, rows: TreeRow[], current: number): T
 }
 
 /** Whether `e`'s key is a printable character that should drive typeahead
- * (M37/FEAT-0077): a single-character `key` that is not a Ctrl-only, Alt-only, or
- * Cmd chord. Named keys (`ArrowDown`, `F2`, `Enter`) have multi-character `key`s
- * and are excluded; Space is a single char but `resolveTreeKey` already claims it
- * as `activate`, so it never reaches the typeahead branch that consults this.
- * AltGr (which Windows reports as Ctrl+Alt together, and is how characters like
- * `ł` are typed) is *allowed* — only a real shortcut chord (exactly one of
- * Ctrl/Alt, or Cmd) is rejected, so accented note names stay reachable. */
-export function isTypeaheadKey(e: {
-  key: string
-  ctrlKey: boolean
-  metaKey: boolean
-  altKey: boolean
-}): boolean {
-  if (e.key.length !== 1 || e.metaKey) return false
-  return e.ctrlKey === e.altKey // both (AltGr) or neither → printable; exactly one → a shortcut
-}
-
-/** Whether `key` is one the tree's own keyboard handling claims — the keys
- * `resolveTreeKey` has a case for (M36/FEAT-0075 movement/activate + M37/
- * FEAT-0076 rename). The typeahead glue ends a search session when one of these
- * is pressed, even at a boundary where it no-ops, so a following letter starts
- * fresh; every *other* non-printable key (a lock key, a dead/IME key, a function
- * key) is ignored and leaves the buffer alone, governed only by the timeout.
- * Keep in sync with `resolveTreeKey`'s switch. */
-export function isTreeActionKey(key: string): boolean {
-  switch (key) {
-    case "ArrowUp":
-    case "ArrowDown":
-    case "ArrowLeft":
-    case "ArrowRight":
-    case "Home":
-    case "End":
-    case "Enter":
-    case " ":
-    case "F2":
-      return true
-    default:
-      return false
-  }
+ * (M37/FEAT-0077): a single-character `key` pressed without Ctrl or Cmd. Named
+ * keys (`ArrowDown`, `F2`, `Enter`) have multi-character `key`s and are excluded;
+ * Space is a single char but `resolveTreeKey` already claims it as `activate`, so
+ * it never reaches the typeahead branch that consults this. `altKey` is
+ * deliberately *not* consulted: on macOS, Option composes real text (é, ł, …),
+ * so an Alt-modified single character is genuine input. A Ctrl or Cmd chord is a
+ * shortcut and is excluded — which also excludes Windows AltGr (reported as
+ * Ctrl+Alt); AltGr-composed characters not driving typeahead is an accepted
+ * limitation (they stay reachable via the arrows or the Ctrl+K switcher), the
+ * alternative being to swallow every genuine Ctrl+Alt shortcut. */
+export function isTypeaheadKey(e: { key: string; ctrlKey: boolean; metaKey: boolean }): boolean {
+  return e.key.length === 1 && !e.ctrlKey && !e.metaKey
 }
 
 /** The index of the next `labels` entry that starts with `buffer`

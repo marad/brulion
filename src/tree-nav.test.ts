@@ -1,12 +1,5 @@
 import { describe, it, expect } from "vitest"
-import {
-  isTreeActionKey,
-  isTypeaheadKey,
-  resolveTreeKey,
-  treeDepth,
-  typeaheadMatch,
-  type TreeRow,
-} from "./tree-nav"
+import { isTypeaheadKey, resolveTreeKey, treeDepth, typeaheadMatch, type TreeRow } from "./tree-nav"
 
 // Build a visible-row list compactly. Each spec is [path, kind, expanded?];
 // depth is derived from the path exactly as the real glue does.
@@ -260,43 +253,19 @@ describe("isTypeaheadKey (FEAT-0077)", () => {
     expect(isTypeaheadKey(k("Enter"))).toBe(false)
   })
 
-  it("is false for a real Ctrl-only, Alt-only, or Cmd chord (a shortcut)", () => {
+  it("is false for a real Ctrl or Cmd chord (a shortcut)", () => {
     expect(isTypeaheadKey(k("a", { ctrlKey: true }))).toBe(false)
     expect(isTypeaheadKey(k("a", { metaKey: true }))).toBe(false)
-    expect(isTypeaheadKey(k("a", { altKey: true }))).toBe(false)
+    // Windows AltGr surfaces as Ctrl+Alt — rejected too, so a genuine Ctrl+Alt
+    // shortcut is never swallowed (the accepted cost is no AltGr typeahead).
+    expect(isTypeaheadKey(k("ł", { ctrlKey: true, altKey: true }))).toBe(false)
   })
 
-  it("is true for an AltGr-composed character (Ctrl+Alt together)", () => {
-    // Windows/Chrome reports AltGr as ctrlKey && altKey; e.g. AltGr+L → "ł".
-    expect(isTypeaheadKey(k("ł", { ctrlKey: true, altKey: true }))).toBe(true)
-    // …but not if Cmd is also somehow held.
-    expect(isTypeaheadKey(k("ł", { ctrlKey: true, altKey: true, metaKey: true }))).toBe(false)
-  })
-})
-
-describe("isTreeActionKey (FEAT-0077)", () => {
-  it("is true for every key resolveTreeKey handles", () => {
-    for (const key of [
-      "ArrowUp",
-      "ArrowDown",
-      "ArrowLeft",
-      "ArrowRight",
-      "Home",
-      "End",
-      "Enter",
-      " ",
-      "F2",
-    ]) {
-      expect(isTreeActionKey(key)).toBe(true)
-    }
-  })
-
-  it("is false for printable and other non-tree keys (they never end a session)", () => {
-    expect(isTreeActionKey("a")).toBe(false)
-    expect(isTreeActionKey("Shift")).toBe(false)
-    expect(isTreeActionKey("NumLock")).toBe(false)
-    expect(isTreeActionKey("Dead")).toBe(false)
-    expect(isTreeActionKey("Escape")).toBe(false)
+  it("is true for an Alt/Option-composed character (macOS text input)", () => {
+    // macOS composes real characters with Option (altKey, no ctrl/meta); those
+    // are genuine input and must drive typeahead.
+    expect(isTypeaheadKey(k("é", { altKey: true }))).toBe(true)
+    expect(isTypeaheadKey(k("a", { altKey: true }))).toBe(true)
   })
 })
 

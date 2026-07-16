@@ -1282,20 +1282,6 @@ describe("renderNoteList typeahead (FEAT-0077)", () => {
     expect(document.activeElement).toBe(rows[0])
   })
 
-  it("a boundary navigation no-op also ends the session (AC-8)", () => {
-    const c = mount(["apple.md", "apricot.md", "banana.md"], "apple.md")
-    const rows = names(c)
-    rows[0].focus()
-    key(rows[0], "a") // → apricot (next a-row); buffer "a"
-    expect(document.activeElement).toBe(rows[1])
-    key(rows[1], "ArrowLeft") // root-level note, no parent → no-op, but ends session
-    expect(document.activeElement).toBe(rows[1]) // focus unchanged
-    // A stale buffer would make this "ap" and jump to apple; a reset makes it a
-    // bare "p", which matches no label → focus stays on apricot.
-    key(rows[1], "p")
-    expect(document.activeElement).toBe(rows[1])
-  })
-
   it("same-letter cycling is case-insensitive — M then m still cycles (AC-4)", () => {
     const c = mount(["Mango.md", "Melon.md"], "Mango.md")
     const rows = names(c)
@@ -1306,19 +1292,20 @@ describe("renderNoteList typeahead (FEAT-0077)", () => {
     expect(document.activeElement).toBe(rows[0])
   })
 
-  it("a lock or dead/IME key does not end the session — buffer survives (AC-8)", () => {
+  it("a lock, dead/IME, or modifier key does not end the session — buffer survives (AC-9)", () => {
     const c = mount(["ant.md", "apple.md", "axe.md"], "ant.md")
     const rows = names(c)
     rows[0].focus()
     key(rows[0], "a") // → apple (buffer "a")
     expect(document.activeElement).toBe(rows[1])
-    key(rows[1], "NumLock") // not a tree key, not printable → ignored, buffer kept
-    key(rows[1], "Dead") // dead/IME keydown → ditto
+    // None of these is a printable character or a completed tree action, so each
+    // is ignored and the in-progress buffer is left intact.
+    for (const k of ["NumLock", "CapsLock", "AltGraph", "Dead"]) key(rows[1], k)
     key(rows[1], "x") // buffer still "a" → "ax" → axe; a reset would leave a bare "x"
     expect(document.activeElement).toBe(rows[2])
   })
 
-  it("a bare modifier press does not end the session — Shift+letter composes (AC-8)", () => {
+  it("a bare modifier press does not end the session — Shift+letter composes (AC-9)", () => {
     const c = mount(["ant.md", "apple.md", "axe.md"], "ant.md")
     const rows = names(c)
     rows[0].focus()

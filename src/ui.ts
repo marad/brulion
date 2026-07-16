@@ -3,14 +3,7 @@ import { pickFolder } from "./fs"
 import { hasPermission, requestAccess } from "./session"
 import { displayName } from "./note-name"
 import { openTreeMenu, type TreeMenuItem } from "./tree-menu"
-import {
-  isTreeActionKey,
-  isTypeaheadKey,
-  resolveTreeKey,
-  treeDepth,
-  typeaheadMatch,
-  type TreeRow,
-} from "./tree-nav"
+import { isTypeaheadKey, resolveTreeKey, treeDepth, typeaheadMatch, type TreeRow } from "./tree-nav"
 import { wireLongPress } from "./long-press"
 import { isWithin, type AddNoteResult } from "./note-controller"
 import { applyAntiAutofillAttrs } from "./anti-autofill"
@@ -396,13 +389,11 @@ function wireTreeKeyNav(container: HTMLElement, handlers: NoteListHandlers): voi
         const labels = els.map((el) => el.textContent ?? "")
         const idx = typeaheadMatch(labels, current, typeaheadBuffer)
         if (idx !== -1) focusRow(container, els[idx])
-      } else if (isTreeActionKey(event.key)) {
-        // A tree key that no-op'd at a boundary (an arrow at the ends, Left at
-        // the root) still ends the session, so a following letter starts fresh
-        // (AC-8). Every other non-printable key — a lock key, a dead/IME key, a
-        // function key — is left alone and never wipes the buffer.
-        resetTypeahead()
       }
+      // Any other key here (a boundary no-op arrow, Escape, a lock/dead/IME key,
+      // a bare modifier) is left alone: it never wipes the buffer, which is ended
+      // only by the timeout, by focus leaving the tree, or by a completed tree
+      // action below — no per-key classification to keep exhaustive (AC-8).
       return
     }
     // A real tree action ends any in-progress typeahead session, so a letter
