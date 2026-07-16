@@ -3,6 +3,7 @@ import { pickFolder } from "./fs"
 import { hasPermission, requestAccess } from "./session"
 import { displayName } from "./note-name"
 import { openTreeMenu, type TreeMenuItem } from "./tree-menu"
+import { resolveTreeKey, treeDepth, type TreeRow } from "./tree-nav"
 import { wireLongPress } from "./long-press"
 import { isWithin, type AddNoteResult } from "./note-controller"
 import { applyAntiAutofillAttrs } from "./anti-autofill"
@@ -249,6 +250,13 @@ export function renderNoteList(
   expanded: ReadonlySet<string> = new Set(),
   folders: string[] = [],
 ): void {
+  // If focus is currently on a tree row, this rebuild (which replaces every
+  // row element) would drop it to <body>. Restore it to the roving tab stop
+  // afterward so keyboard flow survives an activation-triggered re-render
+  // (open a note with Enter → focus lands on its row → arrow on — M36/
+  // FEAT-0075). Guarded on focus *already* being in the tree, so a background
+  // poller repaint while the user is typing in the editor never steals focus.
+  const restoreTreeFocus = container.contains(document.activeElement)
   container.replaceChildren()
   // A rebuild mid-drag (e.g. the background poller repainting the list after
   // a genuine external change while the user is still holding a drag) always
@@ -263,13 +271,95 @@ export function renderNoteList(
   for (const node of buildNoteTree(notes, folders)) {
     container.append(renderNode(node, active, handlers, expanded))
   }
-  // The root drop zone (M35/FEAT-0072) lives on `container` itself, which
-  // (unlike its children) survives every re-render — wire it once, not once
-  // per render, or a long session would stack up one listener per render.
+  container.setAttribute("role", "tree") // M36/FEAT-0075
+  // Roving tabindex (M36/FEAT-0075): exactly one row is Tab-focusable — the
+  // active note's row, or the first row when none is active — so the whole tree
+  // is a single tab stop rather than one per row.
+  applyRovingTabindex(container, active)
+  if (restoreTreeFocus) {
+    container
+      .querySelector<HTMLElement>(".folder-header[tabindex='0'], .note-name[tabindex='0']")
+      ?.focus()
+  }
+  // The root drop zone (M35/FEAT-0072) and the keyboard-nav handler
+  // (M36/FEAT-0075) live on `container` itself, which (unlike its children)
+  // survives every re-render — wire each once, not once per render, or a long
+  // session would stack up one listener per render.
   if (!container.dataset.dropZoneWired) {
     container.dataset.dropZoneWired = "true"
     wireDropTarget(container, () => "", handlers)
   }
+  if (!container.dataset.keyNavWired) {
+    container.dataset.keyNavWired = "true"
+    wireTreeKeyNav(container)
+  }
+}
+
+/** Every focusable tree row (a folder header or a note name), in draw order —
+ * the elements the roving tabindex and keyboard nav operate on. */
+function rowFocusables(container: HTMLElement): HTMLElement[] {
+  return [...container.querySelectorAll<HTMLElement>(".folder-header, .note-name")]
+}
+
+/** The *visible* rows only — a collapsed folder's children are in the DOM but
+ * inside a `hidden` `.folder-children`, and are skipped (M36/FEAT-0075). */
+function visibleRowFocusables(container: HTMLElement): HTMLElement[] {
+  return rowFocusables(container).filter((el) => !el.closest(".folder-children[hidden]"))
+}
+
+/** Promote exactly one row to `tabindex="0"` (the tab stop) and demote the rest
+ * to `-1`. Prefers the active note's row; falls back to the first row. */
+function applyRovingTabindex(container: HTMLElement, active: string): void {
+  const focusables = rowFocusables(container)
+  const chosen =
+    focusables.find((el) => el.dataset.path === active && el.classList.contains("note-name")) ??
+    focusables[0]
+  for (const el of focusables) el.tabIndex = el === chosen ? 0 : -1
+}
+
+/** Move the roving tab stop to `el` and focus it. */
+function focusRow(container: HTMLElement, el: HTMLElement): void {
+  for (const other of rowFocusables(container)) other.tabIndex = other === el ? 0 : -1
+  el.focus()
+}
+
+/** One `keydown` handler for the whole tree (M36/FEAT-0075): standard ARIA
+ * `tree` movement over the visible rows. Delegates the decision to the pure
+ * `resolveTreeKey`, then executes it against the DOM — focus a row (carrying the
+ * tab stop), toggle a folder via its header's existing click (so FEAT-0043's
+ * persistence runs), or activate the focused row. Only acts when focus is on a
+ * row, so it never interferes with the editor or any overlay. */
+function wireTreeKeyNav(container: HTMLElement): void {
+  container.addEventListener("keydown", (event) => {
+    const focused = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+      ".folder-header, .note-name",
+    )
+    if (!focused || !container.contains(focused)) return
+    const els = visibleRowFocusables(container)
+    const current = els.indexOf(focused)
+    if (current === -1) return
+    const descriptors: TreeRow[] = els.map((el) => ({
+      path: el.dataset.path ?? "",
+      kind: el.classList.contains("folder-header") ? "folder" : "note",
+      expanded: el.getAttribute("aria-expanded") === "true",
+      depth: treeDepth(el.dataset.path ?? ""),
+    }))
+    const action = resolveTreeKey(event.key, descriptors, current)
+    if (action.type === "none") return
+    event.preventDefault() // handled keys never scroll the sidebar or double-activate a button
+    switch (action.type) {
+      case "focus":
+        focusRow(container, els[action.index])
+        break
+      case "expand":
+      case "collapse":
+      case "activate":
+        // Reuse the row's own click: a folder header toggles + persists
+        // (FEAT-0043); a note name opens it. One code path, no divergence.
+        els[action.index].click()
+        break
+    }
+  })
 }
 
 /** Wire a row/header element to open `items` on right-click, on long-press
@@ -408,10 +498,15 @@ function renderNode(
   header.className = "folder-header"
   header.textContent = node.name
   header.title = node.path // full folder path on hover (the row may be truncated)
+  header.dataset.path = node.path // read by keyboard nav to build row descriptors (M36)
+  header.setAttribute("role", "treeitem")
+  header.setAttribute("aria-level", String(treeDepth(node.path) + 1))
   header.setAttribute("aria-expanded", String(!isCollapsed))
+  header.tabIndex = -1 // roving tabindex (M36/FEAT-0075): renderNoteList promotes one row to 0
 
   const children = document.createElement("div")
   children.className = "folder-children"
+  children.setAttribute("role", "group")
   children.hidden = isCollapsed
   for (const child of node.children) {
     children.append(renderNode(child, active, handlers, expanded))
@@ -453,6 +548,10 @@ function renderNoteRow(node: NoteLeaf, active: string, handlers: NoteListHandler
   nameButton.className = "note-name"
   nameButton.textContent = node.name
   nameButton.title = displayName(node.path) // full note path on hover (rows ellipsize)
+  nameButton.dataset.path = node.path // read by keyboard nav to build row descriptors (M36)
+  nameButton.setAttribute("role", "treeitem")
+  nameButton.setAttribute("aria-level", String(treeDepth(node.path) + 1))
+  nameButton.tabIndex = -1 // roving tabindex (M36/FEAT-0075): renderNoteList promotes one row to 0
   nameButton.addEventListener("click", () => handlers.onSelect(node.path))
 
   row.append(nameButton)

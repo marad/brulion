@@ -16,9 +16,11 @@ Every technical decision defers to that.
 
 > **Execution order (next up), agreed with the user.** M-numbers are **stable
 > identities, not the running order**. M1–M13, **M14**, **M15**, **M16**, **M17**,
-> **M18**–**M34** are done; **M35** is active (built on a feature branch, not
-> merged to `main` — see the milestone review before it lands).
-> Recently shipped: **M18**
+> **M18**–**M35** are done; **M36** is active (keyboard navigation for the
+> sidebar tree — arrow keys move between rows and expand/collapse folders).
+> Recently shipped: **M35** (folder & note management — create/delete/move/
+> rename folders and notes via context menu + drag-and-drop, reviewed live),
+> **M18**
 > (light/dark theme + theme-aware syntax palette + a toggle action), **M24**
 > (scroll/caret preservation on external refresh), **M26** (table rendering),
 > **M29** (editable code-fence markers), **M30** (command palette + action bar),
@@ -528,11 +530,34 @@ In:
   `listNotes`/sweep infra), `moveNote` each file into the new prefix, rebase
   inbound links per moved note, then remove the emptied source subtree.
 
-Out (deliberately): drag-and-drop reordering (destination picked via a
-"Move to…" folder overlay instead — keyboard/mobile-friendly, no new DnD
-machinery); a general right-click context-menu system for the tree (folder
-create/delete get the same inline-button treatment notes already have, not a
-new UI subsystem); undo of a move/delete.
+Shipped scope (adjusted live in the milestone review — see `DECISIONS.md`):
+row actions moved to a right-click/long-press/keyboard context menu (no inline
+buttons); drag-and-drop added as an additive fast path alongside the "Move to…"
+picker; native confirm/prompt/alert replaced by in-app dialogs. Out: reordering
+siblings (the tree is always alphabetical), and undo of a move/delete.
+
+### M36 — Keyboard navigation for the sidebar tree
+**Goal:** the sidebar tree is reachable by keyboard for *actions* (Shift+F10
+context menu, M35/FEAT-0071) but not for *movement* — you still need the mouse
+to get from one row to another. Make the tree a proper keyboard-navigable
+`tree` widget: arrow keys move focus and expand/collapse, completing the
+keyboard story M35 started.
+
+In:
+- **Up/Down** — move focus to the previous/next *visible* row (flattened tree
+  order, skipping the children of collapsed folders).
+- **Right** — expand a collapsed folder, or (if already expanded) move into its
+  first child; on a note, nothing.
+- **Left** — collapse an expanded folder, or (if already collapsed / a note)
+  move to the parent folder.
+- **Home/End** — first / last visible row.
+- **Enter/Space** — open the focused note, or toggle the focused folder.
+- **Roving tabindex** — one row is Tab-focusable at a time; arrows move focus
+  within the tree, Tab leaves it. The standard ARIA `tree` pattern.
+
+Out (deliberately): typeahead (type a letter to jump); multi-select; anything
+touch-specific (this is the keyboard story). Actions stay on the existing
+context menu — this milestone is purely *movement*.
 
 ## Later / backlog (out of MVP, on purpose)
 
