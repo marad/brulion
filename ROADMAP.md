@@ -16,9 +16,11 @@ Every technical decision defers to that.
 
 > **Execution order (next up), agreed with the user.** M-numbers are **stable
 > identities, not the running order**. M1–M13, **M14**, **M15**, **M16**, **M17**,
-> **M18**–**M35** are done; **M36** is active (keyboard navigation for the
-> sidebar tree — arrow keys move between rows and expand/collapse folders).
-> Recently shipped: **M35** (folder & note management — create/delete/move/
+> **M18**–**M36** are done; **M37** is active (sidebar tree follow-ups — F2 to
+> rename, plus typeahead / multi-select / touch, pulled out of the M36 review).
+> Recently shipped: **M36** (keyboard navigation for the sidebar tree — arrow
+> keys move between rows and expand/collapse folders, reviewed live),
+> **M35** (folder & note management — create/delete/move/
 > rename folders and notes via context menu + drag-and-drop, reviewed live),
 > **M18**
 > (light/dark theme + theme-aware syntax palette + a toggle action), **M24**
@@ -557,7 +559,29 @@ In:
 
 Out (deliberately): typeahead (type a letter to jump); multi-select; anything
 touch-specific (this is the keyboard story). Actions stay on the existing
-context menu — this milestone is purely *movement*.
+context menu — this milestone is purely *movement*. **All three deferred here
+were pulled into M37 in the M36 review.**
+
+### M37 — Sidebar tree follow-ups
+**Goal:** the comfort items that came out of the M36 review — a direct rename
+shortcut plus the movement niceties M36 deliberately deferred. Builds on M35
+(actions) and M36 (keyboard tree). May split into phases.
+
+In:
+- **F2 to rename** — pressing **F2** on a focused row (note *or* folder) triggers
+  the **same rename flow** the M35 context menu runs (FEAT-0071) — one source of
+  truth, no separate logic. F2 is the file-explorer / IDE convention for rename.
+- **Typeahead** — type a letter (or a short run) to move focus to the next
+  matching visible row; the standard `tree` typeahead M36 left out.
+- **Multi-select** — select a range / set of rows (for future batch actions).
+- **Touch gestures for movement** — a touch path for moving through the tree.
+
+> **Open (settle at spec time):** the agent recommended keeping *multi-select*
+> and *touch* out of scope (they sit uneasily with the lean ethos and this
+> niche; touch already reaches actions via M35 long-press). The user chose to
+> include them in the M36 review, so **what "touch gestures for movement" should
+> actually do — scrolling already works — is unresolved and must be pinned down
+> when M37 is specced.**
 
 ## Later / backlog (out of MVP, on purpose)
 

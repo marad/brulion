@@ -2941,3 +2941,85 @@ disjoint files, so the order was never load-bearing.
 The review loop is closed with this refactor. Any future mutation method
 MUST route its post-mutation work through `reconcileAfterMutation` rather
 than hand-rolling the block — that's the whole point.
+
+## Sidebar tree keyboard nav uses a roving tabindex, the standard ARIA `tree` model (M36 → FEAT-0075)
+
+**What:** the sidebar tree is a keyboard-navigable `tree` widget with exactly
+one row in the tab order (`tabindex="0"`) at a time; every other row is
+`tabindex="-1"`. Arrow keys move focus *within* the tree and carry the tab stop
+with them. One Tab enters the tree at the current row, the next Tab leaves it.
+The initial/after-re-render tab stop is the active note's row, or the first row
+when none is active.
+
+**Why:** the alternative — one Tab stop per row — turns a large vault into
+hundreds of sequential tab stops, exactly what the ARIA pattern exists to avoid.
+Roving tabindex is the conventional, screen-reader-friendly, scalable choice.
+
+**Consequence (UI/project):** Tab reaches the tree as a single stop and moving
+between rows is arrows-only; a keyboard user never tabs through the whole vault.
+Confirmed in the M36 review.
+
+## Left/Right are two-step, and tree movement never wraps (M36 → FEAT-0075)
+
+**What:** Right on a collapsed folder expands it; Right on an already-expanded
+folder descends to its first child; Right on a note does nothing. Left on an
+expanded folder collapses it; Left on a collapsed folder / a note moves to the
+parent header (no-op at root). Down on the last visible row and Up on the first
+are no-ops — no wrap-around.
+
+**Why:** this is the ARIA `tree` convention one-to-one (file explorers, IDE
+trees), so it matches the muscle memory of anyone who navigates trees. Wrapping
+disorients in a tree — it's easy to lose your place — so movement deliberately
+stops at the ends.
+
+**Consequence (UI/project):** expand/descend and collapse/ascend each take a
+predictable two presses; the caret can't silently jump from bottom to top.
+Confirmed in the M36 review.
+
+## Enter and Space both activate the focused tree row (M36 → FEAT-0075)
+
+**What:** with focus on a tree row, both Enter and Space activate it — open the
+note or toggle the folder — the same result a click gives. Space is captured
+within the tree, so it does not scroll the page while a row is focused.
+
+**Why:** Space-to-activate is the ARIA `tree` convention and is comfortable; the
+only cost is intercepting Space's default page-scroll while focus is in the tree,
+which is an acceptable, contained trade-off.
+
+**Consequence (UI/project):** either key opens/toggles the focused row; page
+scroll via Space is suppressed only while the tree holds focus. Confirmed in the
+M36 review.
+
+## M36 stays movement-only — file actions remain on the context menu (M36 → FEAT-0075)
+
+**What:** M36 adds no file operation. Create/delete/move/rename stay on the M35
+context menu (Shift+F10, FEAT-0071); M36 only moves focus and toggles folder
+expansion (which is not a note-file write, and reuses FEAT-0043's persisted
+toggle).
+
+**Why:** keeping movement and actions separate kept the milestone small and
+testable, and M35 already gives a full keyboard path to actions.
+
+**Consequence (UI/project):** the boundary held — but the M36 review surfaced one
+real comfort gap (a direct rename shortcut from the focused row), pulled forward
+as M37 below.
+
+## M36 review: F2-to-rename plus the deferred comfort items become M37 (M36 review → M37)
+
+**What:** the M36 milestone review produced one course-correction and a home for
+the deferred items. **F2** on a focused row (note *or* folder) triggers the same
+rename flow the context menu runs — chosen because F2 is the file-explorer/IDE
+convention for rename. It ships as a new milestone **M37 — Sidebar tree
+follow-ups**, which also absorbs the items M36 deliberately deferred: **typeahead**
+(type a letter to jump), **multi-select**, and **touch gestures for movement**.
+
+**Why:** F2 is a genuine daily-use gap (reaching rename only via Shift+F10 is a
+detour). The deferred items get a scheduled home rather than being closed
+silently, per the user's call in the review.
+
+**Consequence (UI/project):** M37 is scheduled (see `ROADMAP.md`). Note: the
+agent recommended keeping multi-select and touch out of scope (they sit uneasily
+with the lean ethos and this niche, and touch already reaches actions via M35
+long-press); the user chose to include them, so what "touch gestures for
+*movement*" should do — scrolling already works — is an open question to settle
+at M37 spec time.
