@@ -1494,6 +1494,30 @@ describe("renderNoteList multi-select (FEAT-0078)", () => {
     expect(rows.map((r) => r.getAttribute("aria-selected"))).toEqual(["true", null, null])
   })
 
+  it("keyboard expand is not hijacked into a selection toggle while a selection is active (AC-10)", () => {
+    const { c } = mount(["other.md", "sub/a.md"], "other.md") // sub collapsed
+    const other = names(c).find((r) => r.dataset.path === "other.md")!
+    other.focus()
+    keyEv(other, " ", { ctrlKey: true }) // start a selection on other.md
+    const header = c.querySelector<HTMLElement>(".folder-header")!
+    header.focus()
+    keyEv(header, "ArrowRight") // expand — must NOT toggle the header into the selection
+    expect(header.getAttribute("aria-expanded")).toBe("true")
+    expect(header.getAttribute("aria-selected")).toBe(null)
+  })
+
+  it("Enter opens a note even with a selection active, without toggling it (AC-10)", () => {
+    const { c, h } = mount(["a.md", "b.md"], "a.md")
+    const rows = names(c)
+    rows[0].focus()
+    keyEv(rows[0], " ", { ctrlKey: true }) // select a.md
+    h.onSelect.mockClear()
+    rows[1].focus()
+    keyEv(rows[1], "Enter") // activate b.md → opens it, does not toggle it
+    expect(h.onSelect).toHaveBeenCalledWith("b.md")
+    expect(rows[1].getAttribute("aria-selected")).toBe(null)
+  })
+
   it("the context menu is the single-row menu outside a multi-selection (AC-11)", () => {
     const { c } = mount(["a.md", "b.md"], "a.md")
     openMenuOn(rowDivs(c)[0])

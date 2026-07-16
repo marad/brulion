@@ -562,7 +562,13 @@ async function runBatch(
   for (const path of [...paths].sort()) {
     const isNote = currentNotes.includes(path)
     const isFolder = !isNote && folderStillExists(path)
-    if (!isNote && !isFolder) continue // vanished before we got to it — skip
+    if (!isNote && !isFolder) {
+      // Vanished externally before we reached it — report it (as the single-item
+      // path's `ifExists` does), so a batch never claims success for an item it
+      // didn't actually touch (roots are disjoint, so this is only ever external).
+      failures.push(`"${displayName(path)}" no longer exists`)
+      continue
+    }
     const result = await op(path, isNote)
     if (!result.ok) failures.push(`"${displayName(path)}": ${result.reason}`)
   }
@@ -639,8 +645,7 @@ function parentOf(path: string): string {
 }
 
 /** Join a moved leaf `name` under `destination` (`""` = the vault root) — the one
- * place the move target path is spelled, shared by moveNoteTo/moveFolderTo and
- * the batch open-note restore so they never diverge. */
+ * place the move target path is spelled, shared by moveNoteTo and moveFolderTo. */
 function joinDest(destination: string, name: string): string {
   return destination ? `${destination}/${name}` : name
 }

@@ -237,6 +237,21 @@ export function repaintTreeSelection(container: HTMLElement): void {
   applySelectionClasses(container)
 }
 
+/** Expand/collapse a folder row: flip its children's visibility, mirror it in
+ * `aria-expanded`, and persist via `onToggleFolder` (FEAT-0043). Used by both a
+ * header click and keyboard expand/collapse/activate (M37/FEAT-0078) — the latter
+ * must NOT route through the selection-aware click, or it would toggle selection
+ * while a multi-selection is active instead of expanding. */
+function toggleFolderRow(header: HTMLElement, handlers: NoteListHandlers): void {
+  const children = header
+    .closest<HTMLElement>(".note-folder")
+    ?.querySelector<HTMLElement>(".folder-children")
+  if (!children) return
+  children.hidden = !children.hidden
+  header.setAttribute("aria-expanded", String(!children.hidden))
+  handlers.onToggleFolder?.(header.dataset.path ?? "", children.hidden)
+}
+
 /** Toggle `path` in the selection and start a fresh range base at it (M37/
  * FEAT-0078) — the shared effect of Ctrl/Cmd+Space and Ctrl/Cmd+click. The new
  * selection becomes the base a following Shift+arrow range unions onto. */
@@ -557,11 +572,19 @@ function wireTreeKeyNav(container: HTMLElement, handlers: NoteListHandlers): voi
         break
       case "expand":
       case "collapse":
-      case "activate":
-        // Reuse the row's own click: a folder header toggles + persists
-        // (FEAT-0043); a note name opens it. One code path, no divergence.
-        els[action.index].click()
+        // Toggle the folder directly — NOT via els[i].click(), which now routes
+        // through the selection-aware handler and would toggle selection instead
+        // while a multi-selection is active (M37/FEAT-0078).
+        toggleFolderRow(els[action.index], handlers)
         break
+      case "activate": {
+        // Enter/Space activates: open a note, or expand/collapse a folder — never
+        // a selection toggle (that is Ctrl+Space), even with a selection active.
+        const target = descriptors[action.index]
+        if (target.kind === "folder") toggleFolderRow(els[action.index], handlers)
+        else handlers.onSelect(target.path)
+        break
+      }
       case "rename": {
         // Reuse the context-menu rename entry points (FEAT-0072) — one rename
         // path, no divergence; F2 itself writes nothing (the prompt does, on commit).
@@ -725,11 +748,7 @@ function renderNode(
   }
 
   header.addEventListener("click", (event) =>
-    handleRowClick(event, node.path, () => {
-      children.hidden = !children.hidden
-      header.setAttribute("aria-expanded", String(!children.hidden))
-      handlers.onToggleFolder?.(node.path, children.hidden)
-    }),
+    handleRowClick(event, node.path, () => toggleFolderRow(header, handlers)),
   )
 
   wireTreeMenu(header, () =>
