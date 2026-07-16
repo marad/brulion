@@ -28,6 +28,7 @@ export type TreeAction =
   | { type: "expand"; index: number }
   | { type: "collapse"; index: number }
   | { type: "activate"; index: number }
+  | { type: "rename"; index: number }
   | { type: "none" }
 
 /** The depth (nesting level) of a row path — the number of `/` separators.
@@ -87,6 +88,11 @@ export function resolveTreeKey(key: string, rows: TreeRow[], current: number): T
     case "Enter":
     case " ":
       return { type: "activate", index: current }
+    case "F2":
+      // Rename the focused row (FEAT-0076); the glue routes to the note- vs
+      // folder-rename entry point by the row's kind. Same one-row-at-a-time
+      // shape as every other action here.
+      return { type: "rename", index: current }
     default:
       return { type: "none" }
   }

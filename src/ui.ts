@@ -291,7 +291,7 @@ export function renderNoteList(
   }
   if (!container.dataset.keyNavWired) {
     container.dataset.keyNavWired = "true"
-    wireTreeKeyNav(container)
+    wireTreeKeyNav(container, handlers)
   }
 }
 
@@ -324,12 +324,14 @@ function focusRow(container: HTMLElement, el: HTMLElement): void {
 }
 
 /** One `keydown` handler for the whole tree (M36/FEAT-0075): standard ARIA
- * `tree` movement over the visible rows. Delegates the decision to the pure
- * `resolveTreeKey`, then executes it against the DOM — focus a row (carrying the
- * tab stop), toggle a folder via its header's existing click (so FEAT-0043's
- * persistence runs), or activate the focused row. Only acts when focus is on a
- * row, so it never interferes with the editor or any overlay. */
-function wireTreeKeyNav(container: HTMLElement): void {
+ * `tree` movement over the visible rows, plus F2-to-rename (M37/FEAT-0076).
+ * Delegates the decision to the pure `resolveTreeKey`, then executes it against
+ * the DOM — focus a row (carrying the tab stop), toggle a folder via its
+ * header's existing click (so FEAT-0043's persistence runs), activate the
+ * focused row, or open its rename prompt (routing to the note- vs folder-rename
+ * entry point by kind, the same ones the context menu uses). Only acts when
+ * focus is on a row, so it never interferes with the editor or any overlay. */
+function wireTreeKeyNav(container: HTMLElement, handlers: NoteListHandlers): void {
   container.addEventListener("keydown", (event) => {
     const focused = (event.target as HTMLElement | null)?.closest<HTMLElement>(
       ".folder-header, .note-name",
@@ -358,6 +360,14 @@ function wireTreeKeyNav(container: HTMLElement): void {
         // (FEAT-0043); a note name opens it. One code path, no divergence.
         els[action.index].click()
         break
+      case "rename": {
+        // Reuse the context-menu rename entry points (FEAT-0072) — one rename
+        // path, no divergence; F2 itself writes nothing (the prompt does, on commit).
+        const target = descriptors[action.index]
+        if (target.kind === "folder") handlers.onRenameFolder?.(target.path)
+        else handlers.onRenameNote?.(target.path)
+        break
+      }
     }
   })
 }
