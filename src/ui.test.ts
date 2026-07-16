@@ -1173,13 +1173,17 @@ describe("renderNoteList F2 rename (FEAT-0076)", () => {
     expect(h.onRenameNote).not.toHaveBeenCalled()
   })
 
-  it("F2 with focus outside the tree renames nothing (AC-3)", () => {
+  it("F2 whose target is in the tree but not on a row renames nothing (AC-3)", () => {
     const h = handlers()
-    mount(["a.md"], "a.md", h)
-    const outside = document.createElement("input")
-    document.body.append(outside)
-    outside.focus()
-    key(outside, "F2")
+    const c = mount(["a.md"], "a.md", h)
+    // Dispatch from the tree container itself (role=tree): the event actually
+    // reaches the wired keydown listener, but its target is not a
+    // `.note-name`/`.folder-header` row, so the focus guard must make it a
+    // no-op. (A keydown originating in the editor or an overlay never bubbles to
+    // this container at all, so an in-tree non-row target is what genuinely
+    // exercises the guard — dispatching on a sibling element would never reach
+    // the listener and the test would pass vacuously.)
+    key(c, "F2")
     expect(h.onRenameNote).not.toHaveBeenCalled()
     expect(h.onRenameFolder).not.toHaveBeenCalled()
   })
