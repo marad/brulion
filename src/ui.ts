@@ -3,7 +3,14 @@ import { pickFolder } from "./fs"
 import { hasPermission, requestAccess } from "./session"
 import { displayName } from "./note-name"
 import { openTreeMenu, type TreeMenuItem } from "./tree-menu"
-import { isTypeaheadKey, resolveTreeKey, treeDepth, typeaheadMatch, type TreeRow } from "./tree-nav"
+import {
+  isModifierKey,
+  isTypeaheadKey,
+  resolveTreeKey,
+  treeDepth,
+  typeaheadMatch,
+  type TreeRow,
+} from "./tree-nav"
 import { wireLongPress } from "./long-press"
 import { isWithin, type AddNoteResult } from "./note-controller"
 import { applyAntiAutofillAttrs } from "./anti-autofill"
@@ -344,6 +351,17 @@ function wireTreeKeyNav(container: HTMLElement, handlers: NoteListHandlers): voi
   // coalescing window (FEAT-0077).
   let typeaheadBuffer = ""
   let typeaheadTimer: ReturnType<typeof setTimeout> | undefined
+  const resetTypeahead = () => {
+    clearTimeout(typeaheadTimer)
+    typeaheadBuffer = ""
+  }
+  // Leaving the tree ends the session, so re-entering and typing within the
+  // window starts fresh instead of extending a stale prefix. focusout bubbles;
+  // moving focus *between* rows keeps it inside the container (relatedTarget is
+  // another row) and must not reset — only a move out of the tree does.
+  container.addEventListener("focusout", (event) => {
+    if (!container.contains(event.relatedTarget as Node | null)) resetTypeahead()
+  })
 
   container.addEventListener("keydown", (event) => {
     const focused = (event.target as HTMLElement | null)?.closest<HTMLElement>(
@@ -364,25 +382,30 @@ function wireTreeKeyNav(container: HTMLElement, handlers: NoteListHandlers): voi
       // A printable key that no tree action claims drives typeahead — move focus
       // to the next visible row whose shown label matches the buffer (FEAT-0077).
       if (isTypeaheadKey(event)) {
-        typeaheadBuffer += event.key
+        // A repeat of the single buffered character keeps the buffer one char so
+        // the same letter cycles through matches instead of growing to "aa"
+        // (which would match nothing) — file-explorer behavior (AC-4).
+        if (typeaheadBuffer !== event.key) typeaheadBuffer += event.key
         clearTimeout(typeaheadTimer)
-        typeaheadTimer = setTimeout(() => {
-          typeaheadBuffer = ""
-        }, TYPEAHEAD_TIMEOUT_MS)
+        typeaheadTimer = setTimeout(resetTypeahead, TYPEAHEAD_TIMEOUT_MS)
         const labels = els.map((el) => el.textContent ?? "")
         const idx = typeaheadMatch(labels, current, typeaheadBuffer)
         if (idx !== -1) {
           event.preventDefault()
           focusRow(container, els[idx])
         }
+      } else if (!isModifierKey(event.key)) {
+        // A non-typeahead key that claims no action (a boundary arrow, Escape,
+        // Tab) ends the session; a bare modifier press does not, so Shift+letter
+        // still composes a two-character search (AC-8).
+        resetTypeahead()
       }
       return
     }
     // A real tree action ends any in-progress typeahead session, so a letter
     // typed right after an arrow/Enter/F2 starts a fresh search rather than
-    // extending a stale buffer within the coalescing window (FEAT-0077).
-    clearTimeout(typeaheadTimer)
-    typeaheadBuffer = ""
+    // extending a stale buffer within the coalescing window (AC-8).
+    resetTypeahead()
     event.preventDefault() // handled keys never scroll the sidebar or double-activate a button
     switch (action.type) {
       case "focus":

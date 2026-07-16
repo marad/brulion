@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest"
-import { isTypeaheadKey, resolveTreeKey, treeDepth, typeaheadMatch, type TreeRow } from "./tree-nav"
+import {
+  isModifierKey,
+  isTypeaheadKey,
+  resolveTreeKey,
+  treeDepth,
+  typeaheadMatch,
+  type TreeRow,
+} from "./tree-nav"
 
 // Build a visible-row list compactly. Each spec is [path, kind, expanded?];
 // depth is derived from the path exactly as the real glue does.
@@ -257,6 +264,21 @@ describe("isTypeaheadKey (FEAT-0077)", () => {
     expect(isTypeaheadKey(k("a", { ctrlKey: true }))).toBe(false)
     expect(isTypeaheadKey(k("a", { metaKey: true }))).toBe(false)
     expect(isTypeaheadKey(k("a", { altKey: true }))).toBe(false)
+  })
+})
+
+describe("isModifierKey (FEAT-0077)", () => {
+  it("is true for the bare modifier keys", () => {
+    for (const key of ["Shift", "Control", "Alt", "Meta", "AltGraph", "CapsLock"]) {
+      expect(isModifierKey(key)).toBe(true)
+    }
+  })
+
+  it("is false for printable and named non-modifier keys", () => {
+    expect(isModifierKey("a")).toBe(false)
+    expect(isModifierKey("ArrowDown")).toBe(false)
+    expect(isModifierKey("Enter")).toBe(false)
+    expect(isModifierKey("Escape")).toBe(false)
   })
 })
 

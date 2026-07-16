@@ -1247,18 +1247,30 @@ describe("renderNoteList typeahead (FEAT-0077)", () => {
     expect(document.activeElement).toBe(rows[1])
   })
 
-  it("repeating a letter cycles through matching rows and wraps (AC-4)", () => {
+  it("repeating a letter cycles through matching rows and wraps, within the window (AC-4)", () => {
+    const c = mount(["ant.md", "apple.md", "zed.md"], "ant.md")
+    const rows = names(c)
+    rows[0].focus()
+    key(rows[0], "a") // → apple (buffer "a")
+    expect(document.activeElement).toBe(rows[1])
+    key(rows[1], "a") // same letter, still within the window → cycle, not "aa"
+    expect(document.activeElement).toBe(rows[0]) // wraps back to ant
+    key(rows[0], "a") // → apple again
+    expect(document.activeElement).toBe(rows[1])
+  })
+
+  it("cycling also works across a buffer reset (AC-4)", () => {
     const c = mount(["ant.md", "apple.md", "zed.md"], "ant.md")
     const rows = names(c)
     rows[0].focus()
     key(rows[0], "a") // → apple
     expect(document.activeElement).toBe(rows[1])
-    vi.advanceTimersByTime(600)
-    key(rows[1], "a") // → wraps back to ant
+    vi.advanceTimersByTime(600) // window lapses → buffer resets
+    key(rows[1], "a") // fresh "a" → wraps back to ant
     expect(document.activeElement).toBe(rows[0])
   })
 
-  it("a navigation key resets the typeahead buffer (no stale carryover)", () => {
+  it("a real tree action ends the session, so a following letter starts fresh (AC-8)", () => {
     const c = mount(["ant.md", "apple.md", "cherry.md"], "ant.md")
     const rows = names(c)
     rows[0].focus()
@@ -1268,6 +1280,45 @@ describe("renderNoteList typeahead (FEAT-0077)", () => {
     expect(document.activeElement).toBe(rows[2])
     key(rows[2], "a") // a fresh "a" (not a stale "aa") → wraps back to ant
     expect(document.activeElement).toBe(rows[0])
+  })
+
+  it("a boundary navigation no-op also ends the session (AC-8)", () => {
+    const c = mount(["apple.md", "apricot.md", "banana.md"], "apple.md")
+    const rows = names(c)
+    rows[0].focus()
+    key(rows[0], "a") // → apricot (next a-row); buffer "a"
+    expect(document.activeElement).toBe(rows[1])
+    key(rows[1], "ArrowLeft") // root-level note, no parent → no-op, but ends session
+    expect(document.activeElement).toBe(rows[1]) // focus unchanged
+    // A stale buffer would make this "ap" and jump to apple; a reset makes it a
+    // bare "p", which matches no label → focus stays on apricot.
+    key(rows[1], "p")
+    expect(document.activeElement).toBe(rows[1])
+  })
+
+  it("a bare modifier press does not end the session — Shift+letter composes (AC-8)", () => {
+    const c = mount(["ant.md", "apple.md", "axe.md"], "ant.md")
+    const rows = names(c)
+    rows[0].focus()
+    key(rows[0], "a") // → apple (buffer "a")
+    expect(document.activeElement).toBe(rows[1])
+    key(rows[1], "Shift") // bare modifier keydown must NOT reset the buffer
+    key(rows[1], "x") // buffer "ax" → axe; if Shift had reset, "x" alone matches nothing
+    expect(document.activeElement).toBe(rows[2])
+  })
+
+  it("leaving the tree ends the session (AC-8)", () => {
+    const c = mount(["ant.md", "apple.md", "axe.md"], "ant.md")
+    const rows = names(c)
+    const outside = document.createElement("input")
+    document.body.append(outside)
+    rows[0].focus()
+    key(rows[0], "a") // → apple (buffer "a")
+    expect(document.activeElement).toBe(rows[1])
+    // Focus leaves the tree, then comes back — the session must have ended.
+    rows[1].dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: outside }))
+    key(rows[1], "x") // fresh "x" (not stale "ax") → no x-row → focus stays
+    expect(document.activeElement).toBe(rows[1])
   })
 
   it("no match leaves focus unchanged and opens nothing (AC-5)", () => {

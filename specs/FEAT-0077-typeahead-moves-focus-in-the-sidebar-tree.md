@@ -34,9 +34,20 @@ search and moves focus to the matching row:
   visible row including, if nothing else matches, the focused row itself.
 - On a match, focus moves to that row and the roving tab stop moves with it
   (exactly as arrow-key movement does). On no match, focus stays where it is.
-- Because a single repeated character (after each reset) searches from the row
-  after the current one and wraps, pressing the same letter repeatedly **cycles**
-  through all visible rows whose label starts with that letter.
+- Pressing the **same character repeatedly cycles** through all visible rows
+  whose label starts with it: a repeat of the single character already in the
+  buffer does not grow the buffer to `aa` (which would match nothing) — it keeps
+  the one-character search and advances to the next match, wrapping. This holds
+  whether or not the coalescing window lapses between the repeats, matching how
+  file explorers behave.
+
+The typeahead session **ends** — the buffer is discarded — when the coalescing
+window lapses, when any real tree action runs (a navigation/activation/rename
+key), when a non-typeahead key that claims no action is pressed (e.g. an
+arrow at a boundary, Escape, Tab — but *not* a bare modifier press, so
+Shift+letter still composes), and when focus leaves the tree. So a letter typed
+to start a new search never silently extends a stale buffer left over from an
+earlier, interrupted one.
 
 Typeahead never opens a note, toggles a folder, or writes a file — it only moves
 focus. It composes with, and does not disturb, the existing tree keys: the
@@ -94,11 +105,22 @@ Then the search matches labels starting with just `c` — the previous buffer wa
 discarded.
 
 **AC-4** — Repeating a letter cycles through the rows starting with it.
-Given several visible rows have labels starting with `a`, and the buffer has
-reset between presses,
-When the user presses `a` repeatedly,
+Given several visible rows have labels starting with `a`,
+When the user presses `a` repeatedly (whether or not the coalescing window lapses
+between presses),
 Then focus advances to the next `a`-row on each press and wraps back to the first
-after the last — it does not stay on one row.
+after the last — repeating the same character cycles rather than accumulating
+into a multi-letter buffer (`aa`) that matches nothing.
+
+**AC-8** — A non-typeahead key or leaving the tree ends the search session.
+Given the user has typed a character `a` (moving focus to an `a`-row) within the
+coalescing window,
+When, still within that window, the user presses a key that is not a typeahead
+character (an arrow at a boundary, Escape, Tab) or moves focus out of the tree
+and back, and then presses a different character `b`,
+Then the `b` search starts fresh (matches labels starting with `b`, not `ab`) —
+the earlier buffer was discarded; a bare modifier press (Shift/Ctrl/Alt/Meta)
+does not end the session, so Shift+letter still composes a two-character search.
 
 **AC-5** — No match leaves focus unchanged.
 Given no visible row's label starts with the typed buffer,

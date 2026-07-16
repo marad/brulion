@@ -112,6 +112,21 @@ export function isTypeaheadKey(e: {
   return e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey
 }
 
+/** Whether `key` is a bare modifier keydown (M37/FEAT-0077). A modifier press
+ * fires its own keydown (e.g. `Shift` before the letter in `Shift`+`A`); the
+ * typeahead glue must NOT treat that as a session-ending keystroke, or holding
+ * Shift to type a capital would wipe the in-progress search buffer. */
+export function isModifierKey(key: string): boolean {
+  return (
+    key === "Shift" ||
+    key === "Control" ||
+    key === "Alt" ||
+    key === "Meta" ||
+    key === "AltGraph" ||
+    key === "CapsLock"
+  )
+}
+
 /** The index of the next `labels` entry that starts with `buffer`
  * (case-insensitive), searching from `current + 1` and wrapping through
  * `current` itself, or `-1` when nothing matches (including an empty `buffer` or
