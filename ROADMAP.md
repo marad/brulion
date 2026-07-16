@@ -16,9 +16,14 @@ Every technical decision defers to that.
 
 > **Execution order (next up), agreed with the user.** M-numbers are **stable
 > identities, not the running order**. M1–M13, **M14**, **M15**, **M16**, **M17**,
-> **M18**–**M36** are done; **M37** is active (sidebar tree follow-ups — F2 to
-> rename, plus typeahead / multi-select / touch, pulled out of the M36 review).
-> Recently shipped: **M36** (keyboard navigation for the sidebar tree — arrow
+> **M18**–**M36** are done; **M37** is implemented & deployed (P1 F2-rename,
+> P2 typeahead, P3 multi-select + batch delete/move; the "touch gesture for
+> movement" item was descoped — see `DECISIONS.md`), with its **milestone review
+> still pending**. **No further milestones are currently scheduled** — the plan is
+> caught up; new work comes from the next round of real daily-use observations.
+> Recently shipped: **M37** (sidebar tree follow-ups — F2 rename, typeahead,
+> multi-select + batch move/delete),
+> **M36** (keyboard navigation for the sidebar tree — arrow
 > keys move between rows and expand/collapse folders, reviewed live),
 > **M35** (folder & note management — create/delete/move/
 > rename folders and notes via context menu + drag-and-drop, reviewed live),
