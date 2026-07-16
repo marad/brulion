@@ -156,6 +156,10 @@ const FOLD_MAP: Record<string, string> = {
   þ: "th",
 }
 
+/** The character class matching {@link FOLD_MAP}'s keys — derived from the map so
+ * the two can't drift when a letter is added. */
+const FOLD_RE = new RegExp(`[${Object.keys(FOLD_MAP).join("")}]`, "gu")
+
 /** Normalize a string for typeahead comparison (M37/FEAT-0077/AC-10): lowercase
  * and fold accents to their base letter, so typing plain ASCII reaches a note
  * with an accented name (`l` → `łódka`, `a` → `ątek`) — useful because the
@@ -170,5 +174,5 @@ export function foldForMatch(s: string): string {
     .normalize("NFD")
     .replace(/\p{Mn}/gu, "")
     .toLowerCase()
-    .replace(/[łøđħıæœßðþ]/g, (c) => FOLD_MAP[c] ?? c)
+    .replace(FOLD_RE, (c) => FOLD_MAP[c] ?? c)
 }
