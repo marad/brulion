@@ -131,8 +131,8 @@ export function isTypeaheadKey(e: {
  * including `current` last means a buffer only the focused row matches keeps
  * focus there rather than reporting no match. */
 export function typeaheadMatch(labels: string[], current: number, buffer: string): number {
-  if (buffer === "") return -1
   const needle = foldForMatch(buffer)
+  if (needle === "") return -1 // empty (or a buffer that folded away entirely) matches nothing
   for (let i = 1; i <= labels.length; i++) {
     const idx = (current + i) % labels.length
     if (foldForMatch(labels[idx]).startsWith(needle)) return idx
@@ -140,17 +140,35 @@ export function typeaheadMatch(labels: string[], current: number, buffer: string
   return -1
 }
 
+/** Atomic Latin letters that carry no combining mark (so NFD can't split them),
+ * mapped to their ASCII base for typeahead folding (M37/FEAT-0077/AC-10). Keyed
+ * on the *lowercase* form — {@link foldForMatch} lowercases before applying this. */
+const FOLD_MAP: Record<string, string> = {
+  ł: "l",
+  ø: "o",
+  đ: "d",
+  ħ: "h",
+  ı: "i",
+  æ: "ae",
+  œ: "oe",
+  ß: "ss",
+  ð: "d",
+  þ: "th",
+}
+
 /** Normalize a string for typeahead comparison (M37/FEAT-0077/AC-10): lowercase
  * and fold accents to their base letter, so typing plain ASCII reaches a note
  * with an accented name (`l` → `łódka`, `a` → `ątek`) — useful because the
  * accented character itself needs an AltGr/Option chord, which typeahead doesn't
- * accept. NFD decomposition + stripping combining marks handles most accents
- * (`ą`→a, `ó`→o, `é`→e, `ż`→z…); `ł` is a distinct letter that does NOT
- * decompose, so it's mapped explicitly. */
+ * accept. NFD decomposition + stripping **combining** marks (`\p{Mn}`, not the
+ * broader `\p{Diacritic}` which also matches spacing chars like `´`/`^` and would
+ * wrongly empty them out) handles most accents (`ą`→a, `ó`→o, `é`→e, `ż`→z…);
+ * atomic letters that don't decompose (`ł`, `ø`, `æ`…) are mapped via
+ * {@link FOLD_MAP}. */
 export function foldForMatch(s: string): string {
   return s
     .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .replace(/ł/gi, "l")
+    .replace(/\p{Mn}/gu, "")
     .toLowerCase()
+    .replace(/[łøđħıæœßðþ]/g, (c) => FOLD_MAP[c] ?? c)
 }

@@ -1336,6 +1336,16 @@ describe("renderNoteList typeahead (FEAT-0077)", () => {
     expect(document.activeElement).toBe(rows[2])
   })
 
+  it("same-letter cycling folds diacritics — 'o' then 'ó' still cycles (AC-4, AC-10)", () => {
+    const c = mount(["oak.md", "oat.md"], "oak.md")
+    const rows = names(c)
+    rows[0].focus()
+    key(rows[0], "o") // → oat (next o-row)
+    expect(document.activeElement).toBe(rows[1])
+    key(rows[1], "ó") // composed ó folds to o → cycle back to oak (not buffer "oó")
+    expect(document.activeElement).toBe(rows[0])
+  })
+
   it("no match leaves focus unchanged and opens nothing (AC-5)", () => {
     const h = handlers()
     const c = mount(["apple.md", "banana.md"], "apple.md", h)

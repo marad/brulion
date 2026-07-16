@@ -3,7 +3,14 @@ import { pickFolder } from "./fs"
 import { hasPermission, requestAccess } from "./session"
 import { displayName } from "./note-name"
 import { openTreeMenu, type TreeMenuItem } from "./tree-menu"
-import { isTypeaheadKey, resolveTreeKey, treeDepth, typeaheadMatch, type TreeRow } from "./tree-nav"
+import {
+  foldForMatch,
+  isTypeaheadKey,
+  resolveTreeKey,
+  treeDepth,
+  typeaheadMatch,
+  type TreeRow,
+} from "./tree-nav"
 import { rangeSelect, toggleSelection } from "./selection-model"
 import { wireLongPress } from "./long-press"
 import { isWithin, type AddNoteResult } from "./note-controller"
@@ -560,7 +567,10 @@ function wireTreeKeyNav(container: HTMLElement, handlers: NoteListHandlers): voi
         // typeaheadMatch) keeps the buffer one char so the same letter cycles
         // instead of growing to "aa" (which would match nothing) — file-explorer
         // behavior (AC-4).
-        if (typeaheadBuffer.toLowerCase() !== event.key.toLowerCase()) typeaheadBuffer += event.key
+        // Compare folded (like the match does), so repeating the same letter in a
+        // different form (case, or an accented variant of the same base) still
+        // cycles instead of growing the buffer (FEAT-0077/AC-4, AC-10).
+        if (foldForMatch(typeaheadBuffer) !== foldForMatch(event.key)) typeaheadBuffer += event.key
         clearTimeout(typeaheadTimer)
         typeaheadTimer = setTimeout(resetTypeahead, TYPEAHEAD_TIMEOUT_MS)
         const labels = els.map((el) => el.textContent ?? "")

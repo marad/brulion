@@ -250,6 +250,20 @@ describe("foldForMatch (FEAT-0077 AC-10)", () => {
     expect(foldForMatch("ŻÓŁW")).toBe("zolw")
   })
 
+  it("folds atomic (non-decomposing) Latin letters and ligatures", () => {
+    expect(foldForMatch("Ørn")).toBe("orn")
+    expect(foldForMatch("æther")).toBe("aether")
+    expect(foldForMatch("œuvre")).toBe("oeuvre")
+    expect(foldForMatch("straße")).toBe("strasse")
+  })
+
+  it("does NOT strip spacing diacritic characters (only combining marks)", () => {
+    // ´ (U+00B4) is a spacing char, not a combining mark — it must survive, or a
+    // lone-´ buffer would fold to "" and match every row.
+    expect(foldForMatch("´")).toBe("´")
+    expect(foldForMatch("a^b")).toBe("a^b")
+  })
+
   it("leaves plain ASCII unchanged apart from case", () => {
     expect(foldForMatch("Alpha")).toBe("alpha")
   })
@@ -263,6 +277,11 @@ describe("typeaheadMatch — diacritic-insensitive (FEAT-0077 AC-10)", () => {
 
   it("matches a multi-character plain prefix against an accented label", () => {
     expect(typeaheadMatch(["x", "łódka"], 0, "lo")).toBe(1)
+  })
+
+  it("a buffer that folds away entirely matches nothing (no jump)", () => {
+    // A lone combining mark (U+0301) folds to "" — must NOT startsWith-match all.
+    expect(typeaheadMatch(["ant", "bee"], 0, "́")).toBe(-1)
   })
 })
 
