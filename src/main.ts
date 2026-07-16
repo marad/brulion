@@ -517,18 +517,15 @@ const noteListHandlers = {
       const failures = await runBatch(roots, (path, isNote) =>
         isNote ? moveNoteTo(path, dest) : moveFolderTo(path, dest),
       )
-      // Keep the editor on the note the user was reading:
-      // - if it still exists at its old path it was unmoved, or its own move was
-      //   refused and it stayed — switch back to it (never a foreign same-named
-      //   note, since a refused move leaves the original in place);
-      // - else if it was itself a directly-moved root, follow it to dest/<name>;
-      // - otherwise (it lived inside a moved folder) don't guess — leave it.
-      if (currentNotes.includes(openBefore)) {
-        void controller.switchTo(openBefore)
-      } else if (roots.includes(openBefore)) {
-        const moved = joinDest(dest, openBefore.split("/").pop() as string)
-        if (currentNotes.includes(moved)) void controller.switchTo(moved)
-      }
+      // Restore the open note only if it still exists at its old path — it was
+      // untouched, or its own move was refused so it stayed (never a foreign
+      // same-named note). We deliberately do NOT try to *follow* an open note that
+      // actually moved: predicting its new path from (dest, basename) repeatedly
+      // opened the wrong note (a same-named note left by a vanished-item race, a
+      // mixed-case `.MD` extension the move rewrites). Following it correctly would
+      // need moveNoteTo to report the real landing path; not worth it here, so if
+      // the open note moved the editor just stays where the batch left it.
+      if (currentNotes.includes(openBefore)) void controller.switchTo(openBefore)
       // The picker closes on ok and shows the reason (staying open) otherwise —
       // report the aggregate through it rather than a separate alert.
       return failures.length === 0

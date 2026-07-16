@@ -176,6 +176,36 @@ test("batch-moving a folder and a note inside it moves the folder as a unit (FEA
   await expect.poll(() => entriesOf(page, "")).toEqual(["dest"])
 })
 
+test("a refused folder move does not extract a co-selected child (FEAT-0078 selectionRoots)", async ({
+  page,
+}) => {
+  await stubPicker(page)
+  await page.goto("/brulion/")
+  await writeNote(page, "sub/x.md", "xx")
+  await writeNote(page, "sub/inner/keep.md", "keep")
+  await page.locator("#open-folder").click()
+  const subHeader = page.locator(".folder-header", { hasText: "sub" })
+  await expect(subHeader).toBeVisible()
+
+  // sub may already be expanded (it's an ancestor of the auto-opened note); only
+  // click to expand if it's collapsed, so we never accidentally collapse it.
+  if ((await subHeader.getAttribute("aria-expanded")) === "false") await subHeader.click()
+  const childX = page.locator('.note-name[data-path="sub/x.md"]')
+  await expect(childX).toBeVisible()
+  await childX.click({ modifiers: ["Control"] })
+  await subHeader.click({ modifiers: ["Control"] }) // select folder sub + its child
+  await subHeader.click({ button: "right" })
+  await page
+    .locator(".cm-context-menu button[role=menuitem]", { hasText: "Move 2 items" })
+    .click()
+  // Try to move sub into its own subfolder — moveFolder refuses (self-nest). The
+  // co-selected child must NOT then be moved on its own into sub/inner.
+  await page.locator(".move-row", { hasText: "sub/inner" }).click()
+
+  await expect.poll(() => entriesOf(page, "sub")).toEqual(["inner", "x.md"]) // sub unchanged
+  await expect.poll(() => entriesOf(page, "sub/inner")).toEqual(["keep.md"]) // no extracted x.md
+})
+
 test("a batch move keeps the note you had open (FEAT-0078)", async ({ page }) => {
   await stubPicker(page)
   await page.goto("/brulion/")
