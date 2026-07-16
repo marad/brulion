@@ -127,6 +127,24 @@ Then focus advances to the next `a`-row on each press and wraps back to the firs
 after the last — repeating the same character cycles rather than accumulating
 into a multi-letter buffer (`aa`) that matches nothing.
 
+**AC-5** — No match leaves focus unchanged.
+Given no visible row's label starts with the typed buffer,
+When the user types it,
+Then focus does not move and no row is opened or toggled.
+
+**AC-6** — Typeahead opens nothing and writes nothing.
+Given any sequence of printable characters typed with focus in the tree,
+When the sequence has run,
+Then no note has been opened, no folder toggled, and no file created, modified,
+or deleted — only focus moved.
+
+**AC-7** — Typeahead does not disturb the navigation, activation, or rename keys.
+Given focus is on a tree row,
+When the user presses a FEAT-0075 navigation key, Enter/Space, or F2
+(FEAT-0076),
+Then that key behaves exactly as its own spec defines — typeahead handles only
+printable keys those keys do not already claim.
+
 **AC-8** — A completed tree action ends the search session.
 Given the user has typed a character `a` (moving focus to an `a`-row) within the
 coalescing window,
@@ -152,21 +170,3 @@ Then that row matches — the comparison folds accented characters to their base
 letter on both the label and the typed buffer (so a note with a Polish name is
 reachable by typing plain ASCII, without needing an AltGr/Option keystroke that
 typeahead does not accept anyway).
-
-**AC-5** — No match leaves focus unchanged.
-Given no visible row's label starts with the typed buffer,
-When the user types it,
-Then focus does not move and no row is opened or toggled.
-
-**AC-6** — Typeahead opens nothing and writes nothing.
-Given any sequence of printable characters typed with focus in the tree,
-When the sequence has run,
-Then no note has been opened, no folder toggled, and no file created, modified,
-or deleted — only focus moved.
-
-**AC-7** — Typeahead does not disturb the navigation, activation, or rename keys.
-Given focus is on a tree row,
-When the user presses a FEAT-0075 navigation key, Enter/Space, or F2
-(FEAT-0076),
-Then that key behaves exactly as its own spec defines — typeahead handles only
-printable keys those keys do not already claim.
