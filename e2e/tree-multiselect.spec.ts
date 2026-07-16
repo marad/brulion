@@ -120,6 +120,12 @@ test("a batch move where one item conflicts still moves the rest (FEAT-0078/AC-9
     .click()
   await page.locator(".move-row", { hasText: "dest" }).click()
 
+  // A failure alert names the refusal, and the picker closes once it's dismissed
+  // (the batch does not reuse the single-move stay-open-and-retry contract).
+  await expect(page.locator("#dialog-message")).toContainText("could not be moved")
+  await page.locator("#dialog-confirm").click()
+  await expect(page.locator("#move-backdrop")).toBeHidden()
+
   // b.md moved in; a.md was refused (won't clobber the existing dest/a.md) but did
   // not abort the batch — it stays at the root.
   await expect.poll(() => entriesOf(page, "dest")).toEqual(["a.md", "b.md"])

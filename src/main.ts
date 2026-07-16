@@ -534,9 +534,11 @@ const noteListHandlers = {
       // Always close the picker (return ok) and report any failures via an alert,
       // like batch delete. Keeping it open to "retry" would re-run the SAME
       // captured roots — already-moved items would then read as vanished and it
-      // could never reach a clean close (FEAT-0078 review).
+      // could never reach a clean close (FEAT-0078 review). Await the alert before
+      // returning so the picker closes only after it's dismissed — otherwise the
+      // picker's close() restores focus to the tree behind the still-open alert.
       if (failures.length > 0) {
-        void dialog.alert(`Some items could not be moved:\n${failures.join("\n")}`)
+        await dialog.alert(`Some items could not be moved:\n${failures.join("\n")}`)
       }
       return { ok: true }
     })
