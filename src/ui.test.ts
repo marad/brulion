@@ -18,6 +18,7 @@ import {
   renderActionBar,
   markMotionReady,
   clearTreeSelection,
+  repaintTreeSelection,
   SIDEBAR_MIN_PX,
 } from "./ui"
 import type { Action } from "./actions"
@@ -1407,6 +1408,38 @@ describe("renderNoteList multi-select (FEAT-0078)", () => {
     keyEv(rows[1], "ArrowDown", { shiftKey: true })
     expect(document.activeElement).toBe(rows[2])
     expect(rows.map((r) => r.getAttribute("aria-selected"))).toEqual(["true", "true", "true"])
+  })
+
+  it("Shift+Arrow extends without discarding earlier Ctrl-click picks (AC-2)", () => {
+    const { c } = mount(["a.md", "b.md", "cc.md", "d.md"], "a.md")
+    const rows = names(c)
+    rows[3].focus()
+    keyEv(rows[3], " ", { ctrlKey: true }) // scattered pick: d.md
+    rows[0].focus()
+    keyEv(rows[0], " ", { ctrlKey: true }) // pick a.md (anchor a, base {a,d})
+    keyEv(rows[0], "ArrowDown", { shiftKey: true }) // range a..b unioned onto the base
+    expect(rows.map((r) => r.getAttribute("aria-selected"))).toEqual(["true", "true", null, "true"])
+  })
+
+  it("Backspace also batch-deletes — the main Delete key on macOS (AC-7)", () => {
+    const { c, h } = mount(["a.md", "b.md"], "a.md")
+    const rows = names(c)
+    rows[0].focus()
+    keyEv(rows[0], " ", { ctrlKey: true })
+    keyEv(rows[0], "Backspace")
+    expect(h.onBatchDelete).toHaveBeenCalledWith(["a.md"])
+  })
+
+  it("repaintTreeSelection clears a stale highlight once the model is emptied", () => {
+    const { c } = mount(["a.md", "b.md"], "a.md")
+    const rows = names(c)
+    rows[0].focus()
+    keyEv(rows[0], " ", { ctrlKey: true })
+    expect(rows[0].getAttribute("aria-selected")).toBe("true")
+    clearTreeSelection() // model emptied by the host on a committed batch…
+    repaintTreeSelection(c) // …and the list repainted even if nothing changed on disk
+    expect(rows[0].getAttribute("aria-selected")).toBe(null)
+    expect(rows[0].classList.contains("selected")).toBe(false)
   })
 
   it("Ctrl/Cmd+click toggles a row without opening it (AC-3)", () => {

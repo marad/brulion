@@ -209,19 +209,41 @@ let draggedItem: { kind: "note" | "folder"; path: string } | null = null
  * this is module-level: there is a single tree, and the state must be readable
  * both by `renderNoteList` (to paint `aria-selected` after any rebuild) and by
  * the keyboard/pointer glue (which mutates it without a full re-render, so focus
- * is never disturbed). `anchor` is the fixed end a Shift+arrow range grows from. */
-const treeSelection: { selected: Set<string>; anchor: string | null } = {
+ * is never disturbed). `anchor` is the fixed end a Shift+arrow range grows from;
+ * `base` is the selection snapshot a range is unioned onto, so a Shift+arrow
+ * range extends (and can shrink) *without* discarding scattered Ctrl-click
+ * picks made before it. */
+const treeSelection: { selected: Set<string>; anchor: string | null; base: Set<string> } = {
   selected: new Set(),
   anchor: null,
+  base: new Set(),
 }
 
 /** Empty the tree selection (M37/FEAT-0078). Called by the host once a batch
- * action has been committed, on Escape, and by tests between cases. Does not
- * repaint on its own — the next render (or an explicit {@link applySelectionClasses})
- * reflects it. */
+ * action has been committed, on a vault switch, on Escape, and by tests between
+ * cases. Does not repaint on its own — the next render (or an explicit
+ * {@link applySelectionClasses}) reflects it. */
 export function clearTreeSelection(): void {
   treeSelection.selected = new Set()
   treeSelection.anchor = null
+  treeSelection.base = new Set()
+}
+
+/** Repaint the tree's selection classes from the current model (M37/FEAT-0078)
+ * without a full rebuild. The host calls this after clearing the selection for a
+ * batch action, so the highlight goes away even when the batch changed nothing on
+ * disk (an all-failed move/delete fires no re-render of its own). */
+export function repaintTreeSelection(container: HTMLElement): void {
+  applySelectionClasses(container)
+}
+
+/** Toggle `path` in the selection and start a fresh range base at it (M37/
+ * FEAT-0078) — the shared effect of Ctrl/Cmd+Space and Ctrl/Cmd+click. The new
+ * selection becomes the base a following Shift+arrow range unions onto. */
+function toggleSelectionAt(path: string): void {
+  treeSelection.selected = toggleSelection(treeSelection.selected, path)
+  treeSelection.anchor = path
+  treeSelection.base = new Set(treeSelection.selected)
 }
 
 /** Whether `item` still corresponds to something in this render's data — a
@@ -379,8 +401,7 @@ function handleRowClick(event: MouseEvent, path: string, plainAction: () => void
   const selecting = event.ctrlKey || event.metaKey || treeSelection.selected.size > 0
   if (container && selecting) {
     event.preventDefault()
-    treeSelection.selected = toggleSelection(treeSelection.selected, path)
-    treeSelection.anchor = path
+    toggleSelectionAt(path)
     applySelectionClasses(container)
     return
   }
@@ -454,8 +475,7 @@ function wireTreeKeyNav(container: HTMLElement, handlers: NoteListHandlers): voi
     if ((event.ctrlKey || event.metaKey) && event.key === " ") {
       event.preventDefault()
       resetTypeahead()
-      treeSelection.selected = toggleSelection(treeSelection.selected, focusedPath)
-      treeSelection.anchor = focusedPath
+      toggleSelectionAt(focusedPath)
       applySelectionClasses(container)
       return
     }
@@ -464,17 +484,26 @@ function wireTreeKeyNav(container: HTMLElement, handlers: NoteListHandlers): voi
       event.preventDefault()
       resetTypeahead()
       if (nextIndex < 0 || nextIndex >= els.length) return // no wrap past the ends
-      if (treeSelection.anchor === null) treeSelection.anchor = focusedPath
+      const paths = descriptors.map((d) => d.path)
+      // Start (or re-establish) the range: snapshot the current selection as the
+      // base a range unions onto, so scattered Ctrl-click picks survive; re-anchor
+      // from the current row if the old anchor scrolled into a collapsed folder
+      // (rather than wiping the selection to an empty range).
+      if (treeSelection.anchor === null || !paths.includes(treeSelection.anchor)) {
+        treeSelection.anchor = focusedPath
+        treeSelection.base = new Set(treeSelection.selected)
+      }
       focusRow(container, els[nextIndex])
-      treeSelection.selected = rangeSelect(
-        descriptors.map((d) => d.path),
-        treeSelection.anchor,
-        descriptors[nextIndex].path,
-      )
+      const range = rangeSelect(paths, treeSelection.anchor, paths[nextIndex])
+      treeSelection.selected = new Set([...treeSelection.base, ...range])
       applySelectionClasses(container)
       return
     }
-    if (event.key === "Delete" && treeSelection.selected.size > 0) {
+    // Delete (or Backspace, which is the main "Delete" key on macOS) batch-deletes.
+    if (
+      (event.key === "Delete" || event.key === "Backspace") &&
+      treeSelection.selected.size > 0
+    ) {
       event.preventDefault()
       resetTypeahead()
       handlers.onBatchDelete?.([...treeSelection.selected])

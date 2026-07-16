@@ -97,3 +97,80 @@ test("select two notes, batch-move via the menu relocates both (FEAT-0078/AC-8)"
   await expect.poll(() => entriesOf(page, "dest")).toEqual(["a.md", "b.md", "keep.md"])
   expect(await entriesOf(page, "")).toEqual(["dest"])
 })
+
+test("a batch move where one item conflicts still moves the rest (FEAT-0078/AC-9)", async ({
+  page,
+}) => {
+  await stubPicker(page)
+  await page.goto("/brulion/")
+  await writeNote(page, "a.md", "aa")
+  await writeNote(page, "b.md", "bb")
+  await writeNote(page, "dest/a.md", "already here") // a name clash for a.md only
+  await page.locator("#open-folder").click()
+  // "a" alone would match both a.md and dest/a.md — address the root notes by path.
+  const rootA = page.locator('.note-name[data-path="a.md"]')
+  const rootB = page.locator('.note-name[data-path="b.md"]')
+  await expect(rootA).toBeVisible()
+
+  await rootA.click({ modifiers: ["Control"] })
+  await rootB.click({ modifiers: ["Control"] })
+  await rootA.click({ button: "right" })
+  await page
+    .locator(".cm-context-menu button[role=menuitem]", { hasText: "Move 2 items" })
+    .click()
+  await page.locator(".move-row", { hasText: "dest" }).click()
+
+  // b.md moved in; a.md was refused (won't clobber the existing dest/a.md) but did
+  // not abort the batch — it stays at the root.
+  await expect.poll(() => entriesOf(page, "dest")).toEqual(["a.md", "b.md"])
+  await expect.poll(() => entriesOf(page, "")).toEqual(["a.md", "dest"])
+})
+
+test("batch delete of a folder and a note inside it, child selected first (FEAT-0078/AC-7, order)", async ({
+  page,
+}) => {
+  await stubPicker(page)
+  await page.goto("/brulion/")
+  await writeNote(page, "keep.md", "keep")
+  await writeNote(page, "sub/x.md", "xx")
+  await page.locator("#open-folder").click()
+  const subHeader = page.locator(".folder-header", { hasText: "sub" })
+  await expect(subHeader).toBeVisible()
+
+  await subHeader.click() // expand (no selection yet → plain click)
+  await expect(noteName(page, "x")).toBeVisible()
+  await noteName(page, "x").click({ modifiers: ["Control"] }) // select the child first…
+  await subHeader.click({ modifiers: ["Control"] }) // …then its parent folder
+  await page.keyboard.press("Delete")
+  await page.locator("#dialog-confirm").click()
+
+  // The folder (and its note) are gone; runBatch processes the parent first
+  // despite the child being selected first, so nothing is stranded.
+  await expect.poll(() => entriesOf(page, "")).toEqual(["keep.md"])
+})
+
+test("a batch move keeps the note you had open (FEAT-0078)", async ({ page }) => {
+  await stubPicker(page)
+  await page.goto("/brulion/")
+  await writeNote(page, "x.md", "x body")
+  await writeNote(page, "a.md", "aa")
+  await writeNote(page, "b.md", "bb")
+  await writeNote(page, "dest/keep.md", "keep")
+  await page.locator("#open-folder").click()
+  await expect(noteName(page, "x")).toBeVisible()
+
+  await noteName(page, "x").click() // open x (not part of the selection)
+  await expect(page.locator("#editor .cm-content")).toContainText("x body")
+
+  await noteName(page, "a").click({ modifiers: ["Control"] })
+  await noteName(page, "b").click({ modifiers: ["Control"] })
+  await noteName(page, "a").click({ button: "right" })
+  await page
+    .locator(".cm-context-menu button[role=menuitem]", { hasText: "Move 2 items" })
+    .click()
+  await page.locator(".move-row", { hasText: "dest" }).click()
+
+  await expect.poll(() => entriesOf(page, "dest")).toEqual(["a.md", "b.md", "keep.md"])
+  // The editor was not yanked to the last moved note — x is still open.
+  await expect(page.locator("#editor .cm-content")).toContainText("x body")
+})

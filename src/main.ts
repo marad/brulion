@@ -31,6 +31,7 @@ import {
   mountMissingNoteBanner,
   markMotionReady,
   clearTreeSelection,
+  repaintTreeSelection,
   type NoteIdentityHandle,
 } from "./ui"
 import { mountQuickSwitcher } from "./quick-switcher"
@@ -494,7 +495,7 @@ const noteListHandlers = {
       )
       .then(async (ok) => {
         if (!ok) return // selection is left intact so the user can retry
-        clearTreeSelection() // committed — operate on the captured `paths`
+        commitSelectionCleared() // committed — operate on the captured `paths`
         const failures = await runBatch(paths, (path, isNote) =>
           isNote ? controller.removeNote(path) : controller.removeFolder(path),
         )
@@ -505,12 +506,22 @@ const noteListHandlers = {
   },
   onBatchMove: (paths: string[]) => {
     movePicker.open(destinationChoices(), async (dest) => {
-      clearTreeSelection()
+      // Remember the note the user actually has open: each moveNoteTo switchTo()s
+      // its own note (renameActive is active-note-scoped), so without restoring it
+      // the editor would be left on the last moved note (FEAT-0078 review).
+      const openBefore = currentActive
+      commitSelectionCleared()
       // moveNoteTo carries the switchTo + existence/conflict guards a single move
       // uses; moveFolderTo carries moveFolder's self-nest guard.
       const failures = await runBatch(paths, (path, isNote) =>
         isNote ? moveNoteTo(path, dest) : moveFolderTo(path, dest),
       )
+      // Restore the pre-batch open note — at its new path if it was one of the
+      // moved items, else where it was.
+      const restored = paths.includes(openBefore)
+        ? joinDest(dest, openBefore.split("/").pop() as string)
+        : openBefore
+      if (currentNotes.includes(restored)) void controller.switchTo(restored)
       // The picker closes on ok and shows the reason (staying open) otherwise —
       // report the aggregate through it rather than a separate alert.
       return failures.length === 0
@@ -520,18 +531,37 @@ const noteListHandlers = {
   },
 }
 
+/** Clear the tree selection and repaint the list so its highlight goes away
+ * immediately (M37/FEAT-0078) — even when the batch that follows changes nothing
+ * on disk (an all-failed move/delete fires no re-render of its own). */
+function commitSelectionCleared(): void {
+  clearTreeSelection()
+  if (listEl) repaintTreeSelection(listEl)
+}
+
+/** `destination`-relative join for a moved leaf (`""` destination = root). */
+function joinDest(destination: string, name: string): string {
+  return destination ? `${destination}/${name}` : name
+}
+
 /** Run a batch action (M37/FEAT-0078) over `paths` sequentially — so the shared
  * serialize queue and post-mutation reconcile aren't raced — classifying each as
  * a note vs folder against the *current* listing (an item removed externally, or
  * carried off by an earlier folder move in the same batch, is simply skipped, the
  * per-item guard equivalent). One item's failure is collected, never aborts the
- * rest (AC-9). Returns the per-item failure messages (empty on full success). */
+ * rest (AC-9). Returns the per-item failure messages (empty on full success).
+ *
+ * Paths are processed ancestor-before-descendant (a plain lexicographic sort puts
+ * a parent prefix before its children), so when both a folder and something
+ * inside it are selected the folder is moved/deleted first — taking its contents
+ * with it — and the now-vanished descendant is harmlessly skipped, rather than the
+ * reverse order emptying an implied folder and leaving it stranded on disk. */
 async function runBatch(
   paths: string[],
   op: (path: string, isNote: boolean) => Promise<AddNoteResult>,
 ): Promise<string[]> {
   const failures: string[] = []
-  for (const path of paths) {
+  for (const path of [...paths].sort()) {
     const isNote = currentNotes.includes(path)
     const isFolder = !isNote && folderStillExists(path)
     if (!isNote && !isFolder) continue // vanished before we got to it — skip
@@ -1006,6 +1036,11 @@ const attachVault = (vault: Vault): Promise<void> => {
   return attachChain
 }
 const attachVaultNow = async (vault: Vault) => {
+  // A vault switch abandons any in-progress tree multi-selection (M37/FEAT-0078):
+  // the module-level selection holds paths from the old vault, which must never
+  // carry into a batch action against the new one (a same-named path there could
+  // be deleted/moved without the user having selected it).
+  clearTreeSelection()
   // Snapshot the currently attached vault so a failed attach can fall back to it
   // instead of leaving the window pinned to a vault it couldn't open. Includes every
   // bit of state openNote mutates before controller.open can throw — settings
