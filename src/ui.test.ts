@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import * as fs from "./fs"
 import * as session from "./session"
 import { closeTreeMenu } from "./tree-menu"
@@ -1255,6 +1255,18 @@ describe("renderNoteList typeahead (FEAT-0077)", () => {
     expect(document.activeElement).toBe(rows[1])
     vi.advanceTimersByTime(600)
     key(rows[1], "a") // → wraps back to ant
+    expect(document.activeElement).toBe(rows[0])
+  })
+
+  it("a navigation key resets the typeahead buffer (no stale carryover)", () => {
+    const c = mount(["ant.md", "apple.md", "cherry.md"], "ant.md")
+    const rows = names(c)
+    rows[0].focus()
+    key(rows[0], "a") // → apple
+    expect(document.activeElement).toBe(rows[1])
+    key(rows[1], "ArrowDown") // → cherry; ends the typeahead session
+    expect(document.activeElement).toBe(rows[2])
+    key(rows[2], "a") // a fresh "a" (not a stale "aa") → wraps back to ant
     expect(document.activeElement).toBe(rows[0])
   })
 

@@ -3,7 +3,7 @@ import { pickFolder } from "./fs"
 import { hasPermission, requestAccess } from "./session"
 import { displayName } from "./note-name"
 import { openTreeMenu, type TreeMenuItem } from "./tree-menu"
-import { resolveTreeKey, treeDepth, type TreeRow } from "./tree-nav"
+import { isTypeaheadKey, resolveTreeKey, treeDepth, typeaheadMatch, type TreeRow } from "./tree-nav"
 import { wireLongPress } from "./long-press"
 import { isWithin, type AddNoteResult } from "./note-controller"
 import { applyAntiAutofillAttrs } from "./anti-autofill"
@@ -323,15 +323,28 @@ function focusRow(container: HTMLElement, el: HTMLElement): void {
   el.focus()
 }
 
+/** How long a typeahead search buffer lives after the last keystroke before it
+ * resets (M37/FEAT-0077) — the coalescing window, WAI-ARIA-typical. */
+const TYPEAHEAD_TIMEOUT_MS = 500
+
 /** One `keydown` handler for the whole tree (M36/FEAT-0075): standard ARIA
- * `tree` movement over the visible rows, plus F2-to-rename (M37/FEAT-0076).
- * Delegates the decision to the pure `resolveTreeKey`, then executes it against
- * the DOM — focus a row (carrying the tab stop), toggle a folder via its
- * header's existing click (so FEAT-0043's persistence runs), activate the
- * focused row, or open its rename prompt (routing to the note- vs folder-rename
- * entry point by kind, the same ones the context menu uses). Only acts when
- * focus is on a row, so it never interferes with the editor or any overlay. */
+ * `tree` movement over the visible rows, plus F2-to-rename (M37/FEAT-0076) and
+ * typeahead (M37/FEAT-0077). Delegates the movement/activation/rename decision
+ * to the pure `resolveTreeKey`, then executes it against the DOM — focus a row
+ * (carrying the tab stop), toggle a folder via its header's existing click (so
+ * FEAT-0043's persistence runs), activate the focused row, or open its rename
+ * prompt (routing to the note- vs folder-rename entry point by kind, the same
+ * ones the context menu uses). A printable key that resolves to no action drives
+ * typeahead: it moves focus to the next visible row whose label matches the
+ * accumulated buffer. Only acts when focus is on a row, so it never interferes
+ * with the editor or any overlay. */
 function wireTreeKeyNav(container: HTMLElement, handlers: NoteListHandlers): void {
+  // Typeahead state, scoped to this container's one-time wiring: the buffer
+  // accumulates quick successive keystrokes and a timer resets it after the
+  // coalescing window (FEAT-0077).
+  let typeaheadBuffer = ""
+  let typeaheadTimer: ReturnType<typeof setTimeout> | undefined
+
   container.addEventListener("keydown", (event) => {
     const focused = (event.target as HTMLElement | null)?.closest<HTMLElement>(
       ".folder-header, .note-name",
@@ -347,7 +360,29 @@ function wireTreeKeyNav(container: HTMLElement, handlers: NoteListHandlers): voi
       depth: treeDepth(el.dataset.path ?? ""),
     }))
     const action = resolveTreeKey(event.key, descriptors, current)
-    if (action.type === "none") return
+    if (action.type === "none") {
+      // A printable key that no tree action claims drives typeahead — move focus
+      // to the next visible row whose shown label matches the buffer (FEAT-0077).
+      if (isTypeaheadKey(event)) {
+        typeaheadBuffer += event.key
+        clearTimeout(typeaheadTimer)
+        typeaheadTimer = setTimeout(() => {
+          typeaheadBuffer = ""
+        }, TYPEAHEAD_TIMEOUT_MS)
+        const labels = els.map((el) => el.textContent ?? "")
+        const idx = typeaheadMatch(labels, current, typeaheadBuffer)
+        if (idx !== -1) {
+          event.preventDefault()
+          focusRow(container, els[idx])
+        }
+      }
+      return
+    }
+    // A real tree action ends any in-progress typeahead session, so a letter
+    // typed right after an arrow/Enter/F2 starts a fresh search rather than
+    // extending a stale buffer within the coalescing window (FEAT-0077).
+    clearTimeout(typeaheadTimer)
+    typeaheadBuffer = ""
     event.preventDefault() // handled keys never scroll the sidebar or double-activate a button
     switch (action.type) {
       case "focus":

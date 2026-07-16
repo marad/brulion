@@ -97,3 +97,35 @@ export function resolveTreeKey(key: string, rows: TreeRow[], current: number): T
       return { type: "none" }
   }
 }
+
+/** Whether `e`'s key is a printable character that should drive typeahead
+ * (M37/FEAT-0077): a single-character `key` with no Ctrl/Cmd/Alt held. Named
+ * keys (`ArrowDown`, `F2`, `Enter`) have multi-character `key`s and are excluded;
+ * Space is a single char but `resolveTreeKey` already claims it as `activate`, so
+ * it never reaches the typeahead branch that consults this. */
+export function isTypeaheadKey(e: {
+  key: string
+  ctrlKey: boolean
+  metaKey: boolean
+  altKey: boolean
+}): boolean {
+  return e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey
+}
+
+/** The index of the next `labels` entry that starts with `buffer`
+ * (case-insensitive), searching from `current + 1` and wrapping through
+ * `current` itself, or `-1` when nothing matches (including an empty `buffer` or
+ * empty `labels`) — the pure core of tree typeahead (M37/FEAT-0077). Searching
+ * after `current` and wrapping is what makes both "jump to the next match" and
+ * "repeated same letter cycles through all matches" fall out of one rule;
+ * including `current` last means a buffer only the focused row matches keeps
+ * focus there rather than reporting no match. */
+export function typeaheadMatch(labels: string[], current: number, buffer: string): number {
+  if (buffer === "") return -1
+  const needle = buffer.toLowerCase()
+  for (let i = 1; i <= labels.length; i++) {
+    const idx = (current + i) % labels.length
+    if (labels[idx].toLowerCase().startsWith(needle)) return idx
+  }
+  return -1
+}
