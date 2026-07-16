@@ -3084,3 +3084,31 @@ lands mid-typeahead-cycle can desync the surviving buffer from where focus went
 proper fix — restoring focus to the previously-focused row by path — is an M36
 change with its own edge cases (hidden/deleted rows) and is left for a focused
 follow-up if it bites in real use. Raised at the M37 review.
+
+## M37 milestone review outcomes (live, with the user)
+
+**What:** the M37 review (via `elicit`, against the deployed app) confirmed most
+decisions and produced two corrections. Confirmed as-is: the touch-movement
+descope (no separate gesture; the touch value is multi-select by tap); the
+multi-select interaction model (Ctrl/Cmd+Space, Shift+arrows, Ctrl/Cmd+click,
+tap-toggles-when-active); and the two deliberate calls — the editor does not
+follow an open note that was itself batch-moved, and batch delete is Delete /
+Cmd+Backspace (bare Backspace inert). **Corrections applied:** (1) typeahead now
+matches **diacritic-insensitively** (FEAT-0077/AC-10) — folding accents to the
+base letter so a Polish user reaches `łódka` by typing `l`, since the accented
+character itself needs an AltGr/Option chord typeahead rejects; (2) the review
+process itself — the review-heavy P2 (6 rounds) and P3 (8 rounds) showed the
+`/code-review --fix` loop spins when point-fixes chase the same class of finding,
+so the **`/review-until-clean` skill** now encodes two rules (restructure after 2
+rounds of the same class; every test added for a fix must fail against the
+pre-fix behavior), and this repo's `CLAUDE.md` routes the review step through that
+skill.
+
+**Why:** the milestone review is the batched, live course-correction point; these
+are the changes the user asked for on the spot, plus the process lesson from
+watching the loops converge only once the root cause (not the effects) was fixed.
+
+**Consequence (UI/project):** M37 is complete and reviewed. Typeahead is
+accent-insensitive (Polish names reachable by plain ASCII). Future review loops in
+this repo follow the two `/review-until-clean` rules. No milestones are scheduled
+beyond M37.
