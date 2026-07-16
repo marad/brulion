@@ -3023,3 +3023,29 @@ with the lean ethos and this niche, and touch already reaches actions via M35
 long-press); the user chose to include them, so what "touch gestures for
 *movement*" should do — scrolling already works — is an open question to settle
 at M37 spec time.
+
+## M37 shape: multi-select must earn its keep, and touch-movement is descoped (M37)
+
+**What:** two shape calls made autonomously at the start of the M37 build, to be
+reviewed live at the end. **(1) Multi-select is not built as dead UI** — it ships
+*with* its consumers, batch **Delete** and batch **Move**, routed through the
+existing `removeNote`/`moveNote`/`moveFolder` primitives (each keeping the same
+existence/conflict guards a single-row action has). Selection with no action
+behind it would be scaffolding for a feature that doesn't exist. **(2) A
+standalone "touch gesture for movement" is descoped** — on touch, movement
+already works end to end (scroll moves, tap opens, tapping a folder header
+expands/collapses), so a bespoke movement gesture would only duplicate the
+scroll. The real touch win is *multi-select by touch* (tap-to-toggle), which P3
+delivers.
+
+**Why:** the lean ethos — "the simplest thing that holds" — forbids building a
+selection model with no operation to consume it, and forbids a gesture that
+duplicates a built-in one. Folding the genuine touch value into multi-select
+gives the user what they asked for (touch reaching the new capability) without a
+redundant movement gesture.
+
+**Consequence (UI/project):** M37 is three phases — P1 (F2 rename), P2
+(typeahead), P3 (multi-select + batch delete/move). No P4 is authored. The
+descope is the headline item for the M37 review; if the user does want a distinct
+touch-movement gesture, it comes back with a concrete behavior to implement
+rather than an open "make touch move somehow."
