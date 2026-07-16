@@ -42,13 +42,16 @@ search and moves focus to the matching row:
   file explorers behave.
 
 The typeahead session **ends** — the buffer is discarded — when the coalescing
-window lapses, when a tree action completes (an arrow that moves, Enter, Space,
-F2), or when focus leaves the tree. Every other key that is not a printable
-character — a boundary arrow that did nothing, Escape, a lock key, a dead/IME
-key, a bare modifier — is simply ignored and leaves the buffer untouched
-(the timeout still governs it); the design classifies only *printable input* and
-*completed tree actions*, never trying to enumerate which of every other key
-should or should not end a session.
+window lapses or when a tree action completes (an arrow that moves, Enter, Space,
+F2). Every other key that is not a printable character — a boundary arrow that
+did nothing, Escape, a lock key, a dead/IME key, a bare modifier — is simply
+ignored and leaves the buffer untouched (the timeout still governs it); the
+design classifies only *printable input* and *completed tree actions*, never
+trying to enumerate which of every other key should or should not end a session.
+Because the window is short, a user who leaves the tree and returns is virtually
+always past it (the buffer already cleared), so no focus-tracking is needed —
+and a background list rebuild that momentarily removes the focused row can never
+wipe a search in progress.
 
 Typeahead never opens a note, toggles a folder, or writes a file — it only moves
 focus. It composes with, and does not disturb, the existing tree keys: the
@@ -121,12 +124,11 @@ Then focus advances to the next `a`-row on each press and wraps back to the firs
 after the last — repeating the same character cycles rather than accumulating
 into a multi-letter buffer (`aa`) that matches nothing.
 
-**AC-8** — A completed tree action or leaving the tree ends the search session.
+**AC-8** — A completed tree action ends the search session.
 Given the user has typed a character `a` (moving focus to an `a`-row) within the
 coalescing window,
 When, still within that window, the user completes a tree action (an arrow that
-moves focus, Enter, Space, or F2) or moves focus out of the tree and back, and
-then presses a different character `b`,
+moves focus, Enter, Space, or F2) and then presses a different character `b`,
 Then the `b` search starts fresh (matches labels starting with `b`, not `ab`) —
 the earlier buffer was discarded.
 

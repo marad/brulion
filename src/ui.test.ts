@@ -1316,20 +1316,6 @@ describe("renderNoteList typeahead (FEAT-0077)", () => {
     expect(document.activeElement).toBe(rows[2])
   })
 
-  it("leaving the tree ends the session (AC-8)", () => {
-    const c = mount(["ant.md", "apple.md", "axe.md"], "ant.md")
-    const rows = names(c)
-    const outside = document.createElement("input")
-    document.body.append(outside)
-    rows[0].focus()
-    key(rows[0], "a") // → apple (buffer "a")
-    expect(document.activeElement).toBe(rows[1])
-    // Focus leaves the tree, then comes back — the session must have ended.
-    rows[1].dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: outside }))
-    key(rows[1], "x") // fresh "x" (not stale "ax") → no x-row → focus stays
-    expect(document.activeElement).toBe(rows[1])
-  })
-
   it("no match leaves focus unchanged and opens nothing (AC-5)", () => {
     const h = handlers()
     const c = mount(["apple.md", "banana.md"], "apple.md", h)

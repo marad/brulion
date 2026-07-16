@@ -348,13 +348,6 @@ function wireTreeKeyNav(container: HTMLElement, handlers: NoteListHandlers): voi
     clearTimeout(typeaheadTimer)
     typeaheadBuffer = ""
   }
-  // Leaving the tree ends the session, so re-entering and typing within the
-  // window starts fresh instead of extending a stale prefix. focusout bubbles;
-  // moving focus *between* rows keeps it inside the container (relatedTarget is
-  // another row) and must not reset — only a move out of the tree does.
-  container.addEventListener("focusout", (event) => {
-    if (!container.contains(event.relatedTarget as Node | null)) resetTypeahead()
-  })
 
   container.addEventListener("keydown", (event) => {
     const focused = (event.target as HTMLElement | null)?.closest<HTMLElement>(
