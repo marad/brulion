@@ -4,6 +4,7 @@ import { hasPermission, requestAccess } from "./session"
 import { displayName } from "./note-name"
 import { openTreeMenu, type TreeMenuItem } from "./tree-menu"
 import { isTypeaheadKey, resolveTreeKey, treeDepth, typeaheadMatch, type TreeRow } from "./tree-nav"
+import { rangeSelect, toggleSelection } from "./selection-model"
 import { wireLongPress } from "./long-press"
 import { isWithin, type AddNoteResult } from "./note-controller"
 import { applyAntiAutofillAttrs } from "./anti-autofill"
@@ -188,6 +189,14 @@ export interface NoteListHandlers {
   /** A folder was dragged and dropped onto `destination` (M35/FEAT-0072, ""
    * is the root). */
   onDropFolder?: (path: string, destination: string) => void
+  /** Batch-delete every selected row (M37/FEAT-0078) — `paths` is the current
+   * multi-selection (notes and/or folders). The host confirms once, then removes
+   * each through the existing per-item delete primitives. */
+  onBatchDelete?: (paths: string[]) => void
+  /** Batch-move every selected row (M37/FEAT-0078) — `paths` is the current
+   * multi-selection. The host opens the "Move to…" picker, then moves each
+   * through the existing per-item move primitives. */
+  onBatchMove?: (paths: string[]) => void
 }
 
 /** What's currently being dragged in the tree (M35/FEAT-0072) — only one
@@ -195,6 +204,25 @@ export interface NoteListHandlers {
  * `DataTransfer` can't be read during `dragover` (only at `drop`), so this is
  * the source of truth for "can I drop here" and "what am I dropping". */
 let draggedItem: { kind: "note" | "folder"; path: string } | null = null
+
+/** The sidebar tree's multi-selection (M37/FEAT-0078). Like {@link draggedItem}
+ * this is module-level: there is a single tree, and the state must be readable
+ * both by `renderNoteList` (to paint `aria-selected` after any rebuild) and by
+ * the keyboard/pointer glue (which mutates it without a full re-render, so focus
+ * is never disturbed). `anchor` is the fixed end a Shift+arrow range grows from. */
+const treeSelection: { selected: Set<string>; anchor: string | null } = {
+  selected: new Set(),
+  anchor: null,
+}
+
+/** Empty the tree selection (M37/FEAT-0078). Called by the host once a batch
+ * action has been committed, on Escape, and by tests between cases. Does not
+ * repaint on its own — the next render (or an explicit {@link applySelectionClasses})
+ * reflects it. */
+export function clearTreeSelection(): void {
+  treeSelection.selected = new Set()
+  treeSelection.anchor = null
+}
 
 /** Whether `item` still corresponds to something in this render's data — a
  * note must still be in `notes`; a folder must either be listed explicitly
@@ -272,10 +300,15 @@ export function renderNoteList(
     container.append(renderNode(node, active, handlers, expanded))
   }
   container.setAttribute("role", "tree") // M36/FEAT-0075
+  container.setAttribute("aria-multiselectable", "true") // M37/FEAT-0078
   // Roving tabindex (M36/FEAT-0075): exactly one row is Tab-focusable — the
   // active note's row, or the first row when none is active — so the whole tree
   // is a single tab stop rather than one per row.
   applyRovingTabindex(container, active)
+  // Re-paint the multi-selection (M37/FEAT-0078) onto the freshly rebuilt rows,
+  // so a selection survives a background repaint (it lives in module state, not
+  // the DOM).
+  applySelectionClasses(container)
   if (restoreTreeFocus) {
     container
       .querySelector<HTMLElement>(".folder-header[tabindex='0'], .note-name[tabindex='0']")
@@ -323,6 +356,56 @@ function focusRow(container: HTMLElement, el: HTMLElement): void {
   el.focus()
 }
 
+/** Paint the current multi-selection (M37/FEAT-0078) onto the rows: a selected
+ * row gets `aria-selected="true"` and a `.selected` class; an unselected row
+ * carries neither. Called on every render and after each incremental selection
+ * change (no full re-render on a toggle, so keyboard focus is never disturbed). */
+function applySelectionClasses(container: HTMLElement): void {
+  for (const el of rowFocusables(container)) {
+    const selected = treeSelection.selected.has(el.dataset.path ?? "")
+    if (selected) el.setAttribute("aria-selected", "true")
+    else el.removeAttribute("aria-selected")
+    el.classList.toggle("selected", selected)
+  }
+}
+
+/** Handle a row click for selection (M37/FEAT-0078): Ctrl/Cmd+click, or a plain
+ * click while a selection is already active, toggles the row in the selection
+ * (touch-reachable "selection mode") instead of running `plainAction` (open a
+ * note / toggle a folder). A plain click with no active selection runs
+ * `plainAction`, so ordinary single-note use is unchanged. */
+function handleRowClick(event: MouseEvent, path: string, plainAction: () => void): void {
+  const container = (event.currentTarget as HTMLElement).closest<HTMLElement>('[role="tree"]')
+  const selecting = event.ctrlKey || event.metaKey || treeSelection.selected.size > 0
+  if (container && selecting) {
+    event.preventDefault()
+    treeSelection.selected = toggleSelection(treeSelection.selected, path)
+    treeSelection.anchor = path
+    applySelectionClasses(container)
+    return
+  }
+  plainAction()
+}
+
+/** The context-menu items for a row: when the row is part of a multi-selection
+ * (≥2 rows selected and this row among them), the batch actions over the whole
+ * selection (M37/FEAT-0078); otherwise the row's own `single` menu (FEAT-0071). */
+function rowMenuItems(
+  path: string,
+  single: TreeMenuItem[],
+  handlers: NoteListHandlers,
+): TreeMenuItem[] {
+  const sel = treeSelection.selected
+  if (sel.size >= 2 && sel.has(path)) {
+    const paths = [...sel]
+    return [
+      { label: `Move ${sel.size} items…`, run: () => handlers.onBatchMove?.(paths) },
+      { label: `Delete ${sel.size} items`, run: () => handlers.onBatchDelete?.(paths) },
+    ]
+  }
+  return single
+}
+
 /** How long a typeahead search buffer lives after the last keystroke before it
  * resets (M37/FEAT-0077) — the coalescing window, WAI-ARIA-typical. */
 const TYPEAHEAD_TIMEOUT_MS = 500
@@ -363,6 +446,48 @@ function wireTreeKeyNav(container: HTMLElement, handlers: NoteListHandlers): voi
       expanded: el.getAttribute("aria-expanded") === "true",
       depth: treeDepth(el.dataset.path ?? ""),
     }))
+
+    // Multi-selection keys (M37/FEAT-0078), handled before the movement/typeahead
+    // pipeline so their modified chords aren't misread (Ctrl+Space is not
+    // "activate", Shift+Arrow is not a plain move).
+    const focusedPath = descriptors[current].path
+    if ((event.ctrlKey || event.metaKey) && event.key === " ") {
+      event.preventDefault()
+      resetTypeahead()
+      treeSelection.selected = toggleSelection(treeSelection.selected, focusedPath)
+      treeSelection.anchor = focusedPath
+      applySelectionClasses(container)
+      return
+    }
+    if (event.shiftKey && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+      const nextIndex = event.key === "ArrowDown" ? current + 1 : current - 1
+      event.preventDefault()
+      resetTypeahead()
+      if (nextIndex < 0 || nextIndex >= els.length) return // no wrap past the ends
+      if (treeSelection.anchor === null) treeSelection.anchor = focusedPath
+      focusRow(container, els[nextIndex])
+      treeSelection.selected = rangeSelect(
+        descriptors.map((d) => d.path),
+        treeSelection.anchor,
+        descriptors[nextIndex].path,
+      )
+      applySelectionClasses(container)
+      return
+    }
+    if (event.key === "Delete" && treeSelection.selected.size > 0) {
+      event.preventDefault()
+      resetTypeahead()
+      handlers.onBatchDelete?.([...treeSelection.selected])
+      return
+    }
+    if (event.key === "Escape" && treeSelection.selected.size > 0) {
+      event.preventDefault()
+      resetTypeahead()
+      clearTreeSelection()
+      applySelectionClasses(container)
+      return
+    }
+
     const action = resolveTreeKey(event.key, descriptors, current)
     if (action.type === "none") {
       // A printable key that no tree action claims drives typeahead — move focus
@@ -567,19 +692,27 @@ function renderNode(
     children.append(renderNode(child, active, handlers, expanded))
   }
 
-  header.addEventListener("click", () => {
-    children.hidden = !children.hidden
-    header.setAttribute("aria-expanded", String(!children.hidden))
-    handlers.onToggleFolder?.(node.path, children.hidden)
-  })
+  header.addEventListener("click", (event) =>
+    handleRowClick(event, node.path, () => {
+      children.hidden = !children.hidden
+      header.setAttribute("aria-expanded", String(!children.hidden))
+      handlers.onToggleFolder?.(node.path, children.hidden)
+    }),
+  )
 
-  wireTreeMenu(header, () => [
-    { label: "New subfolder…", run: () => handlers.onCreateFolder?.(node.path) },
-    { label: "New note…", run: () => handlers.onCreateNoteIn?.(node.path) },
-    { label: "Rename…", run: () => handlers.onRenameFolder?.(node.path) },
-    { label: "Move…", run: () => handlers.onMoveFolder?.(node.path) },
-    { label: "Delete", run: () => handlers.onDeleteFolder?.(node.path) },
-  ])
+  wireTreeMenu(header, () =>
+    rowMenuItems(
+      node.path,
+      [
+        { label: "New subfolder…", run: () => handlers.onCreateFolder?.(node.path) },
+        { label: "New note…", run: () => handlers.onCreateNoteIn?.(node.path) },
+        { label: "Rename…", run: () => handlers.onRenameFolder?.(node.path) },
+        { label: "Move…", run: () => handlers.onMoveFolder?.(node.path) },
+        { label: "Delete", run: () => handlers.onDeleteFolder?.(node.path) },
+      ],
+      handlers,
+    ),
+  )
   wireDragSource(header, "folder", node.path)
   wireDropTarget(header, () => node.path, handlers)
 
@@ -607,15 +740,23 @@ function renderNoteRow(node: NoteLeaf, active: string, handlers: NoteListHandler
   nameButton.setAttribute("role", "treeitem")
   nameButton.setAttribute("aria-level", String(treeDepth(node.path) + 1))
   nameButton.tabIndex = -1 // roving tabindex (M36/FEAT-0075): renderNoteList promotes one row to 0
-  nameButton.addEventListener("click", () => handlers.onSelect(node.path))
+  nameButton.addEventListener("click", (event) =>
+    handleRowClick(event, node.path, () => handlers.onSelect(node.path)),
+  )
 
   row.append(nameButton)
 
-  wireTreeMenu(row, () => [
-    { label: "Rename…", run: () => handlers.onRenameNote?.(node.path) },
-    { label: "Move…", run: () => handlers.onMoveNote?.(node.path) },
-    { label: "Delete", run: () => handlers.onDelete(node.path) },
-  ])
+  wireTreeMenu(row, () =>
+    rowMenuItems(
+      node.path,
+      [
+        { label: "Rename…", run: () => handlers.onRenameNote?.(node.path) },
+        { label: "Move…", run: () => handlers.onMoveNote?.(node.path) },
+        { label: "Delete", run: () => handlers.onDelete(node.path) },
+      ],
+      handlers,
+    ),
+  )
   wireDragSource(row, "note", node.path)
   // A note isn't a container, but its row is the easiest target to hit when
   // the intent is "put this alongside that note" — drop here targets its

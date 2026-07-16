@@ -17,6 +17,7 @@ import {
   wireSidebarResize,
   renderActionBar,
   markMotionReady,
+  clearTreeSelection,
   SIDEBAR_MIN_PX,
 } from "./ui"
 import type { Action } from "./actions"
@@ -49,6 +50,7 @@ function fixture() {
 beforeEach(() => {
   vi.clearAllMocks()
   closeTreeMenu()
+  clearTreeSelection() // module-level selection state must not leak between cases (FEAT-0078)
   document.body.innerHTML = ""
 })
 
@@ -1351,6 +1353,129 @@ describe("renderNoteList typeahead (FEAT-0077)", () => {
     key(rows[0], "a") // moves focus to apricot
     expect(h.onSelect).not.toHaveBeenCalled()
     expect(h.onToggleFolder).not.toHaveBeenCalled()
+  })
+})
+
+describe("renderNoteList multi-select (FEAT-0078)", () => {
+  const handlers = () => ({
+    onSelect: vi.fn(),
+    onDelete: vi.fn(),
+    onToggleFolder: vi.fn(),
+    onBatchDelete: vi.fn(),
+    onBatchMove: vi.fn(),
+    onRenameNote: vi.fn(),
+    onMoveNote: vi.fn(),
+  })
+  const keyEv = (el: HTMLElement, key: string, mods: Record<string, boolean> = {}) =>
+    el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...mods }))
+  const clickEv = (el: HTMLElement, mods: Record<string, boolean> = {}) =>
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...mods }))
+  const names = (c: HTMLElement) => [...c.querySelectorAll<HTMLElement>(".note-name")]
+  const rowDivs = (c: HTMLElement) => [...c.querySelectorAll<HTMLElement>(".note-row")]
+
+  function mount(notes: string[], active: string, h = handlers()) {
+    const c = document.createElement("div")
+    document.body.append(c)
+    renderNoteList(c, notes, active, h)
+    return { c, h }
+  }
+
+  it("the tree is aria-multiselectable (AC-6)", () => {
+    const { c } = mount(["a.md"], "a.md")
+    expect(c.getAttribute("aria-multiselectable")).toBe("true")
+  })
+
+  it("Ctrl+Space toggles the focused row without moving focus (AC-1, AC-6)", () => {
+    const { c } = mount(["a.md", "b.md", "cc.md"], "a.md")
+    const rows = names(c)
+    rows[0].focus()
+    keyEv(rows[0], " ", { ctrlKey: true })
+    expect(rows[0].getAttribute("aria-selected")).toBe("true")
+    expect(rows[0].classList.contains("selected")).toBe(true)
+    expect(document.activeElement).toBe(rows[0])
+    keyEv(rows[0], " ", { ctrlKey: true }) // toggle back off
+    expect(rows[0].getAttribute("aria-selected")).toBe(null)
+    expect(rows[0].classList.contains("selected")).toBe(false)
+  })
+
+  it("Shift+ArrowDown selects the inclusive range and moves focus (AC-2)", () => {
+    const { c } = mount(["a.md", "b.md", "cc.md"], "a.md")
+    const rows = names(c)
+    rows[0].focus()
+    keyEv(rows[0], "ArrowDown", { shiftKey: true })
+    expect(document.activeElement).toBe(rows[1])
+    keyEv(rows[1], "ArrowDown", { shiftKey: true })
+    expect(document.activeElement).toBe(rows[2])
+    expect(rows.map((r) => r.getAttribute("aria-selected"))).toEqual(["true", "true", "true"])
+  })
+
+  it("Ctrl/Cmd+click toggles a row without opening it (AC-3)", () => {
+    const { c, h } = mount(["a.md", "b.md"], "a.md")
+    const rows = names(c)
+    clickEv(rows[1], { ctrlKey: true })
+    expect(rows[1].getAttribute("aria-selected")).toBe("true")
+    expect(h.onSelect).not.toHaveBeenCalled()
+  })
+
+  it("a plain click opens with no selection, toggles once a selection is active (AC-4)", () => {
+    const { c, h } = mount(["a.md", "b.md"], "a.md")
+    const rows = names(c)
+    clickEv(rows[0]) // no selection → opens
+    expect(h.onSelect).toHaveBeenCalledWith("a.md")
+    rows[0].focus()
+    keyEv(rows[0], " ", { ctrlKey: true }) // start a selection
+    h.onSelect.mockClear()
+    clickEv(rows[1]) // selection active → toggles, does not open
+    expect(rows[1].getAttribute("aria-selected")).toBe("true")
+    expect(h.onSelect).not.toHaveBeenCalled()
+  })
+
+  it("Escape clears the selection (AC-5)", () => {
+    const { c } = mount(["a.md", "b.md"], "a.md")
+    const rows = names(c)
+    rows[0].focus()
+    keyEv(rows[0], " ", { ctrlKey: true })
+    expect(rows[0].getAttribute("aria-selected")).toBe("true")
+    keyEv(rows[0], "Escape")
+    expect(rows[0].getAttribute("aria-selected")).toBe(null)
+  })
+
+  it("the Delete key batch-deletes the current selection (AC-7)", () => {
+    const { c, h } = mount(["a.md", "b.md", "cc.md"], "a.md")
+    const rows = names(c)
+    rows[0].focus()
+    keyEv(rows[0], " ", { ctrlKey: true }) // select a.md
+    keyEv(rows[0], "Delete")
+    expect(h.onBatchDelete).toHaveBeenCalledWith(["a.md"])
+  })
+
+  it("plain movement and typeahead never change the selection (AC-10)", () => {
+    const { c } = mount(["a.md", "b.md", "cc.md"], "a.md")
+    const rows = names(c)
+    rows[0].focus()
+    keyEv(rows[0], " ", { ctrlKey: true }) // select a.md
+    keyEv(rows[0], "ArrowDown") // plain move — no selection change
+    keyEv(document.activeElement as HTMLElement, "c") // typeahead → cc; no selection change
+    expect(rows.map((r) => r.getAttribute("aria-selected"))).toEqual(["true", null, null])
+  })
+
+  it("the context menu is the single-row menu outside a multi-selection (AC-11)", () => {
+    const { c } = mount(["a.md", "b.md"], "a.md")
+    openMenuOn(rowDivs(c)[0])
+    expect(menuLabels()).toEqual(["Rename…", "Move…", "Delete"])
+  })
+
+  it("a row in a multi-selection shows batch entries that fire the batch handlers (AC-8, AC-11)", () => {
+    const { c, h } = mount(["a.md", "b.md"], "a.md")
+    const rows = names(c)
+    rows[0].focus()
+    keyEv(rows[0], " ", { ctrlKey: true }) // select a.md
+    rows[1].focus()
+    keyEv(rows[1], " ", { ctrlKey: true }) // select b.md
+    openMenuOn(rowDivs(c)[0]) // a.md is in the multi-selection
+    expect(menuLabels()).toEqual(["Move 2 items…", "Delete 2 items"])
+    clickMenuItem("Move 2 items…")
+    expect(h.onBatchMove).toHaveBeenCalledWith(["a.md", "b.md"])
   })
 })
 

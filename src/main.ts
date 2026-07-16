@@ -30,6 +30,7 @@ import {
   mountNoteIdentity,
   mountMissingNoteBanner,
   markMotionReady,
+  clearTreeSelection,
   type NoteIdentityHandle,
 } from "./ui"
 import { mountQuickSwitcher } from "./quick-switcher"
@@ -484,6 +485,60 @@ const noteListHandlers = {
       if (!result.ok) void dialog.alert(result.reason)
     })
   },
+  onBatchDelete: (paths: string[]) => {
+    const n = paths.length
+    void dialog
+      .confirm(
+        `Delete ${n} selected item${n === 1 ? "" : "s"}? This removes them (folders take their contents) from your folder.`,
+        "Delete",
+      )
+      .then(async (ok) => {
+        if (!ok) return // selection is left intact so the user can retry
+        clearTreeSelection() // committed — operate on the captured `paths`
+        const failures = await runBatch(paths, (path, isNote) =>
+          isNote ? controller.removeNote(path) : controller.removeFolder(path),
+        )
+        if (failures.length > 0) {
+          void dialog.alert(`Some items could not be deleted:\n${failures.join("\n")}`)
+        }
+      })
+  },
+  onBatchMove: (paths: string[]) => {
+    movePicker.open(destinationChoices(), async (dest) => {
+      clearTreeSelection()
+      // moveNoteTo carries the switchTo + existence/conflict guards a single move
+      // uses; moveFolderTo carries moveFolder's self-nest guard.
+      const failures = await runBatch(paths, (path, isNote) =>
+        isNote ? moveNoteTo(path, dest) : moveFolderTo(path, dest),
+      )
+      // The picker closes on ok and shows the reason (staying open) otherwise —
+      // report the aggregate through it rather than a separate alert.
+      return failures.length === 0
+        ? { ok: true }
+        : { ok: false, reason: `Some items could not be moved:\n${failures.join("\n")}` }
+    })
+  },
+}
+
+/** Run a batch action (M37/FEAT-0078) over `paths` sequentially — so the shared
+ * serialize queue and post-mutation reconcile aren't raced — classifying each as
+ * a note vs folder against the *current* listing (an item removed externally, or
+ * carried off by an earlier folder move in the same batch, is simply skipped, the
+ * per-item guard equivalent). One item's failure is collected, never aborts the
+ * rest (AC-9). Returns the per-item failure messages (empty on full success). */
+async function runBatch(
+  paths: string[],
+  op: (path: string, isNote: boolean) => Promise<AddNoteResult>,
+): Promise<string[]> {
+  const failures: string[] = []
+  for (const path of paths) {
+    const isNote = currentNotes.includes(path)
+    const isFolder = !isNote && folderStillExists(path)
+    if (!isNote && !isFolder) continue // vanished before we got to it — skip
+    const result = await op(path, isNote)
+    if (!result.ok) failures.push(`"${displayName(path)}": ${result.reason}`)
+  }
+  return failures
 }
 
 /** Whether `path` still names a real folder — either an explicitly-known

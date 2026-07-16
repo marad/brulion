@@ -702,6 +702,16 @@ header button:hover {
   font-weight: 600;
 }
 
+/* Multi-selection (M37/FEAT-0078): a set of rows picked for a batch move/delete.
+   Deliberately distinct from the active open note (.note-row.active) and hover —
+   an accent tint plus a left accent bar — so "selected for a batch" reads apart
+   from "currently open". Applies to both note names and folder headers. */
+.note-name.selected,
+.folder-header.selected {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
 /* Folder tree (FEAT-0024). A folder is a header row with a disclosure caret over
  * an indented children container. Row actions (create/move/delete) live behind
  * a right-click/long-press context menu (M35/FEAT-0071), not an inline button. */
