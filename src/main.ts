@@ -15,7 +15,12 @@ import {
 } from "lucide"
 import { mountEditor, setEditorEditable, setLinkContext, scrollEditorToHeading } from "./editor"
 import { listFolders } from "./note"
-import { createNoteController, type NoteController, type AddNoteResult } from "./note-controller"
+import {
+  createNoteController,
+  isWithin,
+  type NoteController,
+  type AddNoteResult,
+} from "./note-controller"
 import { mountConflictDiff, type ConflictDiff } from "./conflict-view"
 import {
   wireOpenFolder,
@@ -526,11 +531,14 @@ const noteListHandlers = {
       // need moveNoteTo to report the real landing path; not worth it here, so if
       // the open note moved the editor just stays where the batch left it.
       if (currentNotes.includes(openBefore)) void controller.switchTo(openBefore)
-      // The picker closes on ok and shows the reason (staying open) otherwise —
-      // report the aggregate through it rather than a separate alert.
-      return failures.length === 0
-        ? { ok: true }
-        : { ok: false, reason: `Some items could not be moved:\n${failures.join("\n")}` }
+      // Always close the picker (return ok) and report any failures via an alert,
+      // like batch delete. Keeping it open to "retry" would re-run the SAME
+      // captured roots — already-moved items would then read as vanished and it
+      // could never reach a clean close (FEAT-0078 review).
+      if (failures.length > 0) {
+        void dialog.alert(`Some items could not be moved:\n${failures.join("\n")}`)
+      }
+      return { ok: true }
     })
   },
 }
@@ -656,7 +664,7 @@ function joinDest(destination: string, name: string): string {
  * extract it from its folder (e.g. if the folder's own move is refused). Leaves
  * only the top-level selected items. */
 function selectionRoots(paths: string[]): string[] {
-  return paths.filter((p) => !paths.some((other) => other !== p && p.startsWith(`${other}/`)))
+  return paths.filter((p) => !paths.some((other) => other !== p && isWithin(p, other)))
 }
 
 /** Move note `path` to `destination` (M35/FEAT-0070/FEAT-0072) — the single

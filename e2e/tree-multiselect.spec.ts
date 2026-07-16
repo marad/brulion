@@ -149,6 +149,39 @@ test("batch delete of a folder and a note inside it, child selected first (FEAT-
   await expect.poll(() => entriesOf(page, "")).toEqual(["keep.md"])
 })
 
+test("batch delete reports an externally-vanished item and removes the rest (FEAT-0078/AC-9)", async ({
+  page,
+}) => {
+  await stubPicker(page)
+  await page.goto("/brulion/")
+  await writeNote(page, "a.md", "aa")
+  await writeNote(page, "b.md", "bb")
+  await writeNote(page, "keep.md", "keep")
+  await page.locator("#open-folder").click()
+  const rootA = page.locator('.note-name[data-path="a.md"]')
+  const rootB = page.locator('.note-name[data-path="b.md"]')
+  await expect(rootA).toBeVisible()
+
+  await rootA.click({ modifiers: ["Control"] })
+  await rootB.click({ modifiers: ["Control"] })
+
+  // Remove a.md out from under the app; wait for the poll to drop its row.
+  await page.evaluate(async (folder) => {
+    const root = await navigator.storage.getDirectory()
+    const dir = await root.getDirectoryHandle(folder)
+    await dir.removeEntry("a.md")
+  }, FOLDER)
+  await expect(rootA).toHaveCount(0)
+
+  await rootB.focus()
+  await page.keyboard.press("Delete")
+  await page.locator("#dialog-confirm").click() // confirm the delete
+  // The vanished a.md is reported (not silently swallowed); b.md is deleted.
+  await expect(page.locator("#dialog-message")).toContainText("no longer exists")
+  await page.locator("#dialog-confirm").click() // dismiss the alert
+  await expect.poll(() => entriesOf(page, "")).toEqual(["keep.md"])
+})
+
 test("batch-moving a folder and a note inside it moves the folder as a unit (FEAT-0078/AC-8)", async ({
   page,
 }) => {

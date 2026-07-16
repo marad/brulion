@@ -442,6 +442,18 @@ function rowMenuItems(
   return single
 }
 
+/** Dismiss a lingering multi-selection when a context menu opens on a row that is
+ * NOT part of it (M37/FEAT-0078): acting on a different, unselected row means the
+ * user has moved on, so the old highlighted selection shouldn't linger and turn a
+ * later stray Delete into a batch delete of rows they thought were done. */
+function clearForeignSelection(el: HTMLElement): void {
+  const path = el.dataset.path ?? ""
+  if (treeSelection.selected.size === 0 || treeSelection.selected.has(path)) return
+  clearTreeSelection()
+  const container = el.closest<HTMLElement>('[role="tree"]')
+  if (container) applySelectionClasses(container)
+}
+
 /** How long a typeahead search buffer lives after the last keystroke before it
  * resets (M37/FEAT-0077) — the coalescing window, WAI-ARIA-typical. */
 const TYPEAHEAD_TIMEOUT_MS = 500
@@ -607,12 +619,17 @@ function wireTreeKeyNav(container: HTMLElement, handlers: NoteListHandlers): voi
 function wireTreeMenu(el: HTMLElement, items: () => TreeMenuItem[]): void {
   el.addEventListener("contextmenu", (event) => {
     event.preventDefault()
+    clearForeignSelection(el) // before items(): a menu on an unselected row drops a stale selection
     openTreeMenu(event.clientX, event.clientY, items())
   })
-  wireLongPress(el, (x, y) => openTreeMenu(x, y, items()))
+  wireLongPress(el, (x, y) => {
+    clearForeignSelection(el)
+    openTreeMenu(x, y, items())
+  })
   el.addEventListener("keydown", (event) => {
     if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey)) return
     event.preventDefault()
+    clearForeignSelection(el)
     // The element actually holding focus (a folder header, or a note row's name
     // button) — refocus it when the keyboard-opened menu closes, so the user
     // lands back where they were (M35/FEAT-0071/AC-8) instead of on <body>.

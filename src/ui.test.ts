@@ -1524,6 +1524,19 @@ describe("renderNoteList multi-select (FEAT-0078)", () => {
     expect(menuLabels()).toEqual(["Rename…", "Move…", "Delete"])
   })
 
+  it("opening a context menu on a row outside the selection clears the stale selection (AC-11)", () => {
+    const { c } = mount(["a.md", "b.md", "cc.md"], "a.md")
+    const rows = names(c)
+    rows[0].focus()
+    keyEv(rows[0], " ", { ctrlKey: true }) // select a.md
+    rows[1].focus()
+    keyEv(rows[1], " ", { ctrlKey: true }) // select b.md
+    openMenuOn(rowDivs(c)[2]) // right-click cc.md (not in the selection)
+    expect(menuLabels()).toEqual(["Rename…", "Move…", "Delete"]) // single-row menu
+    expect(rows[0].getAttribute("aria-selected")).toBe(null) // stale selection dropped
+    expect(rows[1].getAttribute("aria-selected")).toBe(null)
+  })
+
   it("a row in a multi-selection shows batch entries that fire the batch handlers (AC-8, AC-11)", () => {
     const { c, h } = mount(["a.md", "b.md"], "a.md")
     const rows = names(c)
