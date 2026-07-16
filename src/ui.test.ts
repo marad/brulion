@@ -1132,6 +1132,70 @@ describe("renderNoteList keyboard navigation (FEAT-0075)", () => {
   })
 })
 
+describe("renderNoteList F2 rename (FEAT-0076)", () => {
+  const handlers = () => ({
+    onSelect: vi.fn(),
+    onDelete: vi.fn(),
+    onToggleFolder: vi.fn(),
+    onRenameNote: vi.fn(),
+    onRenameFolder: vi.fn(),
+    onMoveNote: vi.fn(),
+  })
+  const key = (el: HTMLElement, k: string) =>
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }))
+
+  function mount(notes: string[], active: string, h: ReturnType<typeof handlers>) {
+    const container = document.createElement("div")
+    document.body.append(container) // focus() needs a connected element
+    renderNoteList(container, notes, active, h)
+    return container
+  }
+
+  it("F2 on a focused note row calls onRenameNote with its path (AC-1)", () => {
+    const h = handlers()
+    const c = mount(["a.md", "b.md"], "a.md", h)
+    const row = c.querySelector<HTMLElement>(".note-name")!
+    row.focus()
+    key(row, "F2")
+    expect(h.onRenameNote).toHaveBeenCalledTimes(1)
+    expect(h.onRenameNote).toHaveBeenCalledWith("a.md")
+    expect(h.onRenameFolder).not.toHaveBeenCalled()
+  })
+
+  it("F2 on a focused folder header calls onRenameFolder with its path (AC-2)", () => {
+    const h = handlers()
+    const c = mount(["sub/a.md"], "sub/a.md", h) // sub is expanded (ancestor of active)
+    const header = c.querySelector<HTMLElement>(".folder-header")!
+    header.focus()
+    key(header, "F2")
+    expect(h.onRenameFolder).toHaveBeenCalledTimes(1)
+    expect(h.onRenameFolder).toHaveBeenCalledWith("sub")
+    expect(h.onRenameNote).not.toHaveBeenCalled()
+  })
+
+  it("F2 with focus outside the tree renames nothing (AC-3)", () => {
+    const h = handlers()
+    mount(["a.md"], "a.md", h)
+    const outside = document.createElement("input")
+    document.body.append(outside)
+    outside.focus()
+    key(outside, "F2")
+    expect(h.onRenameNote).not.toHaveBeenCalled()
+    expect(h.onRenameFolder).not.toHaveBeenCalled()
+  })
+
+  it("F2 does not select, delete, or move the focused row (AC-4)", () => {
+    const h = handlers()
+    const c = mount(["a.md"], "a.md", h)
+    const row = c.querySelector<HTMLElement>(".note-name")!
+    row.focus()
+    key(row, "F2")
+    expect(h.onSelect).not.toHaveBeenCalled()
+    expect(h.onDelete).not.toHaveBeenCalled()
+    expect(h.onMoveNote).not.toHaveBeenCalled()
+  })
+})
+
 describe("wireToggle", () => {
   function toggleFixture(initialOn = false) {
     const button = document.createElement("button")

@@ -94,6 +94,37 @@ test("the tree is a single roving tab stop (AC-8)", async ({ page }) => {
   await expect(tabStops).toHaveCount(1)
 })
 
+test("F2 on a focused note row opens the rename prompt seeded with its name (FEAT-0076/AC-1, AC-4)", async ({
+  page,
+}) => {
+  await stubPicker(page)
+  await page.goto("/brulion/")
+  await writeNote(page, "alpha.md", "alpha body")
+  await writeNote(page, "beta.md", "beta body")
+  await page.locator("#open-folder").click()
+
+  await noteName(page, "alpha").focus()
+  await page.keyboard.press("F2")
+
+  // The same in-app rename prompt (FEAT-0073) the context menu opens, seeded
+  // with the current leaf name.
+  await expect(page.locator("#dialog-input")).toBeVisible()
+  await expect(page.locator("#dialog-input")).toHaveValue("alpha")
+
+  // Cancelling writes nothing — the note is still there under its old name.
+  await page.keyboard.press("Escape")
+  await expect(page.locator("#dialog-backdrop")).toBeHidden()
+  const stillAlpha = await page.evaluate(async (folder) => {
+    const root = await navigator.storage.getDirectory()
+    const dir = await root.getDirectoryHandle(folder)
+    const names: string[] = []
+    // @ts-expect-error async iterator on the directory handle
+    for await (const [name] of dir.entries()) names.push(name)
+    return names.sort()
+  }, FOLDER)
+  expect(stillAlpha).toEqual(["alpha.md", "beta.md"])
+})
+
 test("a folder expanded by keyboard stays expanded after reload (AC-9)", async ({ page }) => {
   await stubPicker(page)
   await page.goto("/brulion/")

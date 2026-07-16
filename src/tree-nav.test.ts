@@ -167,6 +167,36 @@ describe("resolveTreeKey — activate (AC-7)", () => {
   })
 })
 
+describe("resolveTreeKey — F2 rename (FEAT-0076)", () => {
+  it("F2 on a note row resolves to rename", () => {
+    const r = rows([["a.md", "note"]])
+    expect(resolveTreeKey("F2", r, 0)).toEqual({ type: "rename", index: 0 })
+  })
+
+  it("F2 on a folder header resolves to rename", () => {
+    const r = rows([["sub", "folder", false]])
+    expect(resolveTreeKey("F2", r, 0)).toEqual({ type: "rename", index: 0 })
+  })
+
+  it("F2 with an out-of-range index does nothing", () => {
+    const r = rows([["a.md", "note"]])
+    expect(resolveTreeKey("F2", r, -1)).toEqual({ type: "none" })
+    expect(resolveTreeKey("F2", r, 5)).toEqual({ type: "none" })
+  })
+
+  it("adding F2 leaves the other keys' actions unchanged (AC-5)", () => {
+    const r = rows([
+      ["sub", "folder", true],
+      ["sub/a.md", "note"],
+    ])
+    expect(resolveTreeKey("ArrowDown", r, 0)).toEqual({ type: "focus", index: 1 })
+    expect(resolveTreeKey("ArrowLeft", r, 1)).toEqual({ type: "focus", index: 0 })
+    expect(resolveTreeKey("ArrowLeft", r, 0)).toEqual({ type: "collapse", index: 0 })
+    expect(resolveTreeKey("Enter", r, 1)).toEqual({ type: "activate", index: 1 })
+    expect(resolveTreeKey(" ", r, 0)).toEqual({ type: "activate", index: 0 })
+  })
+})
+
 describe("resolveTreeKey — guards", () => {
   const r = rows([["a.md", "note"]])
 
