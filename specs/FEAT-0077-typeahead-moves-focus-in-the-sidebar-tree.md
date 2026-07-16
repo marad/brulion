@@ -29,9 +29,12 @@ search and moves focus to the matching row:
   the next character starts a fresh single-character search.
 - The match is the next **visible** row (FEAT-0075's visible-row set — a
   collapsed folder's children are skipped) whose display label
-  **starts with** the buffer, compared **case-insensitively**. The search begins
-  at the row *after* the focused one and **wraps around**, so it can land on any
-  visible row including, if nothing else matches, the focused row itself.
+  **starts with** the buffer, compared **case-insensitively** and
+  **diacritic-insensitively** (accents folded to their base letter on both
+  sides — so typing the plain letter `l` matches `łódka`, `a` matches `ątek`).
+  The search begins at the row *after* the focused one and **wraps around**, so
+  it can land on any visible row including, if nothing else matches, the focused
+  row itself.
 - On a match, focus moves to that row and the roving tab stop moves with it
   (exactly as arrow-key movement does). On no match, focus stays where it is.
 - Pressing the **same character repeatedly cycles** through all visible rows
@@ -140,6 +143,15 @@ printable character nor a completed tree action — a bare modifier
 then presses a second printable character `x`,
 Then the buffer is `ax` (the interruptor did not discard it), so Shift+letter and
 similar compositions still build a multi-character search.
+
+**AC-10** — Matching folds diacritics to the base letter.
+Given a visible row whose display label begins with an accented letter (e.g.
+`łódka`, `ątek`),
+When the user types the corresponding **base** letter (`l`, `a`),
+Then that row matches — the comparison folds accented characters to their base
+letter on both the label and the typed buffer (so a note with a Polish name is
+reachable by typing plain ASCII, without needing an AltGr/Option keystroke that
+typeahead does not accept anyway).
 
 **AC-5** — No match leaves focus unchanged.
 Given no visible row's label starts with the typed buffer,
