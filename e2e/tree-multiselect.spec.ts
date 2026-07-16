@@ -149,6 +149,33 @@ test("batch delete of a folder and a note inside it, child selected first (FEAT-
   await expect.poll(() => entriesOf(page, "")).toEqual(["keep.md"])
 })
 
+test("batch-moving a folder and a note inside it moves the folder as a unit (FEAT-0078/AC-8)", async ({
+  page,
+}) => {
+  await stubPicker(page)
+  await page.goto("/brulion/")
+  await writeNote(page, "sub/x.md", "xx")
+  await writeNote(page, "dest/keep.md", "keep")
+  await page.locator("#open-folder").click()
+  const subHeader = page.locator(".folder-header", { hasText: "sub" })
+  await expect(subHeader).toBeVisible()
+
+  await subHeader.click() // expand (no selection yet)
+  await page.locator('.note-name[data-path="sub/x.md"]').click({ modifiers: ["Control"] })
+  await subHeader.click({ modifiers: ["Control"] }) // select folder + its child
+  await subHeader.click({ button: "right" })
+  await page
+    .locator(".cm-context-menu button[role=menuitem]", { hasText: "Move 2 items" })
+    .click()
+  await page.locator(".move-row", { hasText: "dest" }).click()
+
+  // The folder moved as a unit; the child was never extracted independently
+  // (no stray dest/x.md), which the descendant-filter guards.
+  await expect.poll(() => entriesOf(page, "dest")).toEqual(["keep.md", "sub"])
+  await expect.poll(() => entriesOf(page, "dest/sub")).toEqual(["x.md"])
+  await expect.poll(() => entriesOf(page, "")).toEqual(["dest"])
+})
+
 test("a batch move keeps the note you had open (FEAT-0078)", async ({ page }) => {
   await stubPicker(page)
   await page.goto("/brulion/")

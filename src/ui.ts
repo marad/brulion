@@ -499,9 +499,12 @@ function wireTreeKeyNav(container: HTMLElement, handlers: NoteListHandlers): voi
       applySelectionClasses(container)
       return
     }
-    // Delete (or Backspace, which is the main "Delete" key on macOS) batch-deletes.
+    // Batch-delete on the Delete key, or Cmd/Ctrl+Backspace (Backspace is the
+    // main "Delete" key on macOS, where Finder deletes with Cmd+Delete). A *bare*
+    // Backspace is deliberately not a delete — it's too easy to press by habit
+    // while a selection lingers.
     if (
-      (event.key === "Delete" || event.key === "Backspace") &&
+      (event.key === "Delete" || (event.key === "Backspace" && (event.metaKey || event.ctrlKey))) &&
       treeSelection.selected.size > 0
     ) {
       event.preventDefault()

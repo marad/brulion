@@ -496,7 +496,7 @@ const noteListHandlers = {
       .then(async (ok) => {
         if (!ok) return // selection is left intact so the user can retry
         commitSelectionCleared() // committed — operate on the captured `paths`
-        const failures = await runBatch(paths, (path, isNote) =>
+        const failures = await runBatch(selectionRoots(paths), (path, isNote) =>
           isNote ? controller.removeNote(path) : controller.removeFolder(path),
         )
         if (failures.length > 0) {
@@ -505,6 +505,7 @@ const noteListHandlers = {
       })
   },
   onBatchMove: (paths: string[]) => {
+    const roots = selectionRoots(paths)
     movePicker.open(destinationChoices(), async (dest) => {
       // Remember the note the user actually has open: each moveNoteTo switchTo()s
       // its own note (renameActive is active-note-scoped), so the editor ends on
@@ -513,16 +514,21 @@ const noteListHandlers = {
       commitSelectionCleared()
       // moveNoteTo carries the switchTo + existence/conflict guards a single move
       // uses; moveFolderTo carries moveFolder's self-nest guard.
-      const failures = await runBatch(paths, (path, isNote) =>
+      const failures = await runBatch(roots, (path, isNote) =>
         isNote ? moveNoteTo(path, dest) : moveFolderTo(path, dest),
       )
-      // Restore the open note only if it survived the batch unmoved (still exists
-      // at its old path) — the common case where the user was editing a note that
-      // wasn't part of the selection. If it was moved (or lived in a moved
-      // folder) we don't guess its new path — that depends on per-item success
-      // and is exactly where the previous restore opened the wrong note — the
-      // editor simply stays where the batch left it.
-      if (currentNotes.includes(openBefore)) void controller.switchTo(openBefore)
+      // Keep the editor on the note the user was reading:
+      // - if it still exists at its old path it was unmoved, or its own move was
+      //   refused and it stayed — switch back to it (never a foreign same-named
+      //   note, since a refused move leaves the original in place);
+      // - else if it was itself a directly-moved root, follow it to dest/<name>;
+      // - otherwise (it lived inside a moved folder) don't guess — leave it.
+      if (currentNotes.includes(openBefore)) {
+        void controller.switchTo(openBefore)
+      } else if (roots.includes(openBefore)) {
+        const moved = joinDest(dest, openBefore.split("/").pop() as string)
+        if (currentNotes.includes(moved)) void controller.switchTo(moved)
+      }
       // The picker closes on ok and shows the reason (staying open) otherwise —
       // report the aggregate through it rather than a separate alert.
       return failures.length === 0
@@ -547,11 +553,10 @@ function commitSelectionCleared(): void {
  * per-item guard equivalent). One item's failure is collected, never aborts the
  * rest (AC-9). Returns the per-item failure messages (empty on full success).
  *
- * Paths are processed ancestor-before-descendant (a plain lexicographic sort puts
- * a parent prefix before its children), so when both a folder and something
- * inside it are selected the folder is moved/deleted first — taking its contents
- * with it — and the now-vanished descendant is harmlessly skipped, rather than the
- * reverse order emptying an implied folder and leaving it stranded on disk. */
+ * Callers pass the selection's top-level roots (see {@link selectionRoots} — a
+ * co-selected descendant is dropped so it can't be operated on independently of
+ * its folder). Roots are still processed in sorted order for a stable, testable
+ * sequence. */
 async function runBatch(
   paths: string[],
   op: (path: string, isNote: boolean) => Promise<AddNoteResult>,
@@ -636,6 +641,22 @@ function parentOf(path: string): string {
   return slash === -1 ? "" : path.slice(0, slash)
 }
 
+/** Join a moved leaf `name` under `destination` (`""` = the vault root) — the one
+ * place the move target path is spelled, shared by moveNoteTo/moveFolderTo and
+ * the batch open-note restore so they never diverge. */
+function joinDest(destination: string, name: string): string {
+  return destination ? `${destination}/${name}` : name
+}
+
+/** Drop any path that sits inside another path in the same set (M37/FEAT-0078):
+ * selecting a folder AND something within it means "operate on the folder", so a
+ * co-selected descendant must never be moved/deleted independently — which would
+ * extract it from its folder (e.g. if the folder's own move is refused). Leaves
+ * only the top-level selected items. */
+function selectionRoots(paths: string[]): string[] {
+  return paths.filter((p) => !paths.some((other) => other !== p && p.startsWith(`${other}/`)))
+}
+
 /** Move note `path` to `destination` (M35/FEAT-0070/FEAT-0072) — the single
  * place "what target does a note move actually call renameActive with" is
  * computed, shared by the "Move…" picker and a drag-and-drop drop. */
@@ -648,9 +669,7 @@ function moveNoteTo(path: string, destination: string): Promise<AddNoteResult> {
   // (renameActive would then act on whatever note ended up active instead).
   return ifExistsResult(path, noteStillExists, () => {
     const name = displayName(path).split("/").pop() as string
-    return switchToThenIfLanded(path, () =>
-      controller.renameActive(destination ? `${destination}/${name}` : name),
-    )
+    return switchToThenIfLanded(path, () => controller.renameActive(joinDest(destination, name)))
   })
 }
 
@@ -658,7 +677,7 @@ function moveNoteTo(path: string, destination: string): Promise<AddNoteResult> {
  * counterpart of {@link moveNoteTo} for folders. */
 function moveFolderTo(path: string, destination: string): Promise<AddNoteResult> {
   const name = path.split("/").pop() as string
-  return controller.moveFolder(path, destination ? `${destination}/${name}` : name)
+  return controller.moveFolder(path, joinDest(destination, name))
 }
 
 /** Prompt for a new folder's name and create it under `parentPath` ("" = the

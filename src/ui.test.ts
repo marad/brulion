@@ -1421,12 +1421,14 @@ describe("renderNoteList multi-select (FEAT-0078)", () => {
     expect(rows.map((r) => r.getAttribute("aria-selected"))).toEqual(["true", "true", null, "true"])
   })
 
-  it("Backspace also batch-deletes — the main Delete key on macOS (AC-7)", () => {
+  it("Cmd/Ctrl+Backspace batch-deletes, but a bare Backspace does not (AC-7)", () => {
     const { c, h } = mount(["a.md", "b.md"], "a.md")
     const rows = names(c)
     rows[0].focus()
-    keyEv(rows[0], " ", { ctrlKey: true })
-    keyEv(rows[0], "Backspace")
+    keyEv(rows[0], " ", { ctrlKey: true }) // select a.md
+    keyEv(rows[0], "Backspace") // bare Backspace — must NOT delete (too easy to hit by habit)
+    expect(h.onBatchDelete).not.toHaveBeenCalled()
+    keyEv(rows[0], "Backspace", { metaKey: true }) // Cmd+Backspace = the macOS delete
     expect(h.onBatchDelete).toHaveBeenCalledWith(["a.md"])
   })
 
