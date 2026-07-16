@@ -253,19 +253,19 @@ describe("isTypeaheadKey (FEAT-0077)", () => {
     expect(isTypeaheadKey(k("Enter"))).toBe(false)
   })
 
-  it("is false for a real Ctrl or Cmd chord (a shortcut)", () => {
+  it("is false for any modifier chord (a shortcut, or a platform-ambiguous composed char)", () => {
     expect(isTypeaheadKey(k("a", { ctrlKey: true }))).toBe(false)
     expect(isTypeaheadKey(k("a", { metaKey: true }))).toBe(false)
-    // Windows AltGr surfaces as Ctrl+Alt — rejected too, so a genuine Ctrl+Alt
-    // shortcut is never swallowed (the accepted cost is no AltGr typeahead).
+    // Alt is rejected too: Alt+letter is a menu accelerator on Windows/Linux, so
+    // accepting it would let preventDefault swallow the accelerator. (The cost is
+    // that Option/AltGr-composed accented characters don't drive typeahead.)
+    expect(isTypeaheadKey(k("a", { altKey: true }))).toBe(false)
     expect(isTypeaheadKey(k("ł", { ctrlKey: true, altKey: true }))).toBe(false)
   })
 
-  it("is true for an Alt/Option-composed character (macOS text input)", () => {
-    // macOS composes real characters with Option (altKey, no ctrl/meta); those
-    // are genuine input and must drive typeahead.
-    expect(isTypeaheadKey(k("é", { altKey: true }))).toBe(true)
-    expect(isTypeaheadKey(k("a", { altKey: true }))).toBe(true)
+  it("ignores Shift — a capital letter still drives typeahead", () => {
+    // Shift is not a chord modifier here; "A" is genuine input.
+    expect(isTypeaheadKey(k("A"))).toBe(true)
   })
 })
 

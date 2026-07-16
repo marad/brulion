@@ -60,10 +60,10 @@ from the editor or any overlay.
 
 ## Constraints
 
-- Only printable single characters drive typeahead — a Ctrl or Cmd chord is a
-  shortcut and is excluded (Alt/Option is allowed, since macOS composes real
-  characters with it); every navigation/activation/rename key keeps its existing
-  meaning.
+- Only unmodified printable single characters drive typeahead — any Ctrl/Alt/Cmd
+  chord is excluded (Shift is not a chord — a capital letter still counts), so no
+  shortcut or menu accelerator is ever swallowed; every navigation/activation/
+  rename key keeps its existing meaning.
 - Matching is over the *visible* rows only and by the row's displayed label
   (the note/folder name as shown, not its full path), case-insensitively, by
   prefix.
@@ -83,10 +83,12 @@ from the editor or any overlay.
 - Expanding a collapsed folder to reach a match inside it — typeahead only lands
   on already-visible rows.
 - A visible "search string" indicator or any persistent UI.
-- Driving typeahead from Windows AltGr-composed characters (reported by the
-  browser as Ctrl+Alt, indistinguishable from a genuine Ctrl+Alt shortcut) —
-  excluded so no real shortcut is swallowed; such names stay reachable via the
-  arrows or the Ctrl+K switcher.
+- Driving typeahead from characters that need a modifier to type
+  (Option-composed on macOS, AltGr-composed on Windows/Linux). The modifier flags
+  can't be classified as "text vs shortcut" the same way on every platform, so
+  all modifier chords are excluded rather than risk swallowing a shortcut; notes
+  whose names start with such characters stay reachable via the arrows or the
+  Ctrl+K switcher.
 
 ## Acceptance criteria
 

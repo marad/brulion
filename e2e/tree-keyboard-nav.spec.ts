@@ -144,8 +144,7 @@ test("typing a letter moves focus to the matching row without opening it (FEAT-0
   // Movement only: typeahead did not open mango — the editor still shows alpha.
   await expect(page.locator("#editor .cm-content")).toContainText("alpha body")
 
-  await page.waitForTimeout(600) // let the typeahead buffer reset
-  await page.keyboard.press("m") // cycle → melon
+  await page.keyboard.press("m") // same letter again → cycle to the next m-row
   await expect(noteName(page, "melon")).toBeFocused()
 })
 

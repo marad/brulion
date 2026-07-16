@@ -99,18 +99,27 @@ export function resolveTreeKey(key: string, rows: TreeRow[], current: number): T
 }
 
 /** Whether `e`'s key is a printable character that should drive typeahead
- * (M37/FEAT-0077): a single-character `key` pressed without Ctrl or Cmd. Named
- * keys (`ArrowDown`, `F2`, `Enter`) have multi-character `key`s and are excluded;
- * Space is a single char but `resolveTreeKey` already claims it as `activate`, so
- * it never reaches the typeahead branch that consults this. `altKey` is
- * deliberately *not* consulted: on macOS, Option composes real text (é, ł, …),
- * so an Alt-modified single character is genuine input. A Ctrl or Cmd chord is a
- * shortcut and is excluded — which also excludes Windows AltGr (reported as
- * Ctrl+Alt); AltGr-composed characters not driving typeahead is an accepted
- * limitation (they stay reachable via the arrows or the Ctrl+K switcher), the
- * alternative being to swallow every genuine Ctrl+Alt shortcut. */
-export function isTypeaheadKey(e: { key: string; ctrlKey: boolean; metaKey: boolean }): boolean {
-  return e.key.length === 1 && !e.ctrlKey && !e.metaKey
+ * (M37/FEAT-0077): a single-character `key` pressed with **no** Ctrl/Alt/Cmd
+ * modifier. Named keys (`ArrowDown`, `F2`, `Enter`) have multi-character `key`s
+ * and are excluded; Space is a single char but `resolveTreeKey` already claims it
+ * as `activate`, so it never reaches the typeahead branch that consults this.
+ *
+ * Every modifier chord is rejected on purpose. Deciding "did this keystroke
+ * produce text?" from the modifier flags alone is not possible across platforms
+ * — Alt+letter is a menu accelerator on Windows/Linux but composes real text on
+ * macOS (Option), and AltGr (text) is indistinguishable from a Ctrl+Alt shortcut
+ * because both set ctrlKey+altKey. Rejecting all chords is the only choice that
+ * never swallows a shortcut on any platform; the cost is that characters that
+ * require a modifier to type (accented/composed letters via Option or AltGr)
+ * don't drive typeahead — plain letters do, everywhere, and such notes stay
+ * reachable via the arrows or the Ctrl+K switcher. */
+export function isTypeaheadKey(e: {
+  key: string
+  ctrlKey: boolean
+  metaKey: boolean
+  altKey: boolean
+}): boolean {
+  return e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey
 }
 
 /** The index of the next `labels` entry that starts with `buffer`
