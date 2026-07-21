@@ -3151,3 +3151,45 @@ resolution changes from id-only to name-first-then-id. A new **collision rule** 
 needed because names aren't unique the way minted ids were (0 granted matches →
 pick-a-folder onboarding; 1 → attach; >1 → disambiguate). No change to note bytes
 or the path-addressed note routing.
+
+## M38 implementation outcomes (FEAT-0079 P1 + FEAT-0080 P2)
+
+**What:** the two phases as built. **P1** keys `?ws` on a vault's *effective name*
+(the `workspace` field in `.brulion.json`, else the folder name), cached on the
+vault record and refreshed on attach so startup resolution needs no disk read or
+permission. Resolution is name-first, opaque-id fallback (legacy links keep
+working). **P2** adds a "Workspace name" field to the settings modal that writes
+`.brulion.json` and *live*-updates the window's `?ws` + the cached name.
+
+**Two design calls settled during the build (both after review loops):**
+
+1. **`?ws` is always the effective name — one model, no special cases.** The stamp
+   is applied when the window commits to a vault (so a reload *during* an attach
+   resumes it) and refreshed after settings load; a legacy opaque-id `?ws` upgrades
+   to the name. An earlier attempt to *preserve* legacy-id links (not rewrite them)
+   spawned a cascade of timing/collision edge cases across review rounds; collapsing
+   to "always the name" reduced them to a single documented limitation. Rollback
+   gates on the prior vault: a failed *switch* re-asserts the previous `?ws`, a
+   failed *cold start* clears it so a reload self-heals to the most-recent vault.
+2. **An explicit but unmatched `?ws` never opens a *different* vault.** It falls to
+   the welcome/pick flow with the URL intact (so the note resolves once the right
+   folder is granted). Only an *absent* `?ws` falls back to the most-recent vault.
+
+**Why:** the moat — the note is still path-addressed, only `.brulion.json` and the
+browser-private vault cache/URL are written, no `.md` bytes touched. The "always
+name" model is the file-faithful, portable identity; the unmatched-`?ws` rule stops
+a permalink from silently opening (or create-on-miss writing) a note in the wrong
+folder.
+
+**Consequence (UI/project):** a note URL is now portable across the user's own
+devices; a Workspace name field lets folders named differently per device share one
+link. Limits (documented, deliberate): cross-*own-devices* not foreign-machine;
+path-permalink breaks on rename; name collisions resolve to the most-recently-used
+vault.
+
+**Open for the milestone review (a product call, not a bug):** the P2 field lets a
+user set a workspace name equal to *another* local vault's effective name, silently
+creating a collision that the most-recent tiebreak resolves in favour of the just-
+edited vault — hijacking the other vault's `?ws` permalink. We ship the documented
+tiebreak with no warning; whether the field should **warn on collision** is left for
+the live review to decide.
