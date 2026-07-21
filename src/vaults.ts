@@ -14,12 +14,16 @@ import { get, del, update } from "idb-keyval"
  * cloneable and persist in IndexedDB across reloads. No note bytes are touched.
  */
 export interface Vault {
-  /** Short opaque generated id; the value carried in `?ws=` and the per-vault session key. */
+  /** Short opaque generated id; the per-vault session key, and the legacy `?ws=` value. */
   id: string
   /** The granted directory handle. */
   handle: FileSystemDirectoryHandle
   /** The folder's name, for display only. */
   name: string
+  /** Cached configured workspace name from the vault's `.brulion.json` (FEAT-0079),
+   * refreshed on every attach; absent when unset. Lets startup resolution match a
+   * name-keyed `?ws=` without a disk read or a permission the window may not yet hold. */
+  workspace?: string
 }
 
 const VAULTS_KEY = "brulion:vaults"
@@ -34,6 +38,36 @@ export async function listVaults(): Promise<Vault[]> {
 /** The vault with `id`, or `undefined` if not in the set. */
 export async function getVault(id: string): Promise<Vault | undefined> {
   return (await listVaults()).find((v) => v.id === id)
+}
+
+/**
+ * A vault's *effective name* (FEAT-0079): the trimmed configured `workspace` name
+ * when non-empty, else the folder name. This is the value a portable `?ws=` carries
+ * and matches against — defaulting to the folder name so the common case (one folder
+ * named the same on every device) is portable with no configuration. Pure.
+ */
+export function effectiveVaultName(vault: Pick<Vault, "name" | "workspace">): string {
+  throw new Error("not implemented")
+}
+
+/**
+ * Cache the configured workspace name (FEAT-0079) on the vault with `id`, refreshed
+ * on every attach. Stores the trimmed value, or clears the field when blank/empty.
+ * A single idb-keyval read-modify-write transaction (see {@link touchVault}); a
+ * no-op when the id is absent.
+ */
+export async function setVaultWorkspace(id: string, workspace: string): Promise<void> {
+  throw new Error("not implemented")
+}
+
+/**
+ * Resolve a `?ws=` reference (FEAT-0079), name-first then id-fallback: the vault
+ * whose effective name equals `ref` (a collision resolves to the most-recently-used,
+ * since the set is most-recent-first), else the vault whose opaque `id` equals `ref`
+ * (the pre-M38 meaning, so existing links keep working), else `undefined`.
+ */
+export async function resolveVaultRef(ref: string): Promise<Vault | undefined> {
+  throw new Error("not implemented")
 }
 
 /** A new opaque id not already taken by an existing vault. */

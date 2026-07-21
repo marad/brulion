@@ -6,6 +6,9 @@ import {
   touchVault,
   removeVault,
   migrateLegacyFolder,
+  effectiveVaultName,
+  setVaultWorkspace,
+  resolveVaultRef,
 } from "./vaults"
 
 /**
@@ -216,6 +219,91 @@ describe("vault store", () => {
       const ids = (await listVaults()).map((v) => v.id)
       expect(ids).toContain(a.id)
       expect(ids).toHaveLength(2)
+    })
+  })
+
+  describe("effectiveVaultName (FEAT-0079)", () => {
+    it("AC-1: falls back to the folder name when workspace is unset", () => {
+      expect(effectiveVaultName({ name: "my-notes" })).toBe("my-notes")
+    })
+
+    it("AC-1: falls back to the folder name when workspace is empty or blank", () => {
+      expect(effectiveVaultName({ name: "my-notes", workspace: "" })).toBe("my-notes")
+      expect(effectiveVaultName({ name: "my-notes", workspace: "   " })).toBe("my-notes")
+    })
+
+    it("AC-2: uses the configured workspace (trimmed) over the folder name", () => {
+      expect(effectiveVaultName({ name: "my-notes", workspace: "notes" })).toBe("notes")
+      expect(effectiveVaultName({ name: "my-notes", workspace: "  notes  " })).toBe("notes")
+    })
+  })
+
+  describe("setVaultWorkspace (FEAT-0079)", () => {
+    it("AC-3: caches the configured (trimmed) workspace name on the vault", async () => {
+      const v = await addVault(fakeHandle("my-notes"))
+      await setVaultWorkspace(v.id, "  notes  ")
+      expect((await getVault(v.id))?.workspace).toBe("notes")
+    })
+
+    it("AC-3: clears the field when the name is blank (back to the folder-name default)", async () => {
+      const v = await addVault(fakeHandle("my-notes"))
+      await setVaultWorkspace(v.id, "notes")
+      await setVaultWorkspace(v.id, "   ")
+      const stored = await getVault(v.id)
+      expect(stored?.workspace).toBeUndefined()
+      expect(effectiveVaultName(stored!)).toBe("my-notes")
+    })
+
+    it("does not touch other vaults and is a no-op for an absent id", async () => {
+      const a = await addVault(fakeHandle("a"))
+      const b = await addVault(fakeHandle("b"))
+      await setVaultWorkspace("missing", "x")
+      await setVaultWorkspace(a.id, "aaa")
+      expect((await getVault(a.id))?.workspace).toBe("aaa")
+      expect((await getVault(b.id))?.workspace).toBeUndefined()
+    })
+  })
+
+  describe("resolveVaultRef (FEAT-0079)", () => {
+    it("AC-4: resolves a vault by its effective (configured) name", async () => {
+      const v = await addVault(fakeHandle("weird-local-folder-name"))
+      await setVaultWorkspace(v.id, "notes")
+      expect((await resolveVaultRef("notes"))?.id).toBe(v.id)
+    })
+
+    it("AC-4: resolves by the folder name when no workspace is configured", async () => {
+      const v = await addVault(fakeHandle("notes"))
+      expect((await resolveVaultRef("notes"))?.id).toBe(v.id)
+    })
+
+    it("AC-5: falls back to an opaque id when no name matches (legacy links)", async () => {
+      const v = await addVault(fakeHandle("notes"))
+      // `v.id` is an opaque id, not equal to any effective name, so the id branch wins.
+      expect((await resolveVaultRef(v.id))?.id).toBe(v.id)
+    })
+
+    it("AC-6: a name collision resolves to the most-recently-used vault", async () => {
+      const first = await addVault(fakeHandle("notes"))
+      const second = await addVault(fakeHandle("notes"))
+      // Both have effective name "notes"; the set is most-recent-first, so `second` wins.
+      expect((await resolveVaultRef("notes"))?.id).toBe(second.id)
+      // Touching `first` makes it most-recent — now it wins the same ref.
+      await touchVault(first.id)
+      expect((await resolveVaultRef("notes"))?.id).toBe(first.id)
+    })
+
+    it("AC-7: returns undefined when nothing matches by name or id", async () => {
+      await addVault(fakeHandle("notes"))
+      expect(await resolveVaultRef("ghost")).toBeUndefined()
+    })
+
+    it("prefers a name match over an id match", async () => {
+      // A pathological set where one vault's id equals another vault's effective name.
+      const named = await addVault(fakeHandle("shared-token"))
+      const other = await addVault(fakeHandle("other"))
+      // Force `named`'s effective name to be `other`'s id: the name branch must win.
+      await setVaultWorkspace(named.id, other.id)
+      expect((await resolveVaultRef(other.id))?.id).toBe(named.id)
     })
   })
 

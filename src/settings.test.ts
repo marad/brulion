@@ -139,7 +139,14 @@ describe("normalizeSettings (AC-3)", () => {
     expect(normalizeSettings({ theme: "dark" }).theme).toBe("dark")
     expect(normalizeSettings({ theme: "system" }).theme).toBe("system")
     expect(normalizeSettings({ theme: "neon" }).theme).toBe("system")
-    expect(normalizeSettings({}).theme).toBe("system")
+  })
+
+  it("FEAT-0079: keeps a string workspace name, defaults a non-string to empty", () => {
+    expect(normalizeSettings({ workspace: "notes" }).workspace).toBe("notes")
+    expect(normalizeSettings({ workspace: "" }).workspace).toBe("")
+    expect(normalizeSettings({}).workspace).toBe("")
+    expect(normalizeSettings({ workspace: 7 }).workspace).toBe("")
+    expect(normalizeSettings({ workspace: ["notes"] }).workspace).toBe("")
   })
 
   it("AC-3: returns the defaults for a non-object input", () => {
@@ -185,6 +192,7 @@ describe("loadSettings / saveSettings round-trip (AC-5, AC-2)", () => {
       actionBar: ["toggle-vim", "switch-folder"],
       theme: "dark",
       journalPath: "Journal/Week/{mondayOfTheWeek}",
+      workspace: "notes",
     }
     await saveSettings(folder.dir, settings)
     expect(folder.has(SETTINGS_FILE)).toBe(true)
@@ -219,6 +227,7 @@ describe("loadSettings / saveSettings round-trip (AC-5, AC-2)", () => {
       actionBar: [],
       journalPath: "",
       theme: "system",
+      workspace: "",
     })
   })
 })

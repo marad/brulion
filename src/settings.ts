@@ -35,6 +35,10 @@ export interface Settings {
   journalPath: string
   /** Color theme (FEAT-0065): `system` follows the OS via `prefers-color-scheme`. */
   theme: Theme
+  /** Stable workspace name for cross-device permalinks (FEAT-0079): the value a
+   * portable `?ws=` carries and matches against. Travels with the folder in
+   * `.brulion.json`. Empty means "use the folder name" — see `effectiveVaultName`. */
+  workspace: string
 }
 
 /** The on-disk settings file at the folder root. */
@@ -56,6 +60,7 @@ export const DEFAULT_SETTINGS: Settings = {
   actionBar: [],
   journalPath: "",
   theme: "system",
+  workspace: "",
 }
 
 /** Each width preset's CSS `max-width` value for the content column. */
@@ -85,6 +90,7 @@ export function normalizeSettings(raw: unknown): Settings {
     actionBar: Array.isArray(r.actionBar) ? dedupeStrings(r.actionBar) : [],
     journalPath: typeof r.journalPath === "string" ? r.journalPath : "",
     theme: isTheme(r.theme) ? r.theme : "system",
+    workspace: typeof r.workspace === "string" ? r.workspace : "",
   }
 }
 
