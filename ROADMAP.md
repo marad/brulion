@@ -19,10 +19,10 @@ Every technical decision defers to that.
 > **M18**–**M37** are done. **M37** (P1 F2-rename, P2 typeahead — now
 > diacritic-insensitive, P3 multi-select + batch delete/move; the "touch gesture
 > for movement" item was descoped — see `DECISIONS.md`) is implemented, deployed,
-> and **reviewed live**. **M38** (cross-device permalinks — name-keyed workspaces)
-> is **scheduled, not yet started**: a narrow extension of M19+M33 that makes a
-> note URL resolve on any of the user's *own* devices. New work otherwise comes
-> from the next round of real daily-use observations.
+> and **reviewed live**. **M38** (cross-device permalinks — name-keyed workspaces:
+> P1 name-keyed `?ws` resolution, P2 the workspace-name settings field) is
+> **implemented and deployed, awaiting its live milestone review**. New work
+> otherwise comes from the next round of real daily-use observations.
 > Recently shipped: **M37** (sidebar tree follow-ups — F2 rename, typeahead,
 > multi-select + batch move/delete),
 > **M36** (keyboard navigation for the sidebar tree — arrow
