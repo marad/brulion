@@ -3112,3 +3112,42 @@ watching the loops converge only once the root cause (not the effects) was fixed
 accent-insensitive (Polish names reachable by plain ASCII). Future review loops in
 this repo follow the two `/review-until-clean` rules. No milestones are scheduled
 beyond M37.
+
+## Cross-device permalinks: name-keyed workspaces, an emergent feature (M38)
+
+**What:** scheduled M38 — make a note permalink resolve on any of the user's own
+devices. The two building blocks already shipped: M19 gave note-URLs
+(`#/path/to/note`) and M33 gave `?ws=`. The gap is only the `?ws` key: today it's
+a **random per-machine** opaque id (`crypto.randomUUID().slice(0,8)` in
+`vaults.ts`), so the same synced folder gets a different `?ws` on each device and
+the full URL is device-local. M38 keys the workspace by a **stable name** stored
+in the vault's `.brulion.json` (the M16 settings file, which already travels with
+the folder), and resolves `?ws=<name>` against granted vaults, falling back to the
+legacy opaque id for links already in the wild.
+
+**Why:** the moat is the files, and this is a *pure* moat play — no `.md` bytes
+touched, the note stays addressed by its plain path, and the workspace name rides
+in the config file the user already syncs, so it needs no second thing kept in
+step. Chosen over a rename-stable per-note id in frontmatter (which would survive
+moves) because that pollutes the file and collides with the M23 "opaque
+frontmatter, no interpretation" stance — a path-permalink is the file-faithful
+choice even though a rename breaks it. The name (not the OS folder name) is the
+key so `~/Sync/notes` on one box and `D:\backup` on another can both be
+`workspace: "notes"`.
+
+**Honest scope (recorded so we don't over-promise):** this is cross-*own-devices*,
+**not** "works on any foreign machine" — the FSA cannot silently locate "the
+folder called notes" on a machine that never granted it, so a permalink there
+degrades to "pick your notes folder, then I open the note." And it's a **personal
+bookmark, not a sharing link**: the URL does nothing for someone who lacks your
+folder. Correction to the framing that sparked this: name-keyed local-vault URIs
+are **not** unprecedented — Obsidian's `obsidian://open?vault=…&file=…` does the
+same thing. Our distinctive part is the delivery: a plain clickable **https** URL,
+no app install and no custom protocol handler.
+
+**Consequence (UI/project):** a `workspace` field appears in `.brulion.json`
+(set/edited via M16 settings; defaults to the folder name, user-owned). `?ws=`
+resolution changes from id-only to name-first-then-id. A new **collision rule** is
+needed because names aren't unique the way minted ids were (0 granted matches →
+pick-a-folder onboarding; 1 → attach; >1 → disambiguate). No change to note bytes
+or the path-addressed note routing.

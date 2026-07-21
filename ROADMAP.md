@@ -19,9 +19,10 @@ Every technical decision defers to that.
 > **M18**–**M37** are done. **M37** (P1 F2-rename, P2 typeahead — now
 > diacritic-insensitive, P3 multi-select + batch delete/move; the "touch gesture
 > for movement" item was descoped — see `DECISIONS.md`) is implemented, deployed,
-> and **reviewed live**. **No further milestones are currently scheduled** — the
-> plan is caught up; new work comes from the next round of real daily-use
-> observations.
+> and **reviewed live**. **M38** (cross-device permalinks — name-keyed workspaces)
+> is **scheduled, not yet started**: a narrow extension of M19+M33 that makes a
+> note URL resolve on any of the user's *own* devices. New work otherwise comes
+> from the next round of real daily-use observations.
 > Recently shipped: **M37** (sidebar tree follow-ups — F2 rename, typeahead,
 > multi-select + batch move/delete),
 > **M36** (keyboard navigation for the sidebar tree — arrow
@@ -588,6 +589,46 @@ In:
 > include them in the M36 review, so **what "touch gestures for movement" should
 > actually do — scrolling already works — is unresolved and must be pinned down
 > when M37 is specced.**
+
+### M38 — Cross-device permalinks (name-keyed workspaces)
+**Goal:** make a note URL resolve to the *same* note on any of the user's own
+devices, instead of only the machine that generated it. A narrow extension of
+**M19** (note-URLs `#/path/to/note`) and **M33** (workspaces `?ws=`), not a new
+subsystem. Today `?ws=<id>` carries a **random, per-machine** opaque id
+(`vaults.ts`), so the same synced folder gets a different `?ws` on every device
+and the full permalink (`?ws=<id>#/path`) is device-local. Give the workspace a
+**stable name** and the whole URL becomes portable. Moat-neutral — no `.md` bytes
+touched; the note is still addressed by its plain path.
+
+The canonical workspace name lives in the vault's **`.brulion.json`** (the M16
+settings file, which already travels with the folder across machines) as a
+`workspace` field — so name-consistency rides on the folder sync the user already
+does, not on a second thing to keep in step. The permalink identity is decoupled
+from the local folder name (`~/Sync/notes` and `D:\backup` can both declare
+`workspace: "notes"`).
+
+In:
+- **Resolve `?ws=` by name, with the opaque id as fallback.** `?ws=notes`
+  resolves to the granted vault whose `.brulion.json` declares
+  `workspace: "notes"`; an unmatched value is tried as a legacy opaque id so
+  existing `?ws=<id>` links (in history/bookmarks) keep working.
+- **A `workspace` field in `.brulion.json`** — set/edited via M16 settings;
+  defaults sensibly (e.g. the folder name) but is user-owned and portable.
+- **Collision rule** — names aren't unique the way minted ids were: 0 granted
+  matches → the pick-a-folder onboarding for that name; exactly 1 → attach; >1 →
+  disambiguate (prompt / most-recent).
+
+Out (deliberately, and stated so we don't over-promise):
+- **Not "works on any foreign machine."** FSA can't silently find "the folder
+  called notes" on a machine that never granted it — a permalink there degrades
+  to "pick your notes folder, then I open the note." This is cross-*own-devices*
+  (folder granted once per machine), not cross-*any*-machine.
+- **Path-permalinks, not rename-stable ids.** The note is addressed by path
+  (M19), so a rename/move breaks the link — the file-faithful tradeoff. No hidden
+  per-note id in the file (that would collide with the M23 "opaque frontmatter,
+  no field interpretation" stance).
+- **A personal bookmark, not a sharing link.** The URL does nothing for someone
+  who doesn't have your folder; this is not collaboration.
 
 ## Later / backlog (out of MVP, on purpose)
 
