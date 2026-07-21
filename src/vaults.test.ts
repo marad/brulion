@@ -9,6 +9,8 @@ import {
   effectiveVaultName,
   resolveVaultRef,
   pickStartupVault,
+  wsToStampOnAttach,
+  wsToStampOnFailedAttach,
 } from "./vaults"
 
 /**
@@ -331,6 +333,44 @@ describe("vault store", () => {
 
     it("returns undefined for an absent ?ws when there are no vaults", async () => {
       expect(await pickStartupVault(null)).toBeUndefined()
+    })
+  })
+
+  describe("wsToStampOnAttach (FEAT-0079)", () => {
+    it("AC-8: stamps the effective name on a fresh pick (no prior ?ws)", () => {
+      expect(wsToStampOnAttach(null, "notes", "id1")).toBe("notes")
+    })
+
+    it("AC-8: stamps the new vault's name on a switch (prior ?ws points elsewhere)", () => {
+      expect(wsToStampOnAttach("journal", "notes", "id1")).toBe("notes")
+    })
+
+    it("AC-8: leaves an incoming ?ws that already equals the effective name", () => {
+      expect(wsToStampOnAttach("notes", "notes", "id1")).toBeNull()
+    })
+
+    it("AC-8: leaves a legacy opaque-id ?ws (must not rewrite it to a name)", () => {
+      // Discriminating: the pre-restructure code always stamped the effective name,
+      // which under a name collision could re-resolve a legacy-id link to a different
+      // vault. Here the id ref must be left untouched.
+      expect(wsToStampOnAttach("id1", "notes", "id1")).toBeNull()
+    })
+  })
+
+  describe("wsToStampOnFailedAttach (FEAT-0079)", () => {
+    it("re-asserts the prior vault's ?ws on a failed switch", () => {
+      expect(wsToStampOnFailedAttach("prevId", "journal")).toBe("journal")
+    })
+
+    it("clears ?ws on a failed cold start so a reload self-heals (no prior vault)", () => {
+      // Discriminating: the round-1 regression stamped prev.wsParam here, looping every
+      // reload on the dead permalink. With no prior vault, the result must be null (clear).
+      expect(wsToStampOnFailedAttach("", "Work")).toBeNull()
+    })
+
+    it("clears ?ws when the prior ?ws was empty/absent", () => {
+      expect(wsToStampOnFailedAttach("prevId", "")).toBeNull()
+      expect(wsToStampOnFailedAttach("prevId", null)).toBeNull()
     })
   })
 

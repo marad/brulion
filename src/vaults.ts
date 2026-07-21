@@ -84,6 +84,38 @@ export async function pickStartupVault(ws: string | null): Promise<Vault | undef
   return (await listVaults())[0]
 }
 
+/**
+ * The `?ws=` value to write after a **successful** attach (FEAT-0079), or `null` to
+ * leave the URL's current `?ws` untouched. Returns `null` when the incoming `prevWs`
+ * already points at the attached vault — its `effectiveName` (already portable) or its
+ * opaque `vaultId` (a legacy link we must not rewrite to a name, since under a name
+ * collision that name could later re-resolve to a *different* vault). Otherwise returns
+ * `effectiveName` — a fresh pick (no prior `?ws`) or a switch from another vault — so
+ * the address-bar URL is portable. Pure.
+ */
+export function wsToStampOnAttach(
+  prevWs: string | null,
+  effectiveName: string,
+  vaultId: string,
+): string | null {
+  if (prevWs === effectiveName || prevWs === vaultId) return null
+  return effectiveName
+}
+
+/**
+ * The `?ws=` value to write on a **failed** attach (FEAT-0079), or `null` to *clear*
+ * `?ws`. Re-asserts the previously-attached vault's ref (`prevWs`) when there was a
+ * prior vault (`prevVaultId` truthy) — a failed switch returns the window to it — else
+ * returns `null` so a failed cold start clears the dead permalink and a reload
+ * self-heals to the most-recently-used working vault instead of looping. Pure.
+ */
+export function wsToStampOnFailedAttach(
+  prevVaultId: string,
+  prevWs: string | null,
+): string | null {
+  return prevVaultId && prevWs ? prevWs : null
+}
+
 /** A new opaque id not already taken by an existing vault. */
 function mintId(existing: readonly Vault[]): string {
   const taken = new Set(existing.map((v) => v.id))

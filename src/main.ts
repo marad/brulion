@@ -52,6 +52,8 @@ import {
   migrateLegacyFolder,
   effectiveVaultName,
   pickStartupVault,
+  wsToStampOnAttach,
+  wsToStampOnFailedAttach,
   type Vault,
 } from "./vaults"
 import {
@@ -1096,10 +1098,10 @@ const attachVaultNow = async (vault: Vault) => {
   expandedFolders = await loadExpandedFolders(vault.id)
   cachedNoteList = await loadNoteList(vault.id)
   currentVaultId = vault.id
-  // Stamp the portable name early (FEAT-0079) from the *cached* record — a fresh
-  // folder has none yet, so this is its folder name, the correct default. The
-  // on-disk `.brulion.json` name is applied after openNote below.
-  stampWorkspace(effectiveVaultName(vault))
+  // Note: `?ws` is deliberately NOT stamped here (before openNote). The URL keeps its
+  // incoming `?ws` through the attach, and is settled once — after success or on
+  // rollback — from the pure decisions below (FEAT-0079). Stamping early would rewrite
+  // an incoming legacy-id `?ws` to a name before we know the attach even succeeds.
   try {
     await openNote(vault.handle)
   } catch (err) {
@@ -1118,18 +1120,24 @@ const attachVaultNow = async (vault: Vault) => {
     applySettings(view, currentSettings) // undo the dead folder's settings applied in openNote
     refreshActionBar()
     settingsModal?.sync()
-    if (prev.wsParam) stampWorkspace(prev.wsParam)
-    else unstampWorkspace() // no prior `?ws` (or an empty one) → clear it, don't stamp ""
+    // Settle `?ws`: a failed switch re-asserts the prior vault's ref; a failed cold
+    // start clears it so a reload self-heals to the most-recent working vault instead
+    // of looping on the dead permalink (FEAT-0079).
+    const restore = wsToStampOnFailedAttach(prev.vaultId, prev.wsParam)
+    if (restore !== null) stampWorkspace(restore)
+    else unstampWorkspace()
     console.error("Failed to attach vault:", err)
     throw err
   }
   // openNote loaded this folder's `.brulion.json` into currentSettings. Record the
   // attach in one transaction — move the vault to most-recent AND refresh its cached
-  // workspace name (so a future startup can resolve `?ws=<name>` without a disk read)
-  // — then re-stamp the URL with the on-disk effective name, a no-op when it already
-  // matches the early stamp above (FEAT-0079).
+  // workspace name (so a future startup can resolve `?ws=<name>` without a disk read).
   await markVaultAttached(vault.id, currentSettings.workspace)
-  stampWorkspace(effectiveVaultName({ name: vault.name, workspace: currentSettings.workspace }))
+  // Settle `?ws` to the portable effective name, unless the incoming `?ws` already
+  // targets this vault (its name, or a legacy id we must not rewrite) (FEAT-0079).
+  const eff = effectiveVaultName({ name: vault.name, workspace: currentSettings.workspace })
+  const toStamp = wsToStampOnAttach(prev.wsParam, eff, vault.id)
+  if (toStamp !== null) stampWorkspace(toStamp)
 }
 // A freshly-picked folder (open-folder button / settings switch): record it as a
 // vault (reusing an existing one if it's the same folder) and attach to it.
