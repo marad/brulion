@@ -239,7 +239,7 @@ describe("applySettings DOM variables", () => {
     try {
       applySettings(
         view,
-        { font: [], textSize: 20, editorWidth: "wider", vim: false, actionBar: [], journalPath: "", theme: "system" },
+        { font: [], textSize: 20, editorWidth: "wider", vim: false, actionBar: [], journalPath: "", theme: "system", workspace: "" },
         root,
       )
       expect(root.style.getPropertyValue("--editor-font-size")).toBe("20px")
@@ -270,7 +270,7 @@ describe("applySettings DOM variables", () => {
     try {
       applySettings(
         view,
-        { font: ["Menlo", "Courier New"], textSize: 16, editorWidth: "narrow", vim: false, actionBar: [], journalPath: "", theme: "system" },
+        { font: ["Menlo", "Courier New"], textSize: 16, editorWidth: "narrow", vim: false, actionBar: [], journalPath: "", theme: "system", workspace: "" },
         root,
       )
       expect(root.style.getPropertyValue("--font-stack")).toBe(

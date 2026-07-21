@@ -152,6 +152,7 @@ describe("mountSettingsModal open/seed (FEAT-0048 AC-1)", () => {
       actionBar: [],
       journalPath: "",
       theme: "system",
+      workspace: "",
     }
     const { backdrop, handle } = mount(initial)
 

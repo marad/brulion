@@ -46,11 +46,13 @@ import { mountDialog } from "./dialog"
 import { resolvePinned, type Action } from "./actions"
 import {
   addVault,
-  getVault,
   touchVault,
   listVaults,
   removeVault,
   migrateLegacyFolder,
+  effectiveVaultName,
+  setVaultWorkspace,
+  resolveVaultRef,
   type Vault,
 } from "./vaults"
 import {
@@ -1029,13 +1031,14 @@ window.addEventListener("hashchange", () => {
 keepButton.addEventListener("click", () => void controller.resolveKeepMine())
 diskButton.addEventListener("click", () => void controller.resolveTakeTheirs())
 
-// Vault identity in the URL (M33/FEAT-0059): mirror the attached vault's id into
-// `?ws=` with replaceState (never a push — that history belongs to note navigation,
-// FEAT-0036), preserving the path and the `#/note` hash.
-const stampWorkspace = (id: string) => {
+// Vault identity in the URL (M33/FEAT-0059): mirror the attached vault's `?ws=` value
+// with replaceState (never a push — that history belongs to note navigation,
+// FEAT-0036), preserving the path and the `#/note` hash. The value is the vault's
+// portable effective name (FEAT-0079), not its opaque id, so the URL is cross-device.
+const stampWorkspace = (value: string) => {
   const url = new URL(location.href)
-  if (url.searchParams.get("ws") === id) return // already stamped — no redundant entry
-  url.searchParams.set("ws", id)
+  if (url.searchParams.get("ws") === value) return // already stamped — no redundant entry
+  url.searchParams.set("ws", value)
   // Preserve the note hash byte-for-byte (don't let URL re-encode the fragment) —
   // only the query changes; the note route (FEAT-0036) owns the hash.
   history.replaceState(history.state, "", `${url.pathname}${url.search}${location.hash}`)
@@ -1076,6 +1079,9 @@ const attachVaultNow = async (vault: Vault) => {
   // the next settings write, or the sidebar's folder rows, to a vault that's gone.
   const prev = {
     vaultId: currentVaultId,
+    // The exact pre-attach `?ws` string (or null), restored verbatim on a failed
+    // attach — simpler and more robust than recomputing the previous vault's name.
+    wsParam: new URLSearchParams(location.search).get("ws"),
     recency,
     expandedFolders,
     cachedNoteList,
@@ -1084,12 +1090,17 @@ const attachVaultNow = async (vault: Vault) => {
     currentFolders,
   }
   // Load the vault's session first, so a transient idb error can't leave `?ws` +
-  // currentVaultId pointing at a vault we never actually opened.
+  // currentVaultId pointing at a vault we never actually opened. Session state stays
+  // keyed by the opaque `vault.id` (FEAT-0059) — FEAT-0079 changes only the meaning
+  // of the `?ws` URL param, never how per-vault storage is keyed.
   recency = await loadRecency(vault.id)
   expandedFolders = await loadExpandedFolders(vault.id)
   cachedNoteList = await loadNoteList(vault.id)
   currentVaultId = vault.id
-  stampWorkspace(vault.id)
+  // Stamp the portable name early (FEAT-0079) from the *cached* record — a fresh
+  // folder has none yet, so this is its folder name, the correct default. The
+  // on-disk `.brulion.json` name is applied after openNote below.
+  stampWorkspace(effectiveVaultName(vault))
   try {
     await openNote(vault.handle)
   } catch (err) {
@@ -1108,11 +1119,17 @@ const attachVaultNow = async (vault: Vault) => {
     applySettings(view, currentSettings) // undo the dead folder's settings applied in openNote
     refreshActionBar()
     settingsModal?.sync()
-    if (prev.vaultId) stampWorkspace(prev.vaultId)
+    if (prev.wsParam !== null) stampWorkspace(prev.wsParam)
     else unstampWorkspace()
     console.error("Failed to attach vault:", err)
     throw err
   }
+  // openNote loaded this folder's `.brulion.json` into currentSettings. Cache its
+  // workspace name on the vault record (so a future startup can resolve `?ws=<name>`
+  // without a disk read) and re-stamp the URL with the on-disk effective name — a
+  // no-op when it already matches the early stamp above (FEAT-0079).
+  await setVaultWorkspace(vault.id, currentSettings.workspace)
+  stampWorkspace(effectiveVaultName({ name: vault.name, workspace: currentSettings.workspace }))
   await touchVault(vault.id)
 }
 // A freshly-picked folder (open-folder button / settings switch): record it as a
@@ -1153,12 +1170,14 @@ const openWorkspaceSwitcher = async () => {
       : [{ id: "ws-none", label: "No other workspaces — add one with “Switch folder…”", run: () => {} }],
   )
 }
-// Which vault this window should open on load: its `?ws` vault if that id is known,
-// else the most-recently-used vault (the set is most-recent-first), else none.
+// Which vault this window should open on load: its `?ws` vault resolved by name
+// (FEAT-0079), with the opaque id as a legacy fallback; else the most-recently-used
+// vault (the set is most-recent-first), else none. An unmatched `?ws` leaves the
+// `#/note` hash intact so it resolves once a matching folder is granted.
 const resolveStartupVault = async (): Promise<Vault | undefined> => {
   const ws = new URLSearchParams(location.search).get("ws")
   if (ws) {
-    const v = await getVault(ws)
+    const v = await resolveVaultRef(ws)
     if (v) return v
   }
   return (await listVaults())[0]

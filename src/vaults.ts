@@ -47,7 +47,8 @@ export async function getVault(id: string): Promise<Vault | undefined> {
  * named the same on every device) is portable with no configuration. Pure.
  */
 export function effectiveVaultName(vault: Pick<Vault, "name" | "workspace">): string {
-  throw new Error("not implemented")
+  const configured = vault.workspace?.trim()
+  return configured ? configured : vault.name
 }
 
 /**
@@ -57,7 +58,10 @@ export function effectiveVaultName(vault: Pick<Vault, "name" | "workspace">): st
  * no-op when the id is absent.
  */
 export async function setVaultWorkspace(id: string, workspace: string): Promise<void> {
-  throw new Error("not implemented")
+  const name = workspace.trim() || undefined
+  await update<Vault[]>(VAULTS_KEY, (current = []) =>
+    current.map((v) => (v.id === id ? { ...v, workspace: name } : v)),
+  )
 }
 
 /**
@@ -65,9 +69,18 @@ export async function setVaultWorkspace(id: string, workspace: string): Promise<
  * whose effective name equals `ref` (a collision resolves to the most-recently-used,
  * since the set is most-recent-first), else the vault whose opaque `id` equals `ref`
  * (the pre-M38 meaning, so existing links keep working), else `undefined`.
+ *
+ * Best-effort by design: it matches the *cached* effective name (see {@link Vault}),
+ * so the folder-name default is always warm (stored at add time) but an explicit
+ * `workspace` name set on another device resolves here only after this device has
+ * attached to that vault at least once and refreshed its cache.
  */
 export async function resolveVaultRef(ref: string): Promise<Vault | undefined> {
-  throw new Error("not implemented")
+  const vaults = await listVaults() // most-recent-first
+  // Name match wins; the first hit is the most-recent among any collisions.
+  const byName = vaults.find((v) => effectiveVaultName(v) === ref)
+  if (byName) return byName
+  return vaults.find((v) => v.id === ref) // legacy opaque-id fallback
 }
 
 /** A new opaque id not already taken by an existing vault. */
