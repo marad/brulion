@@ -67,14 +67,15 @@ at load).
   back to the most-recently-used vault (the pre-M38 "just open my last folder"
   behavior).
 
-**Portable stamp.** When a window *establishes or changes* its `?ws` — a fresh
-folder pick, or a switch from another vault — it writes the vault's **effective
-name**, not the opaque id, so a URL copied from the address bar is portable by
-construction. An incoming `?ws` that **already points at the attached vault** — by
-its effective name, or by a legacy opaque id — is **left unchanged**: this keeps
-existing links working and, critically, never rewrites a legacy-id link into a
-name that could later re-resolve to a *different* vault under a name collision.
-The stamp uses `replaceState` (vault identity never enters back/forward history,
+**Portable stamp — one model: `?ws` is always the effective name.** A window's
+`?ws` is stamped to the attached vault's **effective name** (never the opaque id):
+once when the window commits to the vault (so a reload *during* the attach resumes
+the right vault) and again after `openNote` reads `.brulion.json` (in case the
+on-disk name differs from the cached one). A legacy opaque-id `?ws` is therefore
+**upgraded to the name** on load — which is the desired portability in the common
+case, and under a name collision simply follows the same most-recent tiebreak as
+any other name (see AC-6; a single documented limitation, not a special case). The
+stamp uses `replaceState` (vault identity never enters back/forward history,
 FEAT-0059) and preserves the `#/…` note hash byte-for-byte.
 
 **Failed-attach `?ws`.** If an attach fails (the folder is unreachable), the URL
@@ -173,15 +174,12 @@ with `?ws=X` and the `#/some/note` hash left intact, so the note resolves once a
 matching folder is granted. (An *absent* `?ws` still falls back to the
 most-recently-used vault.)
 
-**AC-8** — Establishing `?ws` writes the portable name; an incoming ref that
-already targets the vault is left unchanged.
+**AC-8** — A window's `?ws` is stamped to the vault's portable effective name.
 Given a window attaches to a vault whose effective name is `N`,
-When it had no `?ws` (a fresh pick) or a `?ws` pointing at a *different* vault (a
-switch),
-Then `?ws=N` is written (portable), using `replaceState` and preserving the `#/…`
-hash; but when the incoming `?ws` already targets this vault — equal to `N`, or a
-legacy opaque id equal to the vault's id — the URL is left unchanged (a legacy-id
-link is never rewritten to a name).
+When `?ws` is stamped into the URL,
+Then it is written as `?ws=N` (portable), using `replaceState` and preserving the
+`#/…` hash — including upgrading a legacy opaque-id `?ws` to the name, and applied
+early enough that a reload *during* the attach resumes the same vault.
 
 **AC-9** — Per-vault session state stays keyed by the opaque id.
 Given two vaults with distinct effective names, each with its own recency and

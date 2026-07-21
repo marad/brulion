@@ -52,7 +52,6 @@ import {
   migrateLegacyFolder,
   effectiveVaultName,
   pickStartupVault,
-  wsToStampOnAttach,
   wsToStampOnFailedAttach,
   type Vault,
 } from "./vaults"
@@ -1098,10 +1097,11 @@ const attachVaultNow = async (vault: Vault) => {
   expandedFolders = await loadExpandedFolders(vault.id)
   cachedNoteList = await loadNoteList(vault.id)
   currentVaultId = vault.id
-  // Note: `?ws` is deliberately NOT stamped here (before openNote). The URL keeps its
-  // incoming `?ws` through the attach, and is settled once — after success or on
-  // rollback — from the pure decisions below (FEAT-0079). Stamping early would rewrite
-  // an incoming legacy-id `?ws` to a name before we know the attach even succeeds.
+  // Stamp the portable name (FEAT-0079) from the *cached* record now, before openNote,
+  // so a reload *during* the attach resumes this vault (not the one previously in the
+  // URL). A fresh folder has no cached workspace yet, so this is its folder name — the
+  // correct default; the on-disk `.brulion.json` name is applied after openNote below.
+  stampWorkspace(effectiveVaultName(vault))
   try {
     await openNote(vault.handle)
   } catch (err) {
@@ -1133,11 +1133,10 @@ const attachVaultNow = async (vault: Vault) => {
   // attach in one transaction — move the vault to most-recent AND refresh its cached
   // workspace name (so a future startup can resolve `?ws=<name>` without a disk read).
   await markVaultAttached(vault.id, currentSettings.workspace)
-  // Settle `?ws` to the portable effective name, unless the incoming `?ws` already
-  // targets this vault (its name, or a legacy id we must not rewrite) (FEAT-0079).
-  const eff = effectiveVaultName({ name: vault.name, workspace: currentSettings.workspace })
-  const toStamp = wsToStampOnAttach(prev.wsParam, eff, vault.id)
-  if (toStamp !== null) stampWorkspace(toStamp)
+  // Re-stamp `?ws` with the on-disk effective name — a no-op (guarded) when it already
+  // matches the early stamp above, but corrects it when the on-disk `.brulion.json`
+  // workspace name differs from the cached one (FEAT-0079).
+  stampWorkspace(effectiveVaultName({ name: vault.name, workspace: currentSettings.workspace }))
 }
 // A freshly-picked folder (open-folder button / settings switch): record it as a
 // vault (reusing an existing one if it's the same folder) and attach to it.
