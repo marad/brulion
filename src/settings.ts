@@ -90,7 +90,7 @@ export function normalizeSettings(raw: unknown): Settings {
     actionBar: Array.isArray(r.actionBar) ? dedupeStrings(r.actionBar) : [],
     journalPath: typeof r.journalPath === "string" ? r.journalPath : "",
     theme: isTheme(r.theme) ? r.theme : "system",
-    workspace: typeof r.workspace === "string" ? r.workspace : "",
+    workspace: typeof r.workspace === "string" ? r.workspace.trim() : "",
   }
 }
 

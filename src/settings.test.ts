@@ -147,6 +147,12 @@ describe("normalizeSettings (AC-3)", () => {
     expect(normalizeSettings({}).workspace).toBe("")
     expect(normalizeSettings({ workspace: 7 }).workspace).toBe("")
     expect(normalizeSettings({ workspace: ["notes"] }).workspace).toBe("")
+    // Trimmed so the stored name matches the identity helpers (effectiveVaultName also
+    // trims); whitespace-only collapses to "" (the folder-name default). Internal
+    // spaces are kept (multi-word workspace names are allowed).
+    expect(normalizeSettings({ workspace: "  notes  " }).workspace).toBe("notes")
+    expect(normalizeSettings({ workspace: "   " }).workspace).toBe("")
+    expect(normalizeSettings({ workspace: "my notes" }).workspace).toBe("my notes")
   })
 
   it("AC-3: returns the defaults for a non-object input", () => {

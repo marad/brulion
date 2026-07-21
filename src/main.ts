@@ -377,13 +377,11 @@ const updateSettings = (patch: Partial<Settings>) => {
   void persistSettings()
   // The workspace name is the live vault identity (FEAT-0080): a change must refresh
   // the attached vault's cached name and re-stamp the window's `?ws` now, not on the
-  // next attach. Reuses the FEAT-0079 attach-path helpers; clearing the name falls
-  // back to the folder name via effectiveVaultName.
-  if ("workspace" in patch && currentVaultId) {
-    void markVaultAttached(currentVaultId, currentSettings.workspace)
-    stampWorkspace(
-      effectiveVaultName({ name: settingsDir?.name ?? "", workspace: currentSettings.workspace }),
-    )
+  // next attach — via the same helper the attach path uses. Gated on `settingsDir` (the
+  // open folder handle, whose name is the fallback when the workspace is cleared) so
+  // the identity update never runs with an empty folder name.
+  if ("workspace" in patch && currentVaultId && settingsDir) {
+    void applyWorkspaceIdentity(currentVaultId, settingsDir.name, currentSettings.workspace)
   }
 }
 const toggleVim = () => {
@@ -1061,6 +1059,17 @@ const unstampWorkspace = () => {
   url.searchParams.delete("ws")
   history.replaceState(history.state, "", `${url.pathname}${url.search}${location.hash}`)
 }
+// Persist a vault's most-recent + cached workspace name, THEN stamp the portable `?ws`
+// (FEAT-0079/0080). Awaiting the cache write *before* stamping is deliberate: a reload
+// must never see a `?ws` the vault set can't yet resolve. Re-checks the vault is still
+// attached before stamping (a switch may have raced the async write). Shared by the
+// attach path and the live workspace-name edit so the two never diverge.
+const applyWorkspaceIdentity = async (vaultId: string, folderName: string, workspace: string) => {
+  await markVaultAttached(vaultId, workspace)
+  if (currentVaultId === vaultId) {
+    stampWorkspace(effectiveVaultName({ name: folderName, workspace }))
+  }
+}
 // Attach the window to a vault: stamp its `?ws`, load that vault's per-vault session
 // (recency + expanded folders), then open it through the existing note flow. The
 // vault is moved to most-recent so a future no-`?ws` window falls back to it.
@@ -1140,13 +1149,11 @@ const attachVaultNow = async (vault: Vault) => {
     throw err
   }
   // openNote loaded this folder's `.brulion.json` into currentSettings. Record the
-  // attach in one transaction — move the vault to most-recent AND refresh its cached
-  // workspace name (so a future startup can resolve `?ws=<name>` without a disk read).
-  await markVaultAttached(vault.id, currentSettings.workspace)
-  // Re-stamp `?ws` with the on-disk effective name — a no-op (guarded) when it already
-  // matches the early stamp above, but corrects it when the on-disk `.brulion.json`
-  // workspace name differs from the cached one (FEAT-0079).
-  stampWorkspace(effectiveVaultName({ name: vault.name, workspace: currentSettings.workspace }))
+  // attach (move-to-most-recent + refresh the cached workspace name) and re-stamp `?ws`
+  // with the on-disk effective name — a no-op (guarded) when it already matches the
+  // early stamp above, but corrects it when the on-disk name differs from the cached
+  // one (FEAT-0079).
+  await applyWorkspaceIdentity(vault.id, vault.name, currentSettings.workspace)
 }
 // A freshly-picked folder (open-folder button / settings switch): record it as a
 // vault (reusing an existing one if it's the same folder) and attach to it.
