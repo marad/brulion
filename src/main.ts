@@ -46,13 +46,12 @@ import { mountDialog } from "./dialog"
 import { resolvePinned, type Action } from "./actions"
 import {
   addVault,
-  touchVault,
+  markVaultAttached,
   listVaults,
   removeVault,
   migrateLegacyFolder,
   effectiveVaultName,
-  setVaultWorkspace,
-  resolveVaultRef,
+  pickStartupVault,
   type Vault,
 } from "./vaults"
 import {
@@ -1119,18 +1118,18 @@ const attachVaultNow = async (vault: Vault) => {
     applySettings(view, currentSettings) // undo the dead folder's settings applied in openNote
     refreshActionBar()
     settingsModal?.sync()
-    if (prev.wsParam !== null) stampWorkspace(prev.wsParam)
-    else unstampWorkspace()
+    if (prev.wsParam) stampWorkspace(prev.wsParam)
+    else unstampWorkspace() // no prior `?ws` (or an empty one) → clear it, don't stamp ""
     console.error("Failed to attach vault:", err)
     throw err
   }
-  // openNote loaded this folder's `.brulion.json` into currentSettings. Cache its
-  // workspace name on the vault record (so a future startup can resolve `?ws=<name>`
-  // without a disk read) and re-stamp the URL with the on-disk effective name — a
-  // no-op when it already matches the early stamp above (FEAT-0079).
-  await setVaultWorkspace(vault.id, currentSettings.workspace)
+  // openNote loaded this folder's `.brulion.json` into currentSettings. Record the
+  // attach in one transaction — move the vault to most-recent AND refresh its cached
+  // workspace name (so a future startup can resolve `?ws=<name>` without a disk read)
+  // — then re-stamp the URL with the on-disk effective name, a no-op when it already
+  // matches the early stamp above (FEAT-0079).
+  await markVaultAttached(vault.id, currentSettings.workspace)
   stampWorkspace(effectiveVaultName({ name: vault.name, workspace: currentSettings.workspace }))
-  await touchVault(vault.id)
 }
 // A freshly-picked folder (open-folder button / settings switch): record it as a
 // vault (reusing an existing one if it's the same folder) and attach to it.
@@ -1170,18 +1169,12 @@ const openWorkspaceSwitcher = async () => {
       : [{ id: "ws-none", label: "No other workspaces — add one with “Switch folder…”", run: () => {} }],
   )
 }
-// Which vault this window should open on load: its `?ws` vault resolved by name
-// (FEAT-0079), with the opaque id as a legacy fallback; else the most-recently-used
-// vault (the set is most-recent-first), else none. An unmatched `?ws` leaves the
-// `#/note` hash intact so it resolves once a matching folder is granted.
-const resolveStartupVault = async (): Promise<Vault | undefined> => {
-  const ws = new URLSearchParams(location.search).get("ws")
-  if (ws) {
-    const v = await resolveVaultRef(ws)
-    if (v) return v
-  }
-  return (await listVaults())[0]
-}
+// Which vault this window should open on load: delegates to pickStartupVault
+// (FEAT-0079), reading the `?ws` param here (the DOM concern). An explicit but
+// unmatched `?ws` resolves to nothing — the window falls through to the welcome/pick
+// flow with the URL intact, never silently opening a different folder.
+const resolveStartupVault = (): Promise<Vault | undefined> =>
+  pickStartupVault(new URLSearchParams(location.search).get("ws"))
 
 wireOpenFolder(openButton, resumeButton, openFreshFolder)
 // Re-picking a different folder once one is open (FEAT-0031) now lives in the

@@ -58,9 +58,14 @@ at load).
 - **Legacy id.** If no name matches, `<ref>` is retried as an opaque vault id
   (the pre-M38 meaning), so links already in browser history / bookmarks keep
   working.
-- **Miss.** If nothing matches, fall back to the most-recent vault (as today when
-  `?ws` is absent), leaving the `#/…` hash intact so the note resolves once a
-  folder is granted.
+- **Miss.** If nothing matches, resolution yields nothing. Crucially, an
+  **explicit but unmatched `?ws` is never silently replaced by a different vault**
+  — doing so would consume the `#/…` note hash against the wrong folder and
+  rewrite the shared permalink. Instead the window lands on the normal
+  welcome/pick flow with the URL (both `?ws` and `#/…`) left intact, so the note
+  resolves once the intended folder is granted. Only an **absent** `?ws` falls
+  back to the most-recently-used vault (the pre-M38 "just open my last folder"
+  behavior).
 
 **Portable stamp.** When a window attaches to a vault, the `?ws` it stamps into
 the URL is the vault's **effective name**, not the opaque id — so a URL copied
@@ -101,6 +106,17 @@ distinct effective names remain fully independent windows.
 - **Rename-stable note identity** — the note is addressed by path (FEAT-0036); a
   note rename/move still breaks the permalink. No hidden per-note id is introduced
   (it would collide with the opaque-frontmatter stance, FEAT-0042).
+- **Failover across an effective-name collision.** When two vaults share a name,
+  the most-recently-used wins (a defined tiebreak). If *that* one is unreachable
+  (deleted/moved on disk) the attach fails to the welcome flow; we do **not** then
+  try the other same-named vault. Names colliding is already unusual; the compound
+  case is rarer still, and the user reaches the pick flow either way — a
+  multi-candidate failover is not worth the attach-loop complexity here.
+- **Name-vs-id ambiguity.** Resolution is name-first by design (names are the
+  portable identity). In the pathological case where a legacy opaque id equals some
+  other vault's effective name, the name wins and the legacy id link opens the
+  named folder. An 8-hex-char id colliding with a real workspace name is
+  negligible, and preserving name-first is the whole point.
 
 ## Acceptance criteria
 
@@ -138,13 +154,14 @@ When a window loads with `?ws=N`,
 Then it attaches to the most-recently-used of them (the set is most-recent-first),
 deterministically, without error.
 
-**AC-7** — An unknown `?ws` falls back and preserves the note hash.
+**AC-7** — An explicit but unmatched `?ws` does not open a different vault.
 Given a window loads with `?ws=X#/some/note` where `X` matches no vault name and no
 vault id,
 When the restore runs,
-Then it falls back to the most-recent vault (or the welcome screen if none), and
-the `#/some/note` hash is left intact so the note resolves once a matching folder
-is granted.
+Then no other vault is silently attached in its place — the welcome/pick flow runs
+with `?ws=X` and the `#/some/note` hash left intact, so the note resolves once a
+matching folder is granted. (An *absent* `?ws` still falls back to the
+most-recently-used vault.)
 
 **AC-8** — The stamped `?ws` is the effective name, not the opaque id.
 Given a window attaches to a vault whose effective name is `N`,

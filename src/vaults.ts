@@ -52,19 +52,6 @@ export function effectiveVaultName(vault: Pick<Vault, "name" | "workspace">): st
 }
 
 /**
- * Cache the configured workspace name (FEAT-0079) on the vault with `id`, refreshed
- * on every attach. Stores the trimmed value, or clears the field when blank/empty.
- * A single idb-keyval read-modify-write transaction (see {@link touchVault}); a
- * no-op when the id is absent.
- */
-export async function setVaultWorkspace(id: string, workspace: string): Promise<void> {
-  const name = workspace.trim() || undefined
-  await update<Vault[]>(VAULTS_KEY, (current = []) =>
-    current.map((v) => (v.id === id ? { ...v, workspace: name } : v)),
-  )
-}
-
-/**
  * Resolve a `?ws=` reference (FEAT-0079), name-first then id-fallback: the vault
  * whose effective name equals `ref` (a collision resolves to the most-recently-used,
  * since the set is most-recent-first), else the vault whose opaque `id` equals `ref`
@@ -81,6 +68,20 @@ export async function resolveVaultRef(ref: string): Promise<Vault | undefined> {
   const byName = vaults.find((v) => effectiveVaultName(v) === ref)
   if (byName) return byName
   return vaults.find((v) => v.id === ref) // legacy opaque-id fallback
+}
+
+/**
+ * The vault a window should open on load (FEAT-0079), given its `?ws=` value (or
+ * `null`/empty when absent). An **explicit** `?ws` resolves to *its* vault via
+ * {@link resolveVaultRef} or to nothing — it is never replaced by a different vault
+ * (that would consume the note hash against the wrong folder and rewrite the shared
+ * permalink; the caller shows the welcome/pick flow with the URL intact instead). An
+ * **absent** `?ws` falls back to the most-recently-used vault (the set is
+ * most-recent-first), else `undefined`.
+ */
+export async function pickStartupVault(ws: string | null): Promise<Vault | undefined> {
+  if (ws) return resolveVaultRef(ws)
+  return (await listVaults())[0]
 }
 
 /** A new opaque id not already taken by an existing vault. */
@@ -134,19 +135,25 @@ export async function addVault(handle: FileSystemDirectoryHandle): Promise<Vault
   return result
 }
 
-/** Move the vault with `id` to the front (most-recent); a no-op if absent. Used on
- * attach so the "most-recent vault" fallback (no `?ws`) reflects real usage. A single
- * read-modify-write transaction, so a concurrent window's write isn't clobbered. */
-export async function touchVault(id: string): Promise<void> {
+/**
+ * Record that a window attached to the vault with `id`: move it to the front (so the
+ * "most-recent vault" fallback for an absent `?ws` reflects real usage) **and**
+ * refresh its cached workspace name (FEAT-0079) from the on-disk `.brulion.json`, in
+ * a **single** read-modify-write transaction. `workspace` is stored trimmed, or the
+ * field is cleared when blank/empty. A no-op if the id is absent. One transaction (not
+ * a separate move-to-front + cache-write) keeps the attach path to a single serialize
+ * of the vault set, and a concurrent window's write isn't clobbered. */
+export async function markVaultAttached(id: string, workspace: string): Promise<void> {
+  const name = workspace.trim() || undefined
   await update<Vault[]>(VAULTS_KEY, (current = []) => {
     const v = current.find((x) => x.id === id)
-    return v ? toFront(v, current) : current
+    return v ? toFront({ ...v, workspace: name }, current) : current
   })
 }
 
 /** Remove the vault with `id` from the set (forget it); a no-op if absent. Reserved
  * for the P2 "forget workspace" surface (FEAT-0060) — not yet wired in P1. A single
- * read-modify-write transaction (see {@link touchVault}). */
+ * read-modify-write transaction (see {@link markVaultAttached}). */
 export async function removeVault(id: string): Promise<void> {
   await update<Vault[]>(VAULTS_KEY, (current = []) => current.filter((v) => v.id !== id))
 }
