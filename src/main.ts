@@ -375,6 +375,16 @@ const updateSettings = (patch: Partial<Settings>) => {
   refreshActionBar() // a changed actionBar (or any setting) repaints the header bar
   settingsModal?.sync()
   void persistSettings()
+  // The workspace name is the live vault identity (FEAT-0080): a change must refresh
+  // the attached vault's cached name and re-stamp the window's `?ws` now, not on the
+  // next attach. Reuses the FEAT-0079 attach-path helpers; clearing the name falls
+  // back to the folder name via effectiveVaultName.
+  if ("workspace" in patch && currentVaultId) {
+    void markVaultAttached(currentVaultId, currentSettings.workspace)
+    stampWorkspace(
+      effectiveVaultName({ name: settingsDir?.name ?? "", workspace: currentSettings.workspace }),
+    )
+  }
 }
 const toggleVim = () => {
   if (loadingSettings) return // mid folder-open: ignore, the loaded value wins

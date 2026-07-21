@@ -569,3 +569,47 @@ describe("Weekly journal field (FEAT-0062)", () => {
     expect(el.getAttribute("data-form-type")).toBe("other")
   })
 })
+
+describe("Workspace name field (FEAT-0080)", () => {
+  const workspaceInput = (root: HTMLElement) =>
+    root.querySelector<HTMLInputElement>(".settings-workspace")!
+
+  it("AC-1: seeds the input from settings.workspace and emits on input", () => {
+    const { backdrop, handle, onChange } = mount({ ...DEFAULT_SETTINGS, workspace: "notes" })
+    handle.open()
+    expect(workspaceInput(backdrop).value).toBe("notes")
+
+    workspaceInput(backdrop).value = "journal"
+    workspaceInput(backdrop).dispatchEvent(new Event("input", { bubbles: true }))
+
+    expect(onChange).toHaveBeenCalledWith({ workspace: "journal" })
+  })
+
+  it("AC-2: the placeholder is the open folder's name (the empty-field default)", () => {
+    const { backdrop, handle } = mount({ ...DEFAULT_SETTINGS, workspace: "" }, "my-notes-folder")
+    handle.open()
+    expect(workspaceInput(backdrop).value).toBe("")
+    expect(workspaceInput(backdrop).placeholder).toBe("my-notes-folder")
+  })
+
+  it("does not reset the caret when sync re-seeds the same value (mid-edit)", () => {
+    const { backdrop, handle } = mount({ ...DEFAULT_SETTINGS, workspace: "notebook" })
+    handle.open()
+    const input = workspaceInput(backdrop)
+    input.focus()
+    input.setSelectionRange(4, 4) // caret mid-word ("note|book")
+
+    handle.sync() // what updateSettings triggers after every keystroke
+
+    expect(input.value).toBe("notebook")
+    expect(input.selectionStart).toBe(4)
+  })
+
+  it("carries the anti-autofill attributes (FEAT-0074/AC-2)", () => {
+    const { backdrop } = mount(DEFAULT_SETTINGS)
+    const el = workspaceInput(backdrop)
+    expect(el.autocomplete).toBe("off")
+    expect(el.getAttribute("data-lpignore")).toBe("true")
+    expect(el.getAttribute("data-form-type")).toBe("other")
+  })
+})

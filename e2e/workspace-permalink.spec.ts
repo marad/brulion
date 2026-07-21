@@ -35,6 +35,17 @@ async function writeNote(page: Page, folder: string, file: string, text: string)
   )
 }
 
+async function mdCount(page: Page, folder: string): Promise<number> {
+  return await page.evaluate(async (f) => {
+    const root = await navigator.storage.getDirectory()
+    const dir = await root.getDirectoryHandle(f, { create: true })
+    let n = 0
+    // @ts-expect-error async iterator over a directory handle
+    for await (const [name] of dir.entries()) if (name.endsWith(".md")) n++
+    return n
+  }, folder)
+}
+
 const ws = (page: Page) => new URL(page.url()).searchParams.get("ws")
 const hash = (page: Page) => new URL(page.url()).hash
 const noteRows = (page: Page) => page.locator(".note-row")
@@ -110,4 +121,35 @@ test("a fresh device with no matching folder falls back to welcome, never a wron
   await expect(page2.locator(".note-row")).toHaveCount(0)
   expect(ws(page2)).toBe(B)
   await page2.close()
+})
+
+test("FEAT-0080: setting a workspace name live-updates ?ws; clearing falls back to the folder name (AC-4, AC-5, AC-6)", async ({
+  page,
+}) => {
+  await stubPicker(page, [A])
+  await page.goto("/brulion/")
+  await writeNote(page, A, "alpha.md", "alpha body")
+  await page.locator("#open-folder").click()
+  await expect(noteRows(page)).toHaveCount(1)
+  expect(ws(page)).toBe(A) // folder-name default
+  const before = await mdCount(page, A)
+
+  // Set an explicit workspace name → the URL re-stamps live, no reload.
+  await page.locator("#open-settings").click()
+  await page.locator(".settings-workspace").fill("shared-notes")
+  await expect(page).toHaveURL(/[?&]ws=shared-notes(&|#|$)/)
+
+  // A reload resolves the new name back to the SAME vault (name cached + persisted).
+  await page.reload()
+  await expect(page.locator("#welcome")).toBeHidden()
+  await expect(noteRows(page)).toHaveCount(1)
+  expect(ws(page)).toBe("shared-notes")
+
+  // Clearing the field falls the effective name back to the folder name.
+  await page.locator("#open-settings").click()
+  await page.locator(".settings-workspace").fill("")
+  await expect(page).toHaveURL(new RegExp(`[?&]ws=${A}(&|#|$)`))
+
+  // Moat: only .brulion.json was written — no .md files created.
+  expect(await mdCount(page, A)).toBe(before)
 })

@@ -208,6 +208,23 @@ export function mountSettingsModal(
   journalControl.append(journalInput, journalHint)
   const journalRow = labeledRow("Weekly journal", journalControl)
 
+  // Workspace name (FEAT-0080): the stable name that keys a cross-device permalink
+  // (?ws). A text input plus a hint; empty means "use the folder name" (shown as the
+  // placeholder, seeded in seed()). Emits on input so the host persists + re-stamps.
+  const workspaceInput = document.createElement("input")
+  workspaceInput.type = "text"
+  workspaceInput.className = "settings-workspace"
+  applyAntiAutofillAttrs(workspaceInput)
+  workspaceInput.addEventListener("input", () => emit({ workspace: workspaceInput.value }))
+  const workspaceHint = document.createElement("p")
+  workspaceHint.className = "settings-section-hint"
+  workspaceHint.textContent =
+    "Names this vault for cross-device note links; leave empty to use the folder name."
+  const workspaceControl = document.createElement("div")
+  workspaceControl.className = "settings-workspace-control"
+  workspaceControl.append(workspaceInput, workspaceHint)
+  const workspaceRow = labeledRow("Workspace name", workspaceControl)
+
   // Action bar (FEAT-0058) — its own distinct section (own heading + scrollable
   // list), set off from the appearance controls so a growing action set doesn't
   // crowd the dialog. Rebuilt by seed() from the current settings; placed last so the
@@ -246,6 +263,7 @@ export function mountSettingsModal(
     themeRow,
     vimRow,
     folderRow,
+    workspaceRow,
     journalRow,
     actionBarSection,
     workspacesSection,
@@ -357,6 +375,10 @@ export function mountSettingsModal(
     // host's updateSettings calls sync()→seed() right back, and reassigning `.value`
     // to the string just typed would jump the caret to the end mid-edit.
     if (journalInput.value !== s.journalPath) journalInput.value = s.journalPath
+    // Workspace name (FEAT-0080): same caret-guard as the journal field; the
+    // placeholder is the folder name, so an empty field reads as "using the folder".
+    if (workspaceInput.value !== s.workspace) workspaceInput.value = s.workspace
+    workspaceInput.placeholder = handlers.getFolderName()
     folderName.textContent = handlers.getFolderName()
     const family = s.font[0] ?? DEFAULT_FONT_VALUE
     // Keep the select honest if the active family isn't (yet) an option — e.g. a
