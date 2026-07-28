@@ -1270,7 +1270,12 @@ settingsModal = mountSettingsModal(settingsBackdropEl, {
   // The granted workspaces for the Workspaces section (FEAT-0060); the open one is
   // marked so it can't be forgotten.
   getWorkspaces: async () =>
-    (await listVaults()).map((v) => ({ id: v.id, name: v.name, open: v.id === currentVaultId })),
+    (await listVaults()).map((v) => ({
+      id: v.id,
+      name: v.name,
+      effectiveName: effectiveVaultName(v),
+      open: v.id === currentVaultId,
+    })),
   onForgetWorkspace: (id: string) => removeVault(id),
 })
 // Two entry points open it: the header gear and `Ctrl/Cmd+,`. The gear replaces the

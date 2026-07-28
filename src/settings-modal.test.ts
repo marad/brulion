@@ -28,11 +28,13 @@ const ACTION_META = [
 ]
 
 // The granted workspaces the host hands the modal (FEAT-0060); "alpha" is the open one.
-type WS = { id: string; name: string; open: boolean }
+// effectiveName (FEAT-0080) is the configured workspace name or the folder name — here
+// equal to the folder name for simplicity.
+type WS = { id: string; name: string; effectiveName: string; open: boolean }
 const WORKSPACES: WS[] = [
-  { id: "v1", name: "alpha", open: true },
-  { id: "v2", name: "beta", open: false },
-  { id: "v3", name: "gamma", open: false },
+  { id: "v1", name: "alpha", effectiveName: "alpha", open: true },
+  { id: "v2", name: "beta", effectiveName: "beta", open: false },
+  { id: "v3", name: "gamma", effectiveName: "gamma", open: false },
 ]
 
 function makeHandlers(initial: Settings, folderName = "vault") {
@@ -611,5 +613,50 @@ describe("Workspace name field (FEAT-0080)", () => {
     expect(el.autocomplete).toBe("off")
     expect(el.getAttribute("data-lpignore")).toBe("true")
     expect(el.getAttribute("data-form-type")).toBe("other")
+  })
+
+  const collisionHint = (root: HTMLElement) =>
+    root.querySelector<HTMLElement>(".settings-workspace-collision")
+
+  const typeWorkspace = (root: HTMLElement, value: string) => {
+    const input = workspaceInput(root)
+    input.value = value
+    input.dispatchEvent(new Event("input", { bubbles: true }))
+  }
+
+  it("AC-7: warns (naming the folder) when the typed name collides with another vault", async () => {
+    const { backdrop, handle } = mount(DEFAULT_SETTINGS)
+    handle.open()
+    // Wait for the async workspaces fetch that seeds the sibling-name set.
+    await vi.waitFor(() =>
+      expect(backdrop.querySelector('[data-workspace-id="v2"]')).not.toBeNull(),
+    )
+
+    typeWorkspace(backdrop, "beta") // v2's effective name (a sibling)
+    const hint = collisionHint(backdrop)
+    expect(hint).not.toBeNull()
+    expect(hint!.hidden).toBe(false)
+    expect(hint!.textContent).toContain("beta") // names the colliding folder
+  })
+
+  it("AC-7: no warning for a free name, and none for the open vault's own name", async () => {
+    const { backdrop, handle } = mount(DEFAULT_SETTINGS)
+    handle.open()
+    await vi.waitFor(() =>
+      expect(backdrop.querySelector('[data-workspace-id="v2"]')).not.toBeNull(),
+    )
+
+    typeWorkspace(backdrop, "totally-unique")
+    expect(collisionHint(backdrop)?.hidden ?? true).toBe(true)
+
+    // "alpha" is the OPEN vault's own effective name — not a collision.
+    typeWorkspace(backdrop, "alpha")
+    expect(collisionHint(backdrop)?.hidden ?? true).toBe(true)
+
+    // Trailing space still collides (trimmed match), then clearing hides the warning.
+    typeWorkspace(backdrop, "beta ")
+    expect(collisionHint(backdrop)!.hidden).toBe(false)
+    typeWorkspace(backdrop, "")
+    expect(collisionHint(backdrop)!.hidden).toBe(true)
   })
 })

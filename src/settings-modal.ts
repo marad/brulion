@@ -45,6 +45,10 @@ export interface SettingsModalHandlers {
 export interface WorkspaceMeta {
   id: string
   name: string
+  /** The vault's effective name (FEAT-0080): the configured workspace name or the
+   * folder name — what a `?ws=` permalink resolves against. Used to detect a
+   * name collision when editing the Workspace name field. */
+  effectiveName: string
   /** Whether this is the currently-open workspace (can't be forgotten). */
   open: boolean
 }
@@ -215,14 +219,34 @@ export function mountSettingsModal(
   workspaceInput.type = "text"
   workspaceInput.className = "settings-workspace"
   applyAntiAutofillAttrs(workspaceInput)
-  workspaceInput.addEventListener("input", () => emit({ workspace: workspaceInput.value }))
   const workspaceHint = document.createElement("p")
   workspaceHint.className = "settings-section-hint"
   workspaceHint.textContent =
     "Names this vault for cross-device note links; leave empty to use the folder name."
+  // Non-blocking collision warning (FEAT-0080/AC-7): shown when the typed name matches
+  // another granted vault's effective name (which would make ?ws=<name> open this
+  // vault instead of that one). Seeded from getWorkspaces() on open; never blocks save.
+  const workspaceCollision = document.createElement("p")
+  workspaceCollision.className = "settings-section-hint settings-workspace-collision"
+  workspaceCollision.hidden = true
+  // effective name (of another vault) → its folder display name, for the message.
+  let siblingNames = new Map<string, string>()
+  const updateWorkspaceCollision = () => {
+    const folder = siblingNames.get(workspaceInput.value.trim())
+    if (folder) {
+      workspaceCollision.textContent = `⚠ Already used by folder "${folder}" — a link with this name may open the wrong vault.`
+      workspaceCollision.hidden = false
+    } else {
+      workspaceCollision.hidden = true
+    }
+  }
+  workspaceInput.addEventListener("input", () => {
+    emit({ workspace: workspaceInput.value })
+    updateWorkspaceCollision()
+  })
   const workspaceControl = document.createElement("div")
   workspaceControl.className = "settings-workspace-control"
-  workspaceControl.append(workspaceInput, workspaceHint)
+  workspaceControl.append(workspaceInput, workspaceHint, workspaceCollision)
   const workspaceRow = labeledRow("Workspace name", workspaceControl)
 
   // Action bar (FEAT-0058) — its own distinct section (own heading + scrollable
@@ -396,6 +420,11 @@ export function mountSettingsModal(
   const renderWorkspaces = async () => {
     const workspaces = await handlers.getWorkspaces()
     if (!isOpen) return
+    // Rebuild the sibling effective-name → folder map for the collision warning
+    // (FEAT-0080/AC-7), excluding the open vault (naming it after itself isn't a
+    // collision), then re-evaluate against the current field value.
+    siblingNames = new Map(workspaces.filter((w) => !w.open).map((w) => [w.effectiveName, w.name]))
+    updateWorkspaceCollision()
     workspacesControl.replaceChildren()
     for (const w of workspaces) {
       const row = document.createElement("div")
