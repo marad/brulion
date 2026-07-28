@@ -624,7 +624,7 @@ describe("Workspace name field (FEAT-0080)", () => {
     input.dispatchEvent(new Event("input", { bubbles: true }))
   }
 
-  it("AC-7: warns (naming the folder) when the typed name collides with another vault", async () => {
+  it("AC-7: warns (generically) when the typed name collides with another vault", async () => {
     const { backdrop, handle } = mount(DEFAULT_SETTINGS)
     handle.open()
     // Wait for the async workspaces fetch that seeds the sibling-name set.
@@ -636,7 +636,7 @@ describe("Workspace name field (FEAT-0080)", () => {
     const hint = collisionHint(backdrop)
     expect(hint).not.toBeNull()
     expect(hint!.hidden).toBe(false)
-    expect(hint!.textContent).toContain("beta") // names the colliding folder
+    expect(hint!.textContent).toMatch(/another workspace/i) // generic, names no vault
   })
 
   it("AC-7: no warning for a free name, and none for the open vault's own name", async () => {
@@ -653,10 +653,23 @@ describe("Workspace name field (FEAT-0080)", () => {
     typeWorkspace(backdrop, "alpha")
     expect(collisionHint(backdrop)?.hidden ?? true).toBe(true)
 
-    // Trailing space still collides (trimmed match), then clearing hides the warning.
+    // Trailing space still collides (trimmed match), then clearing hides the warning
+    // (empty field resolves to folder name "vault", which is not a sibling).
     typeWorkspace(backdrop, "beta ")
     expect(collisionHint(backdrop)!.hidden).toBe(false)
     typeWorkspace(backdrop, "")
     expect(collisionHint(backdrop)!.hidden).toBe(true)
+  })
+
+  it("AC-7: an empty field whose folder-name default collides also warns", async () => {
+    // Folder is named "beta" — same as sibling v2's effective name. Leaving the field
+    // empty means ?ws=beta resolves to this vault, so the collision must still surface.
+    const { backdrop, handle } = mount({ ...DEFAULT_SETTINGS, workspace: "" }, "beta")
+    handle.open()
+    await vi.waitFor(() =>
+      expect(backdrop.querySelector('[data-workspace-id="v2"]')).not.toBeNull(),
+    )
+    expect(workspaceInput(backdrop).value).toBe("")
+    expect(collisionHint(backdrop)!.hidden).toBe(false)
   })
 })

@@ -54,9 +54,10 @@ attach path uses; it does not touch note bytes.
 by the FEAT-0079 most-recent tiebreak, setting this field to a name another granted
 vault already resolves to would silently make `?ws=<name>` open *this* vault instead
 of that one — hijacking the other vault's permalink with no signal. So the field
-shows a **non-blocking inline warning** when the entered name (trimmed) matches
-another granted vault's effective name: it names the colliding folder and warns that
-links may open the wrong vault. It does **not** block saving (a deliberate rename /
+shows a **non-blocking inline warning** when the field's *effective* name (the
+trimmed typed value, or the folder name when empty) matches another granted vault's
+effective name: a generic message that another workspace already uses this name and
+a link may open the wrong vault. It does **not** block saving (a deliberate rename /
 migration is legitimate); it only makes the silent collision visible.
 
 ## Out of scope
@@ -106,7 +107,11 @@ browser-private vault cache and URL).
 
 **AC-7** — A colliding name shows a non-blocking inline warning.
 Given another granted vault (not the open one) has effective name `N`,
-When the user types `N` (trimmed) into the Workspace name field,
-Then an inline warning appears naming the colliding folder and stating that links
-may open the wrong vault, while the value still saves; and when the entered name
-matches no other vault's effective name, no warning is shown.
+When the field's *effective* name equals `N` — the trimmed typed value, or the
+folder name when the field is empty —
+Then a non-blocking inline warning appears stating that another workspace already
+uses this name and a link may open the wrong vault, while the value still saves;
+and when the effective name matches no other vault's effective name, no warning is
+shown. (The message is generic — it does not name a specific vault, since a match
+may be a configured workspace name rather than a folder and several vaults may
+share one name.)

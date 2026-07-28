@@ -229,15 +229,20 @@ export function mountSettingsModal(
   const workspaceCollision = document.createElement("p")
   workspaceCollision.className = "settings-section-hint settings-workspace-collision"
   workspaceCollision.hidden = true
-  // effective name (of another vault) → its folder display name, for the message.
-  let siblingNames = new Map<string, string>()
+  // Effective names of the *other* granted vaults (seeded on open by renderWorkspaces).
+  // A set of names, not a name→folder map: the message stays generic because a match
+  // may be a configured workspace name (not a folder) and several vaults may share one.
+  let siblingNames = new Set<string>()
   const updateWorkspaceCollision = () => {
-    const folder = siblingNames.get(workspaceInput.value.trim())
-    if (folder) {
-      workspaceCollision.textContent = `⚠ Already used by folder "${folder}" — a link with this name may open the wrong vault.`
-      workspaceCollision.hidden = false
-    } else {
-      workspaceCollision.hidden = true
+    // Check the *effective* name — the trimmed typed value, or the folder name when the
+    // field is empty (an empty field resolves to the folder name, which can itself
+    // collide with a sibling and make `?ws=<folder>` open the wrong vault).
+    const effective = workspaceInput.value.trim() || handlers.getFolderName()
+    const collides = effective !== "" && siblingNames.has(effective)
+    workspaceCollision.hidden = !collides
+    if (collides) {
+      workspaceCollision.textContent =
+        "⚠ Another workspace already uses this name — a link with it may open the wrong vault."
     }
   }
   workspaceInput.addEventListener("input", () => {
@@ -412,6 +417,10 @@ export function mountSettingsModal(
     }
     fontSelect.value = family
     renderActionBarSection()
+    // Re-evaluate the collision warning against the (re)seeded value — so a sync()
+    // after a keystroke, or a reopen with a different value, never leaves a stale hint
+    // (FEAT-0080/AC-7). Uses whatever siblingNames holds; open() resets it first.
+    updateWorkspaceCollision()
   }
 
   // Rebuild the Workspaces section (FEAT-0060) from the vault set: each workspace by
@@ -423,7 +432,7 @@ export function mountSettingsModal(
     // Rebuild the sibling effective-name → folder map for the collision warning
     // (FEAT-0080/AC-7), excluding the open vault (naming it after itself isn't a
     // collision), then re-evaluate against the current field value.
-    siblingNames = new Map(workspaces.filter((w) => !w.open).map((w) => [w.effectiveName, w.name]))
+    siblingNames = new Set(workspaces.filter((w) => !w.open).map((w) => w.effectiveName))
     updateWorkspaceCollision()
     workspacesControl.replaceChildren()
     for (const w of workspaces) {
@@ -507,6 +516,11 @@ export function mountSettingsModal(
     open() {
       isOpen = true
       restoreFocus = document.activeElement as HTMLElement | null
+      // Reset the collision state before seeding: renderWorkspaces (async, below)
+      // repopulates siblingNames and re-checks. Without this, a stale warning from the
+      // previous open could flash until the fetch resolves; and if getWorkspaces()
+      // rejects, an empty set safely yields no (false) warning (FEAT-0080/AC-7).
+      siblingNames = new Set()
       seed() // size/width/vim immediately; font value set once options are filled
       backdrop.hidden = false
       dialog.focus() // so Esc (handled on the backdrop) works without a prior click
