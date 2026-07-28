@@ -50,11 +50,20 @@ attach path uses; it does not touch note bytes.
 - **Moat.** The only file written is `.brulion.json` (already the settings file);
   no `.md` bytes are touched.
 
+**Collision warning (milestone-review addition).** Because name collisions resolve
+by the FEAT-0079 most-recent tiebreak, setting this field to a name another granted
+vault already resolves to would silently make `?ws=<name>` open *this* vault instead
+of that one — hijacking the other vault's permalink with no signal. So the field
+shows a **non-blocking inline warning** when the entered name (trimmed) matches
+another granted vault's effective name: it names the colliding folder and warns that
+links may open the wrong vault. It does **not** block saving (a deliberate rename /
+migration is legitimate); it only makes the silent collision visible.
+
 ## Out of scope
 
-- **Uniqueness / collision warnings** — the field does not check whether the chosen
-  name collides with another granted vault's effective name; collision resolution is
-  the documented FEAT-0079 most-recent tiebreak, not a validation concern here.
+- **Hard uniqueness validation** — the collision warning is advisory only; the field
+  never refuses a name. Resolution stays the documented FEAT-0079 most-recent
+  tiebreak.
 - **Cross-window propagation** — other open windows on the same vault refresh their
   cached name on their next attach, not live.
 
@@ -94,3 +103,10 @@ Given any edit to the Workspace name field,
 When it is saved and the live identity updates,
 Then no `.md` file is created or modified (only `.brulion.json`, plus the
 browser-private vault cache and URL).
+
+**AC-7** — A colliding name shows a non-blocking inline warning.
+Given another granted vault (not the open one) has effective name `N`,
+When the user types `N` (trimmed) into the Workspace name field,
+Then an inline warning appears naming the colliding folder and stating that links
+may open the wrong vault, while the value still saves; and when the entered name
+matches no other vault's effective name, no warning is shown.
