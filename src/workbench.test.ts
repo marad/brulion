@@ -23,13 +23,13 @@ function deps(overrides: Partial<WorkbenchAttachmentDeps> = {}): WorkbenchAttach
 }
 
 describe("separate extension workbench contract", () => {
-  it("uses an editor-first vocabulary in the workbench shell", () => {
-    expect(workbenchHtml).toContain("New extension")
-    expect(workbenchHtml).toContain(">Files<")
-    expect(workbenchHtml).toContain("Extension settings")
-    expect(workbenchHtml).toContain("Save changes")
-    expect(workbenchHtml).not.toContain(">Rename file<")
-    expect(workbenchHtml).not.toContain(">Delete file<")
+  it("uses a full editor shell instead of a dashboard layout", () => {
+    expect(workbenchHtml).toContain('class="workbench-titlebar"')
+    expect(workbenchHtml).toContain('class="workbench-sidebar"')
+    expect(workbenchHtml).toContain('class="workbench-tabbar"')
+    expect(workbenchHtml).toContain('class="workbench-statusbar"')
+    expect(workbenchHtml).not.toContain("workbench-eyebrow")
+    expect(workbenchHtml).not.toContain("Reconnect this workspace")
   })
 
   it("builds a new-window URL carrying only the workspace reference", () => {
