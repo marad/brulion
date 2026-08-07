@@ -2101,3 +2101,428 @@ header button:hover {
   box-shadow: 0 6px 20px var(--shadow);
   color: var(--text);
 }
+
+/* M41 workbench refresh: an editor-first layout with one clear explorer and one
+ * clear editing surface. The older workbench rules above remain as the narrow
+ * fallback; these rules define the current desktop presentation. */
+.workbench-page {
+  background: var(--bg);
+}
+
+#workbench {
+  width: min(100%, 90rem);
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 2rem clamp(1rem, 4vw, 3.5rem) 2.5rem;
+  gap: 1rem;
+}
+
+.workbench-header {
+  align-items: flex-start;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.workbench-brand h1 {
+  margin: 0.15rem 0 0;
+  font-size: clamp(1.45rem, 2vw, 1.8rem);
+  letter-spacing: -0.02em;
+}
+
+.workbench-eyebrow {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.workbench-status {
+  min-height: 1rem;
+  padding: 0 0.15rem;
+  font-size: 0.78rem;
+}
+
+.workbench-content {
+  grid-template-columns: 18.5rem minmax(0, 1fr);
+  min-height: min(70vh, 47rem);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 12px 32px var(--shadow);
+}
+
+.workbench-explorer {
+  gap: 0.75rem;
+  min-height: 0;
+  padding: 1rem 0.75rem;
+  border-right: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.workbench-pane-heading,
+.workbench-files-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.workbench-pane-heading h2 {
+  margin: 0.15rem 0 0;
+  font-size: 0.95rem;
+}
+
+.workbench-files-heading {
+  align-items: flex-end;
+  margin-top: 0.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.workbench-files-heading strong {
+  display: block;
+  max-width: 10rem;
+  overflow: hidden;
+  margin-top: 0.2rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-create-form {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.workbench-create-form input,
+.workbench-settings input,
+.workbench-file-actions input {
+  min-width: 0;
+  flex: 1;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.workbench-button {
+  padding: 0.48rem 0.7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.workbench-button:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.workbench-button-small {
+  padding: 0.4rem 0.55rem;
+  font-size: 0.78rem;
+}
+
+.workbench-button-quiet {
+  border-color: transparent;
+  background: transparent;
+}
+
+.workbench-button-secondary {
+  border-color: var(--soft-border);
+  background: var(--soft-bg);
+}
+
+.workbench-button-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 700;
+}
+
+.workbench-button-primary:hover:not(:disabled) {
+  background: var(--accent-text);
+}
+
+.workbench-button-danger {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--accent-text);
+}
+
+.workbench-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.workbench-list {
+  gap: 0.15rem;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+}
+
+.workbench-extension-list {
+  max-height: 13rem;
+}
+
+.workbench-file-list {
+  flex: 1;
+}
+
+.workbench-list-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  padding: 0.55rem 0.65rem 0.55rem 0.8rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.workbench-list-row:hover,
+.workbench-list-row.is-selected {
+  background: var(--surface);
+}
+
+.workbench-list-row.is-selected::before {
+  position: absolute;
+  top: 0.25rem;
+  bottom: 0.25rem;
+  left: 0;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--accent);
+  content: "";
+}
+
+.workbench-list-row strong {
+  overflow: hidden;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-list-row span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-file-row {
+  flex-direction: row;
+  align-items: center;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.78rem;
+}
+
+.workbench-empty-list {
+  padding: 0.5rem 0.65rem;
+  font-size: 0.75rem;
+}
+
+.workbench-settings,
+.workbench-file-actions {
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.workbench-settings {
+  margin-top: auto;
+  padding-top: 0.8rem;
+}
+
+.workbench-settings summary,
+.workbench-file-actions summary {
+  cursor: pointer;
+  font-weight: 650;
+  list-style-position: inside;
+}
+
+.workbench-settings-body,
+.workbench-file-actions-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding-top: 0.7rem;
+}
+
+.workbench-settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 0.25rem;
+}
+
+.workbench-editor-panel {
+  gap: 0;
+  min-height: 0;
+  padding: 0;
+  background: var(--surface);
+}
+
+.workbench-editor-heading {
+  align-items: flex-start;
+  padding: 1.15rem 1.25rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.workbench-editor-title {
+  min-width: 0;
+}
+
+.workbench-breadcrumb {
+  display: flex;
+  gap: 0.35rem;
+  overflow: hidden;
+  margin: 0 0 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-editor-heading h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.workbench-editor-actions {
+  flex-shrink: 0;
+}
+
+.workbench-file-actions {
+  margin: 0 1.25rem;
+  padding-top: 0.75rem;
+  border-top: 0;
+}
+
+.workbench-file-actions-body {
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.workbench-file-remove {
+  align-self: flex-start;
+}
+
+.workbench-editor-panel #workbench-editor {
+  flex: 1;
+  min-height: 24rem;
+  margin: 0.75rem 1.25rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.workbench-editor-panel #workbench-editor .cm-editor {
+  height: 100%;
+}
+
+.workbench-editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 2.4rem;
+  padding: 0 1.25rem 0.9rem;
+}
+
+.workbench-key-hint {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.workbench-diagnostic {
+  min-height: 1rem;
+  margin: 0;
+}
+
+.workbench-missing {
+  justify-content: space-between;
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+
+.workbench-missing h2 {
+  margin: 0.2rem 0;
+  font-size: 1rem;
+}
+
+.workbench-missing p {
+  max-width: 48rem;
+}
+
+.workbench-kit-panel {
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 12px 32px var(--shadow);
+}
+
+.workbench-kit-row {
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.workbench-kit-row:last-child {
+  border-bottom: 0;
+}
+
+.workbench-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+@media (max-width: 48rem) {
+  #workbench {
+    padding: 1rem;
+  }
+
+  .workbench-content {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .workbench-explorer {
+    max-height: 28rem;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .workbench-file-list,
+  .workbench-extension-list {
+    max-height: 10rem;
+  }
+
+  .workbench-editor-heading {
+    flex-direction: column;
+  }
+
+  .workbench-editor-actions {
+    width: 100%;
+  }
+
+  .workbench-editor-actions .workbench-button {
+    flex: 1;
+  }
+}

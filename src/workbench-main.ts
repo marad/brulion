@@ -39,6 +39,8 @@ const content = byId<HTMLElement>("workbench-content")
 const vaultLabel = byId<HTMLElement>("workbench-vault")
 const scriptList = byId<HTMLElement>("workbench-script-list")
 const fileList = byId<HTMLElement>("workbench-file-list")
+const selectedScriptLabel = byId<HTMLElement>("workbench-selected-script")
+const scriptContext = byId<HTMLElement>("workbench-script-context")
 const editorMount = byId<HTMLElement>("workbench-editor")
 const fileTitle = byId<HTMLElement>("workbench-file-title")
 const fileStatus = byId<HTMLElement>("workbench-file-status")
@@ -107,10 +109,17 @@ function updateScriptControls(): void {
   toggleScriptButton.disabled = !selected || busy
   if (selected) {
     const enabled = currentSettings?.extensions?.includes(selectedScriptId!) ?? false
-    toggleScriptButton.textContent = enabled ? "Disable" : "Enable"
+    toggleScriptButton.textContent = enabled ? "Disable extension" : "Enable extension"
   } else {
-    toggleScriptButton.textContent = "Enable"
+    toggleScriptButton.textContent = "Enable extension"
   }
+}
+
+function updateSelectionLabels(): void {
+  const selected = scripts.find((item) => item.id === selectedScriptId)
+  const label = selected?.manifest?.name ?? selected?.id ?? "No extension selected"
+  selectedScriptLabel.textContent = label
+  scriptContext.textContent = selected ? label : "No extension selected"
 }
 
 function renderScripts(): void {
@@ -124,7 +133,10 @@ function renderScripts(): void {
     const label = document.createElement("strong")
     label.textContent = item.manifest?.name ?? item.id
     const detail = document.createElement("span")
-    detail.textContent = item.error ? "Invalid: " + item.error : item.id
+    const enabled = currentSettings?.extensions?.includes(item.id) ?? false
+    detail.textContent = item.error
+      ? "Invalid: " + item.error
+      : (enabled ? "Enabled" : "Disabled") + " · " + item.id
     row.append(label, detail)
     row.addEventListener("click", () => void selectScript(item.id))
     scriptList.append(row)
@@ -135,6 +147,7 @@ function renderScripts(): void {
     empty.textContent = "No extensions found."
     scriptList.append(empty)
   }
+  updateSelectionLabels()
 }
 
 function renderFiles(): void {
@@ -152,6 +165,12 @@ function renderFiles(): void {
     row.append(label)
     row.addEventListener("click", () => void selectFile(file.path))
     fileList.append(row)
+  }
+  if (files.length === 0) {
+    const empty = document.createElement("p")
+    empty.className = "workbench-muted workbench-empty-list"
+    empty.textContent = selectedScriptId ? "No JavaScript or JSON files." : "Choose an extension first."
+    fileList.append(empty)
   }
 }
 
@@ -257,7 +276,10 @@ async function selectScript(id: string): Promise<void> {
   setStatus("Reading " + id + "…")
   await refreshFiles(false)
   await refreshSettings()
-  if (selectedScriptId === id) setStatus("Editing " + id + ".")
+  if (selectedScriptId === id) {
+    const label = scripts.find((item) => item.id === id)?.manifest?.name ?? id
+    setStatus("Editing " + label + ".")
+  }
 }
 
 async function selectFile(path: string | null): Promise<void> {
@@ -543,7 +565,9 @@ async function toggleExtension(): Promise<void> {
   currentSettings = { ...settings, extensions: [...extensions] }
   await saveSettings(root, currentSettings)
   updateScriptControls()
-  setStatus((enabled ? "Disabled " : "Enabled ") + id + ". The notes window reloads it on refresh.")
+  setStatus(
+    (enabled ? "Disabled " : "Enabled ") + id + ". Return to the notes window to run its commands.",
+  )
 }
 
 async function refresh(): Promise<void> {
@@ -568,7 +592,13 @@ async function refresh(): Promise<void> {
       destroyEditor()
       updateScriptControls()
     }
-    setStatus(found.length ? found.length + " extension folder(s)." : "No extensions yet.")
+    setStatus(
+      found.length === 0
+        ? "No extensions yet."
+        : found.length === 1
+          ? "1 extension"
+          : found.length + " extensions",
+    )
   } catch (error) {
     setDiagnostic(error instanceof Error ? error.message : "Unable to refresh the filesystem.")
   }

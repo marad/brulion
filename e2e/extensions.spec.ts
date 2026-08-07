@@ -104,7 +104,7 @@ test("runs an enabled local command and opens the separate multi-file workbench"
   await expect(workbench.locator("#workbench-content")).toBeVisible()
   await expect(workbench.locator("#workbench-script-list .workbench-list-row")).toHaveCount(1)
   await expect(workbench.locator(".workbench-file-row")).toHaveCount(2)
-  await expect(workbench.locator("#workbench-toggle-script")).toHaveText("Disable")
+  await expect(workbench.locator("#workbench-toggle-script")).toHaveText("Disable extension")
   await workbench.locator("#workbench-kit").click()
   await expect(workbench.locator("#workbench-kit-panel")).toBeVisible()
   await expect(workbench.locator("#workbench-kit-version")).toHaveText("v1.0.0")
