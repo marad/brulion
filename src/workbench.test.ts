@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
+import { readFileSync } from "node:fs"
 import {
   attachWorkbenchVault,
   createWorkbenchUrl,
@@ -20,6 +21,17 @@ function deps(overrides: Partial<WorkbenchAttachmentDeps> = {}): WorkbenchAttach
 }
 
 describe("separate extension workbench contract", () => {
+  it("uses an editor-first vocabulary in the workbench shell", () => {
+    const html = readFileSync("workbench.html", "utf8")
+
+    expect(html).toContain("New extension")
+    expect(html).toContain(">Files<")
+    expect(html).toContain("Extension settings")
+    expect(html).toContain("Save changes")
+    expect(html).not.toContain(">Rename file<")
+    expect(html).not.toContain(">Delete file<")
+  })
+
   it("builds a new-window URL carrying only the workspace reference", () => {
     expect(createWorkbenchUrl("my notes", "https://example.test/brulion/")).toBe(
       "https://example.test/brulion/workbench.html?ws=my+notes",
