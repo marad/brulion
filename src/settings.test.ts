@@ -155,6 +155,13 @@ describe("normalizeSettings (AC-3)", () => {
     expect(normalizeSettings({ workspace: "my notes" }).workspace).toBe("my notes")
   })
 
+  it("M39: keeps explicit extension enablement ids and removes duplicates", () => {
+    expect(normalizeSettings({ extensions: ["daily-tools", "daily-tools", 7, null] }).extensions).toEqual([
+      "daily-tools",
+    ])
+    expect(normalizeSettings({}).extensions).toBeUndefined()
+  })
+
   it("AC-3: returns the defaults for a non-object input", () => {
     expect(normalizeSettings(null)).toEqual(DEFAULT_SETTINGS)
     expect(normalizeSettings(undefined)).toEqual(DEFAULT_SETTINGS)

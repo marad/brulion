@@ -61,16 +61,15 @@ test("Ctrl+Shift+K opens the palette focused, listing the actions (AC-1)", async
 
   await expect(backdrop(page)).toBeVisible()
   await expect(input(page)).toBeFocused()
-  // Nine registered actions: go to note, switch folder, vim, theme, note list, settings,
-  // switch workspace, open palette, this week's journal.
-  await expect(rows(page)).toHaveCount(9)
+  // Ten built-in actions: the original palette actions plus the extension workbench.
+  await expect(rows(page)).toHaveCount(10)
 })
 
 test("each row renders its Lucide icon beside the label (AC-7)", async ({ page }) => {
   await open(page)
-  await expect(rows(page)).toHaveCount(9)
+  await expect(rows(page)).toHaveCount(10)
   // Every action in the initial registry carries an icon → an <svg> per row.
-  await expect(rows(page).locator("svg")).toHaveCount(9)
+  await expect(rows(page).locator("svg")).toHaveCount(10)
   await expect(rows(page).first()).toContainText("Go to note")
 })
 

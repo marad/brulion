@@ -13,8 +13,21 @@ import {
   SunMoon,
   type IconNode,
 } from "lucide"
-import { mountEditor, setEditorEditable, setLinkContext, scrollEditorToHeading } from "./editor"
-import { listFolders } from "./note"
+import {
+  mountEditor,
+  setEditorEditable,
+  setLinkContext,
+  scrollEditorToHeading,
+} from "./editor"
+import {
+  createNote,
+  deleteNote,
+  listFolders,
+  listNotes,
+  moveNote,
+  readNote,
+  saveNote,
+} from "./note"
 import {
   createNoteController,
   isWithin,
@@ -88,6 +101,8 @@ import { wireFlushOnHide } from "./flush"
 import { createPoller } from "./watch"
 import { registerServiceWorker } from "./pwa"
 import { createInstallPrompt, type DeferredInstallPrompt } from "./install-prompt"
+import { ExtensionRegistry } from "./extension-registry"
+import { mountExtensionManager, type ExtensionManagerHandle } from "./extension-manager"
 
 /** How often to poll the folder for changes made by other tools (FEAT-0014). */
 const POLL_MS = 2000
@@ -106,6 +121,8 @@ let toggleNoteList = (): void => {}
  * action registry exists. A no-op before then. Called on folder open and after any
  * settings change (FEAT-0058). */
 let refreshActionBar = (): void => {}
+/** Rebuild the action registry when a local extension registers/unregisters a command. */
+let refreshExtensionActions = (): void => {}
 
 // Enable chrome motion (FEAT-0068) only after the first paint has settled, so the
 // load sequence and the async theme apply never animate (no welcome/theme flash).
@@ -151,6 +168,7 @@ const dialogMessageEl = document.querySelector<HTMLElement>("#dialog-message")
 const dialogInputEl = document.querySelector<HTMLInputElement>("#dialog-input")
 const dialogCancelButton = document.querySelector<HTMLButtonElement>("#dialog-cancel")
 const dialogConfirmButton = document.querySelector<HTMLButtonElement>("#dialog-confirm")
+const extensionsBackdropEl = document.querySelector<HTMLElement>("#extensions-backdrop")
 if (
   !editorEl ||
   !workspaceEl ||
@@ -191,7 +209,8 @@ if (
   !dialogMessageEl ||
   !dialogInputEl ||
   !dialogCancelButton ||
-  !dialogConfirmButton
+  !dialogConfirmButton ||
+  !extensionsBackdropEl
 ) {
   throw new Error("missing mount points in index.html")
 }
@@ -357,6 +376,82 @@ const view = mountEditor(editorEl, {
 // one is open. Loaded and applied per folder open (in openNote).
 let currentSettings: Settings = DEFAULT_SETTINGS
 let settingsDir: FileSystemDirectoryHandle | null = null
+const extensionRegistry = new ExtensionRegistry({
+  onActionsChanged: () => refreshExtensionActions(),
+  onError: (error, scriptId) => {
+    console.error(scriptId ? `Extension ${scriptId} failed:` : "Extension failed:", error)
+  },
+})
+
+const reloadExtensions = async (): Promise<void> => {
+  const root = settingsDir
+  if (!root) {
+    extensionRegistry.dispose()
+    return
+  }
+  // Bind every callback to the vault snapshot used for this load. A global
+  // callback that reads `settingsDir` at invocation time could let a runner
+  // finishing during a vault switch address the newly selected vault/editor.
+  const assertActive = () => {
+    if (settingsDir !== root) throw new Error("Extension vault is no longer active")
+  }
+  await extensionRegistry.load(
+    root,
+    {
+      editor: {
+        getText: () => {
+          assertActive()
+          return view.state.doc.toString()
+        },
+        getSelection: () => {
+          assertActive()
+          const selection = view.state.selection.main
+          return {
+            from: selection.from,
+            to: selection.to,
+            text: view.state.sliceDoc(selection.from, selection.to),
+          }
+        },
+        replaceSelection: (text: string) => {
+          assertActive()
+          view.dispatch(view.state.replaceSelection(text))
+          view.focus()
+        },
+        focus: () => {
+          assertActive()
+          view.focus()
+        },
+      },
+      notes: {
+        list: () => {
+          assertActive()
+          return listNotes(root)
+        },
+        read: (path: string) => {
+          assertActive()
+          return readNote(root, path)
+        },
+        create: (path: string) => {
+          assertActive()
+          return createNote(root, path)
+        },
+        write: (path: string, content: string, expectedLastModified: number | null) => {
+          assertActive()
+          return saveNote(root, path, content, expectedLastModified)
+        },
+        delete: (path: string) => {
+          assertActive()
+          return deleteNote(root, path)
+        },
+        move: (from: string, to: string) => {
+          assertActive()
+          return moveNote(root, from, to)
+        },
+      },
+    },
+    currentSettings.extensions ?? [],
+  )
+}
 const persistSettings = (): Promise<void> =>
   settingsDir ? saveSettings(settingsDir, currentSettings) : Promise.resolve()
 // The settings modal (FEAT-0048); forward-declared so updateSettings can re-sync it
@@ -375,6 +470,7 @@ const updateSettings = (patch: Partial<Settings>) => {
   refreshActionBar() // a changed actionBar (or any setting) repaints the header bar
   settingsModal?.sync()
   void persistSettings()
+  if ("extensions" in patch) void reloadExtensions()
   // The workspace name is the live vault identity (FEAT-0080): a change must refresh
   // the attached vault's cached name and re-stamp the window's `?ws` now, not on the
   // next attach — via the same helper the attach path uses. Gated on `settingsDir` (the
@@ -946,6 +1042,7 @@ window.addEventListener(
       workspaceShown &&
       conflictBackdropEl.hidden && // the conflict modal must stay the only forward path
       settingsBackdropEl.hidden && // don't stack the switcher over an open settings modal
+      extensionsBackdropEl.hidden && // …nor over the extension workbench
       paletteBackdropEl.hidden && // …nor over an open command palette (FEAT-0057)
       dialogBackdropEl.hidden && // …nor over a pending confirm/prompt/alert (M35/FEAT-0073)
       !movePicker.isOpen() // …nor over an open "Move to…" picker (M35/FEAT-0070)
@@ -1019,6 +1116,9 @@ const openNote = async (dir: FileSystemDirectoryHandle) => {
     await controller.open(dir)
   }
   poller.start()
+  // Extensions are vault-scoped. Loading is deliberately best-effort and does not
+  // delay the first editor paint; invalid/failed scripts are isolated by the registry.
+  void reloadExtensions()
 }
 
 // URL → open note (FEAT-0036): Back/Forward, the mouse back button, or an edited
@@ -1282,6 +1382,18 @@ settingsModal = mountSettingsModal(settingsBackdropEl, {
 // old header Vim button (Vim now lives inside the modal).
 openSettingsEl.addEventListener("click", () => settingsModal?.open())
 
+const extensionManager: ExtensionManagerHandle = mountExtensionManager(extensionsBackdropEl, {
+  getRoot: () => settingsDir,
+  isEnabled: (id) => currentSettings.extensions?.includes(id) ?? false,
+  onEnabledChange: (id, enabled) => {
+    const ids = new Set(currentSettings.extensions ?? [])
+    if (enabled) ids.add(id)
+    else ids.delete(id)
+    updateSettings({ extensions: [...ids] })
+  },
+  onScriptsChanged: reloadExtensions,
+})
+
 // Action registry + command palette (FEAT-0057/M30 P1). Actions are the app's
 // invocable capabilities named as first-class `{ id, label, icon?, run }` records;
 // the palette lists them for fuzzy-search + run, and folder-switch / Vim toggle
@@ -1290,7 +1402,7 @@ openSettingsEl.addEventListener("click", () => settingsModal?.open())
 // the registry must live here (the only place that has the switcher handle, the
 // open-folder flow, toggleVim, the sidebar toggle, and the settings modal in scope).
 // Icons come from the M27 Lucide set; the palette sizes them via `.palette-icon`.
-const actions: Action[] = [
+const builtinActions: Action[] = [
   { id: "goto", label: "Go to note…", icon: Search, run: () => switcher.open() },
   {
     id: "switch-folder",
@@ -1305,6 +1417,15 @@ const actions: Action[] = [
   // no-op stub at registry-build time. (toggleVim above is a const, so it's safe bare.)
   { id: "toggle-note-list", label: "Toggle note list", icon: PanelLeft, run: () => toggleNoteList() },
   { id: "open-settings", label: "Open settings", icon: SettingsIcon, run: () => settingsModal?.open() },
+  {
+    id: "manage-extensions",
+    label: "Manage extensions",
+    icon: Command,
+    run: () => {
+      palette.close()
+      extensionManager.open()
+    },
+  },
   { id: "switch-workspace", label: "Switch workspace…", icon: Folders, run: () => void openWorkspaceSwitcher() },
   { id: "open-journal", label: "Open this week's journal", icon: CalendarDays, run: openWeeklyJournal },
   // Opens the palette itself — its value is being pinnable to the action bar and
@@ -1312,10 +1433,20 @@ const actions: Action[] = [
   // palette just reopens it (harmless).
   { id: "open-palette", label: "Open command palette", icon: Command, run: () => palette.open() },
 ]
+let actions: Action[] = [...builtinActions]
 const palette = mountCommandPalette(
   { backdrop: paletteBackdropEl, input: paletteInputEl, list: paletteListEl },
   { getActions: () => actions },
 )
+refreshExtensionActions = () => {
+  const builtInIds = new Set(builtinActions.map((action) => action.id))
+  const extension = extensionRegistry
+    .getActions()
+    .filter((action) => !builtInIds.has(action.id))
+  actions = [...builtinActions, ...extension]
+  refreshActionBar()
+}
+refreshExtensionActions()
 // The header action bar (FEAT-0058) renders the pinned actions (settings.actionBar),
 // resolved against the registry so an unknown/stale id is silently skipped. Painted
 // now (covers the case where a folder restored before this point) and on every
@@ -1341,6 +1472,7 @@ window.addEventListener(
       conflictBackdropEl.hidden &&
       switcherBackdropEl.hidden &&
       settingsBackdropEl.hidden &&
+      extensionsBackdropEl.hidden &&
       dialogBackdropEl.hidden && // …nor over a pending confirm/prompt/alert (M35/FEAT-0073)
       !movePicker.isOpen() && // …nor over an open "Move to…" picker (M35/FEAT-0070)
       !palette.isOpen()
@@ -1373,6 +1505,7 @@ window.addEventListener(
       !workspaceShown ||
       !conflictBackdropEl.hidden ||
       !paletteBackdropEl.hidden ||
+      !extensionsBackdropEl.hidden ||
       !dialogBackdropEl.hidden ||
       movePicker.isOpen() // …nor over an open "Move to…" picker (M35/FEAT-0070)
     )

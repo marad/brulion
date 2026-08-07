@@ -15,6 +15,8 @@ export type NormalizeResult =
  * characters are rejected separately (see {@link hasControlChar}) so this source
  * stays plain ASCII with no embedded control bytes. */
 const UNSAFE = /[\\<>:"|?*]/
+/** Root metadata is reserved for Brulion's own settings/extensions. */
+const RESERVED_ROOT_DIRECTORY = ".brulion"
 
 /** True if `s` contains any C0 control character (U+0000–U+001F). */
 function hasControlChar(s: string): boolean {
@@ -30,9 +32,12 @@ function hasControlChar(s: string): boolean {
  * (`normalizeNoteName`'s `.md` suffix) differs between the two. */
 function validateSegments(raw: string[]): { ok: true; segments: string[] } | { ok: false; reason: string } {
   const segments: string[] = []
-  for (const part of raw) {
+  for (const [index, part] of raw.entries()) {
     const segment = part.trim()
     if (!segment) return { ok: false, reason: "Name segments cannot be empty." }
+    if (index === 0 && segment.toLowerCase() === RESERVED_ROOT_DIRECTORY) {
+      return { ok: false, reason: "The .brulion directory is reserved for Brulion metadata." }
+    }
     if (segment === "." || segment === "..") {
       return { ok: false, reason: "Name cannot contain . or .. path segments." }
     }

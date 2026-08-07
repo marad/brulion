@@ -971,7 +971,8 @@ header button:hover {
    (M35/FEAT-0073) modals share the same centered backdrop. */
 #conflict-backdrop,
 #settings-backdrop,
-#dialog-backdrop {
+#dialog-backdrop,
+#extensions-backdrop {
   position: fixed;
   inset: 0;
   z-index: 100;
@@ -990,14 +991,16 @@ header button:hover {
 @starting-style {
   #conflict-backdrop,
   #settings-backdrop,
-  #dialog-backdrop {
+  #dialog-backdrop,
+  #extensions-backdrop {
     opacity: 0;
   }
 }
 
 #conflict-backdrop[hidden],
 #settings-backdrop[hidden],
-#dialog-backdrop[hidden] {
+#dialog-backdrop[hidden],
+#extensions-backdrop[hidden] {
   display: none;
   opacity: 0;
   pointer-events: none; /* don't block the workspace during the fade-out */
@@ -1006,7 +1009,8 @@ header button:hover {
 /* The dialogs rise + fade with the backdrop (out via the backdrop's [hidden]). */
 #conflict,
 .settings-dialog,
-#dialog {
+#dialog,
+.extensions-dialog {
   opacity: 1;
   transform: none;
   transition:
@@ -1017,7 +1021,8 @@ header button:hover {
 @starting-style {
   #conflict,
   .settings-dialog,
-  #dialog {
+  #dialog,
+  .extensions-dialog {
     opacity: 0;
     transform: translateY(8px) scale(0.98);
   }
@@ -1025,7 +1030,8 @@ header button:hover {
 
 #conflict-backdrop[hidden] #conflict,
 #settings-backdrop[hidden] .settings-dialog,
-#dialog-backdrop[hidden] #dialog {
+#dialog-backdrop[hidden] #dialog,
+#extensions-backdrop[hidden] .extensions-dialog {
   opacity: 0;
   transform: translateY(8px) scale(0.98);
 }
@@ -1417,6 +1423,159 @@ header button:hover {
 }
 .settings-workspace-forget:hover {
   background: var(--soft-bg);
+}
+
+/* Local extension workbench (FEAT-0082): scripts stay in the vault and are
+   edited in a bounded modal. The CodeMirror surface gets its own scroll area so
+   a large source file never stretches the application viewport. */
+.extensions-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: min(58rem, 100%);
+  max-height: min(88vh, 100%);
+  overflow: auto;
+  padding: 1.25rem 1.5rem;
+  background: var(--soft-surface);
+  border: 1px solid var(--soft-border);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px var(--shadow);
+  color: var(--soft-text);
+}
+
+.extensions-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.extensions-title,
+.extensions-editor-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.extensions-close {
+  font: inherit;
+  font-size: 1.2rem;
+  line-height: 1;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--soft-text);
+  cursor: pointer;
+}
+
+.extensions-close:hover {
+  background: var(--soft-bg);
+}
+
+.extensions-hint,
+.extensions-status,
+.extensions-empty {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.extensions-status.is-error {
+  color: var(--accent-text);
+}
+
+.extensions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  max-height: 12rem;
+  overflow-y: auto;
+  padding: 0.25rem;
+  border: 1px solid var(--soft-border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.extensions-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.35rem 0.45rem;
+  border-radius: 5px;
+}
+
+.extensions-row:hover {
+  background: var(--soft-bg);
+}
+
+.extensions-row-label {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 0.1rem;
+}
+
+.extensions-row-label strong,
+.extensions-row-label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.extensions-row-label span {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.extensions-edit,
+.extensions-toggle,
+.extensions-editor-actions button {
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--soft-border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.extensions-edit:hover,
+.extensions-toggle:hover,
+.extensions-editor-actions button:hover {
+  background: var(--soft-bg);
+}
+
+.extensions-editor-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 0;
+}
+
+.extensions-editor {
+  min-height: 16rem;
+  height: min(50vh, 30rem);
+  overflow: hidden;
+  border: 1px solid var(--soft-border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.extensions-editor .cm-editor {
+  height: 100%;
+}
+
+.extensions-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.extensions-editor-actions .extensions-delete {
+  margin-right: auto;
+  color: var(--accent-text);
 }
 
 #editor {

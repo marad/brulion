@@ -1,0 +1,92 @@
+---
+id: FEAT-0082
+title: Script storage, manifest validation, and JavaScript editor
+status: draft
+depends_on: [FEAT-0081]
+---
+
+## Intent
+
+Give the extension system a small, file-faithful local storage contract before
+adding execution or application capabilities. A script is a folder under
+`.brulion/scripts/` containing a validated manifest and a JavaScript entry file.
+The phase also provides a reusable CodeMirror JavaScript editor, but deliberately
+does not run scripts or expose them to the production command palette yet.
+
+## Behavior
+
+**Storage root.** All extension files live below the open vault's
+`.brulion/scripts/` directory. Discovery does not create the directory; write
+operations create missing parent directories. The note tree must be able to hide
+`.brulion` independently of the `.md` listing.
+
+**Manifest.** A manifest is a JSON object with `schemaVersion: 1`, `apiVersion: 1`,
+an id, display name, semver version, a relative `.js` entry path, and a list of
+known capability names. IDs and paths are single-vault safe: no empty, `.`, `..`,
+absolute, backslash, control-character, or traversal segments. Unknown capability
+names and malformed values are rejected before any file is written.
+
+**File fidelity.** Script source and manifest reads return their last-modified
+timestamps. A guarded overwrite compares the caller's expected timestamp with the
+current file and returns a conflict without writing when an external editor or
+sync client changed the file. Source size is bounded before writing. Delete is
+explicit and scoped to one validated script id.
+
+**Editor.** The reusable script editor uses CodeMirror's JavaScript language
+support. Programmatic loads do not invoke `onChange`; user edits do. The host can
+read the current text and replace it programmatically, and `Mod-s` invokes an
+optional save callback. The editor has no file-system or execution side effects.
+
+## Acceptance criteria
+
+**AC-1** — Discovery is vault-relative and non-creating.
+Given a vault with no `.brulion/scripts` directory,
+when scripts are listed,
+then the result is empty and the directory is not created; given valid script
+folders, only immediate script directories with valid manifests are returned,
+sorted by id, while unrelated files are ignored.
+
+**AC-2** — Manifest validation is strict and pure.
+Given a manifest value,
+when it is parsed,
+then a valid v1 manifest is normalized/returned, while missing or wrongly typed
+fields, invalid ids, invalid semver, non-relative/non-`.js` entries, duplicate or
+unknown permissions, and unsupported schema/API versions return a structured error
+without touching the file system.
+
+**AC-3** — Invalid discovery is observable but isolated.
+Given one malformed script folder beside valid script folders,
+when discovery runs,
+then the valid scripts remain discoverable and the malformed folder is reported as
+an error record rather than aborting the entire listing.
+
+**AC-4** — Reading a script validates both manifest and entry.
+Given a valid script id,
+when it is read,
+then the parsed manifest, entry source, and source/manifest mtimes are returned;
+an invalid id, missing entry, invalid manifest, or source over the configured size
+limit rejects without creating or modifying files.
+
+**AC-5** — Guarded writes preserve external edits.
+Given an expected source mtime,
+when the source is unchanged, the new source is saved and its new mtime returned;
+when it changed or appeared since the caller's read, the result is `conflict` and
+the on-disk bytes remain untouched. A new script write creates only the validated
+`.brulion/scripts/<id>/` paths.
+
+**AC-6** — Delete is explicit and path-safe.
+Given a valid script id, deleting it removes only that script directory
+recursively; invalid ids and traversal attempts are rejected and never reach
+`removeEntry`.
+
+**AC-7** — The JavaScript editor has a side-effect-free host contract.
+Given a mounted script editor, a programmatic load replaces its text without
+calling `onChange`; a user transaction calls `onChange`; `getScriptEditorText`
+returns the current document; and `Mod-s` invokes the optional save callback.
+
+## Out of scope
+
+- sandbox execution, lifecycle, capability registration, or command palette wiring;
+- TypeScript transpilation, bare/npm imports, network access, or custom extension UI;
+- automatic reload/run on file changes;
+- settings panel and user-facing enable/disable controls.

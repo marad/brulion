@@ -22,7 +22,10 @@ Every technical decision defers to that.
 > and **reviewed live**. **M38** (cross-device permalinks — name-keyed workspaces:
 > P1 name-keyed `?ws` resolution, P2 the workspace-name settings field) is
 > **implemented and deployed, awaiting its live milestone review**. New work
-> otherwise comes from the next round of real daily-use observations.
+> otherwise comes from the next round of real daily-use observations. **M39**
+> (local JavaScript extensions) is now active: Phase 0 (sandbox/RPC spike), Phase
+> 1 (script storage + editor), and the first sandboxed runtime/workbench slice are
+> implemented and covered by FEAT-0081–0084.
 > Recently shipped: **M37** (sidebar tree follow-ups — F2 rename, typeahead,
 > multi-select + batch move/delete),
 > **M36** (keyboard navigation for the sidebar tree — arrow
@@ -629,6 +632,30 @@ Out (deliberately, and stated so we don't over-promise):
   no field interpretation" stance).
 - **A personal bookmark, not a sharing link.** The URL does nothing for someone
   who doesn't have your folder; this is not collaboration.
+
+### M39 — Local JavaScript extensions
+**Goal:** let a user keep small, reviewable JavaScript extensions beside the
+notes, edit them locally, and expose narrow capabilities through the sandboxed
+RPC boundary proven by FEAT-0081. Script files remain ordinary files in
+the user's workspace; they are never silently executed or treated as trusted
+application code.
+
+In:
+- `.brulion/scripts/<id>/manifest.json` + JavaScript entry source, with safe path
+  and manifest validation and mtime-aware writes;
+- a dedicated CodeMirror JavaScript editor surface as a reusable module;
+- explicit per-vault enable/disable and extension-host integration;
+- capability-based execution through the FEAT-0081 sandbox/RPC boundary, with
+  namespaced commands in the existing palette/action bar.
+
+Out:
+- TypeScript execution or browser-side transpilation in the MVP;
+- arbitrary npm/bare-module imports, network capabilities, or raw DOM/FSA handles;
+- automatic execution on file changes (a user must explicitly enable a script);
+- an in-app LLM or agent service. Agents may edit these plain files externally,
+  subject to user review and explicit enablement.
+
+Phases: [`milestones/M39.md`](milestones/M39.md).
 
 ## Later / backlog (out of MVP, on purpose)
 

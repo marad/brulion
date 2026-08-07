@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Brulion extension sandbox spike</title>
+    <!-- Deliberately permissive only for this inline demo. The production policy is
+         documented in docs/spikes/FEAT-0081-extension-sandbox.md. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; base-uri 'none'; object-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-src 'self' blob: data:; connect-src 'none'; img-src 'none'"
+    />
+    <style>
+      :root { color-scheme: light dark; font: 16px/1.45 system-ui, sans-serif; }
+      body { max-width: 56rem; margin: 2rem auto; padding: 0 1rem; }
+      code { font-family: ui-monospace, monospace; }
+      li { margin: .45rem 0; }
+      .pass { color: #0a7a34; }
+      .fail { color: #b42318; }
+      .pending { color: #8b6b00; }
+      iframe { width: 1px; height: 1px; border: 0; position: absolute; left: -10000px; }
+    </style>
+  </head>
+  <body>
+    <h1>FEAT-0081 sandbox spike</h1>
+    <p>
+      This page is a disposable Chromium harness. It creates an
+      <code>allow-scripts</code>-only iframe, transfers one <code>MessagePort</code>,
+      and reports the boundary checks below. Unit-level protocol assertions live in
+      <code>src/extension-rpc.test.ts</code>.
+    </p>
+    <ol id="checks" aria-live="polite"></ol>
+    <iframe id="extension" sandbox="allow-scripts" title="sandboxed extension"></iframe>
+
+    <script>
+      (() => {
+        const CHANNEL = "brulion-extension-rpc"
+        const VERSION = 1
+        const nonce = crypto.randomUUID()
+        const frame = document.querySelector("#extension")
+        const checks = document.querySelector("#checks")
+        const port = new MessageChannel()
+        let disposed = false
+        const rows = new Map()
+
+        function row(id, label) {
+          const item = document.createElement("li")
+          item.dataset.id = id
+          item.className = "pending"
+          item.textContent = `${label}: pending`
+          checks.append(item)
+          rows.set(id, item)
+        }
+
+        function mark(id, ok, detail) {
+          const item = rows.get(id)
+          if (!item) return
+          item.className = ok ? "pass" : "fail"
+          item.textContent = `${ok ? "PASS" : "FAIL"} — ${item.textContent.replace(": pending", "")} ${detail || ""}`
+        }
+
+        [
+          ["handshake", "nonce-bound handshake"],
+          ["capability", "registered capability"],
+          ["unknown", "unknown capability rejected"],
+          ["malformed", "malformed message rejected"],
+          ["wrong-nonce", "wrong nonce rejected"],
+          ["value", "non-JSON value rejected"],
+          ["dom", "parent DOM is outside the sandbox"],
+          ["timeout", "hung capability times out"],
+          ["dispose", "disposed port fails closed"],
+        ].forEach(([id, label]) => row(id, label))
+
+        function isJsonLike(value, seen = new Set()) {
+          if (value === null || typeof value === "string" || typeof value === "boolean") return true
+          if (typeof value === "number") return Number.isFinite(value)
+          if (!value || typeof value !== "object" || seen.has(value)) return false
+          const prototype = Object.getPrototypeOf(value)
+          if (prototype !== Object.prototype && prototype !== null) return false
+          seen.add(value)
+          try {
+            return Object.keys(value).every((key) => isJsonLike(value[key], seen))
+          } finally {
+            seen.delete(value)
+          }
+        }
+
+        function send(message) {
+          if (disposed) return
+          port.port1.postMessage({ channel: CHANNEL, version: VERSION, nonce, ...message })
+        }
+
+        function sendResponseError(id, code, message) {
+          send({ type: "response", id, ok: false, error: { code, message } })
+        }
+
+        function sendProtocolError(id, code, message) {
+          send({ type: "error", id, error: { code, message } })
+        }
+
+        function respond(request) {
+          if (request.method === "spike.echo") {
+            if (!isJsonLike(request.params)) {
+              sendResponseError(request.id, "invalid_value", "params must be JSON-like")
+              return
+            }
+            send({ type: "response", id: request.id, ok: true, result: request.params })
+            return
+          }
+          if (request.method === "spike.never") {
+            // The host deliberately does not answer. The timeout below is part of
+            // this harness, not a production implementation.
+            window.setTimeout(() => {
+              sendResponseError(request.id, "timeout", "demo timeout")
+              window.setTimeout(() => {
+                disposed = true
+                port.port1.close()
+                mark("dispose", true, "host closed the dedicated port")
+              }, 20)
+            }, 100)
+            return
+          }
+          sendResponseError(request.id, "unknown_method", "method is not registered")
+        }
+
+        port.port1.addEventListener("message", (event) => {
+          const message = event.data
+          if (!message || message.channel !== CHANNEL || message.version !== VERSION) return
+          if (message.nonce !== nonce) {
+            if (message.type === "request") sendProtocolError(message.id, "unauthorized", "nonce mismatch")
+            return
+          }
+          if (message.type === "hello") {
+            mark("handshake", true, "hello accepted")
+            send({ type: "ready" })
+            return
+          }
+          if (message.type === "request") {
+            if (!("params" in message)) sendProtocolError(message.id, "protocol", "params are required")
+            else respond(message)
+            return
+          }
+          if (message.type === "report") {
+            mark(message.id, Boolean(message.ok), message.detail || "")
+          }
+        })
+        port.port1.start()
+
+        const child = `<!doctype html><meta charset="utf-8"><script>
+          (() => {
+            const CHANNEL = "brulion-extension-rpc"
+            const VERSION = 1
+            let port
+            let nonce
+            let next = 0
+            const pending = new Map()
+            function send(message) {
+              port.postMessage({ channel: CHANNEL, version: VERSION, nonce, ...message })
+            }
+            function report(id, ok, detail) {
+              send({ type: "report", id, ok, detail })
+            }
+            function request(method, params, id) {
+              const requestId = id || "child-" + (++next)
+              pending.set(requestId, method)
+              send({ type: "request", id: requestId, method, params })
+            }
+            window.addEventListener("message", (event) => {
+              if (!event.data || event.data.channel !== "brulion-extension-bootstrap" || !event.ports[0]) return
+              nonce = event.data.nonce
+              port = event.ports[0]
+              port.addEventListener("message", ({ data }) => {
+                if (data.type === "ready") {
+                  report("handshake", true, "ready received")
+                  try {
+                    window.parent.document.querySelector("body")
+                    report("dom", false, "parent DOM was readable")
+                  } catch (_) {
+                    report("dom", true, "SecurityError as expected")
+                  }
+                  request("spike.echo", { text: "hello" }, "echo-1")
+                  request("spike.missing", null, "unknown-1")
+                  request("spike.echo", new Date(), "value-1")
+                  request("spike.never", null, "timeout-1")
+                  // The host closes the port after the timeout response. This late
+                  // call must not mutate host state (the unit test asserts it too).
+                  window.setTimeout(() => request("spike.echo", { late: true }, "late-1"), 180)
+                  return
+                }
+                if (data.type === "response") {
+                  const method = pending.get(data.id)
+                  pending.delete(data.id)
+                  if (data.id === "echo-1") report("capability", data.ok && data.result.text === "hello", "echo result")
+                  else if (data.id === "unknown-1") report("unknown", !data.ok && data.error.code === "unknown_method", data.error?.code)
+                  else if (data.id === "malformed-1") report("malformed", !data.ok && data.error.code === "protocol", data.error?.code)
+                  else if (data.id === "value-1") report("value", !data.ok && data.error.code === "invalid_value", data.error?.code)
+                  else if (data.id === "timeout-1") report("timeout", !data.ok && data.error.code === "timeout", data.error?.code)
+                  else if (method) report("dispose", false, "late response was delivered")
+                }
+                if (data.type === "error") {
+                  if (data.id === "wrong-1") report("wrong-nonce", data.error.code === "unauthorized", data.error.code)
+                  else if (data.id === "malformed-1") report("malformed", data.error.code === "protocol", data.error.code)
+                }
+              })
+              port.start()
+              port.postMessage({ channel: CHANNEL, version: VERSION, type: "hello", nonce })
+              // These are deliberately hostile envelopes; the host should answer
+              // on the dedicated port without running a capability.
+              port.postMessage({ channel: CHANNEL, version: VERSION, type: "request", nonce: "wrong", id: "wrong-1", method: "spike.echo", params: null })
+              port.postMessage({ channel: CHANNEL, version: VERSION, type: "request", nonce, id: "malformed-1", method: "spike.echo" })
+            }, { once: true })
+          })()
+        <\/script>`
+
+        frame.srcdoc = child
+        frame.addEventListener("load", () => {
+          // srcdoc has an opaque origin because allow-same-origin is absent. The
+          // source check belongs in the real bootstrap; this demo has one known
+          // iframe and transfers exactly one port to it.
+          frame.contentWindow?.postMessage(
+            { channel: "brulion-extension-bootstrap", nonce },
+            "*",
+            [port.port2],
+          )
+        }, { once: true })
+      })()
+    </script>
+  </body>
+</html>

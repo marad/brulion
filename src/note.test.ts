@@ -274,6 +274,17 @@ describe("listNotes (AC-5, AC-6)", () => {
     expect(await listNotes(folder.dir)).toEqual([])
   })
 
+  it("hides the root .brulion metadata directory from the note tree", async () => {
+    const folder = fakeFolder({
+      ".brulion": {
+        kind: "directory",
+        children: { "hidden.md": { kind: "file", content: "internal" } },
+      },
+      "visible.md": { kind: "file", content: "note" },
+    })
+    expect(await listNotes(folder.dir)).toEqual(["visible.md"])
+  })
+
   // Builds a tree of `folderCount` sibling folders whose values() stays "in
   // flight" for a fixed short delay — tracks concurrent/peak scans so the
   // true peak concurrency across a listNotes() run is observable regardless
@@ -439,12 +450,14 @@ describe("Sweep (startSweep/continueSweep/sweepResult)", () => {
   it("matches listNotes's own result once a sweep completes on a real (fast) tree", async () => {
     const folder = fakeFolder({
       "a.md": { kind: "file", content: "" },
+      ".brulion": { kind: "directory", children: { "hidden.md": { kind: "file", content: "" } } },
       sub: { kind: "directory", children: { "b.md": { kind: "file", content: "" } } },
     })
     const sweep = startSweep(folder.dir)
     const complete = await continueSweep(sweep, 10_000)
     expect(complete).toBe(true)
-    expect(sweepResult(sweep)).toEqual(await listNotes(folder.dir))
+    expect(sweepResult(sweep)).toEqual(["a.md", "sub/b.md"])
+    expect(await listNotes(folder.dir)).toEqual(["a.md", "sub/b.md"])
   })
 })
 
@@ -523,6 +536,14 @@ describe("listFolders (AC-1, AC-2)", () => {
   it("returns an empty list when the tree has no subdirectories", async () => {
     const folder = fakeFolder({ "a.md": { kind: "file", content: "x" } })
     expect(await listFolders(folder.dir)).toEqual([])
+  })
+
+  it("hides the root .brulion metadata directory from the note tree", async () => {
+    const folder = fakeFolder({
+      ".brulion": { kind: "directory", children: { scripts: { kind: "directory" } } },
+      visible: { kind: "directory" },
+    })
+    expect(await listFolders(folder.dir)).toEqual(["visible"])
   })
 })
 

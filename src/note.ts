@@ -8,6 +8,8 @@
  */
 
 const MD_EXT = /\.md$/i
+/** Vault metadata is an implementation directory, not a user note folder. */
+const BRULION_DIRECTORY = ".brulion"
 
 export interface NoteContent {
   content: string
@@ -185,7 +187,7 @@ async function collect(
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError")
       if (entry.kind === "file") {
         if (MD_EXT.test(entry.name)) out.push(prefix + entry.name)
-      } else {
+      } else if (!(prefix === "" && entry.name === BRULION_DIRECTORY)) {
         subdirs.push(entry)
       }
     }
@@ -234,7 +236,7 @@ async function collectFolders(
   try {
     for await (const entry of dir.values()) {
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError")
-      if (entry.kind === "directory") {
+      if (entry.kind === "directory" && !(prefix === "" && entry.name === BRULION_DIRECTORY)) {
         out.push(prefix + entry.name)
         subdirs.push(entry)
       }
@@ -293,7 +295,7 @@ export async function continueSweep(sweep: Sweep, budgetMs: number, signal?: Abo
       // only after, to decide whether to fetch the *next* one.
       if (entry.kind === "file") {
         if (MD_EXT.test(entry.name)) sweep.files.push(prefix + entry.name)
-      } else {
+      } else if (!(prefix === "" && entry.name === BRULION_DIRECTORY)) {
         sweep.pending.push({ dir: entry, prefix: prefix + entry.name + "/" })
       }
       if (signal?.aborted || performance.now() >= deadline) return false

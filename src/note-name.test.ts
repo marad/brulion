@@ -79,6 +79,11 @@ describe("normalizeNoteName rejection (AC-10)", () => {
       expect(normalizeNoteName("sub/" + bad).ok).toBe(false)
     }
   })
+
+  it("reserves the root .brulion directory for Brulion metadata", () => {
+    expect(normalizeNoteName(".brulion/internal").ok).toBe(false)
+    expect(normalizeNoteName(".BRULION/internal").ok).toBe(false)
+  })
 })
 
 describe("normalizeFolderPath (FEAT-0069 AC-1, AC-2, AC-3)", () => {
@@ -104,6 +109,11 @@ describe("normalizeFolderPath (FEAT-0069 AC-1, AC-2, AC-3)", () => {
   it("rejects empty segments and unsafe characters, same as normalizeNoteName", () => {
     expect(normalizeFolderPath("a//b").ok).toBe(false)
     expect(normalizeFolderPath("a<b").ok).toBe(false)
+  })
+
+  it("reserves the root .brulion directory for Brulion metadata", () => {
+    expect(normalizeFolderPath(".brulion").ok).toBe(false)
+    expect(normalizeFolderPath(".BRULION/scripts").ok).toBe(false)
   })
 })
 

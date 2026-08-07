@@ -39,6 +39,8 @@ export interface Settings {
    * portable `?ws=` carries and matches against. Travels with the folder in
    * `.brulion.json`. Empty means "use the folder name" — see `effectiveVaultName`. */
   workspace: string
+  /** Script ids explicitly enabled in the local extension workbench. */
+  extensions?: string[]
 }
 
 /** The on-disk settings file at the folder root. */
@@ -74,12 +76,14 @@ export const WIDTH_MEASURE: Record<EditorWidth, string> = {
  * Coerce arbitrary parsed JSON into a valid {@link Settings}: every field falls to
  * its default when missing or wrong-typed; `textSize` is rounded and clamped to
  * [MIN_SIZE, MAX_SIZE]; `editorWidth` must be one of the three literals; `font`
- * keeps only string entries; `vim` is coerced to a boolean. Pure and total — any
- * input yields a valid value, never a throw.
+ * keeps only string entries; `vim` is coerced to a boolean; extension enablement
+ * keeps only unique string ids when present. Pure and total — any input yields a
+ * valid value, never a throw.
  */
 export function normalizeSettings(raw: unknown): Settings {
   if (typeof raw !== "object" || raw === null) return { ...DEFAULT_SETTINGS }
   const r = raw as Record<string, unknown>
+  const extensions = Array.isArray(r.extensions) ? dedupeStrings(r.extensions) : undefined
   return {
     font: Array.isArray(r.font)
       ? r.font.filter((x): x is string => typeof x === "string" && isSafeFontName(x))
@@ -91,6 +95,7 @@ export function normalizeSettings(raw: unknown): Settings {
     journalPath: typeof r.journalPath === "string" ? r.journalPath : "",
     theme: isTheme(r.theme) ? r.theme : "system",
     workspace: typeof r.workspace === "string" ? r.workspace.trim() : "",
+    ...(extensions === undefined ? {} : { extensions }),
   }
 }
 

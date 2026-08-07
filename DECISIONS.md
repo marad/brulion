@@ -3193,3 +3193,41 @@ creating a collision that the most-recent tiebreak resolves in favour of the jus
 edited vault — hijacking the other vault's `?ws` permalink. We ship the documented
 tiebreak with no warning; whether the field should **warn on collision** is left for
 the live review to decide.
+
+## Extension spike: opaque-origin iframe + nonce-bound capability RPC (FEAT-0081)
+
+**What:** the Phase 0 extension spike uses a dedicated `MessageChannel` between
+Brulion and a script running in an iframe with `sandbox="allow-scripts"` and
+**without** `allow-same-origin`. The host authenticates the transferred port with
+a one-time nonce, validates a small versioned envelope, dispatches only explicitly
+registered asynchronous capabilities, and accepts only recursive JSON-like values
+on the wire. Requests have bounded timeouts; disposing a peer removes listeners,
+rejects pending calls, and makes later messages fail closed. The spike is
+JavaScript-only; it does not add script discovery, storage, UI, or production
+command/editor integration.
+
+**Why:** local extension code is untrusted application code even when it lives next
+to the user's notes. A same-origin iframe or direct `eval` would give it a path to
+Brulion's DOM, CodeMirror state, and File System Access handles. An opaque-origin
+sandbox keeps the script out of the app's origin, while the capability registry
+makes the exposed surface auditable and keeps file-fidelity-sensitive state in the
+host. JSON-like validation is intentional: structured clone can transfer
+`FileSystemHandle` objects, so relying on structured clone alone would accidentally
+widen the boundary.
+
+**Browser/deployment consequences:** an opaque-origin frame cannot be addressed with
+a fixed `targetOrigin`, so the bootstrap uses `postMessage("*", …)` only for the
+expected iframe window and relies on source identity plus the nonce; all subsequent
+traffic uses the dedicated port. Production must serve the frame under a restrictive
+CSP (`frame-src` for the chosen `blob:`/static source, `connect-src 'none'`, no
+`allow-same-origin`, and no popup/top-navigation capabilities). GitHub Pages is
+static and cannot set custom response headers from this repository, so a production
+rollout needs a meta CSP plus a deliberate hosting/header plan; the spike does not
+claim that a meta policy alone is equivalent to a response header. File System
+Access handles remain host-only and are never passed through the extension API.
+
+**Consequence (project):** FEAT-0081 leaves a runnable protocol test and browser
+harness plus a written threat model. The next phase may build script storage and
+UI on this boundary, but must keep the host-side source/nonce checks, capability
+allow-list, value validation, timeout, and disposal invariants. Native folder
+picker/permission prompts remain a manual check in the later live-app review.
