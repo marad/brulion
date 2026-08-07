@@ -109,11 +109,15 @@ test("runs an enabled local command and opens the separate multi-file workbench"
   await expect(workbench.locator("#workbench-kit-panel")).toBeVisible()
   await expect(workbench.locator("#workbench-kit-version")).toHaveText("v1.0.0")
   await expect(workbench.locator("#workbench-kit-list .workbench-kit-row")).toHaveCount(10)
+  await workbench.locator("#workbench-kit-close").click()
+  await expect(workbench.locator("#workbench-kit-panel")).toBeHidden()
 
+  await workbench.locator("#workbench-create-script").click()
   await workbench.locator("#workbench-new-id").fill("new-tools")
   await workbench.locator("#workbench-create-script-confirm").click()
   await expect(workbench.locator("#workbench-script-list .workbench-list-row")).toHaveCount(2)
   await workbench.locator('#workbench-script-list [data-script-id="new-tools"]').click()
+  await expect(workbench.locator("#workbench-script-context")).toHaveText("new-tools")
   await expect(workbench.locator("#workbench-file-title")).toHaveText("main.js")
 
   await workbench.locator("#workbench-editor .cm-content").click()

@@ -43,13 +43,14 @@ const selectedScriptLabel = byId<HTMLElement>("workbench-selected-script")
 const scriptContext = byId<HTMLElement>("workbench-script-context")
 const editorMount = byId<HTMLElement>("workbench-editor")
 const fileTitle = byId<HTMLElement>("workbench-file-title")
+const fileIcon = byId<HTMLElement>("workbench-file-icon")
+const languageStatus = byId<HTMLElement>("workbench-language")
 const fileStatus = byId<HTMLElement>("workbench-file-status")
 const diagnostic = byId<HTMLElement>("workbench-diagnostic")
 const saveButton = byId<HTMLButtonElement>("workbench-save")
 const renameFileButton = byId<HTMLButtonElement>("workbench-rename-file")
 const deleteFileButton = byId<HTMLButtonElement>("workbench-delete-file")
 const renameFileInput = byId<HTMLInputElement>("workbench-rename-file-input")
-const renameFileConfirm = byId<HTMLButtonElement>("workbench-rename-file-confirm")
 const renameScriptInput = byId<HTMLInputElement>("workbench-rename-script-input")
 const renameScriptButton = byId<HTMLButtonElement>("workbench-rename-script")
 const deleteScriptButton = byId<HTMLButtonElement>("workbench-delete-script")
@@ -96,8 +97,9 @@ function destroyEditor(): void {
   renameFileButton.disabled = true
   deleteFileButton.disabled = true
   renameFileInput.disabled = true
-  renameFileConfirm.disabled = true
   fileTitle.textContent = "Select a file"
+  fileIcon.textContent = "—"
+  languageStatus.textContent = "Plain text"
   fileStatus.textContent = ""
 }
 
@@ -297,11 +299,14 @@ async function selectFile(path: string | null): Promise<void> {
     destroyEditor()
     selectedLastModified = record.lastModified
     fileTitle.textContent = path
+    const isJson = path.toLowerCase().endsWith(".json")
+    fileIcon.textContent = isJson ? "{}" : "JS"
+    languageStatus.textContent = isJson ? "JSON" : "JavaScript"
     const key = draftKey(id, path)
     const draft = drafts.get(key)
     fileStatus.textContent = draft === undefined ? "Loaded from disk." : "Unsaved changes preserved."
     editor = mountScriptEditor(editorMount, {
-      language: path.toLowerCase().endsWith(".json") ? "json" : "javascript",
+      language: isJson ? "json" : "javascript",
       onChange: (text) => {
         drafts.set(key, text)
         fileStatus.textContent = "Unsaved changes."
@@ -314,7 +319,6 @@ async function selectFile(path: string | null): Promise<void> {
     renameFileButton.disabled = false
     deleteFileButton.disabled = false
     renameFileInput.disabled = false
-    renameFileConfirm.disabled = false
     renderFiles()
   } catch (error) {
     setDiagnostic(error instanceof Error ? error.message : "Unable to read the selected file.")
@@ -378,6 +382,7 @@ async function createExtension(): Promise<void> {
   if (busy || !root) return
   const id = newIdInput.value.trim()
   if (!id) return
+  let created = false
   busy = true
   try {
     const result = await createScript(
@@ -392,13 +397,14 @@ async function createExtension(): Promise<void> {
     newIdInput.value = ""
     setDiagnostic("")
     await refresh()
-    await selectScript(id)
+    created = true
   } catch (error) {
     setDiagnostic(error instanceof Error ? error.message : "Unable to create extension.")
   } finally {
     busy = false
     updateScriptControls()
   }
+  if (created) await selectScript(id)
 }
 
 async function createFile(): Promise<void> {
@@ -653,8 +659,7 @@ byId<HTMLButtonElement>("workbench-create-script-confirm").addEventListener("cli
 byId<HTMLButtonElement>("workbench-create-file").addEventListener("click", () => newFileInput.focus())
 byId<HTMLButtonElement>("workbench-create-file-confirm").addEventListener("click", () => void createFile())
 saveButton.addEventListener("click", () => void saveFile())
-renameFileButton.addEventListener("click", () => renameFileInput.focus())
-renameFileConfirm.addEventListener("click", () => void renameFile())
+renameFileButton.addEventListener("click", () => void renameFile())
 deleteFileButton.addEventListener("click", () => void deleteFile())
 renameScriptButton.addEventListener("click", () => void renameExtension())
 deleteScriptButton.addEventListener("click", () => void deleteExtension())

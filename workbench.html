@@ -7,119 +7,127 @@
   </head>
   <body class="workbench-page">
     <main id="workbench" aria-labelledby="workbench-title">
-      <header class="workbench-header">
-        <div class="workbench-brand">
-          <span class="workbench-eyebrow">Brulion / Developer tools</span>
-          <h1 id="workbench-title">Extensions</h1>
-          <p id="workbench-vault" class="workbench-muted"></p>
+      <header class="workbench-titlebar">
+        <div class="workbench-product">
+          <span class="workbench-product-mark" aria-hidden="true">B</span>
+          <div class="workbench-product-copy">
+            <h1 id="workbench-title">Extension editor</h1>
+            <p id="workbench-vault"></p>
+          </div>
         </div>
-        <div class="workbench-header-actions">
+        <section id="workbench-status" class="workbench-status" role="status"></section>
+        <div class="workbench-titlebar-actions">
           <button id="workbench-refresh" class="workbench-button workbench-button-quiet" type="button">Refresh</button>
-          <button id="workbench-kit" class="workbench-button" type="button">Authoring kit</button>
+          <button id="workbench-kit" class="workbench-button workbench-button-quiet" type="button">Authoring kit</button>
         </div>
       </header>
 
-      <section id="workbench-status" class="workbench-status" role="status"></section>
-
-      <section id="workbench-missing" class="workbench-missing" hidden>
-        <div>
-          <span class="workbench-eyebrow">Workspace unavailable</span>
-          <h2>Reconnect this workspace</h2>
+      <section id="workbench-missing" class="workbench-recovery" hidden>
+        <div class="workbench-recovery-card">
+          <span class="workbench-recovery-icon" aria-hidden="true">⌁</span>
+          <h2>Workspace access required</h2>
           <p id="workbench-missing-message"></p>
+          <button id="workbench-choose-folder" class="workbench-button workbench-button-primary" type="button">Open workspace…</button>
         </div>
-        <button id="workbench-choose-folder" class="workbench-button" type="button">Choose another folder…</button>
       </section>
 
-      <section id="workbench-content" class="workbench-content" hidden>
-        <aside class="workbench-explorer" aria-label="Extension explorer">
-          <div class="workbench-pane-heading">
-            <div>
-              <span class="workbench-eyebrow">Explorer</span>
-              <h2>Extensions</h2>
+      <section id="workbench-content" class="workbench-workspace" hidden>
+        <aside class="workbench-sidebar" aria-label="Extension explorer">
+          <header class="workbench-sidebar-header">
+            <h2>Explorer</h2>
+          </header>
+
+          <section class="workbench-tree-section" aria-labelledby="workbench-extensions-heading">
+            <div class="workbench-tree-heading">
+              <h3 id="workbench-extensions-heading"><span aria-hidden="true">▾</span> Extensions</h3>
+              <button id="workbench-create-script" class="workbench-icon-button" type="button" aria-label="New extension" title="New extension">＋</button>
             </div>
-            <button id="workbench-create-script" class="workbench-button workbench-button-small" type="button">New extension</button>
-          </div>
-
-          <div class="workbench-create-form">
-            <label class="workbench-sr-only" for="workbench-new-id">New extension id</label>
-            <input id="workbench-new-id" type="text" placeholder="e.g. daily-tools" aria-label="New extension id" />
-            <button id="workbench-create-script-confirm" class="workbench-button workbench-button-small" type="button">Create</button>
-          </div>
-          <div id="workbench-script-list" class="workbench-list workbench-extension-list"></div>
-
-          <div class="workbench-files-heading">
-            <div>
-              <span class="workbench-eyebrow">Files</span>
-              <strong id="workbench-selected-script">Choose an extension</strong>
+            <div class="workbench-create-form">
+              <label class="workbench-sr-only" for="workbench-new-id">New extension id</label>
+              <input id="workbench-new-id" type="text" placeholder="Extension id" aria-label="New extension id" />
+              <button id="workbench-create-script-confirm" class="workbench-inline-action" type="button">Add</button>
             </div>
-            <button id="workbench-create-file" class="workbench-button workbench-button-small" type="button">New file</button>
-          </div>
-          <div class="workbench-create-form">
-            <label class="workbench-sr-only" for="workbench-new-file">New file name</label>
-            <input id="workbench-new-file" type="text" placeholder="e.g. helpers.js" aria-label="New file name" />
-            <button id="workbench-create-file-confirm" class="workbench-button workbench-button-small" type="button">Create</button>
-          </div>
-          <div id="workbench-file-list" class="workbench-list workbench-file-list"></div>
+            <div id="workbench-script-list" class="workbench-list workbench-extension-list"></div>
+          </section>
 
-          <details class="workbench-settings">
-            <summary>Extension settings</summary>
-            <div class="workbench-settings-body">
+          <section class="workbench-tree-section workbench-files-section" aria-labelledby="workbench-files-heading">
+            <div class="workbench-tree-heading">
+              <div>
+                <h3 id="workbench-files-heading"><span aria-hidden="true">▾</span> Files</h3>
+                <strong id="workbench-selected-script">Choose an extension</strong>
+              </div>
+              <button id="workbench-create-file" class="workbench-icon-button" type="button" aria-label="New file" title="New file">＋</button>
+            </div>
+            <div class="workbench-create-form">
+              <label class="workbench-sr-only" for="workbench-new-file">New file name</label>
+              <input id="workbench-new-file" type="text" placeholder="File name" aria-label="New file name" />
+              <button id="workbench-create-file-confirm" class="workbench-inline-action" type="button">Add</button>
+            </div>
+            <div id="workbench-file-list" class="workbench-list workbench-file-list"></div>
+          </section>
+
+          <details class="workbench-sidebar-menu">
+            <summary>Extension options</summary>
+            <div class="workbench-menu-body">
               <label for="workbench-rename-script-input">Extension id</label>
-              <div class="workbench-create-form">
-                <input id="workbench-rename-script-input" type="text" placeholder="new extension id" aria-label="New extension id" disabled />
-                <button id="workbench-rename-script" class="workbench-button workbench-button-small" type="button" disabled>Rename id</button>
-              </div>
-              <div class="workbench-settings-actions">
-                <button id="workbench-delete-script" class="workbench-button workbench-button-danger" type="button" disabled>Delete extension</button>
-              </div>
+              <input id="workbench-rename-script-input" type="text" placeholder="New extension id" aria-label="New extension id" disabled />
+              <button id="workbench-rename-script" class="workbench-button" type="button" disabled>Rename extension</button>
+              <button id="workbench-delete-script" class="workbench-button workbench-button-danger" type="button" disabled>Delete extension</button>
             </div>
           </details>
         </aside>
 
         <section class="workbench-editor-panel" aria-label="Extension editor">
-          <header class="workbench-editor-heading">
-            <div class="workbench-editor-title">
-              <p class="workbench-breadcrumb"><span id="workbench-script-context">No extension selected</span><span aria-hidden="true">/</span></p>
+          <header class="workbench-tabbar">
+            <div class="workbench-tab is-active">
+              <span id="workbench-file-icon" class="workbench-file-icon" aria-hidden="true">—</span>
               <h2 id="workbench-file-title">Select a file</h2>
-              <p id="workbench-file-status" class="workbench-muted"></p>
             </div>
             <div class="workbench-editor-actions">
-              <button id="workbench-toggle-script" class="workbench-button workbench-button-secondary" type="button" disabled>Enable extension</button>
-              <button id="workbench-save" class="workbench-button workbench-button-primary" type="button" disabled>Save changes</button>
+              <button id="workbench-toggle-script" class="workbench-button workbench-button-quiet" type="button" disabled>Enable extension</button>
+              <button id="workbench-save" class="workbench-button workbench-button-primary" type="button" disabled>Save</button>
             </div>
           </header>
 
-          <details class="workbench-file-actions">
-            <summary>File actions</summary>
-            <div class="workbench-file-actions-body">
-              <label for="workbench-rename-file-input">Move selected file</label>
-              <div class="workbench-create-form">
-                <input id="workbench-rename-file-input" type="text" placeholder="new-file.js" aria-label="New file path" disabled />
-                <button id="workbench-rename-file" class="workbench-button workbench-button-small" type="button" disabled>Move file</button>
-                <button id="workbench-rename-file-confirm" class="workbench-button workbench-button-small" type="button" disabled>Confirm</button>
+          <div class="workbench-editor-toolbar">
+            <p class="workbench-breadcrumb"><span>extensions</span><span aria-hidden="true"> / </span><span id="workbench-script-context">No extension selected</span></p>
+            <details class="workbench-file-menu">
+              <summary aria-label="File actions" title="File actions">•••</summary>
+              <div class="workbench-menu-body">
+                <label for="workbench-rename-file-input">Move selected file</label>
+                <input id="workbench-rename-file-input" type="text" placeholder="New file path" aria-label="New file path" disabled />
+                <button id="workbench-rename-file" class="workbench-button" type="button" disabled>Move file</button>
+                <button id="workbench-delete-file" class="workbench-button workbench-button-danger" type="button" disabled>Delete file</button>
               </div>
-              <button id="workbench-delete-file" class="workbench-button workbench-button-danger workbench-file-remove" type="button" disabled>Remove file</button>
-            </div>
-          </details>
+            </details>
+          </div>
 
           <div id="workbench-editor"></div>
-          <footer class="workbench-editor-footer">
-            <p id="workbench-diagnostic" class="workbench-diagnostic" role="alert"></p>
-            <span class="workbench-key-hint">Ctrl/Cmd + S to save</span>
+          <footer class="workbench-statusbar">
+            <div class="workbench-statusbar-left">
+              <p id="workbench-diagnostic" class="workbench-diagnostic" role="alert"></p>
+              <p id="workbench-file-status"></p>
+            </div>
+            <div class="workbench-statusbar-right" aria-label="Editor information">
+              <span id="workbench-language">Plain text</span>
+              <span>UTF-8</span>
+              <span>Ctrl/Cmd + S</span>
+            </div>
           </footer>
         </section>
       </section>
 
-      <section id="workbench-kit-panel" class="workbench-kit-panel" hidden>
-        <div class="workbench-pane-heading">
-          <div>
-            <span class="workbench-eyebrow">Resources</span>
-            <h2>Authoring kit <span id="workbench-kit-version"></span></h2>
-          </div>
-          <button id="workbench-kit-close" class="workbench-button workbench-button-small" type="button">Close</button>
+      <section id="workbench-kit-panel" class="workbench-kit-drawer" hidden>
+        <div class="workbench-kit-panel" role="complementary" aria-labelledby="workbench-kit-title">
+          <header class="workbench-kit-header">
+            <div>
+              <h2 id="workbench-kit-title">Authoring kit <span id="workbench-kit-version"></span></h2>
+              <p>Versioned references for extension authors and coding agents.</p>
+            </div>
+            <button id="workbench-kit-close" class="workbench-icon-button" type="button" aria-label="Close authoring kit">×</button>
+          </header>
+          <div id="workbench-kit-list" class="workbench-list workbench-kit-list"></div>
         </div>
-        <p class="workbench-muted">The same versioned files are shipped in the repository and available for people or coding agents.</p>
-        <div id="workbench-kit-list" class="workbench-list"></div>
       </section>
     </main>
     <script type="module" src="/src/workbench-main.ts"></script>
