@@ -97,6 +97,24 @@ export function validateScriptEntry(value: unknown): PathResult {
   return { ok: true, value }
 }
 
+/** Validate any supported text file inside a script directory. */
+export function validateScriptFilePath(value: unknown): PathResult {
+  if (typeof value !== "string" || value.length === 0 || value.length > MAX_ENTRY_LENGTH) {
+    return { ok: false, error: "Script file path must be a bounded non-empty path." }
+  }
+  if (value.startsWith("/") || value.includes("\\")) {
+    return { ok: false, error: "Script file path must be a relative POSIX path." }
+  }
+  const segments = value.split("/")
+  if (segments.some((segment) => !safeSegment(segment))) {
+    return { ok: false, error: "Script file path contains an unsafe or traversal path segment." }
+  }
+  if (!/\.(?:js|json)$/i.test(value)) {
+    return { ok: false, error: "Script file path must point to a .js or .json file." }
+  }
+  return { ok: true, value }
+}
+
 function validPermission(value: unknown): value is ScriptPermission {
   return (SCRIPT_PERMISSIONS as readonly unknown[]).includes(value)
 }

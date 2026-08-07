@@ -7,6 +7,12 @@ import {
   listScripts,
   readScript,
   writeScriptSource,
+  createScriptFile,
+  deleteScriptFile,
+  listScriptFiles,
+  readScriptFile,
+  renameScriptFile,
+  writeScriptFile,
 } from "./script-storage"
 import type { ScriptManifest } from "./script-manifest"
 
@@ -213,5 +219,57 @@ describe("script storage (FEAT-0082)", () => {
     await deleteScript(folder.dir, "daily-tools")
     expect(folder.has(".brulion/scripts/daily-tools")).toBe(false)
     expect(folder.has(".brulion/scripts")).toBe(true)
+  })
+
+  it("lists and reads the manifest plus supported companion files deterministically", async () => {
+    const folder = fakeFolder()
+    await createScript(folder.dir, manifest, "source")
+    folder.touch(".brulion/scripts/daily-tools/data.json", "{\"ok\":true}")
+    folder.touch(".brulion/scripts/daily-tools/lib/helper.js", "export const x = 1")
+    folder.touch(".brulion/scripts/daily-tools/readme.md", "ignore")
+
+    const files = await listScriptFiles(folder.dir, "daily-tools")
+    expect(files.map((file) => file.path)).toEqual(["data.json", "lib/helper.js", "main.js", "manifest.json"])
+    await expect(readScriptFile(folder.dir, "daily-tools", "data.json")).resolves.toMatchObject({
+      path: "data.json",
+      text: "{\"ok\":true}",
+    })
+  })
+
+  it("creates, saves, renames, and deletes a companion with mtime guards", async () => {
+    const folder = fakeFolder()
+    await createScript(folder.dir, manifest, "source")
+    expect(await createScriptFile(folder.dir, "daily-tools", "data.json", "{}")).toEqual({ status: "created" })
+    expect(await createScriptFile(folder.dir, "daily-tools", "data.json", "other")).toEqual({ status: "exists" })
+
+    const first = await readScriptFile(folder.dir, "daily-tools", "data.json")
+    expect(await writeScriptFile(folder.dir, "daily-tools", "data.json", "{\"v\":1}", first.lastModified)).toMatchObject({
+      status: "saved",
+    })
+    folder.touch(".brulion/scripts/daily-tools/data.json", "external")
+    expect(await writeScriptFile(folder.dir, "daily-tools", "data.json", "clobber", first.lastModified)).toEqual({
+      status: "conflict",
+    })
+    expect(folder.content(".brulion/scripts/daily-tools/data.json")).toBe("external")
+
+    const current = await readScriptFile(folder.dir, "daily-tools", "data.json")
+    expect(await renameScriptFile(folder.dir, "daily-tools", "data.json", "settings.json", current.lastModified)).toMatchObject({
+      status: "renamed",
+    })
+    expect(folder.content(".brulion/scripts/daily-tools/settings.json")).toBe("external")
+    expect(folder.has(".brulion/scripts/daily-tools/data.json")).toBe(false)
+    const renamed = await readScriptFile(folder.dir, "daily-tools", "settings.json")
+    expect(await deleteScriptFile(folder.dir, "daily-tools", "settings.json", renamed.lastModified)).toEqual({
+      status: "deleted",
+    })
+    expect(folder.has(".brulion/scripts/daily-tools/settings.json")).toBe(false)
+  })
+
+  it("rejects unsafe file paths before creating metadata", async () => {
+    const folder = fakeFolder()
+    await expect(createScriptFile(folder.dir, "daily-tools", "../escape.js", "x")).rejects.toMatchObject({
+      code: "invalid_file_path",
+    })
+    expect(folder.has(".brulion")).toBe(false)
   })
 })

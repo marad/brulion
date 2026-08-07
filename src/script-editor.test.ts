@@ -15,6 +15,15 @@ describe("script editor (FEAT-0082)", () => {
     view.destroy()
   })
 
+  it("mounts a JSON-aware surface for companion files", () => {
+    const parent = document.createElement("div")
+    const view = mountScriptEditor(parent, { language: "json" })
+
+    expect(parent.querySelector(".cm-editor")).not.toBeNull()
+    expect(parent.querySelector("[data-language=javascript]")).toBeNull()
+    view.destroy()
+  })
+
   it("loads source programmatically without reporting a user change", () => {
     const onChange = vi.fn()
     const view = mountScriptEditor(document.createElement("div"), { onChange })

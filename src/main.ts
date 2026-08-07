@@ -103,6 +103,7 @@ import { registerServiceWorker } from "./pwa"
 import { createInstallPrompt, type DeferredInstallPrompt } from "./install-prompt"
 import { ExtensionRegistry } from "./extension-registry"
 import { mountExtensionManager, type ExtensionManagerHandle } from "./extension-manager"
+import { createWorkbenchUrl } from "./workbench"
 
 /** How often to poll the folder for changes made by other tools (FEAT-0014). */
 const POLL_MS = 2000
@@ -451,6 +452,18 @@ const reloadExtensions = async (): Promise<void> => {
     },
     currentSettings.extensions ?? [],
   )
+}
+const refreshExtensionsFromDisk = async (): Promise<void> => {
+  const root = settingsDir
+  if (!root) {
+    extensionRegistry.dispose()
+    return
+  }
+  const diskSettings = await loadSettings(root)
+  if (settingsDir !== root) return
+  currentSettings = { ...currentSettings, extensions: diskSettings.extensions }
+  settingsModal?.sync()
+  await reloadExtensions()
 }
 const persistSettings = (): Promise<void> =>
   settingsDir ? saveSettings(settingsDir, currentSettings) : Promise.resolve()
@@ -1394,6 +1407,20 @@ const extensionManager: ExtensionManagerHandle = mountExtensionManager(extension
   onScriptsChanged: reloadExtensions,
 })
 
+const openExtensionWorkbench = () => {
+  palette.close()
+  const workspace = effectiveVaultName({
+    name: settingsDir?.name ?? "",
+    workspace: currentSettings.workspace,
+  })
+  const child = window.open(createWorkbenchUrl(workspace), "brulion-extension-workbench", "popup,width=1280,height=860")
+  if (!child) extensionManager.open()
+}
+// A separate workbench persists enablement in the shared vault settings file.
+// Re-read that small piece of state when this window regains focus so an
+// explicit enable/reload in the workbench becomes runnable here without IPC.
+window.addEventListener("focus", () => void refreshExtensionsFromDisk())
+
 // Action registry + command palette (FEAT-0057/M30 P1). Actions are the app's
 // invocable capabilities named as first-class `{ id, label, icon?, run }` records;
 // the palette lists them for fuzzy-search + run, and folder-switch / Vim toggle
@@ -1421,10 +1448,7 @@ const builtinActions: Action[] = [
     id: "manage-extensions",
     label: "Manage extensions",
     icon: Command,
-    run: () => {
-      palette.close()
-      extensionManager.open()
-    },
+    run: openExtensionWorkbench,
   },
   { id: "switch-workspace", label: "Switch workspace…", icon: Folders, run: () => void openWorkspaceSwitcher() },
   { id: "open-journal", label: "Open this week's journal", icon: CalendarDays, run: openWeeklyJournal },

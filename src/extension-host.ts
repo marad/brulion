@@ -15,6 +15,7 @@ import {
   validateScriptId,
   type ScriptPermission,
 } from "./script-manifest"
+import { resolveExtensionIcon, sanitizeExtensionIconName } from "./extension-icons"
 
 /** Maximum number of commands one extension may publish in the MVP host. */
 export const MAX_EXTENSION_COMMANDS = 64
@@ -70,6 +71,7 @@ interface CommandRegistration {
   readonly id: string
   readonly label: string
   readonly description?: string
+  readonly icon: string
 }
 
 function record(value: RpcValue, label: string): Record<string, unknown> {
@@ -102,7 +104,12 @@ function commandRegistration(value: RpcValue): CommandRegistration {
     description = boundedString(rawDescription, "Command description", MAX_COMMAND_DESCRIPTION_LENGTH).trim()
     if (description.length === 0) throw new Error("Command description must not be blank")
   }
-  return { id, label, ...(description === undefined ? {} : { description }) }
+  return {
+    id,
+    label,
+    icon: sanitizeExtensionIconName(params.icon),
+    ...(description === undefined ? {} : { description }),
+  }
 }
 
 function notePath(value: unknown): string {
@@ -255,6 +262,7 @@ export class ExtensionHost {
     const action: Action = {
       id: actionId,
       label: registration.label,
+      icon: resolveExtensionIcon(registration.icon),
       run: () => {
         void this.invokeCommand(registration.id)
       },

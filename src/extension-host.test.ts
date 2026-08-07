@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
+import { Puzzle, Sparkles } from "lucide"
 import { ExtensionHost, type ExtensionEditorCapabilities, type ExtensionNoteCapabilities } from "./extension-host"
 import { ExtensionRpcPeer, type RpcEndpoint, type RpcValue } from "./extension-rpc"
 import type { ScriptPermission } from "./script-manifest"
@@ -99,9 +100,11 @@ describe("FEAT-0083 ExtensionHost", () => {
         id: "insert-date",
         label: "Insert date",
         description: "Insert today's date",
+        icon: "sparkles",
       }),
     ).resolves.toEqual({ actionId: "daily-tools:insert-date" })
     expect(host.getActions().map((action) => action.id)).toEqual(["daily-tools:insert-date"])
+    expect(host.getActions()[0].icon).toBe(Sparkles)
 
     host.getActions()[0].run()
     await new Promise<void>((resolve) => queueMicrotask(resolve))
@@ -211,6 +214,15 @@ describe("FEAT-0083 ExtensionHost", () => {
     await expect(
       extension.call("commands.register", { id: "allowed", label: "Allowed" }),
     ).resolves.toEqual({ actionId: "daily-tools:allowed" })
+    host.dispose()
+  })
+
+  it("defaults an omitted icon to puzzle without affecting registration", async () => {
+    const { host, extension } = await setup()
+    await expect(extension.call("commands.register", { id: "default-icon", label: "Default" })).resolves.toEqual({
+      actionId: "daily-tools:default-icon",
+    })
+    expect(host.getActions()[0].icon).toBe(Puzzle)
     host.dispose()
   })
 })

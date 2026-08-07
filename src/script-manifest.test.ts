@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   parseScriptManifest,
   parseScriptManifestText,
+  validateScriptFilePath,
   validateScriptEntry,
   validateScriptId,
   type ScriptManifest,
@@ -61,5 +62,14 @@ describe("script manifest validation (FEAT-0082)", () => {
   it("parses JSON text without letting malformed JSON escape", () => {
     expect(parseScriptManifestText(JSON.stringify(valid))).toMatchObject({ ok: true, manifest: valid })
     expect(parseScriptManifestText("{not json")).toMatchObject({ ok: false })
+  })
+
+  it("accepts only safe JavaScript and JSON companion paths", () => {
+    for (const path of ["manifest.json", "main.js", "lib/helpers.js", "data/config.json"]) {
+      expect(validateScriptFilePath(path), path).toEqual({ ok: true, value: path })
+    }
+    for (const path of ["", "/main.js", "../main.js", "lib/../../x.js", "lib/helper.ts", "lib\\helper.js", "main.css", "a//b.js"]) {
+      expect(validateScriptFilePath(path).ok, path).toBe(false)
+    }
   })
 })

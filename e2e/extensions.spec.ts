@@ -79,7 +79,7 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator(".cm-content")).toHaveText("alpha body")
 })
 
-test("runs an enabled local command in the sandbox and opens its workbench", async ({ page }) => {
+test("runs an enabled local command and opens the separate multi-file workbench", async ({ page }) => {
   const editor = page.locator(".cm-content")
   await editor.click()
   await page.keyboard.press("Control+A")
@@ -97,8 +97,46 @@ test("runs an enabled local command in the sandbox and opens its workbench", asy
 
   await page.keyboard.press("Control+Shift+K")
   await page.locator("#palette-input").fill("manage extensions")
+  const popup = page.waitForEvent("popup")
   await paletteRows(page).first().click()
-  await expect(page.locator("#extensions-backdrop")).toBeVisible()
-  await expect(page.locator(".extensions-row")).toHaveCount(1)
-  await expect(page.locator(".extensions-toggle")).toHaveText("Disable")
+  const workbench = await popup
+  await workbench.waitForLoadState()
+  await expect(workbench.locator("#workbench-content")).toBeVisible()
+  await expect(workbench.locator("#workbench-script-list .workbench-list-row")).toHaveCount(1)
+  await expect(workbench.locator(".workbench-file-row")).toHaveCount(2)
+  await expect(workbench.locator("#workbench-toggle-script")).toHaveText("Disable")
+  await workbench.locator("#workbench-kit").click()
+  await expect(workbench.locator("#workbench-kit-panel")).toBeVisible()
+  await expect(workbench.locator("#workbench-kit-version")).toHaveText("v1.0.0")
+  await expect(workbench.locator("#workbench-kit-list .workbench-kit-row")).toHaveCount(10)
+
+  await workbench.locator("#workbench-new-id").fill("new-tools")
+  await workbench.locator("#workbench-create-script-confirm").click()
+  await expect(workbench.locator("#workbench-script-list .workbench-list-row")).toHaveCount(2)
+  await workbench.locator('#workbench-script-list [data-script-id="new-tools"]').click()
+  await expect(workbench.locator("#workbench-file-title")).toHaveText("main.js")
+
+  await workbench.locator("#workbench-editor .cm-content").click()
+  await workbench.keyboard.press("Control+A")
+  await workbench.keyboard.type("export default async function activate(api) {}")
+  await workbench.locator("#workbench-save").click()
+  await expect(workbench.locator("#workbench-file-status")).toContainText("Saved")
+
+  await workbench.waitForTimeout(25)
+  await page.evaluate(
+    async ([folder, content]) => {
+      const root = await navigator.storage.getDirectory()
+      const dir = await root.getDirectoryHandle(folder)
+      const scripts = await dir.getDirectoryHandle(".brulion")
+      const sourceDir = await scripts.getDirectoryHandle("scripts")
+      const ext = await sourceDir.getDirectoryHandle("new-tools")
+      const file = await ext.getFileHandle("main.js")
+      const writable = await file.createWritable()
+      await writable.write(content)
+      await writable.close()
+    },
+    [FOLDER, "external edit"] as const,
+  )
+  await workbench.locator("#workbench-refresh").click()
+  await expect(workbench.locator("#workbench-editor .cm-content")).toHaveText("external edit")
 })

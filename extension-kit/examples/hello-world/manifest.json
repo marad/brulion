@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": 1,
+  "id": "hello-world",
+  "name": "Hello world",
+  "version": "0.1.0",
+  "entry": "main.js",
+  "permissions": ["commands", "editor:write"]
+}

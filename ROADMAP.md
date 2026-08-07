@@ -25,7 +25,12 @@ Every technical decision defers to that.
 > otherwise comes from the next round of real daily-use observations. **M39**
 > (local JavaScript extensions) is now active: Phase 0 (sandbox/RPC spike), Phase
 > 1 (script storage + editor), and the first sandboxed runtime/workbench slice are
-> implemented and covered by FEAT-0081–0084.
+> implemented and covered by FEAT-0081–0084. **M40** (File System Observer
+> acceleration) is queued as a future milestone for making external-change
+> detection scale to large vaults while reducing reliance on full recursive scans.
+> **M41** (full extension workbench and authoring kit) is the next product
+> milestone: a separate-window, multi-file authoring surface for users and LLM
+> agents.
 > Recently shipped: **M37** (sidebar tree follow-ups — F2 rename, typeahead,
 > multi-select + batch move/delete),
 > **M36** (keyboard navigation for the sidebar tree — arrow
@@ -656,6 +661,54 @@ Out:
   subject to user review and explicit enablement.
 
 Phases: [`milestones/M39.md`](milestones/M39.md).
+
+### M40 — File System Observer acceleration
+**Goal:** re-evaluate M4's polling choice for large folders by using the
+browser's `FileSystemObserver` when available, while preserving the filesystem
+as the source of truth and retaining a portable fallback.
+
+In:
+- opportunistic observation of the picked vault and `.brulion/scripts/`;
+- targeted invalidation and reload of notes, manifests, sources, and the
+  extension command registry after observed changes;
+- polling/rescan fallback for browsers without `FileSystemObserver` or when an
+  observer cannot be attached;
+- tests for observer delivery, missed-event recovery, periodic fallback scans,
+  and mtime conflict guards.
+
+Out:
+- treating observer events as authoritative file contents;
+- removing mtime checks or conflict handling;
+- requiring communication between independent Brulion windows — each window
+  observes and refreshes its own view of the shared vault.
+
+### M41 — Full extension workbench and authoring kit
+**Goal:** replace the M39 inline script editor with a separate-window workbench
+that can create and maintain complete extensions, and make the extension API
+usable by both people and LLM agents.
+
+In:
+- a workbench opened in a separate Brulion window, independently attached to the
+  same user-selected vault;
+- a file tree and multi-file editor for `manifest.json`, `main.js`, and supported
+  JavaScript/JSON companion files;
+- safe extension creation, rename, delete, manifest validation, and mtime-aware
+  saves with explicit enablement preserved;
+- a versioned Extension Authoring Kit containing a template, API declarations,
+  examples, `AGENTS.md`, an LLM skill, and a ready-to-use authoring prompt;
+- command registration with `icon?: string` using an allowlisted Lucide name,
+  with `puzzle` as the default and a compact toolbar rendering;
+- diagnostics for invalid manifests, API misuse, load failures, and reload
+  status, with each window refreshing from the filesystem independently.
+
+Out:
+- arbitrary SVG markup or custom icon assets in the first workbench release;
+- TypeScript transpilation, npm dependencies, network imports, or an in-app LLM;
+- window-to-window IPC as a correctness requirement;
+- replacing mtime conflict guards with last-writer-wins behavior;
+- `FileSystemObserver` as the default watcher (that optimization is M40).
+
+Phases: [`milestones/M41.md`](milestones/M41.md).
 
 ## Later / backlog (out of MVP, on purpose)
 

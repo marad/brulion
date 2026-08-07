@@ -1,10 +1,13 @@
 import { javascript } from "@codemirror/lang-javascript"
+import { json } from "@codemirror/lang-json"
 import { basicSetup } from "codemirror"
 import { EditorState } from "@codemirror/state"
 import { EditorView, keymap } from "@codemirror/view"
 import { ProgrammaticLoad } from "./editor-load"
 
 export interface ScriptEditorOptions {
+  /** Syntax mode for the selected workbench file. */
+  language?: "javascript" | "json"
   /** Called for a user edit with the complete current JavaScript source. */
   onChange?: (source: string) => void
   /** Called by Mod-s with the complete current JavaScript source. */
@@ -21,7 +24,7 @@ export function mountScriptEditor(
       doc: "",
       extensions: [
         basicSetup,
-        javascript(),
+        opts.language === "json" ? json() : javascript(),
         keymap.of([
           {
             key: "Mod-s",

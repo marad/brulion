@@ -1,6 +1,7 @@
 import {
   parseScriptManifest,
   parseScriptManifestText,
+  validateScriptFilePath,
   validateScriptId,
   type ScriptManifest,
 } from "./script-manifest"
@@ -34,8 +35,32 @@ export type ScriptWriteResult =
 
 export type CreateScriptResult = { status: "created" } | { status: "exists" }
 
+export interface ScriptFileRecord {
+  path: string
+  text: string
+  lastModified: number
+}
+
+export type ScriptFileCreateResult = { status: "created" } | { status: "exists" }
+export type ScriptFileWriteResult =
+  | { status: "saved"; lastModified: number }
+  | { status: "conflict" }
+export type ScriptFileRenameResult =
+  | { status: "renamed"; lastModified: number }
+  | { status: "conflict" }
+  | { status: "exists" }
+  | { status: "missing" }
+export type ScriptFileDeleteResult =
+  | { status: "deleted" }
+  | { status: "conflict" }
+  | { status: "missing" }
+
+export type ScriptRenameResult = { status: "renamed" } | { status: "exists" }
+
 export type ScriptStorageErrorCode =
   | "invalid_id"
+  | "invalid_file_path"
+  | "file_missing"
   | "missing"
   | "invalid_manifest"
   | "entry_missing"
@@ -73,6 +98,11 @@ function assertSourceSize(source: string): void {
 function assertId(id: string): void {
   const result = validateScriptId(id)
   if (!result.ok) throw new ScriptStorageError("invalid_id", result.error)
+}
+
+function assertFilePath(path: string): void {
+  const result = validateScriptFilePath(path)
+  if (!result.ok) throw new ScriptStorageError("invalid_file_path", result.error)
 }
 
 async function scriptsDirectory(
@@ -301,4 +331,160 @@ export async function deleteScript(root: FileSystemDirectoryHandle, id: string):
   } catch (error) {
     if (!isMissing(error)) throw error
   }
+}
+
+async function collectScriptFiles(
+  dir: FileSystemDirectoryHandle,
+  prefix = "",
+): Promise<ScriptFileRecord[]> {
+  const files: ScriptFileRecord[] = []
+  for await (const entry of dir.values()) {
+    const path = prefix ? prefix + "/" + entry.name : entry.name
+    if (entry.kind === "directory") {
+      files.push(...(await collectScriptFiles(entry, path)))
+      continue
+    }
+    if (!validateScriptFilePath(path).ok) continue
+    const file = await entry.getFile()
+    files.push({ path, text: await file.text(), lastModified: file.lastModified })
+  }
+  return files.sort((a, b) => a.path.localeCompare(b.path))
+}
+
+/** List all supported JavaScript/JSON files in a validated script subtree. */
+export async function listScriptFiles(
+  root: FileSystemDirectoryHandle,
+  id: string,
+): Promise<ScriptFileRecord[]> {
+  assertId(id)
+  const scriptDir = await getScriptDirectory(root, id, false)
+  if (!scriptDir) throw new ScriptStorageError("missing", "Script not found: " + id)
+  return collectScriptFiles(scriptDir)
+}
+
+/** Read one supported file, including the current mtime used by a guarded save. */
+export async function readScriptFile(
+  root: FileSystemDirectoryHandle,
+  id: string,
+  path: string,
+): Promise<ScriptFileRecord> {
+  assertId(id)
+  assertFilePath(path)
+  const scriptDir = await getScriptDirectory(root, id, false)
+  if (!scriptDir) throw new ScriptStorageError("missing", "Script not found: " + id)
+  const stored = await readFile(scriptDir, path)
+  if (!stored) throw new ScriptStorageError("file_missing", "Script file not found: " + path)
+  return { path, text: stored.text, lastModified: stored.lastModified }
+}
+
+/** Create a new supported companion file without overwriting an existing file. */
+export async function createScriptFile(
+  root: FileSystemDirectoryHandle,
+  id: string,
+  path: string,
+  text: string,
+): Promise<ScriptFileCreateResult> {
+  assertId(id)
+  assertFilePath(path)
+  const scriptDir = await getScriptDirectory(root, id, false)
+  if (!scriptDir) throw new ScriptStorageError("missing", "Script not found: " + id)
+  if (await readFile(scriptDir, path)) return { status: "exists" }
+  await writeFile(scriptDir, path, text)
+  return { status: "created" }
+}
+
+/** Save one supported file while preserving the caller's last-seen mtime guard. */
+export async function writeScriptFile(
+  root: FileSystemDirectoryHandle,
+  id: string,
+  path: string,
+  text: string,
+  expectedLastModified: number | null,
+): Promise<ScriptFileWriteResult> {
+  assertId(id)
+  assertFilePath(path)
+  const scriptDir = await getScriptDirectory(root, id, false)
+  if (!scriptDir) throw new ScriptStorageError("missing", "Script not found: " + id)
+  const current = await readFile(scriptDir, path)
+  if (current && (expectedLastModified === null || current.lastModified !== expectedLastModified)) {
+    return { status: "conflict" }
+  }
+  if (!current && expectedLastModified !== null) return { status: "conflict" }
+  return { status: "saved", lastModified: await writeFile(scriptDir, path, text) }
+}
+
+/** Rename one supported file without silently replacing a destination. */
+export async function renameScriptFile(
+  root: FileSystemDirectoryHandle,
+  id: string,
+  from: string,
+  to: string,
+  expectedLastModified: number | null,
+): Promise<ScriptFileRenameResult> {
+  assertId(id)
+  assertFilePath(from)
+  assertFilePath(to)
+  if (from === to) {
+    return { status: "renamed", lastModified: (await readScriptFile(root, id, from)).lastModified }
+  }
+  const scriptDir = await getScriptDirectory(root, id, false)
+  if (!scriptDir) throw new ScriptStorageError("missing", "Script not found: " + id)
+  const current = await readFile(scriptDir, from)
+  if (!current) return { status: "missing" }
+  if (expectedLastModified === null || current.lastModified !== expectedLastModified) {
+    return { status: "conflict" }
+  }
+  if (await readFile(scriptDir, to)) return { status: "exists" }
+  await writeFile(scriptDir, to, current.text)
+  const { folders, file } = splitPath(from)
+  const parent = await resolveParent(scriptDir, folders, false)
+  if (!parent) throw new ScriptStorageError("file_missing", "Script file not found: " + from)
+  await parent.removeEntry(file)
+  const moved = await readFile(scriptDir, to)
+  return { status: "renamed", lastModified: moved?.lastModified ?? current.lastModified }
+}
+
+/** Delete one supported file only if it still has the caller's last-seen mtime. */
+export async function deleteScriptFile(
+  root: FileSystemDirectoryHandle,
+  id: string,
+  path: string,
+  expectedLastModified: number | null,
+): Promise<ScriptFileDeleteResult> {
+  assertId(id)
+  assertFilePath(path)
+  const scriptDir = await getScriptDirectory(root, id, false)
+  if (!scriptDir) throw new ScriptStorageError("missing", "Script not found: " + id)
+  const current = await readFile(scriptDir, path)
+  if (!current) return { status: "missing" }
+  if (expectedLastModified === null || current.lastModified !== expectedLastModified) {
+    return { status: "conflict" }
+  }
+  const { folders, file } = splitPath(path)
+  const parent = await resolveParent(scriptDir, folders, false)
+  if (!parent) return { status: "missing" }
+  await parent.removeEntry(file)
+  return { status: "deleted" }
+}
+
+/** Copy a complete extension to a new validated id, then remove the old subtree. */
+export async function renameScript(
+  root: FileSystemDirectoryHandle,
+  fromId: string,
+  toId: string,
+): Promise<ScriptRenameResult> {
+  assertId(fromId)
+  assertId(toId)
+  if (fromId === toId) return { status: "renamed" }
+  const source = await readScript(root, fromId)
+  if (await getScriptDirectory(root, toId, false)) return { status: "exists" }
+  const manifest = { ...source.manifest, id: toId }
+  await createScript(root, manifest, source.source)
+  const files = await listScriptFiles(root, fromId)
+  for (const file of files) {
+    if (file.path === "manifest.json" || file.path === source.manifest.entry) continue
+    await createScriptFile(root, toId, file.path, file.text)
+  }
+  await deleteScript(root, fromId)
+  return { status: "renamed" }
 }

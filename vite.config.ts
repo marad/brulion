@@ -16,6 +16,10 @@ export default defineConfig({
         deps.filter((dep) => !/[\\/](mermaid|cytoscape|cose-|layout-base|katex|elkjs|dagre|wardley)/.test(dep)),
     },
     rollupOptions: {
+      input: {
+        main: "index.html",
+        workbench: "workbench.html",
+      },
       output: {
         // Heavy diagram deps stay separate-lazy chunks (only fetched when their
         // diagram type is actually used): cytoscape (mindmap/architecture) + its

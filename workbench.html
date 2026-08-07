@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Brulion — extension workbench</title>
+  </head>
+  <body class="workbench-page">
+    <main id="workbench" aria-labelledby="workbench-title">
+      <header class="workbench-header">
+        <div>
+          <h1 id="workbench-title">Extension workbench</h1>
+          <p id="workbench-vault" class="workbench-muted"></p>
+        </div>
+        <div class="workbench-header-actions">
+          <button id="workbench-refresh" type="button">Refresh</button>
+          <button id="workbench-kit" type="button">Authoring Kit</button>
+        </div>
+      </header>
+      <section id="workbench-status" class="workbench-status" role="status"></section>
+      <section id="workbench-missing" class="workbench-missing" hidden>
+        <p id="workbench-missing-message"></p>
+        <button id="workbench-choose-folder" type="button">Choose folder…</button>
+      </section>
+      <section id="workbench-content" class="workbench-content" hidden>
+        <aside class="workbench-sidebar" aria-label="Extension files">
+          <div class="workbench-section-heading">
+            <h2>Extensions</h2>
+            <button id="workbench-create-script" type="button">New</button>
+          </div>
+          <div class="workbench-inline-form">
+            <input id="workbench-new-id" type="text" placeholder="extension-id" aria-label="New extension id" />
+            <button id="workbench-create-script-confirm" type="button">Create</button>
+          </div>
+          <div id="workbench-script-list" class="workbench-list"></div>
+          <div class="workbench-section-heading">
+            <h2>Files</h2>
+            <button id="workbench-create-file" type="button">New</button>
+          </div>
+          <div class="workbench-inline-form">
+            <input id="workbench-new-file" type="text" placeholder="helpers.js" aria-label="New extension file" />
+            <button id="workbench-create-file-confirm" type="button">Create</button>
+          </div>
+          <div id="workbench-file-list" class="workbench-list"></div>
+        </aside>
+        <section class="workbench-editor-panel" aria-label="Extension editor">
+          <div class="workbench-editor-heading">
+            <div>
+              <h2 id="workbench-file-title">Select a file</h2>
+              <p id="workbench-file-status" class="workbench-muted"></p>
+            </div>
+            <div class="workbench-editor-actions">
+              <button id="workbench-save" type="button" disabled>Save</button>
+              <button id="workbench-rename-file" type="button" disabled>Rename file</button>
+              <button id="workbench-delete-file" type="button" disabled>Delete file</button>
+            </div>
+          </div>
+          <div class="workbench-inline-form">
+            <input id="workbench-rename-file-input" type="text" placeholder="new-file.js" aria-label="New file path" disabled />
+            <button id="workbench-rename-file-confirm" type="button" disabled>Rename</button>
+          </div>
+          <div id="workbench-editor"></div>
+          <div class="workbench-script-actions">
+            <input id="workbench-rename-script-input" type="text" placeholder="new extension id" aria-label="New extension id" disabled />
+            <button id="workbench-rename-script" type="button" disabled>Rename extension</button>
+            <button id="workbench-delete-script" type="button" disabled>Delete extension</button>
+            <button id="workbench-toggle-script" type="button" disabled>Enable</button>
+          </div>
+          <p id="workbench-diagnostic" class="workbench-diagnostic" role="alert"></p>
+        </section>
+      </section>
+      <section id="workbench-kit-panel" class="workbench-kit-panel" hidden>
+        <div class="workbench-section-heading">
+          <h2>Authoring Kit <span id="workbench-kit-version"></span></h2>
+          <button id="workbench-kit-close" type="button">Close</button>
+        </div>
+        <p class="workbench-muted">The files below are the same versioned kit shipped in the repository.</p>
+        <div id="workbench-kit-list" class="workbench-list"></div>
+      </section>
+    </main>
+    <script type="module" src="/src/workbench-main.ts"></script>
+  </body>
+</html>
