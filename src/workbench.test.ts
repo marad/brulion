@@ -5,7 +5,9 @@ import workbenchHtml from "../workbench.html?raw"
 import apiDocsHtml from "../api.html?raw"
 import {
   attachWorkbenchVault,
+  createWorkbenchRefreshScheduler,
   createWorkbenchUrl,
+  WORKBENCH_REFRESH_INTERVAL_MS,
   type WorkbenchAttachmentDeps,
 } from "./workbench"
 import type { Vault } from "./vaults"
@@ -53,6 +55,52 @@ describe("separate extension workbench contract", () => {
     expect(createWorkbenchUrl("my notes", "https://example.test/brulion/")).toBe(
       "https://example.test/brulion/workbench.html?ws=my+notes",
     )
+  })
+
+  it("serializes refresh requests and drains a trigger that arrives during a scan", async () => {
+    const calls: string[] = []
+    const releases: Array<() => void> = []
+    const refresh = vi.fn(async (reason: string) => {
+      calls.push(reason)
+      await new Promise<void>((resolve) => releases.push(resolve))
+    })
+    const scheduler = createWorkbenchRefreshScheduler({
+      refresh,
+      intervalMs: WORKBENCH_REFRESH_INTERVAL_MS,
+      setInterval: () => 1,
+      clearInterval: () => {},
+    })
+
+    const first = scheduler.request("attach")
+    const queued = scheduler.request("focus")
+    expect(calls).toEqual(["attach"])
+    releases.shift()!()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(calls).toEqual(["attach", "focus"])
+    releases.shift()!()
+    await expect(Promise.all([first, queued])).resolves.toEqual([undefined, undefined])
+  })
+
+  it("starts one bounded polling timer and stops it", async () => {
+    const timerCallback = vi.fn()
+    const setInterval = vi.fn((_callback: () => void, milliseconds: number) => {
+      timerCallback.mockImplementation(_callback)
+      expect(milliseconds).toBe(WORKBENCH_REFRESH_INTERVAL_MS)
+      return 7
+    })
+    const clearInterval = vi.fn()
+    const refresh = vi.fn(async () => {})
+    const scheduler = createWorkbenchRefreshScheduler({ refresh, setInterval, clearInterval })
+
+    scheduler.start()
+    scheduler.start()
+    expect(setInterval).toHaveBeenCalledOnce()
+    timerCallback()
+    await Promise.resolve()
+    expect(refresh).toHaveBeenCalledWith("poll")
+    scheduler.stop()
+    expect(clearInterval).toHaveBeenCalledWith(7)
   })
 
   it("attaches the requested persisted vault independently", async () => {

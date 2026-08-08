@@ -80,6 +80,25 @@ describe("FEAT-0084 ExtensionRegistry", () => {
     expect(changed).toHaveBeenCalled()
   })
 
+  it("keeps a healthy action available when an explicit reload fails for another script", async () => {
+    const errors = vi.fn()
+    const registry = new ExtensionRegistry({ onError: errors })
+    await registry.load({} as FileSystemDirectoryHandle, { editor: {} as never, notes: {} as never }, ["alpha"])
+    const old = runners.instances[0]
+
+    await expect(
+      registry.load(
+        {} as FileSystemDirectoryHandle,
+        { editor: {} as never, notes: {} as never },
+        ["alpha", "broken"],
+      ),
+    ).resolves.toEqual(discovery)
+
+    expect(old.dispose).toHaveBeenCalledOnce()
+    expect(registry.getActions().map((action) => action.id)).toEqual(["alpha:run"])
+    expect(errors).toHaveBeenCalledWith(expect.any(Error), "broken")
+  })
+
   it("isolates a failed enabled script and disposes old runners on reload", async () => {
     const errors = vi.fn()
     const registry = new ExtensionRegistry({ onError: errors })
