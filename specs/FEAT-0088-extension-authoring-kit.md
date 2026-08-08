@@ -38,6 +38,9 @@ consume the same versioned source so these surfaces cannot silently diverge.
 - AC-6: Given the workbench is attached, when the user chooses API docs, then a
   separate browser window opens a readable static API reference sourced from the
   same versioned API content as the Authoring Kit; the workbench remains open.
+- AC-7: Given the API reference window, when TypeScript declarations or JavaScript
+  code blocks are rendered, then syntax tokens receive the workbench's shared
+  light/dark code colors while their exact source text remains selectable.
 
 ## Out of scope
 
