@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test"
 
-// FEAT-0084: exercise the real iframe runner, OPFS script discovery, command
-// palette integration, and the explicit extension workbench in Chromium.
+// FEAT-0084/0090: exercise the real iframe runner, OPFS script discovery,
+// workbench lifecycle, freshness, conflict handling, and command integration in Chromium.
 const FOLDER = "e2e-extension-folder"
 
 const manifest = JSON.stringify({
@@ -47,6 +47,21 @@ async function writeFile(page: Page, path: string, content: string) {
   )
 }
 
+async function readFile(page: Page, path: string): Promise<string> {
+  return page.evaluate(
+    async ([folder, relativePath]) => {
+      const root = await navigator.storage.getDirectory()
+      let dir = await root.getDirectoryHandle(folder)
+      const parts = relativePath.split("/")
+      const file = parts.pop()
+      if (!file) throw new Error("Missing file name")
+      for (const part of parts) dir = await dir.getDirectoryHandle(part)
+      return (await dir.getFileHandle(file)).getFile().then((item) => item.text())
+    },
+    [FOLDER, path] as const,
+  )
+}
+
 async function seedVault(page: Page) {
   await writeFile(page, "alpha.md", "alpha body")
   await writeFile(
@@ -69,6 +84,17 @@ async function seedVault(page: Page) {
 }
 
 const paletteRows = (page: Page) => page.locator(".palette-row")
+
+async function openWorkbench(page: Page) {
+  await page.keyboard.press("Control+Shift+K")
+  await page.locator("#palette-input").fill("edit extensions")
+  const popup = page.waitForEvent("popup")
+  await paletteRows(page).first().click()
+  const workbench = await popup
+  await workbench.waitForLoadState()
+  await expect(workbench.locator("#workbench-content")).toBeVisible()
+  return workbench
+}
 
 test.beforeEach(async ({ page }) => {
   await stubPicker(page)
@@ -103,13 +129,7 @@ test("runs an enabled local command and keeps management separate from the workb
   await expect(page.locator("#extensions-backdrop .extensions-toggle")).toHaveText("Disable")
   await page.locator("#extensions-backdrop .extensions-close").click()
 
-  await page.keyboard.press("Control+Shift+K")
-  await page.locator("#palette-input").fill("edit extensions")
-  const popup = page.waitForEvent("popup")
-  await paletteRows(page).first().click()
-  const workbench = await popup
-  await workbench.waitForLoadState()
-  await expect(workbench.locator("#workbench-content")).toBeVisible()
+  const workbench = await openWorkbench(page)
   const apiPopupPromise = workbench.waitForEvent("popup")
   await workbench.locator("#workbench-api-docs").click()
   const apiDocs = await apiPopupPromise
@@ -211,4 +231,66 @@ test("runs an enabled local command and keeps management separate from the workb
   await workbench.locator("#workbench-create-confirm").click()
   await expect(workbench.locator("#workbench-script-select option")).toHaveCount(1)
   await expect(workbench.locator("#workbench-script-select")).toHaveValue("daily-tools")
+})
+
+test("P5 polling refreshes external files and preserves a dirty draft on conflict", async ({ page }) => {
+  const workbench = await openWorkbench(page)
+  await workbench.locator('[data-file-path="main.js"]').click()
+
+  await writeFile(page, ".brulion/scripts/daily-tools/main.js", "external polling edit")
+  await expect.poll(() => workbench.locator("#workbench-editor .cm-content").textContent()).toBe("external polling edit")
+
+  await workbench.locator("#workbench-editor .cm-content").click()
+  await workbench.keyboard.press("Control+A")
+  await workbench.keyboard.type("local unsaved draft")
+  await writeFile(page, ".brulion/scripts/daily-tools/main.js", "external conflict edit")
+
+  await expect(workbench.locator("#workbench-diagnostic")).toContainText("preserved draft", { timeout: 6_000 })
+  await expect(workbench.locator("#workbench-editor .cm-content")).toHaveText("local unsaved draft")
+  await workbench.locator("#workbench-save").click()
+  await expect(workbench.locator("#workbench-diagnostic")).toContainText("changed on disk")
+  expect(await readFile(page, ".brulion/scripts/daily-tools/main.js")).toBe("external conflict edit")
+  await workbench.close()
+})
+
+test("P5 release path creates, edits, saves, enables, and runs a new extension", async ({ page }) => {
+  const workbench = await openWorkbench(page)
+  await workbench.locator("#workbench-create-script").click()
+  await workbench.locator("#workbench-create-input").fill("new-tools")
+  await workbench.locator("#workbench-create-confirm").click()
+  await expect(workbench.locator("#workbench-script-select")).toHaveValue("new-tools")
+  await workbench.locator("#workbench-create-file").click()
+  await workbench.locator("#workbench-create-input").fill("helper.js")
+  await workbench.locator("#workbench-create-confirm").click()
+  await expect(workbench.locator('[data-file-path="helper.js"]')).toBeVisible()
+  await workbench.locator('[data-file-path="main.js"]').click()
+
+  const createdSource = `export default async function activate(api) {
+  await api.commands.register({ id: "created", label: "Created extension command" }, async () => {})
+}`
+  await workbench.locator("#workbench-editor .cm-content").click()
+  await workbench.keyboard.press("Control+A")
+  await workbench.keyboard.insertText(createdSource)
+  await workbench.locator("#workbench-save").click()
+  await expect(workbench.locator("#workbench-file-status")).toContainText("Saved")
+  expect(await readFile(page, ".brulion/scripts/new-tools/main.js")).toContain('id: "created"')
+  await workbench.close()
+  await page.bringToFront()
+
+  await page.keyboard.press("Control+Shift+K")
+  await page.locator("#palette-input").fill("manage extensions")
+  await paletteRows(page).first().click()
+  const newRow = page.locator('[data-script-id="new-tools"]')
+  await expect(newRow.locator(".extensions-toggle")).toHaveText("Enable")
+  await newRow.locator(".extensions-toggle").click()
+  expect(await readFile(page, ".brulion.json")).toContain('"new-tools"')
+  await page.locator(".extensions-close").click()
+
+  await page.keyboard.press("Control+Shift+K")
+  await expect.poll(async () => {
+    await page.locator("#palette-input").fill("created extension command")
+    return paletteRows(page).count()
+  }).toBe(1)
+  await paletteRows(page).first().click()
+  await expect(page.locator(".cm-content")).toBeVisible()
 })

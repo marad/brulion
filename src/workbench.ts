@@ -63,7 +63,53 @@ export interface WorkbenchRefreshScheduler {
 export function createWorkbenchRefreshScheduler(
   options: WorkbenchRefreshSchedulerOptions,
 ): WorkbenchRefreshScheduler {
-  throw new Error("Not implemented")
+  const intervalMs = options.intervalMs ?? WORKBENCH_REFRESH_INTERVAL_MS
+  const setInterval =
+    options.setInterval ?? ((callback, milliseconds) => globalThis.setInterval(callback, milliseconds))
+  const clearInterval = options.clearInterval ?? ((handle) => globalThis.clearInterval(handle))
+  let timer: number | null = null
+  let running: Promise<void> | null = null
+  let queuedReason: WorkbenchRefreshReason | null = null
+
+  const drain = async (): Promise<void> => {
+    let firstError: unknown
+    let hasError = false
+    while (queuedReason !== null) {
+      const reason = queuedReason
+      queuedReason = null
+      try {
+        await options.refresh(reason)
+      } catch (error) {
+        firstError ??= error
+        hasError = true
+      }
+    }
+    if (hasError) throw firstError
+  }
+
+  const request = (reason: WorkbenchRefreshReason): Promise<void> => {
+    queuedReason = reason
+    if (!running) {
+      running = drain().finally(() => {
+        running = null
+        if (queuedReason !== null) void request(queuedReason)
+      })
+    }
+    return running
+  }
+
+  return {
+    request,
+    start: () => {
+      if (timer !== null) return
+      timer = setInterval(() => void request("poll"), intervalMs)
+    },
+    stop: () => {
+      if (timer === null) return
+      clearInterval(timer)
+      timer = null
+    },
+  }
 }
 
 export async function attachWorkbenchVault(

@@ -16,7 +16,11 @@ import { parseScriptManifestText } from "./script-manifest"
 import { getScriptEditorText, mountScriptEditor, setScriptEditorText } from "./script-editor"
 import { loadSettings, saveSettings } from "./settings"
 import { addVault, effectiveVaultName, markVaultAttached } from "./vaults"
-import { attachWorkbenchVault } from "./workbench"
+import {
+  attachWorkbenchVault,
+  createWorkbenchRefreshScheduler,
+  type WorkbenchRefreshReason,
+} from "./workbench"
 import {
   AUTHORING_KIT_VERSION,
   getAuthoringKitFile,
@@ -432,7 +436,7 @@ async function createExtension(): Promise<void> {
       return
     }
     setDiagnostic("")
-    await refresh()
+    await refreshScheduler.request("manual")
     created = true
   } catch (error) {
     setCreateError(error instanceof Error ? error.message : "Unable to create extension.")
@@ -566,13 +570,14 @@ async function deleteExtension(): Promise<void> {
   selectedFilePath = null
   closeCreateDialog()
   busy = false
-  await refresh()
+  await refreshScheduler.request("manual")
   if (settingsWarning) setDiagnostic(settingsWarning)
 }
 
-async function refresh(): Promise<void> {
+async function refreshFilesystem(_reason: WorkbenchRefreshReason): Promise<void> {
   const generation = ++refreshGeneration
   if (!root) return
+  setDiagnostic("")
   setStatus("Refreshing filesystem…")
   try {
     const found = await listScripts(root)
@@ -632,10 +637,12 @@ async function start(reference: string | null): Promise<void> {
   vaultLabel.textContent = "Workspace: " + effectiveVaultName(attachment.vault)
   missing.hidden = true
   content.hidden = false
-  await refresh()
+  await refreshScheduler.request("attach")
 }
 
-byId<HTMLButtonElement>("workbench-refresh").addEventListener("click", () => void refresh())
+const refreshScheduler = createWorkbenchRefreshScheduler({ refresh: refreshFilesystem })
+
+byId<HTMLButtonElement>("workbench-refresh").addEventListener("click", () => void refreshScheduler.request("manual"))
 byId<HTMLButtonElement>("workbench-api-docs").addEventListener("click", openApiDocs)
 byId<HTMLButtonElement>("workbench-kit").addEventListener("click", () => {
   kitPanel.hidden = false
@@ -667,10 +674,10 @@ window.addEventListener("keydown", (event) => {
 saveButton.addEventListener("click", () => void saveFile())
 renameFileButton.addEventListener("click", () => void renameFile())
 deleteFileButton.addEventListener("click", () => openDeleteDialog("file"))
-window.addEventListener("focus", () => void refresh())
-const refreshTimer = window.setInterval(() => void refresh(), 3000)
+window.addEventListener("focus", () => void refreshScheduler.request("focus"))
+refreshScheduler.start()
 window.addEventListener("beforeunload", () => {
-  window.clearInterval(refreshTimer)
+  refreshScheduler.stop()
   editor?.destroy()
 })
 void start(new URLSearchParams(location.search).get("ws"))

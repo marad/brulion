@@ -461,8 +461,11 @@ const refreshExtensionsFromDisk = async (): Promise<void> => {
     extensionRegistry.dispose()
     return
   }
+  const revision = settingsRevision
   const diskSettings = await loadSettings(root)
-  if (settingsDir !== root) return
+  // A local enable/disable may have persisted while this focus read was in flight.
+  // Do not let the older disk snapshot roll that local choice back.
+  if (settingsDir !== root || revision !== settingsRevision) return
   currentSettings = { ...currentSettings, extensions: diskSettings.extensions }
   settingsModal?.sync()
   await reloadExtensions()
@@ -477,15 +480,17 @@ let settingsModal: SettingsModalHandle | null = null
 // `Ctrl/Cmd+;` from mutating/persisting against the outgoing folder (and being
 // clobbered by the load that's about to assign `currentSettings`).
 let loadingSettings = false
+let settingsRevision = 0
 // The single settings mutator: merge a patch, apply it live, re-sync the modal,
-// persist.
-const updateSettings = (patch: Partial<Settings>) => {
+// persist, and (for extension enablement) await the explicit runtime reload.
+const updateSettings = (patch: Partial<Settings>): Promise<void> => {
+  settingsRevision++
   currentSettings = { ...currentSettings, ...patch }
   applySettings(view, currentSettings)
   refreshActionBar() // a changed actionBar (or any setting) repaints the header bar
   settingsModal?.sync()
-  void persistSettings()
-  if ("extensions" in patch) void reloadExtensions()
+  const persisted = persistSettings()
+  const reloaded = "extensions" in patch ? reloadExtensions() : Promise.resolve()
   // The workspace name is the live vault identity (FEAT-0080): a change must refresh
   // the attached vault's cached name and re-stamp the window's `?ws` now, not on the
   // next attach — via the same helper the attach path uses. Gated on `settingsDir` (the
@@ -494,6 +499,7 @@ const updateSettings = (patch: Partial<Settings>) => {
   if ("workspace" in patch && currentVaultId && settingsDir) {
     void applyWorkspaceIdentity(currentVaultId, settingsDir.name, currentSettings.workspace)
   }
+  return Promise.all([persisted, reloaded]).then(() => undefined)
 }
 const toggleVim = () => {
   if (loadingSettings) return // mid folder-open: ignore, the loaded value wins
@@ -1082,6 +1088,7 @@ const openNote = async (dir: FileSystemDirectoryHandle) => {
   // freshly loaded value isn't clobbered and nothing is written to the old folder.
   loadingSettings = true
   settingsDir = dir
+  settingsRevision++
   // Best-effort: empty folders (M35/FEAT-0069) are an opportunistic sidebar
   // extra, not load-bearing for opening the vault — a transient failure here
   // must not abort the whole open the way it would sharing a `Promise.all`
@@ -1404,7 +1411,7 @@ const extensionManager: ExtensionManagerHandle = mountExtensionManager(extension
     const ids = new Set(currentSettings.extensions ?? [])
     if (enabled) ids.add(id)
     else ids.delete(id)
-    updateSettings({ extensions: [...ids] })
+    return updateSettings({ extensions: [...ids] })
   },
   onScriptsChanged: reloadExtensions,
   confirmDelete: (label) => dialog.confirm(`Remove extension "${label}"?`, "Remove"),
