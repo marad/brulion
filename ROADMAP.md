@@ -694,8 +694,9 @@ usable by both people and LLM agents.
 In:
 - a workbench opened in a separate Brulion window, independently attached to the
   same user-selected vault;
-- a compact extension selector plus a file list and real multi-file tabs for
-  `manifest.json`, `main.js`, and supported JavaScript/JSON companions;
+- a compact extension selector plus a file list and one direct editor for
+  `manifest.json`, `main.js`, and supported JavaScript/JSON companions, with
+  path-owned drafts but no tab/open-file layer;
 - modal extension/file creation with local validation errors, compact confirmed
   deletion for the selected extension/file, safe file rename, manifest
   validation, and mtime-aware saves; enable/disable stays in the separate

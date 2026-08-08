@@ -1768,3 +1768,21 @@ path-keyed drafts survive replacement/close. The workbench can delete selected
 companion files and whole extensions after confirmation, removes deleted enabled
 ids from settings, but cannot enable code. This supersedes only the previous
 entry's claim that extension removal happens exclusively in Manage extensions.
+
+## The extension workbench uses one editor and no tabs (M41 correction)
+
+**What:** remove the tab strip, empty-tab `+`, close actions, and open-file slot
+state entirely. Clicking a sidebar file loads it directly into the one editor;
+double-click still has no additional behavior. Unsaved drafts remain keyed by
+extension id and path.
+
+**Why:** the tab model adds visual and state complexity without improving this
+small authoring workflow. The always-visible file list already provides all
+navigation, while path-owned drafts provide the only important safety property
+that tabs were carrying.
+
+**Consequence (UI/project):** the editor begins with its compact file toolbar,
+there is no second representation of open files, and switching away from an
+unsaved file then returning restores its draft. Refresh, rename, delete, and
+conflict handling track only the selected path. This supersedes both earlier M41
+tab-model decisions; confirmed extension/file deletion remains unchanged.

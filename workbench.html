@@ -62,28 +62,23 @@
         </aside>
 
         <section class="workbench-editor-panel" aria-label="Extension editor">
-          <header class="workbench-tabbar">
-            <div id="workbench-tabs" class="workbench-tabs" role="tablist" aria-label="Open files"></div>
-            <button id="workbench-new-tab" class="workbench-new-tab" type="button" aria-label="New tab" title="New tab">＋</button>
+          <header class="workbench-editor-toolbar">
             <span id="workbench-file-icon" class="workbench-sr-only" aria-hidden="true">—</span>
-            <h2 id="workbench-file-title" class="workbench-sr-only">Select a file</h2>
+            <h2 id="workbench-file-title" class="workbench-editor-title">Select a file</h2>
+            <p class="workbench-breadcrumb"><span>extensions</span><span aria-hidden="true"> / </span><span id="workbench-script-context">No extension selected</span></p>
             <div class="workbench-editor-actions">
+              <details class="workbench-file-menu">
+                <summary aria-label="File actions" title="File actions">•••</summary>
+                <div class="workbench-menu-body">
+                  <label for="workbench-rename-file-input">Move selected file</label>
+                  <input id="workbench-rename-file-input" type="text" placeholder="New file path" aria-label="New file path" disabled />
+                  <button id="workbench-rename-file" class="workbench-button" type="button" disabled>Move file</button>
+                  <button id="workbench-delete-file" class="workbench-button workbench-button-danger" type="button" disabled>Delete file</button>
+                </div>
+              </details>
               <button id="workbench-save" class="workbench-button workbench-button-primary" type="button" disabled>Save</button>
             </div>
           </header>
-
-          <div class="workbench-editor-toolbar">
-            <p class="workbench-breadcrumb"><span>extensions</span><span aria-hidden="true"> / </span><span id="workbench-script-context">No extension selected</span></p>
-            <details class="workbench-file-menu">
-              <summary aria-label="File actions" title="File actions">•••</summary>
-              <div class="workbench-menu-body">
-                <label for="workbench-rename-file-input">Move selected file</label>
-                <input id="workbench-rename-file-input" type="text" placeholder="New file path" aria-label="New file path" disabled />
-                <button id="workbench-rename-file" class="workbench-button" type="button" disabled>Move file</button>
-                <button id="workbench-delete-file" class="workbench-button workbench-button-danger" type="button" disabled>Delete file</button>
-              </div>
-            </details>
-          </div>
 
           <div id="workbench-editor"></div>
           <footer class="workbench-statusbar">

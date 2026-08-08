@@ -21,10 +21,10 @@
   failure.
 - **Script file store** — validates script ids and file paths, discovers files,
   reads bytes/mtimes, and performs guarded create/save/rename/delete operations.
-- **Workbench session** — owns the selected extension/file, active tab slots,
-  dirty text, refresh generation, reload request, and diagnostics for one window.
-- **Workbench view** — renders the extension dropdown, file list, attached tabs,
-  editor, focused create/delete dialogs, status, file controls, kit actions, and
+- **Workbench session** — owns the selected extension/file, path-keyed dirty
+  text, refresh generation, reload request, and diagnostics for one window.
+- **Workbench view** — renders the extension dropdown, file list, single editor,
+  focused create/delete dialogs, status, file controls, kit actions, and
   permission errors; it delegates all data changes to the session. Enablement
   remains in the notes window's existing manager.
 - **Authoring kit catalog** — exposes one versioned deterministic set of kit
@@ -79,11 +79,11 @@ flowchart LR
 - The script store owns no cache. Every read obtains current bytes and mtime;
   every mutation validates the path and compares the supplied mtime before
   writing.
-- The session owns the selected extension/file, stable tab slots, path-keyed
-  dirty text, refresh generation, diagnostics, and reload intents. Sidebar
-  selection fills the active slot unless another slot already owns that path. A
-  generation token prevents stale reads from replacing a newer selection.
-  Enablement is not duplicated in this view; confirmed deletion is.
+- The session owns the selected extension/file, path-keyed dirty text, refresh
+  generation, diagnostics, and reload intents. Sidebar selection directly
+  replaces the one editor while the draft map preserves unsaved text by extension
+  and path. A generation token prevents stale reads from replacing a newer
+  selection. Enablement is not duplicated in this view; confirmed deletion is.
 - The view owns DOM and CodeMirror instances only. Programmatic loads are
   annotated and cannot mark a file dirty.
 - The authoring kit catalog owns immutable versioned kit bytes. It is not

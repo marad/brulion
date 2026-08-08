@@ -38,8 +38,6 @@ const content = byId<HTMLElement>("workbench-content")
 const vaultLabel = byId<HTMLElement>("workbench-vault")
 const scriptSelect = byId<HTMLSelectElement>("workbench-script-select")
 const fileList = byId<HTMLElement>("workbench-file-list")
-const tabs = byId<HTMLElement>("workbench-tabs")
-const newTabButton = byId<HTMLButtonElement>("workbench-new-tab")
 const deleteScriptButton = byId<HTMLButtonElement>("workbench-delete-script")
 const deleteFileShortcut = byId<HTMLButtonElement>("workbench-delete-file-shortcut")
 const scriptContext = byId<HTMLElement>("workbench-script-context")
@@ -71,10 +69,6 @@ let files: ScriptFileRecord[] = []
 let selectedScriptId: string | null = null
 let selectedFilePath: string | null = null
 let selectedLastModified: number | null = null
-interface TabSlot { id: number; path: string | null }
-let openTabs: TabSlot[] = []
-let activeTabId: number | null = null
-let nextTabId = 1
 let editor: ReturnType<typeof mountScriptEditor> | null = null
 let refreshGeneration = 0
 let busy = false
@@ -107,7 +101,6 @@ function destroyEditor(): void {
   fileIcon.textContent = "—"
   languageStatus.textContent = "Plain text"
   fileStatus.textContent = ""
-  renderTabs()
 }
 
 function updateSelectionLabel(): void {
@@ -135,81 +128,7 @@ function renderScripts(): void {
     scriptSelect.value = selectedScriptId ?? scripts[0].id
   }
   deleteScriptButton.disabled = selectedScriptId === null || busy
-  newTabButton.disabled = selectedScriptId === null
   updateSelectionLabel()
-}
-
-function activeTab(): TabSlot | undefined {
-  return openTabs.find((slot) => slot.id === activeTabId)
-}
-
-function renderTabs(): void {
-  tabs.replaceChildren()
-  for (const slot of openTabs) {
-    const path = slot.path
-    const tab = document.createElement("div")
-    tab.className = "workbench-tab"
-    tab.classList.toggle("is-active", slot.id === activeTabId)
-
-    const activate = document.createElement("button")
-    activate.type = "button"
-    activate.className = "workbench-tab-label"
-    activate.dataset.tabId = String(slot.id)
-    if (path) activate.dataset.tabPath = path
-    activate.setAttribute("role", "tab")
-    activate.setAttribute("aria-selected", String(slot.id === activeTabId))
-    activate.textContent = path
-      ? path + (drafts.has(draftKey(selectedScriptId ?? "", path)) ? " *" : "")
-      : "Select a file"
-    activate.addEventListener("click", () => void activateTab(slot.id))
-
-    const close = document.createElement("button")
-    close.type = "button"
-    close.className = "workbench-tab-close"
-    close.setAttribute("aria-label", "Close " + (path ?? "new tab"))
-    close.textContent = "×"
-    close.addEventListener("click", () => void closeTab(slot.id))
-
-    tab.append(activate, close)
-    tabs.append(tab)
-  }
-}
-
-function newTab(): void {
-  const slot = { id: nextTabId++, path: null }
-  openTabs.push(slot)
-  activeTabId = slot.id
-  selectedFilePath = null
-  destroyEditor()
-}
-
-async function activateTab(id: number): Promise<void> {
-  const slot = openTabs.find((candidate) => candidate.id === id)
-  if (!slot) return
-  activeTabId = id
-  if (slot.path) await selectFile(slot.path)
-  else {
-    selectedFilePath = null
-    destroyEditor()
-  }
-}
-
-async function closeTab(id: number): Promise<void> {
-  const index = openTabs.findIndex((slot) => slot.id === id)
-  if (index < 0) return
-  const wasActive = activeTabId === id
-  openTabs.splice(index, 1)
-  if (wasActive) {
-    const next = openTabs[index] ?? openTabs[index - 1]
-    if (next) await activateTab(next.id)
-    else {
-      activeTabId = null
-      selectedFilePath = null
-      destroyEditor()
-    }
-  } else {
-    renderTabs()
-  }
 }
 
 function setCreateError(message: string): void {
@@ -283,7 +202,6 @@ function renderFiles(): void {
     empty.textContent = selectedScriptId ? "No JavaScript or JSON files." : "Choose an extension first."
     fileList.append(empty)
   }
-  renderTabs()
 }
 
 function renderKit(): void {
@@ -345,14 +263,9 @@ async function refreshFiles(preserveSelection = true): Promise<void> {
     const next = await listScriptFiles(root, currentId)
     if (currentId !== selectedScriptId) return
     files = next
-    openTabs = openTabs.map((slot) =>
-      slot.path && !next.some((file) => file.path === slot.path) ? { ...slot, path: null } : slot,
-    )
     renderFiles()
-    const wanted = preserveSelection
-      ? selectedFilePath && next.some((file) => file.path === selectedFilePath)
-        ? selectedFilePath
-        : activeTab()?.path ?? null
+    const wanted = preserveSelection && selectedFilePath && next.some((file) => file.path === selectedFilePath)
+      ? selectedFilePath
       : next[0]?.path ?? null
     if (wanted !== selectedFilePath) {
       await selectFile(wanted)
@@ -386,8 +299,6 @@ async function selectScript(id: string): Promise<void> {
   if (busy || !root) return
   selectedScriptId = id
   selectedFilePath = null
-  openTabs = []
-  activeTabId = null
   files = []
   renderScripts()
   setDiagnostic("")
@@ -406,20 +317,7 @@ async function selectFile(path: string | null): Promise<void> {
     return
   }
   const id = selectedScriptId
-  const existing = openTabs.find((slot) => slot.path === path)
-  if (existing) {
-    activeTabId = existing.id
-  } else {
-    let slot = activeTab()
-    if (!slot) {
-      slot = { id: nextTabId++, path: null }
-      openTabs.push(slot)
-      activeTabId = slot.id
-    }
-    slot.path = path
-  }
   selectedFilePath = path
-  renderTabs()
   const generation = refreshGeneration
   try {
     const record = files.find((file) => file.path === path) ?? await readScriptFile(root, id, path)
@@ -584,7 +482,6 @@ async function renameFile(): Promise<void> {
     const draft = drafts.get(oldKey)
     drafts.delete(oldKey)
     if (draft !== undefined) drafts.set(draftKey(selectedScriptId, to), draft)
-    openTabs = openTabs.map((slot) => slot.path === oldPath ? { ...slot, path: to } : slot)
     selectedFilePath = to
     renameFileInput.value = ""
     await refreshFiles(false)
@@ -613,8 +510,6 @@ async function deleteFile(): Promise<void> {
       return
     }
     drafts.delete(draftKey(id, path))
-    openTabs = openTabs.filter((slot) => slot.path !== path)
-    activeTabId = null
     selectedFilePath = null
     closeCreateDialog()
     await refreshFiles(false)
@@ -655,8 +550,6 @@ async function deleteExtension(): Promise<void> {
   }
   selectedScriptId = null
   selectedFilePath = null
-  openTabs = []
-  activeTabId = null
   closeCreateDialog()
   busy = false
   await refresh()
@@ -679,8 +572,6 @@ async function refresh(): Promise<void> {
     } else {
       selectedScriptId = null
       selectedFilePath = null
-      openTabs = []
-      activeTabId = null
       files = []
       renderFiles()
       destroyEditor()
@@ -744,7 +635,6 @@ byId<HTMLButtonElement>("workbench-create-script").addEventListener("click", () 
 byId<HTMLButtonElement>("workbench-create-file").addEventListener("click", () => openCreateDialog("file"))
 deleteScriptButton.addEventListener("click", () => openDeleteDialog("extension"))
 deleteFileShortcut.addEventListener("click", () => openDeleteDialog("file"))
-newTabButton.addEventListener("click", newTab)
 byId<HTMLButtonElement>("workbench-create-cancel").addEventListener("click", closeCreateDialog)
 createDialog.addEventListener("click", (event) => {
   if (event.target === createDialog) closeCreateDialog()

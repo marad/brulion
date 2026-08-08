@@ -23,12 +23,13 @@ function deps(overrides: Partial<WorkbenchAttachmentDeps> = {}): WorkbenchAttach
 }
 
 describe("separate extension workbench contract", () => {
-  it("uses honest explorer controls, real tabs, and modal creation flows", () => {
+  it("uses an honest single-editor explorer and modal creation flows", () => {
     expect(workbenchHtml).toContain('class="workbench-titlebar"')
     expect(workbenchHtml).toContain('class="workbench-sidebar"')
     expect(workbenchHtml).toContain('id="workbench-script-select"')
-    expect(workbenchHtml).toContain('id="workbench-tabs"')
-    expect(workbenchHtml).toContain('id="workbench-new-tab"')
+    expect(workbenchHtml).not.toContain('id="workbench-tabs"')
+    expect(workbenchHtml).not.toContain('id="workbench-new-tab"')
+    expect(workbenchHtml).not.toContain('class="workbench-tabbar"')
     expect(workbenchHtml).toContain('id="workbench-delete-script"')
     expect(workbenchHtml).toContain('id="workbench-delete-file-shortcut"')
     expect(workbenchHtml).toContain('id="workbench-create-dialog"')
