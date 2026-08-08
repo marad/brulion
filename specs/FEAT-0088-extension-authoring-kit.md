@@ -35,6 +35,9 @@ consume the same versioned source so these surfaces cannot silently diverge.
 - AC-5: Given the kit declares an API version, when an example is read, then it
   uses only the declared M39/M41 capabilities and does not require TypeScript,
   packages, network imports, timers, or background execution.
+- AC-6: Given the workbench is attached, when the user chooses API docs, then a
+  separate browser window opens a readable static API reference sourced from the
+  same versioned API content as the Authoring Kit; the workbench remains open.
 
 ## Out of scope
 
