@@ -1745,3 +1745,26 @@ opens path-owned tabs, and unsaved drafts survive tab close/reopen without being
 written into another file. Creation errors stay beside the input until fixed or
 dismissed. Extension removal and enablement happen only through Manage
 extensions; the workbench owns creation and file authoring.
+
+## Workbench tabs are editor slots; deletion accompanies creation (M41 correction)
+
+**What:** tabs become stable editor slots. A sidebar file click replaces the
+active slot unless that path is already open, in which case its existing tab is
+activated; double-click has no additional behavior. A trailing tab-strip `+`
+creates an empty active slot. The tabs are larger and visually joined to the
+editor, and the extension dropdown uses an inset custom chevron. Compact delete
+actions sit beside the extension/file create buttons and require an in-app
+confirmation.
+
+**Why:** automatically opening a new tab for every sidebar click makes browsing
+files grow state unintentionally; slot replacement matches editor/explorer
+conventions while still preventing duplicate tabs. Creation without nearby
+removal is an arbitrary capability split. Enablement is different: it is a trust
+decision and still belongs in Manage extensions.
+
+**Consequence (UI/project):** users explicitly add tab capacity with `+`; ordinary
+sidebar browsing reuses that capacity, open paths are unique across tabs, and
+path-keyed drafts survive replacement/close. The workbench can delete selected
+companion files and whole extensions after confirmation, removes deleted enabled
+ids from settings, but cannot enable code. This supersedes only the previous
+entry's claim that extension removal happens exclusively in Manage extensions.

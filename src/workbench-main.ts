@@ -2,6 +2,7 @@ import "./styles.css"
 import {
   createScript,
   createScriptFile,
+  deleteScript,
   deleteScriptFile,
   listScriptFiles,
   listScripts,
@@ -13,6 +14,7 @@ import {
 } from "./script-storage"
 import { parseScriptManifestText } from "./script-manifest"
 import { getScriptEditorText, mountScriptEditor, setScriptEditorText } from "./script-editor"
+import { loadSettings, saveSettings } from "./settings"
 import { addVault, effectiveVaultName, markVaultAttached } from "./vaults"
 import { attachWorkbenchVault } from "./workbench"
 import {
@@ -37,6 +39,9 @@ const vaultLabel = byId<HTMLElement>("workbench-vault")
 const scriptSelect = byId<HTMLSelectElement>("workbench-script-select")
 const fileList = byId<HTMLElement>("workbench-file-list")
 const tabs = byId<HTMLElement>("workbench-tabs")
+const newTabButton = byId<HTMLButtonElement>("workbench-new-tab")
+const deleteScriptButton = byId<HTMLButtonElement>("workbench-delete-script")
+const deleteFileShortcut = byId<HTMLButtonElement>("workbench-delete-file-shortcut")
 const scriptContext = byId<HTMLElement>("workbench-script-context")
 const editorMount = byId<HTMLElement>("workbench-editor")
 const fileTitle = byId<HTMLElement>("workbench-file-title")
@@ -51,9 +56,11 @@ const renameFileInput = byId<HTMLInputElement>("workbench-rename-file-input")
 const createDialog = byId<HTMLElement>("workbench-create-dialog")
 const createForm = createDialog.querySelector<HTMLFormElement>("form")!
 const createTitle = byId<HTMLElement>("workbench-create-title")
+const createDescription = byId<HTMLElement>("workbench-create-description")
 const createLabel = byId<HTMLElement>("workbench-create-label")
 const createInput = byId<HTMLInputElement>("workbench-create-input")
 const createError = byId<HTMLElement>("workbench-create-error")
+const createConfirm = byId<HTMLButtonElement>("workbench-create-confirm")
 const kitPanel = byId<HTMLElement>("workbench-kit-panel")
 const kitList = byId<HTMLElement>("workbench-kit-list")
 const kitVersion = byId<HTMLElement>("workbench-kit-version")
@@ -64,13 +71,15 @@ let files: ScriptFileRecord[] = []
 let selectedScriptId: string | null = null
 let selectedFilePath: string | null = null
 let selectedLastModified: number | null = null
-let openTabs: string[] = []
+interface TabSlot { id: number; path: string | null }
+let openTabs: TabSlot[] = []
+let activeTabId: number | null = null
+let nextTabId = 1
 let editor: ReturnType<typeof mountScriptEditor> | null = null
 let refreshGeneration = 0
 let busy = false
-let createMode: "extension" | "file" = "extension"
+let dialogMode: "create-extension" | "create-file" | "delete-extension" | "delete-file" = "create-extension"
 const drafts = new Map<string, string>()
-let deleteFileArmed = false
 
 const draftKey = (id: string, path: string) => id + ":" + path
 
@@ -92,6 +101,7 @@ function destroyEditor(): void {
   saveButton.disabled = true
   renameFileButton.disabled = true
   deleteFileButton.disabled = true
+  deleteFileShortcut.disabled = true
   renameFileInput.disabled = true
   fileTitle.textContent = "Select a file"
   fileIcon.textContent = "—"
@@ -124,44 +134,79 @@ function renderScripts(): void {
     }
     scriptSelect.value = selectedScriptId ?? scripts[0].id
   }
+  deleteScriptButton.disabled = selectedScriptId === null || busy
+  newTabButton.disabled = selectedScriptId === null
   updateSelectionLabel()
+}
+
+function activeTab(): TabSlot | undefined {
+  return openTabs.find((slot) => slot.id === activeTabId)
 }
 
 function renderTabs(): void {
   tabs.replaceChildren()
-  for (const path of openTabs) {
+  for (const slot of openTabs) {
+    const path = slot.path
     const tab = document.createElement("div")
     tab.className = "workbench-tab"
-    tab.classList.toggle("is-active", path === selectedFilePath)
+    tab.classList.toggle("is-active", slot.id === activeTabId)
 
     const activate = document.createElement("button")
     activate.type = "button"
     activate.className = "workbench-tab-label"
-    activate.dataset.tabPath = path
+    activate.dataset.tabId = String(slot.id)
+    if (path) activate.dataset.tabPath = path
     activate.setAttribute("role", "tab")
-    activate.setAttribute("aria-selected", String(path === selectedFilePath))
-    activate.textContent = path + (drafts.has(draftKey(selectedScriptId ?? "", path)) ? " *" : "")
-    activate.addEventListener("click", () => void selectFile(path))
+    activate.setAttribute("aria-selected", String(slot.id === activeTabId))
+    activate.textContent = path
+      ? path + (drafts.has(draftKey(selectedScriptId ?? "", path)) ? " *" : "")
+      : "Select a file"
+    activate.addEventListener("click", () => void activateTab(slot.id))
 
     const close = document.createElement("button")
     close.type = "button"
     close.className = "workbench-tab-close"
-    close.setAttribute("aria-label", "Close " + path)
+    close.setAttribute("aria-label", "Close " + (path ?? "new tab"))
     close.textContent = "×"
-    close.addEventListener("click", () => void closeTab(path))
+    close.addEventListener("click", () => void closeTab(slot.id))
 
     tab.append(activate, close)
     tabs.append(tab)
   }
 }
 
-async function closeTab(path: string): Promise<void> {
-  const index = openTabs.indexOf(path)
+function newTab(): void {
+  const slot = { id: nextTabId++, path: null }
+  openTabs.push(slot)
+  activeTabId = slot.id
+  selectedFilePath = null
+  destroyEditor()
+}
+
+async function activateTab(id: number): Promise<void> {
+  const slot = openTabs.find((candidate) => candidate.id === id)
+  if (!slot) return
+  activeTabId = id
+  if (slot.path) await selectFile(slot.path)
+  else {
+    selectedFilePath = null
+    destroyEditor()
+  }
+}
+
+async function closeTab(id: number): Promise<void> {
+  const index = openTabs.findIndex((slot) => slot.id === id)
   if (index < 0) return
+  const wasActive = activeTabId === id
   openTabs.splice(index, 1)
-  if (selectedFilePath === path) {
-    const next = openTabs[index] ?? openTabs[index - 1] ?? null
-    await selectFile(next)
+  if (wasActive) {
+    const next = openTabs[index] ?? openTabs[index - 1]
+    if (next) await activateTab(next.id)
+    else {
+      activeTabId = null
+      selectedFilePath = null
+      destroyEditor()
+    }
   } else {
     renderTabs()
   }
@@ -179,14 +224,41 @@ function closeCreateDialog(): void {
 
 function openCreateDialog(mode: "extension" | "file"): void {
   if (mode === "file" && !selectedScriptId) return
-  createMode = mode
+  dialogMode = mode === "extension" ? "create-extension" : "create-file"
   createTitle.textContent = mode === "extension" ? "New extension" : "New file"
+  createDescription.hidden = true
+  createLabel.hidden = false
+  createInput.hidden = false
   createLabel.textContent = mode === "extension" ? "Extension id" : "File path"
   createInput.placeholder = mode === "extension" ? "daily-tools" : "helper.js"
   createInput.value = ""
+  createConfirm.textContent = "Create"
+  createConfirm.classList.remove("workbench-button-danger")
   setCreateError("")
   createDialog.hidden = false
   createInput.focus()
+}
+
+function openDeleteDialog(mode: "extension" | "file"): void {
+  if (mode === "extension" && !selectedScriptId) return
+  if (mode === "file" && !selectedFilePath) return
+  dialogMode = mode === "extension" ? "delete-extension" : "delete-file"
+  const target = mode === "extension" ? selectedScriptId : selectedFilePath
+  createTitle.textContent = mode === "extension" ? "Delete extension?" : "Delete file?"
+  const hasDraft = mode === "file" && selectedScriptId && selectedFilePath
+    ? drafts.has(draftKey(selectedScriptId, selectedFilePath))
+    : false
+  createDescription.textContent = mode === "extension"
+    ? `Delete ${target} and all of its files from this workspace?`
+    : `Delete ${target} from ${selectedScriptId}?${hasDraft ? " Its unsaved changes will be lost." : ""}`
+  createDescription.hidden = false
+  createLabel.hidden = true
+  createInput.hidden = true
+  createConfirm.textContent = "Delete"
+  createConfirm.classList.add("workbench-button-danger")
+  setCreateError("")
+  createDialog.hidden = false
+  createConfirm.focus()
 }
 
 function renderFiles(): void {
@@ -273,11 +345,15 @@ async function refreshFiles(preserveSelection = true): Promise<void> {
     const next = await listScriptFiles(root, currentId)
     if (currentId !== selectedScriptId) return
     files = next
-    openTabs = openTabs.filter((path) => next.some((file) => file.path === path))
+    openTabs = openTabs.map((slot) =>
+      slot.path && !next.some((file) => file.path === slot.path) ? { ...slot, path: null } : slot,
+    )
     renderFiles()
-    const wanted = preserveSelection && selectedFilePath && next.some((file) => file.path === selectedFilePath)
-      ? selectedFilePath
-      : openTabs[0] ?? next[0]?.path ?? null
+    const wanted = preserveSelection
+      ? selectedFilePath && next.some((file) => file.path === selectedFilePath)
+        ? selectedFilePath
+        : activeTab()?.path ?? null
+      : next[0]?.path ?? null
     if (wanted !== selectedFilePath) {
       await selectFile(wanted)
     } else if (wanted) {
@@ -311,6 +387,7 @@ async function selectScript(id: string): Promise<void> {
   selectedScriptId = id
   selectedFilePath = null
   openTabs = []
+  activeTabId = null
   files = []
   renderScripts()
   setDiagnostic("")
@@ -329,13 +406,24 @@ async function selectFile(path: string | null): Promise<void> {
     return
   }
   const id = selectedScriptId
+  const existing = openTabs.find((slot) => slot.path === path)
+  if (existing) {
+    activeTabId = existing.id
+  } else {
+    let slot = activeTab()
+    if (!slot) {
+      slot = { id: nextTabId++, path: null }
+      openTabs.push(slot)
+      activeTabId = slot.id
+    }
+    slot.path = path
+  }
   selectedFilePath = path
-  if (!openTabs.includes(path)) openTabs.push(path)
   renderTabs()
   const generation = refreshGeneration
   try {
     const record = files.find((file) => file.path === path) ?? await readScriptFile(root, id, path)
-    if (generation !== refreshGeneration && selectedScriptId !== id) return
+    if (generation !== refreshGeneration || selectedScriptId !== id || selectedFilePath !== path) return
     destroyEditor()
     selectedLastModified = record.lastModified
     fileTitle.textContent = path
@@ -358,6 +446,7 @@ async function selectFile(path: string | null): Promise<void> {
     saveButton.disabled = false
     renameFileButton.disabled = false
     deleteFileButton.disabled = false
+    deleteFileShortcut.disabled = false
     renameFileInput.disabled = false
     renderFiles()
   } catch (error) {
@@ -495,7 +584,7 @@ async function renameFile(): Promise<void> {
     const draft = drafts.get(oldKey)
     drafts.delete(oldKey)
     if (draft !== undefined) drafts.set(draftKey(selectedScriptId, to), draft)
-    openTabs = openTabs.map((path) => path === oldPath ? to : path)
+    openTabs = openTabs.map((slot) => slot.path === oldPath ? { ...slot, path: to } : slot)
     selectedFilePath = to
     renameFileInput.value = ""
     await refreshFiles(false)
@@ -509,37 +598,69 @@ async function renameFile(): Promise<void> {
 
 async function deleteFile(): Promise<void> {
   if (busy || !root || !selectedScriptId || !selectedFilePath || selectedLastModified === null) return
-  const entry = scripts.find((script) => script.id === selectedScriptId)?.manifest?.entry
-  if (selectedFilePath === "manifest.json" || selectedFilePath === entry) {
-    setDiagnostic("The manifest and declared entry are required and cannot be deleted.")
-    return
-  }
-  if (!deleteFileArmed) {
-    deleteFileArmed = true
-    deleteFileButton.textContent = "Confirm delete"
-    setDiagnostic("Press Delete file again to remove " + selectedFilePath + ".")
+  const id = selectedScriptId
+  const path = selectedFilePath
+  const entry = scripts.find((script) => script.id === id)?.manifest?.entry
+  if (path === "manifest.json" || path === entry) {
+    setCreateError("The manifest and declared entry are required and cannot be deleted.")
     return
   }
   busy = true
   try {
-    const result = await deleteScriptFile(root, selectedScriptId, selectedFilePath, selectedLastModified)
-    if (result.status === "conflict") {
-      setDiagnostic("The file changed on disk.")
+    const result = await deleteScriptFile(root, id, path, selectedLastModified)
+    if (result.status !== "deleted") {
+      setCreateError(result.status === "conflict" ? "The file changed on disk." : "The file is no longer on disk.")
       return
     }
-    const deletedPath = selectedFilePath
-    drafts.delete(draftKey(selectedScriptId, deletedPath))
-    openTabs = openTabs.filter((path) => path !== deletedPath)
+    drafts.delete(draftKey(id, path))
+    openTabs = openTabs.filter((slot) => slot.path !== path)
+    activeTabId = null
     selectedFilePath = null
+    closeCreateDialog()
     await refreshFiles(false)
     setDiagnostic("")
   } catch (error) {
-    setDiagnostic(error instanceof Error ? error.message : "Unable to delete file.")
+    setCreateError(error instanceof Error ? error.message : "Unable to delete file.")
   } finally {
     busy = false
-    deleteFileArmed = false
-    deleteFileButton.textContent = "Delete file"
   }
+}
+
+async function deleteExtension(): Promise<void> {
+  if (busy || !root || !selectedScriptId) return
+  const id = selectedScriptId
+  busy = true
+  try {
+    await deleteScript(root, id)
+  } catch (error) {
+    setCreateError(error instanceof Error ? error.message : "Unable to delete extension.")
+    busy = false
+    return
+  }
+
+  let settingsWarning = ""
+  try {
+    const settings = await loadSettings(root)
+    if (settings.extensions?.includes(id)) {
+      await saveSettings(root, {
+        ...settings,
+        extensions: settings.extensions.filter((candidate) => candidate !== id),
+      })
+    }
+  } catch {
+    settingsWarning = "Extension files were deleted, but its enabled setting could not be updated."
+  }
+  for (const key of drafts.keys()) {
+    if (key.startsWith(id + ":")) drafts.delete(key)
+  }
+  selectedScriptId = null
+  selectedFilePath = null
+  openTabs = []
+  activeTabId = null
+  closeCreateDialog()
+  busy = false
+  await refresh()
+  if (settingsWarning) setDiagnostic(settingsWarning)
 }
 
 async function refresh(): Promise<void> {
@@ -559,6 +680,7 @@ async function refresh(): Promise<void> {
       selectedScriptId = null
       selectedFilePath = null
       openTabs = []
+      activeTabId = null
       files = []
       renderFiles()
       destroyEditor()
@@ -620,20 +742,26 @@ chooseFolder.addEventListener("click", () => void choose())
 scriptSelect.addEventListener("change", () => void selectScript(scriptSelect.value))
 byId<HTMLButtonElement>("workbench-create-script").addEventListener("click", () => openCreateDialog("extension"))
 byId<HTMLButtonElement>("workbench-create-file").addEventListener("click", () => openCreateDialog("file"))
+deleteScriptButton.addEventListener("click", () => openDeleteDialog("extension"))
+deleteFileShortcut.addEventListener("click", () => openDeleteDialog("file"))
+newTabButton.addEventListener("click", newTab)
 byId<HTMLButtonElement>("workbench-create-cancel").addEventListener("click", closeCreateDialog)
 createDialog.addEventListener("click", (event) => {
   if (event.target === createDialog) closeCreateDialog()
 })
 createForm.addEventListener("submit", (event) => {
   event.preventDefault()
-  void (createMode === "extension" ? createExtension() : createFile())
+  if (dialogMode === "create-extension") void createExtension()
+  else if (dialogMode === "create-file") void createFile()
+  else if (dialogMode === "delete-extension") void deleteExtension()
+  else void deleteFile()
 })
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !createDialog.hidden) closeCreateDialog()
 })
 saveButton.addEventListener("click", () => void saveFile())
 renameFileButton.addEventListener("click", () => void renameFile())
-deleteFileButton.addEventListener("click", () => void deleteFile())
+deleteFileButton.addEventListener("click", () => openDeleteDialog("file"))
 window.addEventListener("focus", () => void refresh())
 const refreshTimer = window.setInterval(() => void refresh(), 3000)
 window.addEventListener("beforeunload", () => {

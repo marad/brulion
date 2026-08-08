@@ -696,9 +696,10 @@ In:
   same user-selected vault;
 - a compact extension selector plus a file list and real multi-file tabs for
   `manifest.json`, `main.js`, and supported JavaScript/JSON companions;
-- modal extension/file creation with local validation errors, safe file
-  rename/delete, manifest validation, and mtime-aware saves; extension
-  enable/disable/removal stays in the separate extension manager;
+- modal extension/file creation with local validation errors, compact confirmed
+  deletion for the selected extension/file, safe file rename, manifest
+  validation, and mtime-aware saves; enable/disable stays in the separate
+  extension manager;
 - a versioned Extension Authoring Kit containing a template, API declarations,
   examples, `AGENTS.md`, an LLM skill, and a ready-to-use authoring prompt;
 - command registration with `icon?: string` using an allowlisted Lucide name,

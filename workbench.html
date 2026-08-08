@@ -40,7 +40,10 @@
           <section class="workbench-tree-section" aria-labelledby="workbench-extensions-heading">
             <div class="workbench-tree-heading">
               <h3 id="workbench-extensions-heading">Extensions</h3>
-              <button id="workbench-create-script" class="workbench-icon-button" type="button" aria-label="New extension" title="New extension">＋</button>
+              <div class="workbench-heading-actions">
+                <button id="workbench-delete-script" class="workbench-icon-button" type="button" aria-label="Delete selected extension" title="Delete selected extension" disabled>−</button>
+                <button id="workbench-create-script" class="workbench-icon-button" type="button" aria-label="New extension" title="New extension">＋</button>
+              </div>
             </div>
             <label class="workbench-sr-only" for="workbench-script-select">Active extension</label>
             <select id="workbench-script-select" class="workbench-script-select" aria-label="Active extension"></select>
@@ -49,7 +52,10 @@
           <section class="workbench-tree-section workbench-files-section" aria-labelledby="workbench-files-heading">
             <div class="workbench-tree-heading">
               <h3 id="workbench-files-heading">Files</h3>
-              <button id="workbench-create-file" class="workbench-icon-button" type="button" aria-label="New file" title="New file">＋</button>
+              <div class="workbench-heading-actions">
+                <button id="workbench-delete-file-shortcut" class="workbench-icon-button" type="button" aria-label="Delete selected file" title="Delete selected file" disabled>−</button>
+                <button id="workbench-create-file" class="workbench-icon-button" type="button" aria-label="New file" title="New file">＋</button>
+              </div>
             </div>
             <div id="workbench-file-list" class="workbench-list workbench-file-list"></div>
           </section>
@@ -58,6 +64,7 @@
         <section class="workbench-editor-panel" aria-label="Extension editor">
           <header class="workbench-tabbar">
             <div id="workbench-tabs" class="workbench-tabs" role="tablist" aria-label="Open files"></div>
+            <button id="workbench-new-tab" class="workbench-new-tab" type="button" aria-label="New tab" title="New tab">＋</button>
             <span id="workbench-file-icon" class="workbench-sr-only" aria-hidden="true">—</span>
             <h2 id="workbench-file-title" class="workbench-sr-only">Select a file</h2>
             <div class="workbench-editor-actions">
@@ -96,6 +103,7 @@
       <section id="workbench-create-dialog" class="workbench-dialog-backdrop" hidden>
         <form class="workbench-dialog" role="dialog" aria-modal="true" aria-labelledby="workbench-create-title">
           <h2 id="workbench-create-title">Create</h2>
+          <p id="workbench-create-description" class="workbench-dialog-description" hidden></p>
           <label id="workbench-create-label" for="workbench-create-input">Name</label>
           <input id="workbench-create-input" type="text" autocomplete="off" />
           <p id="workbench-create-error" class="workbench-dialog-error" role="alert" hidden></p>
