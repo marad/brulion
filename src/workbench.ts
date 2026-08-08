@@ -42,6 +42,30 @@ export function createWorkbenchUrl(
   return url.href
 }
 
+export const WORKBENCH_REFRESH_INTERVAL_MS = 3_000
+
+export type WorkbenchRefreshReason = "attach" | "manual" | "focus" | "poll"
+
+export interface WorkbenchRefreshSchedulerOptions {
+  refresh: (reason: WorkbenchRefreshReason) => Promise<void>
+  intervalMs?: number
+  setInterval?: (callback: () => void, milliseconds: number) => number
+  clearInterval?: (handle: number) => void
+}
+
+export interface WorkbenchRefreshScheduler {
+  request: (reason: WorkbenchRefreshReason) => Promise<void>
+  start: () => void
+  stop: () => void
+}
+
+/** Serialize refresh triggers so a slow filesystem scan cannot overlap a later one. */
+export function createWorkbenchRefreshScheduler(
+  options: WorkbenchRefreshSchedulerOptions,
+): WorkbenchRefreshScheduler {
+  throw new Error("Not implemented")
+}
+
 export async function attachWorkbenchVault(
   reference: string | null,
   dependencies: Partial<WorkbenchAttachmentDeps> = {},
