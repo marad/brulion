@@ -1,0 +1,441 @@
+{
+  "kind": "brulion.extension-api",
+  "apiVersion": 1,
+  "kitVersion": "1.1.0",
+  "title": "Brulion Extension API",
+  "summary": "A small JSON-like capability API for explicitly enabled local JavaScript extensions.",
+  "runtime": {
+    "language": "JavaScript",
+    "module": "ESM",
+    "activation": [
+      "export default async function activate(api)",
+      "export async function activate(api)",
+      "top-level globalThis.brulion calls"
+    ],
+    "sandbox": [
+      "opaque-origin allow-scripts iframe",
+      "nonce-bound MessageChannel",
+      "no Brulion DOM or CodeMirror access",
+      "no File System Access handles",
+      "no network access"
+    ],
+    "limits": {
+      "sourceBytes": 524288,
+      "rpcTimeoutMs": 5000,
+      "maxCommands": 64,
+      "replacementTextBytes": 1048576,
+      "noteContentBytes": 8388608,
+      "commandIdMaxLength": 64,
+      "commandLabelMaxLength": 120,
+      "commandDescriptionMaxLength": 240,
+      "notePathMaxLength": 512
+    },
+    "unsupported": [
+      "TypeScript execution or transpilation",
+      "npm packages and bare-module imports",
+      "network or remote imports",
+      "timers and background triggers",
+      "custom UI or arbitrary SVG",
+      "direct DOM, storage, or File System Access access"
+    ]
+  },
+  "manifest": {
+    "file": "manifest.json",
+    "fields": [
+      {
+        "name": "schemaVersion",
+        "type": "1",
+        "required": true,
+        "description": "Manifest schema version.",
+        "constraints": ["must equal 1"]
+      },
+      {
+        "name": "apiVersion",
+        "type": "1",
+        "required": true,
+        "description": "Brulion extension API version used by the entry source.",
+        "constraints": ["must equal 1"]
+      },
+      {
+        "name": "id",
+        "type": "string",
+        "required": true,
+        "description": "Stable extension directory identity.",
+        "constraints": ["lowercase safe id", "starts with a letter", "maximum 64 characters"]
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "required": true,
+        "description": "Human-readable extension name.",
+        "constraints": ["non-empty", "maximum 160 characters"]
+      },
+      {
+        "name": "version",
+        "type": "semver string",
+        "required": true,
+        "description": "Extension version.",
+        "constraints": ["valid semantic version"]
+      },
+      {
+        "name": "entry",
+        "type": "relative .js path",
+        "required": true,
+        "description": "JavaScript ESM entry file inside the extension directory.",
+        "constraints": ["POSIX separators", "no traversal segments", "must end in .js"]
+      },
+      {
+        "name": "permissions",
+        "type": "string[]",
+        "required": true,
+        "description": "Capabilities explicitly granted to the extension.",
+        "constraints": ["known permissions only", "no duplicates"]
+      }
+    ],
+    "example": "{\n  \"schemaVersion\": 1,\n  \"apiVersion\": 1,\n  \"id\": \"daily-tools\",\n  \"name\": \"Daily tools\",\n  \"version\": \"0.1.0\",\n  \"entry\": \"main.js\",\n  \"permissions\": [\"commands\", \"editor:write\"]\n}"
+  },
+  "permissions": [
+    {
+      "id": "commands",
+      "grants": ["commands.register", "commands.unregister"],
+      "description": "Publish and remove commands in Brulion's palette and action bar.",
+      "risk": "Adds user-invoked actions; it does not grant automatic execution."
+    },
+    {
+      "id": "editor:read",
+      "grants": ["editor.getText", "editor.getSelection", "editor.focus"],
+      "description": "Read the active editor and focus it.",
+      "risk": "Can read the note currently open in the editor."
+    },
+    {
+      "id": "editor:write",
+      "grants": ["editor.replaceSelection"],
+      "description": "Replace the active editor selection.",
+      "risk": "Can change the current editor buffer and trigger its normal save behavior."
+    },
+    {
+      "id": "notes:read",
+      "grants": ["notes.list", "notes.read"],
+      "description": "List and read markdown notes in the granted vault.",
+      "risk": "Can read user-owned markdown files in the vault."
+    },
+    {
+      "id": "notes:write",
+      "grants": ["notes.create", "notes.write", "notes.delete", "notes.move"],
+      "description": "Create, modify, remove, and move markdown notes.",
+      "risk": "Can change user-owned files; guarded writes prevent silent overwrite."
+    }
+  ],
+  "types": [
+    {
+      "name": "ExtensionIconName",
+      "description": "Allowlisted Lucide icon names accepted by command registration.",
+      "declaration": "export type ExtensionIconName = \"braces\" | \"puzzle\" | \"sparkles\" | \"terminal\""
+    },
+    {
+      "name": "BrulionCommand",
+      "description": "Metadata shown for a command in the palette and action bar.",
+      "declaration": "export interface BrulionCommand {\n  id: string\n  label: string\n  description?: string\n  icon?: ExtensionIconName\n}"
+    },
+    {
+      "name": "CommandHandler",
+      "description": "A user-invoked command callback. Its return value is ignored.",
+      "declaration": "export type CommandHandler = () => void | Promise<void>"
+    },
+    {
+      "name": "RegisterResult",
+      "description": "The host identity assigned to a registered command.",
+      "declaration": "export interface RegisterResult {\n  actionId: string\n}"
+    },
+    {
+      "name": "EditorSelection",
+      "description": "The primary active editor selection, using zero-based document offsets.",
+      "declaration": "export interface EditorSelection {\n  from: number\n  to: number\n  text: string\n}"
+    },
+    {
+      "name": "NoteContent",
+      "description": "Note bytes and the mtime used for a subsequent guarded write.",
+      "declaration": "export interface NoteContent {\n  content: string\n  lastModified: number | null\n}"
+    },
+    {
+      "name": "CreateResult",
+      "description": "Creating a note never replaces an existing file.",
+      "declaration": "export type CreateResult =\n  | { status: \"created\" }\n  | { status: \"exists\" }"
+    },
+    {
+      "name": "SaveResult",
+      "description": "A guarded note write either saves or reports an external-edit conflict.",
+      "declaration": "export type SaveResult =\n  | { status: \"saved\"; lastModified: number }\n  | { status: \"conflict\" }"
+    },
+    {
+      "name": "MoveResult",
+      "description": "A note move never replaces an occupied destination.",
+      "declaration": "export type MoveResult =\n  | { status: \"moved\" }\n  | { status: \"exists\" }\n  | { status: \"missing\" }"
+    }
+  ],
+  "namespaces": [
+    {
+      "name": "commands",
+      "summary": "Register user-invoked commands in Brulion's existing command surfaces.",
+      "methods": [
+        {
+          "id": "commands.register",
+          "name": "register",
+          "signature": "commands.register(command, run)",
+          "permission": "commands",
+          "description": "Adds one namespaced command to the command palette and optional action bar.",
+          "parameters": [
+            {
+              "name": "command",
+              "type": "BrulionCommand",
+              "required": true,
+              "description": "Label, stable local id, optional description, and optional allowlisted icon.",
+              "constraints": ["id starts with a lowercase letter", "id uses lowercase letters, numbers, -, _, or .", "id maximum 64 characters", "label is non-empty and at most 120 characters", "description is optional and at most 240 characters", "unknown icon names fall back to puzzle"]
+            },
+            {
+              "name": "run",
+              "type": "CommandHandler",
+              "required": true,
+              "description": "Async or synchronous callback invoked after the user chooses the command."
+            }
+          ],
+          "returns": "RegisterResult",
+          "errors": ["Rejects if the permission is missing, metadata is invalid, the id is duplicated, or the command limit is reached."],
+          "behavior": ["The returned action id is namespaced as <extension-id>:<command-id>.", "The callback runs only after explicit user invocation.", "The callback return value is ignored.", "Only braces, puzzle, sparkles, and terminal are rendered; missing or unknown icon names use puzzle."],
+          "example": "await api.commands.register(\n  { id: \"insert-date\", label: \"Insert date\", icon: \"sparkles\" },\n  async () => {\n    await api.editor.replaceSelection(new Date().toISOString().slice(0, 10))\n  },\n)",
+          "since": 1
+        },
+        {
+          "id": "commands.unregister",
+          "name": "unregister",
+          "signature": "commands.unregister(id)",
+          "permission": "commands",
+          "description": "Removes a command previously registered by this extension.",
+          "parameters": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "The local command id passed to register()."
+            }
+          ],
+          "returns": "void",
+          "errors": ["Rejects if the permission is missing or the id is invalid."],
+          "behavior": ["Unregistering an unknown id is a no-op.", "An extension can remove only its own commands."],
+          "example": "await api.commands.unregister(\"insert-date\")",
+          "since": 1
+        }
+      ]
+    },
+    {
+      "name": "editor",
+      "summary": "Read and change the primary selection in the currently open note.",
+      "methods": [
+        {
+          "id": "editor.getText",
+          "name": "getText",
+          "signature": "editor.getText()",
+          "permission": "editor:read",
+          "description": "Returns the complete markdown text in the active editor.",
+          "parameters": [],
+          "returns": "string",
+          "errors": ["Rejects if editor:read is missing or the editor/vault is no longer active."],
+          "behavior": ["Returns the file-format text, including markdown markers hidden by Brulion's visual editor."],
+          "example": "const markdown = await api.editor.getText()",
+          "since": 1
+        },
+        {
+          "id": "editor.getSelection",
+          "name": "getSelection",
+          "signature": "editor.getSelection()",
+          "permission": "editor:read",
+          "description": "Returns the primary editor selection and its text.",
+          "parameters": [],
+          "returns": "EditorSelection",
+          "errors": ["Rejects if editor:read is missing or the editor/vault is no longer active."],
+          "behavior": ["from and to are zero-based document offsets.", "When there is no selected range, from equals to."],
+          "example": "const selection = await api.editor.getSelection()\nconsole.log(selection.text)",
+          "since": 1
+        },
+        {
+          "id": "editor.replaceSelection",
+          "name": "replaceSelection",
+          "signature": "editor.replaceSelection(text)",
+          "permission": "editor:write",
+          "description": "Replaces the primary editor selection and returns focus to the editor.",
+          "parameters": [
+            {
+              "name": "text",
+              "type": "string",
+              "required": true,
+              "description": "Replacement markdown text.",
+              "constraints": ["maximum 1 MiB of text"]
+            }
+          ],
+          "returns": "void",
+          "errors": ["Rejects if editor:write is missing, text is too large, or the editor/vault is no longer active."],
+          "behavior": ["Uses the editor's normal document change and save path.", "Does not expose the CodeMirror instance or DOM."],
+          "example": "await api.editor.replaceSelection(\"- captured item\")",
+          "since": 1
+        },
+        {
+          "id": "editor.focus",
+          "name": "focus",
+          "signature": "editor.focus()",
+          "permission": "editor:read",
+          "description": "Places keyboard focus in the active editor.",
+          "parameters": [],
+          "returns": "void",
+          "errors": ["Rejects if editor:read is missing or the editor/vault is no longer active."],
+          "behavior": ["This is a narrow focus action; it does not return a DOM element."],
+          "example": "await api.editor.focus()",
+          "since": 1
+        }
+      ]
+    },
+    {
+      "name": "notes",
+      "summary": "Read and change folder-relative markdown files without exposing filesystem handles.",
+      "methods": [
+        {
+          "id": "notes.list",
+          "name": "list",
+          "signature": "notes.list()",
+          "permission": "notes:read",
+          "description": "Lists every markdown note path in the granted vault.",
+          "parameters": [],
+          "returns": "readonly string[]",
+          "errors": ["Rejects if notes:read is missing or the vault cannot be read."],
+          "behavior": ["Paths are folder-relative POSIX paths and include the .md suffix.", "The reserved .brulion directory is excluded.", "Results are sorted case-insensitively."],
+          "example": "const paths = await api.notes.list()\nfor (const path of paths) console.log(path)",
+          "since": 1
+        },
+        {
+          "id": "notes.read",
+          "name": "read",
+          "signature": "notes.read(path)",
+          "permission": "notes:read",
+          "description": "Reads one markdown note and returns its content with the current mtime.",
+          "parameters": [
+            {
+              "name": "path",
+              "type": "string",
+              "required": true,
+              "description": "Folder-relative note name or path.",
+              "constraints": [".md is optional", "POSIX / separators", "no . or .. traversal", "maximum 512 characters"]
+            }
+          ],
+          "returns": "NoteContent",
+          "errors": ["Rejects if notes:read is missing, the path is unsafe, or the vault cannot be read."],
+          "behavior": ["A missing note returns { content: \"\", lastModified: null } instead of throwing.", "The normalized path always targets a .md file."],
+          "example": "const note = await api.notes.read(\"Journal/today\")\nconsole.log(note.content, note.lastModified)",
+          "since": 1
+        },
+        {
+          "id": "notes.create",
+          "name": "create",
+          "signature": "notes.create(path)",
+          "permission": "notes:write",
+          "description": "Creates an empty markdown note without replacing existing content.",
+          "parameters": [
+            {
+              "name": "path",
+              "type": "string",
+              "required": true,
+              "description": "Folder-relative note name or path.",
+              "constraints": ["same safe path rules as read()"]
+            }
+          ],
+          "returns": "CreateResult",
+          "errors": ["Rejects if notes:write is missing, the path is unsafe, or the vault cannot be written."],
+          "behavior": ["Creates missing parent folders.", "Returns { status: \"exists\" } and leaves bytes untouched when the destination exists."],
+          "example": "const result = await api.notes.create(\"Journal/today\")\nif (result.status === \"exists\") console.log(\"Already created\")",
+          "since": 1
+        },
+        {
+          "id": "notes.write",
+          "name": "write",
+          "signature": "notes.write(path, content, expectedLastModified)",
+          "permission": "notes:write",
+          "description": "Writes complete markdown content with an optimistic external-edit guard.",
+          "parameters": [
+            {
+              "name": "path",
+              "type": "string",
+              "required": true,
+              "description": "Folder-relative note name or path.",
+              "constraints": ["same safe path rules as read()"]
+            },
+            {
+              "name": "content",
+              "type": "string",
+              "required": true,
+              "description": "Complete markdown bytes to write.",
+              "constraints": ["maximum 8 MiB of text"]
+            },
+            {
+              "name": "expectedLastModified",
+              "type": "number | null",
+              "required": true,
+              "description": "The mtime returned by the last read or successful write; use null for a create-only write."
+            }
+          ],
+          "returns": "SaveResult",
+          "errors": ["Rejects if notes:write is missing, a parameter is invalid, or the vault cannot be written."],
+          "behavior": ["Returns { status: \"conflict\" } and writes nothing when the on-disk mtime differs.", "A null expectedLastModified refuses to replace an existing file.", "Creates missing parent folders and preserves the markdown file as the source of truth."],
+          "example": "const current = await api.notes.read(\"todo\")\nconst result = await api.notes.write(\n  \"todo\",\n  current.content + \"\\n- New item\",\n  current.lastModified,\n)\nif (result.status === \"conflict\") console.warn(\"Changed externally\")",
+          "since": 1
+        },
+        {
+          "id": "notes.delete",
+          "name": "delete",
+          "signature": "notes.delete(path)",
+          "permission": "notes:write",
+          "description": "Deletes one markdown note if it exists.",
+          "parameters": [
+            {
+              "name": "path",
+              "type": "string",
+              "required": true,
+              "description": "Folder-relative note name or path.",
+              "constraints": ["same safe path rules as read()"]
+            }
+          ],
+          "returns": "void",
+          "errors": ["Rejects if notes:write is missing, the path is unsafe, or the vault cannot be written."],
+          "behavior": ["Deleting an already absent note is an idempotent no-op.", "The containing folder is not removed automatically."],
+          "example": "await api.notes.delete(\"old-note\")",
+          "since": 1
+        },
+        {
+          "id": "notes.move",
+          "name": "move",
+          "signature": "notes.move(from, to)",
+          "permission": "notes:write",
+          "description": "Moves one markdown note without overwriting the destination.",
+          "parameters": [
+            {
+              "name": "from",
+              "type": "string",
+              "required": true,
+              "description": "Existing folder-relative note name or path.",
+              "constraints": ["same safe path rules as read()"]
+            },
+            {
+              "name": "to",
+              "type": "string",
+              "required": true,
+              "description": "New folder-relative note name or path.",
+              "constraints": ["same safe path rules as read()"]
+            }
+          ],
+          "returns": "MoveResult",
+          "errors": ["Rejects if notes:write is missing, either path is unsafe, or the vault cannot be written."],
+          "behavior": ["Returns { status: \"exists\" } when the destination is occupied and leaves the source untouched.", "Returns { status: \"missing\" } when the source is absent.", "Moves the file bytes without rewriting links or content."],
+          "example": "const result = await api.notes.move(\"inbox/item\", \"archive/item\")\nif (result.status === \"moved\") console.log(\"Archived\")",
+          "since": 1
+        }
+      ]
+    }
+  ]
+}

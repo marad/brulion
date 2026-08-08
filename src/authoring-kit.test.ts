@@ -9,12 +9,13 @@ import {
 
 describe("versioned extension authoring kit", () => {
   it("contains the complete deterministic kit and a valid disabled template", () => {
-    expect(AUTHORING_KIT_VERSION).toBe("1.0.0")
+    expect(AUTHORING_KIT_VERSION).toBe("1.1.0")
     const files = listAuthoringKitFiles()
     expect(files.map((file) => file.path)).toEqual([
       "template/manifest.json",
       "template/main.js",
       "brulion-extension.d.ts",
+      "api-contract.json",
       "examples/hello-world/manifest.json",
       "examples/hello-world/main.js",
       "API.md",
@@ -31,6 +32,7 @@ describe("versioned extension authoring kit", () => {
   it("keeps kit files exact and avoids unsupported authoring assumptions", () => {
     const source = getAuthoringKitFile("template/main.js")!.content
     expect(source).toContain("api.commands.register")
+    expect(getAuthoringKitFile("api-contract.json")?.content).toContain('"apiVersion": 1')
     expect(source).not.toMatch(/from\s+["']https?:|setInterval|setTimeout|npm install|\.ts\b/)
     const bundle = serializeAuthoringKit()
     expect(bundle.indexOf("===== template/manifest.json =====")).toBeLessThan(

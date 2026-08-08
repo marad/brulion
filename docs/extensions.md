@@ -40,24 +40,26 @@ boundary before an application callback is called.
 ## Source contract
 
 The entry is an ESM module. It may register commands at top level through the
-global `brulion` object, or export a default activation function:
+global `brulion` object, export a default activation function, or export a named
+`activate` function:
 
 ```js
 export default async function activate(api) {
   await api.commands.register(
     { id: "insert-date", label: "Insert date", description: "Add today's date" },
     async () => {
-      const selection = await api.editor.getSelection()
       await api.editor.replaceSelection(new Date().toISOString().slice(0, 10))
       await api.editor.focus()
-      return { replaced: selection.text }
     },
   )
 }
 ```
 
 The same API is available as `globalThis.brulion`. Commands appear in Brulion's
-existing command palette and action bar under `<script-id>:<command-id>`.
+existing command palette and action bar under `<script-id>:<command-id>`. The
+complete commands, editor, and notes surface—including guarded `notes.write()`
+and the `notes.create()`/`delete()`/`move()` results—is in the standalone API
+reference and its `api-contract.json` source.
 
 The module runs in an opaque-origin `allow-scripts` iframe. It receives only
 JSON-like values over a nonce-bound `MessageChannel`; it cannot access Brulion's
@@ -68,5 +70,7 @@ UI.
 
 Agents can create or update these ordinary files, but enabling and reviewing a
 script remains a user decision. From the workbench, **API docs** opens the
-read-only API reference in a separate window; it uses the same versioned source
-as the Authoring Kit.
+read-only API reference in a separate window. The reference combines the
+human guide with the versioned `api-contract.json` and typed declarations from
+the Authoring Kit, so method signatures, permissions, return statuses, and
+file-fidelity rules are visible without reverse-engineering the runtime.

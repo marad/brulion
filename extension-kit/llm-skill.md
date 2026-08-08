@@ -1,6 +1,6 @@
 # Brulion extension authoring skill
 
-1. Read the manifest and the brulion-extension.d.ts contract.
+1. Read the manifest, `api-contract.json`, and the brulion-extension.d.ts contract.
 2. Choose a lowercase safe extension id and a semantic version.
 3. Start from the disabled template.
 4. Use only declared permissions and the sandbox API.

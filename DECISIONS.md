@@ -1804,3 +1804,21 @@ and future kit updates automatically reach both the Authoring Kit drawer and
 the documentation page. The page uses CodeMirror's JavaScript/TypeScript parser
 and the existing `--tok-*` palette for syntax highlighting, rather than a second
 ad-hoc tokenizer or an embedded editable editor.
+
+## The extension API contract is structured and task-oriented (M41)
+
+**What:** keep `extension-kit/api-contract.json` as the structured API v1
+contract, with `API.md` for human-oriented guidance and recipes. The standalone
+reference renders the contract's method cards, permissions, limits, results, and
+examples; `brulion-extension.d.ts` exposes the same complete public surface.
+
+**Why:** a short README and an incomplete declaration file made developers
+reverse-engineer the sandbox and, more seriously, hid the note write conflict
+contract. JSON is easy for the browser, coding agents, and drift tests to
+consume without introducing an HTTP-oriented specification format.
+
+**Consequence (UI/project):** API docs have a quickstart, navigation, symbol
+search, stable anchors, copyable examples, and a downloadable contract. The
+contract test compares its method inventory with the host bridge and typed
+artifact. The Authoring Kit version becomes 1.1.0 while the runtime API remains
+v1; adding documentation does not change extension capabilities or note bytes.

@@ -25,6 +25,22 @@ const MAX_COMMAND_DESCRIPTION_LENGTH = 240
 const COMMAND_ID = /^[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*$/
 const BRULION_DIRECTORY = ".brulion"
 
+/** Every public capability registered by the host-side extension bridge. */
+export const EXTENSION_API_METHODS = [
+  "commands.register",
+  "commands.unregister",
+  "editor.getText",
+  "editor.getSelection",
+  "editor.replaceSelection",
+  "editor.focus",
+  "notes.list",
+  "notes.read",
+  "notes.create",
+  "notes.write",
+  "notes.delete",
+  "notes.move",
+] as const
+
 export interface ExtensionSelection {
   from: number
   to: number

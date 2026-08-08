@@ -8,19 +8,62 @@
   <body class="api-docs-page">
     <main class="api-docs-shell">
       <header class="api-docs-header">
-        <div>
+        <div class="api-docs-heading">
           <p class="api-docs-eyebrow">Brulion extension kit · API v1</p>
           <h1>Brulion extension API</h1>
-          <p class="api-docs-lede">The host API available to explicitly enabled local extensions.</p>
+          <p class="api-docs-lede">A task-oriented reference for explicitly enabled local JavaScript extensions.</p>
+          <div class="api-docs-badges" aria-label="API properties">
+            <span>JavaScript ESM</span>
+            <span>Sandboxed</span>
+            <span>File-safe writes</span>
+          </div>
         </div>
-        <button id="api-docs-close" class="api-docs-close" type="button">Close window</button>
+        <div class="api-docs-header-actions">
+          <a id="api-docs-workbench" class="api-docs-button api-docs-button-quiet" href="workbench.html">Workbench</a>
+          <button id="api-docs-contract" class="api-docs-button api-docs-button-quiet" type="button">Download contract</button>
+          <button id="api-docs-close" class="api-docs-button" type="button">Close window</button>
+        </div>
       </header>
-      <article id="api-docs-content" class="api-docs-content" aria-labelledby="api-docs-content-title"></article>
-      <section id="api-docs-declarations" class="api-docs-declarations" aria-labelledby="api-docs-declarations-title">
-        <h2 id="api-docs-declarations-title">Type declarations</h2>
-        <p>The complete TypeScript-shaped contract, useful for editor hints and reference.</p>
-        <pre><code id="api-docs-declaration-source"></code></pre>
-      </section>
+
+      <div class="api-docs-layout">
+        <aside class="api-docs-sidebar" aria-label="API reference navigation">
+          <label class="api-docs-search-label" for="api-docs-search">Search reference</label>
+          <input id="api-docs-search" class="api-docs-search" type="search" placeholder="Search methods…" autocomplete="off" />
+          <p id="api-docs-search-status" class="api-docs-search-status" role="status"></p>
+          <nav id="api-docs-toc" class="api-docs-toc" aria-label="On this page"></nav>
+        </aside>
+
+        <div class="api-docs-main">
+          <article id="api-docs-content" class="api-docs-content" aria-labelledby="api-docs-content-title"></article>
+
+          <section id="api-docs-reference" class="api-docs-reference" aria-labelledby="api-docs-reference-title">
+            <div class="api-docs-section-heading">
+              <div>
+                <p class="api-docs-section-kicker">Generated from the API contract</p>
+                <h2 id="api-docs-reference-title">API reference</h2>
+              </div>
+            </div>
+            <div id="api-docs-methods"></div>
+          </section>
+
+          <section id="api-docs-types" class="api-docs-types" aria-labelledby="api-docs-types-title">
+            <h2 id="api-docs-types-title">Shared types</h2>
+            <div id="api-docs-type-list"></div>
+          </section>
+
+          <section id="api-docs-declarations" class="api-docs-declarations" aria-labelledby="api-docs-declarations-title">
+            <div class="api-docs-section-heading">
+              <div>
+                <p class="api-docs-section-kicker">Copy into an editor for hints</p>
+                <h2 id="api-docs-declarations-title">Type declarations</h2>
+              </div>
+              <button class="api-docs-copy-button" type="button" data-copy-target="api-docs-declaration-source">Copy declarations</button>
+            </div>
+            <p>The complete TypeScript-shaped contract, useful for editor hints and reference. TypeScript execution is not required or supported at runtime.</p>
+            <pre><code id="api-docs-declaration-source"></code></pre>
+          </section>
+        </div>
+      </div>
     </main>
     <script type="module" src="/src/api-docs-main.ts"></script>
   </body>
