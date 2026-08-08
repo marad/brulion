@@ -694,10 +694,11 @@ usable by both people and LLM agents.
 In:
 - a workbench opened in a separate Brulion window, independently attached to the
   same user-selected vault;
-- a file tree and multi-file editor for `manifest.json`, `main.js`, and supported
-  JavaScript/JSON companion files;
-- safe extension creation, rename, delete, manifest validation, and mtime-aware
-  saves with explicit enablement preserved;
+- a compact extension selector plus a file list and real multi-file tabs for
+  `manifest.json`, `main.js`, and supported JavaScript/JSON companions;
+- modal extension/file creation with local validation errors, safe file
+  rename/delete, manifest validation, and mtime-aware saves; extension
+  enable/disable/removal stays in the separate extension manager;
 - a versioned Extension Authoring Kit containing a template, API declarations,
   examples, `AGENTS.md`, an LLM skill, and a ready-to-use authoring prompt;
 - command registration with `icon?: string` using an allowlisted Lucide name,
@@ -709,6 +710,7 @@ Out:
 - arbitrary SVG markup or custom icon assets in the first workbench release;
 - TypeScript transpilation, npm dependencies, network imports, or an in-app LLM;
 - window-to-window IPC as a correctness requirement;
+- duplicate extension management controls inside the authoring workbench;
 - replacing mtime conflict guards with last-writer-wins behavior;
 - `FileSystemObserver` as the default watcher (that optimization is M40).
 

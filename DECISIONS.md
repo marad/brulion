@@ -1724,3 +1724,24 @@ honest without dropping the work.
 milestone file has no unfinished phase. M42 owns the follow-up scope and is the
 next queued milestone after the current M41 work; M40 remains the separate,
 future File System Observer optimization.
+
+## The workbench is an authoring surface, not a second extension manager (M41)
+
+**What:** replace the extension row list with one compact dropdown; show files as
+an always-visible list and open them in real closable tabs. Remove decorative
+chevrons from the static Extensions/Files headings. Both `+` actions open a
+focused modal with their input and prominent local validation feedback instead
+of revealing inline sidebar fields. Remove the workbench's "Extension options"
+and enable/disable controls; those remain in the existing extension manager.
+
+**Why:** the previous shell visually promised interactions it did not provide:
+chevrons implied collapsing, a single styled tab implied multi-tab behavior, and
+`+` revealed easy-to-miss inline fields. A second extension-management surface
+also split ownership of enablement/removal. The revised model follows familiar
+editor conventions while keeping authoring and trust decisions separate.
+
+**Consequence (UI/project):** selecting an extension is compact, clicking files
+opens path-owned tabs, and unsaved drafts survive tab close/reopen without being
+written into another file. Creation errors stay beside the input until fixed or
+dismissed. Extension removal and enablement happen only through Manage
+extensions; the workbench owns creation and file authoring.

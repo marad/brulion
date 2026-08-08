@@ -12,9 +12,10 @@ Brulion can run explicitly enabled JavaScript extensions from the open vault:
 
 The app validates the folder id, manifest, entry path, permissions, and source
 size before it starts anything. A script is disabled by default; use **Manage
-extensions** to enable, disable, or remove it. Use **Edit extensions** when you
-need to review or change its files. The enablement list is stored in
-`.brulion.json` and travels with the vault.
+extensions** to enable, disable, or remove it. Use **Edit extensions** to create
+an extension or review and change its files in the separate tabbed workbench;
+that authoring surface deliberately does not duplicate management controls. The
+enablement list is stored in `.brulion.json` and travels with the vault.
 
 ## Manifest
 

@@ -21,11 +21,12 @@
   failure.
 - **Script file store** — validates script ids and file paths, discovers files,
   reads bytes/mtimes, and performs guarded create/save/rename/delete operations.
-- **Workbench session** — owns the selected script/file, dirty text, refresh
-  generation, explicit reload request, and diagnostics for one window.
-- **Workbench view** — renders the file tree, editor, status, lifecycle controls,
-  kit actions, and permission errors; it delegates all data changes to the
-  session.
+- **Workbench session** — owns the selected extension/file, open tabs, dirty
+  text, refresh generation, reload request, and diagnostics for one window.
+- **Workbench view** — renders the extension dropdown, file list, tabs, editor,
+  focused creation dialog, status, file controls, kit actions, and permission
+  errors; it delegates all data changes to the session. Extension management
+  remains in the notes window's existing manager.
 - **Authoring kit catalog** — exposes one versioned deterministic set of kit
   files to the repository and the workbench copy/download actions.
 - **Extension runtime registry** — existing M39 vault-scoped registry; it loads
@@ -78,9 +79,10 @@ flowchart LR
 - The script store owns no cache. Every read obtains current bytes and mtime;
   every mutation validates the path and compares the supplied mtime before
   writing.
-- The session owns the current selected file, dirty text, refresh generation,
-  diagnostics, and explicit enable/reload intents. A generation token prevents
-  stale reads from replacing a newer selection.
+- The session owns the selected extension/file, open tab paths, path-keyed dirty
+  text, refresh generation, diagnostics, and reload intents. A generation token
+  prevents stale reads from replacing a newer selection. Enablement/removal is
+  not duplicated in this view.
 - The view owns DOM and CodeMirror instances only. Programmatic loads are
   annotated and cannot mark a file dirty.
 - The authoring kit catalog owns immutable versioned kit bytes. It is not

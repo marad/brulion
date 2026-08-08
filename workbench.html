@@ -39,52 +39,28 @@
 
           <section class="workbench-tree-section" aria-labelledby="workbench-extensions-heading">
             <div class="workbench-tree-heading">
-              <h3 id="workbench-extensions-heading"><span aria-hidden="true">▾</span> Extensions</h3>
+              <h3 id="workbench-extensions-heading">Extensions</h3>
               <button id="workbench-create-script" class="workbench-icon-button" type="button" aria-label="New extension" title="New extension">＋</button>
             </div>
-            <div class="workbench-create-form">
-              <label class="workbench-sr-only" for="workbench-new-id">New extension id</label>
-              <input id="workbench-new-id" type="text" placeholder="Extension id" aria-label="New extension id" />
-              <button id="workbench-create-script-confirm" class="workbench-inline-action" type="button">Add</button>
-            </div>
-            <div id="workbench-script-list" class="workbench-list workbench-extension-list"></div>
+            <label class="workbench-sr-only" for="workbench-script-select">Active extension</label>
+            <select id="workbench-script-select" class="workbench-script-select" aria-label="Active extension"></select>
           </section>
 
           <section class="workbench-tree-section workbench-files-section" aria-labelledby="workbench-files-heading">
             <div class="workbench-tree-heading">
-              <div>
-                <h3 id="workbench-files-heading"><span aria-hidden="true">▾</span> Files</h3>
-                <strong id="workbench-selected-script">Choose an extension</strong>
-              </div>
+              <h3 id="workbench-files-heading">Files</h3>
               <button id="workbench-create-file" class="workbench-icon-button" type="button" aria-label="New file" title="New file">＋</button>
-            </div>
-            <div class="workbench-create-form">
-              <label class="workbench-sr-only" for="workbench-new-file">New file name</label>
-              <input id="workbench-new-file" type="text" placeholder="File name" aria-label="New file name" />
-              <button id="workbench-create-file-confirm" class="workbench-inline-action" type="button">Add</button>
             </div>
             <div id="workbench-file-list" class="workbench-list workbench-file-list"></div>
           </section>
-
-          <details class="workbench-sidebar-menu">
-            <summary>Extension options</summary>
-            <div class="workbench-menu-body">
-              <label for="workbench-rename-script-input">Extension id</label>
-              <input id="workbench-rename-script-input" type="text" placeholder="New extension id" aria-label="New extension id" disabled />
-              <button id="workbench-rename-script" class="workbench-button" type="button" disabled>Rename extension</button>
-              <button id="workbench-delete-script" class="workbench-button workbench-button-danger" type="button" disabled>Delete extension</button>
-            </div>
-          </details>
         </aside>
 
         <section class="workbench-editor-panel" aria-label="Extension editor">
           <header class="workbench-tabbar">
-            <div class="workbench-tab is-active">
-              <span id="workbench-file-icon" class="workbench-file-icon" aria-hidden="true">—</span>
-              <h2 id="workbench-file-title">Select a file</h2>
-            </div>
+            <div id="workbench-tabs" class="workbench-tabs" role="tablist" aria-label="Open files"></div>
+            <span id="workbench-file-icon" class="workbench-sr-only" aria-hidden="true">—</span>
+            <h2 id="workbench-file-title" class="workbench-sr-only">Select a file</h2>
             <div class="workbench-editor-actions">
-              <button id="workbench-toggle-script" class="workbench-button workbench-button-quiet" type="button" disabled>Enable extension</button>
               <button id="workbench-save" class="workbench-button workbench-button-primary" type="button" disabled>Save</button>
             </div>
           </header>
@@ -115,6 +91,19 @@
             </div>
           </footer>
         </section>
+      </section>
+
+      <section id="workbench-create-dialog" class="workbench-dialog-backdrop" hidden>
+        <form class="workbench-dialog" role="dialog" aria-modal="true" aria-labelledby="workbench-create-title">
+          <h2 id="workbench-create-title">Create</h2>
+          <label id="workbench-create-label" for="workbench-create-input">Name</label>
+          <input id="workbench-create-input" type="text" autocomplete="off" />
+          <p id="workbench-create-error" class="workbench-dialog-error" role="alert" hidden></p>
+          <div class="workbench-dialog-actions">
+            <button id="workbench-create-cancel" class="workbench-button" type="button">Cancel</button>
+            <button id="workbench-create-confirm" class="workbench-button workbench-button-primary" type="submit">Create</button>
+          </div>
+        </form>
       </section>
 
       <section id="workbench-kit-panel" class="workbench-kit-drawer" hidden>

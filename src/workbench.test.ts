@@ -23,13 +23,18 @@ function deps(overrides: Partial<WorkbenchAttachmentDeps> = {}): WorkbenchAttach
 }
 
 describe("separate extension workbench contract", () => {
-  it("uses a full editor shell instead of a dashboard layout", () => {
+  it("uses honest explorer controls, real tabs, and modal creation flows", () => {
     expect(workbenchHtml).toContain('class="workbench-titlebar"')
     expect(workbenchHtml).toContain('class="workbench-sidebar"')
-    expect(workbenchHtml).toContain('class="workbench-tabbar"')
+    expect(workbenchHtml).toContain('id="workbench-script-select"')
+    expect(workbenchHtml).toContain('id="workbench-tabs"')
+    expect(workbenchHtml).toContain('id="workbench-create-dialog"')
+    expect(workbenchHtml).toContain('id="workbench-create-error"')
     expect(workbenchHtml).toContain('class="workbench-statusbar"')
-    expect(workbenchHtml).not.toContain("workbench-eyebrow")
-    expect(workbenchHtml).not.toContain("Reconnect this workspace")
+    expect(workbenchHtml).not.toContain("workbench-script-list")
+    expect(workbenchHtml).not.toContain("workbench-create-form")
+    expect(workbenchHtml).not.toContain("Extension options")
+    expect(workbenchHtml).not.toContain("▾")
   })
 
   it("builds a new-window URL carrying only the workspace reference", () => {
