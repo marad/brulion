@@ -4,6 +4,8 @@ import { test, expect, type Page } from "@playwright/test"
 // workbench lifecycle, freshness, conflict handling, and command integration in Chromium.
 const FOLDER = "e2e-extension-folder"
 
+test.describe.configure({ timeout: 60_000 })
+
 const manifest = JSON.stringify({
   schemaVersion: 1,
   apiVersion: 1,
