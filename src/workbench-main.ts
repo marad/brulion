@@ -251,6 +251,20 @@ function downloadText(name: string, text: string): void {
   URL.revokeObjectURL(link.href)
 }
 
+function openApiDocs(): void {
+  const url = new URL("api.html", location.href).href
+  const child = window.open(url, "brulion-extension-api", "popup,width=1000,height=800")
+  if (child) {
+    child.focus()
+    return
+  }
+  const fallback = document.createElement("a")
+  fallback.href = url
+  fallback.target = "_blank"
+  fallback.rel = "noopener noreferrer"
+  fallback.click()
+}
+
 async function refreshFiles(preserveSelection = true): Promise<void> {
   if (!root || !selectedScriptId) {
     files = []
@@ -622,6 +636,7 @@ async function start(reference: string | null): Promise<void> {
 }
 
 byId<HTMLButtonElement>("workbench-refresh").addEventListener("click", () => void refresh())
+byId<HTMLButtonElement>("workbench-api-docs").addEventListener("click", openApiDocs)
 byId<HTMLButtonElement>("workbench-kit").addEventListener("click", () => {
   kitPanel.hidden = false
   renderKit()

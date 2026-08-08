@@ -67,4 +67,6 @@ allow imports from the network, or provide a Brulion timer/trigger API or custom
 UI.
 
 Agents can create or update these ordinary files, but enabling and reviewing a
-script remains a user decision.
+script remains a user decision. From the workbench, **API docs** opens the
+read-only API reference in a separate window; it uses the same versioned source
+as the Authoring Kit.

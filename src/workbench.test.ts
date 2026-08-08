@@ -2,6 +2,7 @@
 
 import { describe, expect, it, vi } from "vitest"
 import workbenchHtml from "../workbench.html?raw"
+import apiDocsHtml from "../api.html?raw"
 import {
   attachWorkbenchVault,
   createWorkbenchUrl,
@@ -25,6 +26,7 @@ function deps(overrides: Partial<WorkbenchAttachmentDeps> = {}): WorkbenchAttach
 describe("separate extension workbench contract", () => {
   it("uses an honest single-editor explorer and modal creation flows", () => {
     expect(workbenchHtml).toContain('class="workbench-titlebar"')
+    expect(workbenchHtml).toContain('id="workbench-api-docs"')
     expect(workbenchHtml).toContain('class="workbench-sidebar"')
     expect(workbenchHtml).toContain('id="workbench-script-select"')
     expect(workbenchHtml).not.toContain('id="workbench-tabs"')
@@ -39,6 +41,12 @@ describe("separate extension workbench contract", () => {
     expect(workbenchHtml).not.toContain("workbench-create-form")
     expect(workbenchHtml).not.toContain("Extension options")
     expect(workbenchHtml).not.toContain("▾")
+  })
+
+  it("ships a standalone API documentation page", () => {
+    expect(apiDocsHtml).toContain('id="api-docs-content"')
+    expect(apiDocsHtml).toContain('src="/src/api-docs-main.ts"')
+    expect(apiDocsHtml).toContain("Brulion extension API")
   })
 
   it("builds a new-window URL carrying only the workspace reference", () => {

@@ -19,6 +19,7 @@ export default defineConfig({
       input: {
         main: "index.html",
         workbench: "workbench.html",
+        api: "api.html",
       },
       output: {
         // Heavy diagram deps stay separate-lazy chunks (only fetched when their

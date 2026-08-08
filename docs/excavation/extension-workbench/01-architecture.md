@@ -28,7 +28,10 @@
   permission errors; it delegates all data changes to the session. Enablement
   remains in the notes window's existing manager.
 - **Authoring kit catalog** — exposes one versioned deterministic set of kit
-  files to the repository and the workbench copy/download actions.
+  files to the repository, workbench copy/download actions, and the standalone
+  API documentation page.
+- **API documentation page** — a read-only same-origin window that renders the
+  API reference and declaration bytes from the authoring kit without vault state.
 - **Extension runtime registry** — existing M39 vault-scoped registry; it loads
   only explicitly enabled extensions and receives reload requests after a
   successful source change.
@@ -87,7 +90,8 @@ flowchart LR
 - The view owns DOM and CodeMirror instances only. Programmatic loads are
   annotated and cannot mark a file dirty.
 - The authoring kit catalog owns immutable versioned kit bytes. It is not
-  user-vault state.
+  user-vault state. The API documentation page consumes those same bytes and
+  cannot diverge by maintaining a second copy.
 - The existing settings file owns explicit enabled extension ids. Discovery,
   editing, and kit copy never imply enablement.
 - The runtime registry owns sandbox runners and actions. A failed runner is

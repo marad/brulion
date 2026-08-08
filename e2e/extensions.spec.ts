@@ -110,6 +110,15 @@ test("runs an enabled local command and keeps management separate from the workb
   const workbench = await popup
   await workbench.waitForLoadState()
   await expect(workbench.locator("#workbench-content")).toBeVisible()
+  const apiPopupPromise = workbench.waitForEvent("popup")
+  await workbench.locator("#workbench-api-docs").click()
+  const apiDocs = await apiPopupPromise
+  await apiDocs.waitForLoadState()
+  await expect(apiDocs).toHaveTitle("Brulion Extension API")
+  await expect(apiDocs.locator("#api-docs-content")).toContainText("brulion.commands")
+  await expect(apiDocs.locator("#api-docs-declarations")).toContainText("BrulionApi")
+  await expect(workbench.locator("#workbench-content")).toBeVisible()
+  await apiDocs.close()
   await expect(workbench.locator("#workbench-script-select option")).toHaveCount(1)
   await expect(workbench.locator("#workbench-script-select")).toHaveValue("daily-tools")
   await expect(workbench.locator(".workbench-file-row")).toHaveCount(2)

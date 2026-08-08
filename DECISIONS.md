@@ -1786,3 +1786,19 @@ there is no second representation of open files, and switching away from an
 unsaved file then returning restores its draft. Refresh, rename, delete, and
 conflict handling track only the selected path. This supersedes both earlier M41
 tab-model decisions; confirmed extension/file deletion remains unchanged.
+
+## API documentation opens in a standalone window (M41)
+
+**What:** add an **API docs** action to the extension workbench titlebar. It
+opens a named same-origin `api.html` window containing the API reference and
+TypeScript-shaped declarations from the versioned Authoring Kit. The workbench
+stays open and the documentation page has no vault dependency.
+
+**Why:** API documentation is a reference task, not an editing task. A separate
+read-only surface keeps it available while the user works on an extension and
+avoids copying the API contract into a second source.
+
+**Consequence (UI/project):** the workbench has an explicit API docs action; the
+new window renders the bundled `API.md` and `brulion-extension.d.ts` content,
+and future kit updates automatically reach both the Authoring Kit drawer and
+the documentation page.

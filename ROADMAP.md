@@ -703,6 +703,7 @@ In:
   extension manager;
 - a versioned Extension Authoring Kit containing a template, API declarations,
   examples, `AGENTS.md`, an LLM skill, and a ready-to-use authoring prompt;
+  the workbench opens the same API reference in a separate read-only window;
 - command registration with `icon?: string` using an allowlisted Lucide name,
   with `puzzle` as the default and a compact toolbar rendering;
 - diagnostics for invalid manifests, API misuse, load failures, and reload

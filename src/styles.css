@@ -2563,3 +2563,137 @@ header button:hover {
     display: none;
   }
 }
+
+.api-docs-page {
+  min-height: 100%;
+  overflow: auto;
+  background: var(--bg);
+}
+
+.api-docs-shell {
+  width: min(100% - 2rem, 62rem);
+  margin: 0 auto;
+  padding: 2.5rem 0 4rem;
+}
+
+.api-docs-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 0 0 2rem;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.api-docs-eyebrow {
+  margin: 0 0 0.55rem;
+  color: var(--accent-text);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.api-docs-header h1 {
+  margin: 0;
+  font-size: clamp(1.7rem, 4vw, 2.35rem);
+  letter-spacing: -0.03em;
+}
+
+.api-docs-lede {
+  margin: 0.65rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.api-docs-close {
+  flex: 0 0 auto;
+  min-height: 1.9rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.api-docs-close:hover {
+  background: var(--surface-2);
+}
+
+.api-docs-content,
+.api-docs-declarations {
+  max-width: 50rem;
+  margin: 0 auto;
+}
+
+.api-docs-content {
+  padding-top: 2rem;
+}
+
+.api-docs-content h2,
+.api-docs-declarations h2 {
+  margin: 2rem 0 0.7rem;
+  font-size: 1.15rem;
+}
+
+.api-docs-content h2:first-child {
+  margin-top: 0;
+}
+
+.api-docs-content p,
+.api-docs-declarations p {
+  margin: 0.7rem 0;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  line-height: 1.65;
+}
+
+.api-docs-content code {
+  padding: 0.1rem 0.28rem;
+  border-radius: 3px;
+  background: var(--code-bg);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+}
+
+.api-docs-declarations {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.api-docs-content pre,
+.api-docs-declarations pre {
+  margin: 1rem 0;
+  padding: 1rem 1.1rem;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: 0.8rem/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+@media (max-width: 46rem) {
+  .api-docs-shell {
+    width: min(100% - 1.25rem, 62rem);
+    padding-top: 1.5rem;
+  }
+
+  .api-docs-header {
+    gap: 1rem;
+  }
+
+  .api-docs-close {
+    font-size: 0;
+  }
+
+  .api-docs-close::before {
+    content: "×";
+    font-size: 1.1rem;
+  }
+}
