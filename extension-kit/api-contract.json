@@ -1,7 +1,7 @@
 {
   "kind": "brulion.extension-api",
   "apiVersion": 1,
-  "kitVersion": "1.1.0",
+  "kitVersion": "1.1.1",
   "title": "Brulion Extension API",
   "summary": "A small JSON-like capability API for explicitly enabled local JavaScript extensions.",
   "runtime": {
@@ -129,8 +129,8 @@
   "types": [
     {
       "name": "ExtensionIconName",
-      "description": "Allowlisted Lucide icon names accepted by command registration.",
-      "declaration": "export type ExtensionIconName = \"braces\" | \"puzzle\" | \"sparkles\" | \"terminal\""
+      "description": "An unconstrained icon name string accepted by command registration; names that are not in the bundled Lucide catalog use the puzzle fallback.",
+      "declaration": "export type ExtensionIconName = string"
     },
     {
       "name": "BrulionCommand",
@@ -189,8 +189,8 @@
               "name": "command",
               "type": "BrulionCommand",
               "required": true,
-              "description": "Label, stable local id, optional description, and optional allowlisted icon.",
-              "constraints": ["id starts with a lowercase letter", "id uses lowercase letters, numbers, -, _, or .", "id maximum 64 characters", "label is non-empty and at most 120 characters", "description is optional and at most 240 characters", "unknown icon names fall back to puzzle"]
+              "description": "Label, stable local id, optional description, and optional icon name string.",
+              "constraints": ["id starts with a lowercase letter", "id uses lowercase letters, numbers, -, _, or .", "id maximum 64 characters", "label is non-empty and at most 120 characters", "description is optional and at most 240 characters", "any non-blank icon string is accepted; unavailable names fall back to puzzle"]
             },
             {
               "name": "run",
@@ -201,7 +201,7 @@
           ],
           "returns": "RegisterResult",
           "errors": ["Rejects if the permission is missing, metadata is invalid, the id is duplicated, or the command limit is reached."],
-          "behavior": ["The returned action id is namespaced as <extension-id>:<command-id>.", "The callback runs only after explicit user invocation.", "The callback return value is ignored.", "Only braces, puzzle, sparkles, and terminal are rendered; missing or unknown icon names use puzzle."],
+          "behavior": ["The returned action id is namespaced as <extension-id>:<command-id>.", "The callback runs only after explicit user invocation.", "The callback return value is ignored.", "Any non-blank icon string crosses the API as metadata; names in the bundled Lucide catalog are rendered and missing or unavailable names use puzzle."],
           "example": "await api.commands.register(\n  { id: \"insert-date\", label: \"Insert date\", icon: \"sparkles\" },\n  async () => {\n    await api.editor.replaceSelection(new Date().toISOString().slice(0, 10))\n  },\n)",
           "since": 1
         },

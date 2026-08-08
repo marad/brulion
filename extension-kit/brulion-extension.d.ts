@@ -1,4 +1,4 @@
-export type ExtensionIconName = "braces" | "puzzle" | "sparkles" | "terminal"
+export type ExtensionIconName = string
 
 export interface BrulionCommand {
   id: string

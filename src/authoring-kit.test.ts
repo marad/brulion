@@ -9,7 +9,7 @@ import {
 
 describe("versioned extension authoring kit", () => {
   it("contains the complete deterministic kit and a valid disabled template", () => {
-    expect(AUTHORING_KIT_VERSION).toBe("1.1.0")
+    expect(AUTHORING_KIT_VERSION).toBe("1.1.1")
     const files = listAuthoringKitFiles()
     expect(files.map((file) => file.path)).toEqual([
       "template/manifest.json",

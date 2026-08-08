@@ -1820,5 +1820,22 @@ consume without introducing an HTTP-oriented specification format.
 **Consequence (UI/project):** API docs have a quickstart, navigation, symbol
 search, stable anchors, copyable examples, and a downloadable contract. The
 contract test compares its method inventory with the host bridge and typed
-artifact. The Authoring Kit version becomes 1.1.0 while the runtime API remains
+artifact. The Authoring Kit version is 1.1.1 while the runtime API remains
 v1; adding documentation does not change extension capabilities or note bytes.
+
+## Extension icon names are open strings resolved by the host catalog (M41 correction)
+
+**What:** declare command `icon` as `string`, accept every non-blank string over
+RPC, and resolve it against the complete bundled Lucide catalog. Missing, blank,
+or unavailable names use the host-owned `puzzle` icon. The supplied string is
+never interpreted as SVG, HTML, or an extension asset.
+
+**Why:** a finite TypeScript union makes the public API needlessly stale and
+prevents an extension from selecting a newly bundled Lucide icon without a kit
+release. The host still owns rendering and can safely fall back when a name is
+not available, so openness does not weaken the sandbox or inject UI markup.
+
+**Consequence (UI/project):** `brulion-extension.d.ts`, the JSON contract, API
+reference, and runtime now agree on `icon?: string`; common Lucide spellings are
+resolved to host `IconNode`s, while unknown names remain accepted metadata and
+render as `puzzle`. Arbitrary SVG/custom assets stay out of scope.

@@ -139,7 +139,7 @@ test("runs an enabled local command and keeps management separate from the workb
   await expect(workbench.locator("#workbench-file-title")).toHaveText("manifest.json")
   await workbench.locator("#workbench-kit").click()
   await expect(workbench.locator("#workbench-kit-panel")).toBeVisible()
-  await expect(workbench.locator("#workbench-kit-version")).toHaveText("v1.1.0")
+  await expect(workbench.locator("#workbench-kit-version")).toHaveText("v1.1.1")
   await expect(workbench.locator("#workbench-kit-list .workbench-kit-row")).toHaveCount(11)
   await workbench.locator("#workbench-kit-close").click()
   await expect(workbench.locator("#workbench-kit-panel")).toBeHidden()

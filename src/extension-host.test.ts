@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { Puzzle, Sparkles } from "lucide"
+import { HeartPulse, Puzzle, Sparkles } from "lucide"
 import { ExtensionHost, type ExtensionEditorCapabilities, type ExtensionNoteCapabilities } from "./extension-host"
 import { ExtensionRpcPeer, type RpcEndpoint, type RpcValue } from "./extension-rpc"
 import type { ScriptPermission } from "./script-manifest"
@@ -214,6 +214,31 @@ describe("FEAT-0083 ExtensionHost", () => {
     await expect(
       extension.call("commands.register", { id: "allowed", label: "Allowed" }),
     ).resolves.toEqual({ actionId: "daily-tools:allowed" })
+    host.dispose()
+  })
+
+  it("accepts arbitrary icon metadata and keeps invocation isolated", async () => {
+    const { host, extension, invoke } = await setup()
+    await expect(
+      extension.call("commands.register", {
+        id: "pulse",
+        label: "Pulse",
+        icon: "heart-pulse",
+      }),
+    ).resolves.toEqual({ actionId: "daily-tools:pulse" })
+    await expect(
+      extension.call("commands.register", {
+        id: "custom",
+        label: "Custom",
+        icon: "extension-owned-icon",
+      }),
+    ).resolves.toEqual({ actionId: "daily-tools:custom" })
+
+    expect(host.getActions()[0].icon).toBe(HeartPulse)
+    expect(host.getActions()[1].icon).toBe(Puzzle)
+    host.getActions()[0].run()
+    await new Promise<void>((resolve) => queueMicrotask(resolve))
+    expect(invoke).toHaveBeenCalledWith({ id: "pulse" })
     host.dispose()
   })
 

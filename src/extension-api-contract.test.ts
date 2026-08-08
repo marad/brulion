@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import contractSource from "../extension-kit/api-contract.json?raw"
 import declarations from "../extension-kit/brulion-extension.d.ts?raw"
 import { EXTENSION_API_METHODS } from "./extension-host"
+import { AUTHORING_KIT_VERSION } from "./authoring-kit"
 import {
   contractMethods,
   parseExtensionApiContract,
@@ -27,6 +28,7 @@ describe("versioned extension API contract", () => {
     const contract = parseExtensionApiContract(contractSource)
     expect(contract.kind).toBe("brulion.extension-api")
     expect(contract.apiVersion).toBe(1)
+    expect(contract.kitVersion).toBe(AUTHORING_KIT_VERSION)
     expect(contract.manifest.fields.map((field) => field.name)).toEqual([
       "schemaVersion",
       "apiVersion",
@@ -46,6 +48,8 @@ describe("versioned extension API contract", () => {
     expect(contractMethods(contract).map((method) => method.id)).toEqual(expectedMethodIds)
     expect([...EXTENSION_API_METHODS]).toEqual(expectedMethodIds)
     for (const type of contract.types) expect(declarations).toContain(type.declaration)
+    expect(declarations).toContain("export type ExtensionIconName = string")
+    expect(declarations).not.toContain('export type ExtensionIconName = "braces"')
   })
 
   it("requires concrete method results in the authoring declaration", () => {

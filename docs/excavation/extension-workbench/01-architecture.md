@@ -35,8 +35,9 @@
 - **Extension runtime registry** — existing M39 vault-scoped registry; it loads
   only explicitly enabled extensions and receives reload requests after a
   successful source change.
-- **Command icon resolver** — existing-host-only allowlist mapping from an
-  extension string name to a bundled Lucide node, defaulting to puzzle.
+- **Command icon resolver** — existing-host-only mapping from an arbitrary
+  extension string name to a bundled Lucide node, defaulting to puzzle when the
+  catalog has no matching name.
 - **Filesystem refresher** — session-owned focus/open/poll triggers that ask the
   store for current state; it does not interpret notifications as file content.
 
@@ -70,8 +71,8 @@ flowchart LR
 | Workbench view | Workbench session | typed user intent (select, edit, save, create, delete) | sync callback / async result | view renders session diagnostic | user repeats after refresh |
 | Filesystem refresher | Workbench session | open/focus/timer refresh event | sync trigger | session serializes refresh generations | next cadence after failed scan |
 | Notes window | Script file store | shared vault filesystem state, no message payload | async independent access | each window owns its own read/guard | each window refreshes independently |
-| Extension runtime registry | Command icon resolver | bounded optional icon name | sync | resolver defaults to puzzle | none |
-| Command icon resolver | Palette and action bar | bundled Lucide IconNode | sync | host resolver rejects markup | default puzzle |
+| Extension runtime registry | Command icon resolver | arbitrary optional icon name string | sync | resolver defaults to puzzle | none |
+| Command icon resolver | Palette and action bar | bundled Lucide IconNode | sync | host resolver never renders the supplied string | default puzzle |
 
 ## State ownership and consistency boundaries
 

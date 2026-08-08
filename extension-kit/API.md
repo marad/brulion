@@ -33,9 +33,10 @@ export default async function activate(api) {
 
 The command appears in Brulion's command palette and can be pinned to the action
 bar. The command id is namespaced as `daily-tools:insert-date`. Command labels
-are limited to 120 characters and descriptions to 240. The supported icons are
-`braces`, `puzzle`, `sparkles`, and `terminal`; missing or unknown names use
-`puzzle`.
+are limited to 120 characters and descriptions to 240. The icon field accepts
+any string; names found in Brulion's bundled Lucide catalog are rendered, while
+missing, blank, or unavailable names use `puzzle`. The value is always treated
+as a name, never as SVG or other markup.
 
 ## Manifest
 

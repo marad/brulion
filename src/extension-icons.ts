@@ -1,18 +1,25 @@
-import { Braces, Puzzle, Sparkles, Terminal, type IconNode } from "lucide"
+import { icons, type IconNode } from "lucide"
 
 export const DEFAULT_EXTENSION_ICON_NAME = "puzzle" as const
 
-const ICONS: Record<string, IconNode> = {
-  braces: Braces,
-  puzzle: Puzzle,
-  sparkles: Sparkles,
-  terminal: Terminal,
+function lookupKey(value: string): string {
+  return value.trim().replace(/[\s_-]+/g, "").toLowerCase()
 }
 
+// The public API intentionally accepts an unconstrained string. Resolution is
+// still host-owned: only IconNodes from Lucide's bundled catalog can reach the
+// DOM, and an unavailable name falls back to the default icon.
+const ICONS_BY_NAME = new Map<string, IconNode>(
+  Object.entries(icons).map(([name, icon]) => [lookupKey(name), icon]),
+)
+
 export function sanitizeExtensionIconName(value: unknown): string {
-  return typeof value === "string" && value in ICONS ? value : DEFAULT_EXTENSION_ICON_NAME
+  if (typeof value !== "string") return DEFAULT_EXTENSION_ICON_NAME
+  const name = value.trim()
+  return name.length > 0 ? name : DEFAULT_EXTENSION_ICON_NAME
 }
 
 export function resolveExtensionIcon(value: unknown): IconNode {
-  return ICONS[sanitizeExtensionIconName(value)]
+  const name = sanitizeExtensionIconName(value)
+  return ICONS_BY_NAME.get(lookupKey(name)) ?? ICONS_BY_NAME.get(lookupKey(DEFAULT_EXTENSION_ICON_NAME))!
 }
