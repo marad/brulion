@@ -21,7 +21,8 @@ Every technical decision defers to that.
 > for movement" item was descoped — see `DECISIONS.md`) is implemented, deployed,
 > and **reviewed live**. **M38** (cross-device permalinks — name-keyed workspaces:
 > P1 name-keyed `?ws` resolution, P2 the workspace-name settings field) is
-> **implemented and deployed, awaiting its live milestone review**. New work
+> **implemented, deployed, and reviewed live**; only the optional manual
+> second-device verification remains. New work
 > otherwise comes from the next round of real daily-use observations. **M39**
 > (local JavaScript extensions) is **complete**: P0 (sandbox/RPC spike), P1
 > (script storage + editor), and P2 (the sandboxed runtime/workbench slice) are

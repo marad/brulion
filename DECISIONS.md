@@ -1619,12 +1619,11 @@ link. Limits (documented, deliberate): cross-*own-devices* not foreign-machine;
 path-permalink breaks on rename; name collisions resolve to the most-recently-used
 vault.
 
-**Open for the milestone review (a product call, not a bug):** the P2 field lets a
-user set a workspace name equal to *another* local vault's effective name, silently
-creating a collision that the most-recent tiebreak resolves in favour of the just-
-edited vault — hijacking the other vault's `?ws` permalink. We ship the documented
-tiebreak with no warning; whether the field should **warn on collision** is left for
-the live review to decide.
+**Milestone review decision:** the P2 field shows a non-blocking inline warning when
+the entered workspace name equals another granted vault's effective name. Saving
+remains allowed, and the documented most-recently-used tiebreak remains in force.
+This makes a potentially ambiguous `?ws` visible without blocking an intentional
+name collision.
 
 ## Extension spike: opaque-origin iframe + nonce-bound capability RPC (FEAT-0081)
 
