@@ -2678,6 +2678,59 @@ header button:hover {
   font: 0.8rem/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+.api-docs-page .tok-keyword,
+.api-docs-page .tok-controlKeyword,
+.api-docs-page .tok-operatorKeyword,
+.api-docs-page .tok-definitionKeyword,
+.api-docs-page .tok-moduleKeyword {
+  color: var(--tok-keyword);
+}
+
+.api-docs-page .tok-string,
+.api-docs-page .tok-special,
+.api-docs-page .tok-attributeValue {
+  color: var(--tok-string);
+}
+
+.api-docs-page .tok-number,
+.api-docs-page .tok-integer,
+.api-docs-page .tok-float,
+.api-docs-page .tok-bool,
+.api-docs-page .tok-null,
+.api-docs-page .tok-atom,
+.api-docs-page .tok-propertyName,
+.api-docs-page .tok-attributeName,
+.api-docs-page .tok-escape {
+  color: var(--tok-number);
+}
+
+.api-docs-page .tok-comment,
+.api-docs-page .tok-lineComment,
+.api-docs-page .tok-blockComment {
+  color: var(--tok-comment);
+  font-style: italic;
+}
+
+.api-docs-page .tok-function {
+  color: var(--tok-function);
+}
+
+.api-docs-page .tok-typeName,
+.api-docs-page .tok-className,
+.api-docs-page .tok-namespace {
+  color: var(--tok-type);
+}
+
+.api-docs-page .tok-tagName,
+.api-docs-page .tok-regexp {
+  color: var(--tok-tag);
+}
+
+.api-docs-page .tok-meta,
+.api-docs-page .tok-annotation {
+  color: var(--tok-comment);
+}
+
 @media (max-width: 46rem) {
   .api-docs-shell {
     width: min(100% - 1.25rem, 62rem);

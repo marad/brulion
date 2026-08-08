@@ -1801,4 +1801,6 @@ avoids copying the API contract into a second source.
 **Consequence (UI/project):** the workbench has an explicit API docs action; the
 new window renders the bundled `API.md` and `brulion-extension.d.ts` content,
 and future kit updates automatically reach both the Authoring Kit drawer and
-the documentation page.
+the documentation page. The page uses CodeMirror's JavaScript/TypeScript parser
+and the existing `--tok-*` palette for syntax highlighting, rather than a second
+ad-hoc tokenizer or an embedded editable editor.

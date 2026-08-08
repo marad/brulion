@@ -117,6 +117,7 @@ test("runs an enabled local command and keeps management separate from the workb
   await expect(apiDocs).toHaveTitle("Brulion Extension API")
   await expect(apiDocs.locator("#api-docs-content")).toContainText("brulion.commands")
   await expect(apiDocs.locator("#api-docs-declarations")).toContainText("BrulionApi")
+  await expect(apiDocs.locator("#api-docs-declaration-source span[class^=\"tok-\"]")).not.toHaveCount(0)
   await expect(workbench.locator("#workbench-content")).toBeVisible()
   await apiDocs.close()
   await expect(workbench.locator("#workbench-script-select option")).toHaveCount(1)
