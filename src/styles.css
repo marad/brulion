@@ -1425,9 +1425,8 @@ header button:hover {
   background: var(--soft-bg);
 }
 
-/* Local extension workbench (FEAT-0082): scripts stay in the vault and are
-   edited in a bounded modal. The CodeMirror surface gets its own scroll area so
-   a large source file never stretches the application viewport. */
+/* Local extension manager: scripts stay in the vault and lifecycle actions stay
+   compact. Authoring is handled by the separate extension workbench. */
 .extensions-dialog {
   display: flex;
   flex-direction: column;
@@ -1449,8 +1448,7 @@ header button:hover {
   justify-content: space-between;
 }
 
-.extensions-title,
-.extensions-editor-title {
+.extensions-title {
   margin: 0;
   font-size: 1.05rem;
   font-weight: 600;
@@ -1528,9 +1526,8 @@ header button:hover {
   color: var(--text-muted);
 }
 
-.extensions-edit,
 .extensions-toggle,
-.extensions-editor-actions button {
+.extensions-remove {
   font: inherit;
   font-size: 0.82rem;
   padding: 0.25rem 0.6rem;
@@ -1541,40 +1538,12 @@ header button:hover {
   cursor: pointer;
 }
 
-.extensions-edit:hover,
 .extensions-toggle:hover,
-.extensions-editor-actions button:hover {
+.extensions-remove:hover {
   background: var(--soft-bg);
 }
 
-.extensions-editor-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  min-height: 0;
-}
-
-.extensions-editor {
-  min-height: 16rem;
-  height: min(50vh, 30rem);
-  overflow: hidden;
-  border: 1px solid var(--soft-border);
-  border-radius: 6px;
-  background: var(--surface);
-}
-
-.extensions-editor .cm-editor {
-  height: 100%;
-}
-
-.extensions-editor-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-}
-
-.extensions-editor-actions .extensions-delete {
-  margin-right: auto;
+.extensions-remove {
   color: var(--accent-text);
 }
 

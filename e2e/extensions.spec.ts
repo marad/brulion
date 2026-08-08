@@ -79,7 +79,7 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator(".cm-content")).toHaveText("alpha body")
 })
 
-test("runs an enabled local command and opens the separate multi-file workbench", async ({ page }) => {
+test("runs an enabled local command and keeps management separate from the workbench", async ({ page }) => {
   const editor = page.locator(".cm-content")
   await editor.click()
   await page.keyboard.press("Control+A")
@@ -97,6 +97,14 @@ test("runs an enabled local command and opens the separate multi-file workbench"
 
   await page.keyboard.press("Control+Shift+K")
   await page.locator("#palette-input").fill("manage extensions")
+  await paletteRows(page).first().click()
+  await expect(page.locator("#extensions-backdrop")).toBeVisible()
+  await expect(page.locator("#extensions-backdrop .extensions-row")).toHaveCount(1)
+  await expect(page.locator("#extensions-backdrop .extensions-toggle")).toHaveText("Disable")
+  await page.locator("#extensions-backdrop .extensions-close").click()
+
+  await page.keyboard.press("Control+Shift+K")
+  await page.locator("#palette-input").fill("edit extensions")
   const popup = page.waitForEvent("popup")
   await paletteRows(page).first().click()
   const workbench = await popup

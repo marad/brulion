@@ -11,6 +11,8 @@ import {
   Command,
   CalendarDays,
   SunMoon,
+  Puzzle,
+  Code2,
   type IconNode,
 } from "lucide"
 import {
@@ -1405,7 +1407,12 @@ const extensionManager: ExtensionManagerHandle = mountExtensionManager(extension
     updateSettings({ extensions: [...ids] })
   },
   onScriptsChanged: reloadExtensions,
+  confirmDelete: (label) => dialog.confirm(`Remove extension "${label}"?`, "Remove"),
 })
+
+const openExtensionManager = () => {
+  extensionManager.open()
+}
 
 const openExtensionWorkbench = () => {
   palette.close()
@@ -1447,7 +1454,13 @@ const builtinActions: Action[] = [
   {
     id: "manage-extensions",
     label: "Manage extensions",
-    icon: Command,
+    icon: Puzzle,
+    run: openExtensionManager,
+  },
+  {
+    id: "edit-extensions",
+    label: "Edit extensions",
+    icon: Code2,
     run: openExtensionWorkbench,
   },
   { id: "switch-workspace", label: "Switch workspace…", icon: Folders, run: () => void openWorkspaceSwitcher() },
