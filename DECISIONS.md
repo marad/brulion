@@ -1838,3 +1838,20 @@ not available, so openness does not weaken the sandbox or inject UI markup.
 reference, and runtime now agree on `icon?: string`; common Lucide spellings are
 resolved to host `IconNode`s, while unknown names remain accepted metadata and
 render as `puzzle`. Arbitrary SVG/custom assets stay out of scope.
+
+## Workbench freshness uses serialized portable polling (M41 P5)
+
+**What:** route workbench attach, manual refresh, focus, and fallback-timer
+triggers through one serialized/coalescing refresh scheduler. It rereads the
+filesystem before rendering and keeps the existing per-file mtime guard for
+writes; it does not use `FileSystemObserver` or inter-window IPC.
+
+**Why:** separate workbench windows and external agents can touch the same
+extension files. A timer or focus event must not overlap a save/refresh or allow a
+stale asynchronous listing to replace a newer selection. Ordinary polling keeps
+the behavior portable while the filesystem remains the source of truth.
+
+**Consequence (UI/project):** the workbench converges on a bounded fallback
+cadence, never silently overwrites a changed file, and keeps the selected dirty
+draft visible when disk changes underneath it. Observer-backed acceleration
+remains M40; runtime diagnostics and broader browser validation remain M42.
