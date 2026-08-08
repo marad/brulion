@@ -1708,3 +1708,19 @@ one versioned source that includes the template, declarations, examples,
 `AGENTS.md`, an LLM skill, and a prompt, so those surfaces cannot silently drift
 apart. Arbitrary SVG, TypeScript execution, package installation, and FSO-backed
 watching remain explicitly out of scope for M41.
+
+## M39 closes at the runtime slice; its former P3 becomes M42
+
+**What:** mark M39 complete after P0–P2 (sandbox/RPC, script storage and editor,
+and the sandboxed runtime/workbench slice), and move its remaining “richer
+settings UX, diagnostics, and full browser tests” work into a new M42.
+
+**Why:** the runtime boundary and basic extension host are a coherent delivered
+milestone. Settings polish, user-facing diagnostics, and real-browser validation
+are follow-up hardening work; separating them keeps M39's completion criteria
+honest without dropping the work.
+
+**Consequence (UI/project):** M39 is marked complete in the roadmap and its
+milestone file has no unfinished phase. M42 owns the follow-up scope and is the
+next queued milestone after the current M41 work; M40 remains the separate,
+future File System Observer optimization.

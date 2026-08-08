@@ -15,33 +15,38 @@ per-file conflict guards.
 ## Behavior
 
 Creating an extension validates its id and creates manifest.json plus main.js as
-one disabled scaffold. Files may be created, read, saved, renamed, and deleted
-only under the selected validated script directory and only for supported
-JavaScript/JSON paths. A save compares the caller's last-seen mtime; on mismatch
-it returns a conflict and leaves disk bytes unchanged. Extension enablement
-remains a separate explicit settings choice. Diagnostics report invalid
-manifests, unsafe paths, conflicts, load failures, and reload status.
+one disabled scaffold. The extension and file `+` actions open a focused modal
+with one input instead of revealing inline sidebar fields; validation and create
+failures remain visible beside that input until corrected or dismissed. Files
+may be created, read, saved, renamed, and deleted only under the selected
+validated script directory and only for supported JavaScript/JSON paths. A save
+compares the caller's last-seen mtime; on mismatch it returns a conflict and
+leaves disk bytes unchanged. Extension enablement and removal remain in the
+separate extension manager rather than an "Extension options" section in the
+authoring workbench. Diagnostics report invalid manifests, unsafe paths,
+conflicts, load failures, and reload status.
 
 ## Acceptance criteria
 
-- AC-1: Given a valid new extension id, when the user creates it, then a
-  validated manifest and main.js are written, the extension is disabled, and an
-  existing id is never overwritten.
-- AC-2: Given an extension file path, when it is created, read, renamed, or
-  deleted, then the operation accepts only a safe relative .js or .json path and
-  cannot escape the selected script directory.
+- AC-1: Given the new-extension `+` action, when it is invoked, then a modal
+  requests the id; a valid id creates a validated manifest and main.js in a
+  disabled extension, while an invalid or existing id leaves the modal open with
+  a prominent local error and never overwrites existing files.
+- AC-2: Given the new-file `+` action for a selected extension, when it is
+  invoked, then a modal requests the path; create/read/rename/delete accept only
+  a safe relative .js or .json path and cannot escape the selected script
+  directory, and create errors remain in the modal.
 - AC-3: Given an open file and its last-seen mtime, when the disk mtime differs,
   then save reports a conflict and leaves the file content untouched; when it
   matches, then save writes the new text and returns the new mtime.
-- AC-4: Given an extension directory rename or delete, when the operation
-  completes, then only the validated selected extension subtree is affected and
-  the selected extension's enablement is removed on delete.
+- AC-4: Given the authoring workbench sidebar, when an extension is selected,
+  then it does not show a separate "Extension options" section; enable/disable
+  and remove remain owned by the existing extension manager.
 - AC-5: Given an invalid manifest, missing entry, source load error, or failed
   reload, when the workbench refreshes, then it reports a diagnostic and does not
   disable or crash unrelated extensions or the notes editor.
 - AC-6: Given a newly created or edited extension, when the user has not enabled
-  it, then no runner or command is started; explicit enablement persists in the
-  vault settings and is preserved across workbench refreshes.
+  it in the extension manager, then no runner or command is started.
 
 ## Constraints
 

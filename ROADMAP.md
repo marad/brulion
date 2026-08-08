@@ -23,16 +23,18 @@ Every technical decision defers to that.
 > P1 name-keyed `?ws` resolution, P2 the workspace-name settings field) is
 > **implemented and deployed, awaiting its live milestone review**. New work
 > otherwise comes from the next round of real daily-use observations. **M39**
-> (local JavaScript extensions) is now active: Phase 0 (sandbox/RPC spike), Phase
-> 1 (script storage + editor), and the first sandboxed runtime/workbench slice are
-> implemented and covered by FEAT-0081–0084. **M40** (File System Observer
-> acceleration) is queued as a future milestone for making external-change
-> detection scale to large vaults while reducing reliance on full recursive scans.
-> **M41** (full extension workbench and authoring kit) is the next product
-> milestone: a separate-window, multi-file authoring surface for users and LLM
-> agents.
-> Recently shipped: **M37** (sidebar tree follow-ups — F2 rename, typeahead,
-> multi-select + batch move/delete),
+> (local JavaScript extensions) is **complete**: P0 (sandbox/RPC spike), P1
+> (script storage + editor), and P2 (the sandboxed runtime/workbench slice) are
+> implemented and covered by FEAT-0081–0084; its former P3 is now **M42**.
+> **M40** (File System Observer acceleration) remains queued as a future milestone
+> for making external-change detection scale to large vaults while reducing
+> reliance on full recursive scans. **M41** (full extension workbench and
+> authoring kit) is the current product milestone: a separate-window,
+> multi-file authoring surface for users and LLM agents. **M42** (extension UX,
+> diagnostics, and browser validation) is queued next.
+> Recently shipped: **M39** (local JavaScript extensions, P0–P2), **M37**
+> (sidebar tree follow-ups — F2 rename, typeahead, multi-select + batch
+> move/delete),
 > **M36** (keyboard navigation for the sidebar tree — arrow
 > keys move between rows and expand/collapse folders, reviewed live),
 > **M35** (folder & note management — create/delete/move/
@@ -662,6 +664,8 @@ Out:
 
 Phases: [`milestones/M39.md`](milestones/M39.md).
 
+**Status:** Complete. The former P3 is tracked separately in M42.
+
 ### M40 — File System Observer acceleration
 **Goal:** re-evaluate M4's polling choice for large folders by using the
 browser's `FileSystemObserver` when available, while preserving the filesystem
@@ -709,6 +713,26 @@ Out:
 - `FileSystemObserver` as the default watcher (that optimization is M40).
 
 Phases: [`milestones/M41.md`](milestones/M41.md).
+
+### M42 — Extension UX, diagnostics, and browser validation
+**Goal:** complete the follow-up that was formerly P3 of M39: make local
+extension management clearer, surface actionable runtime problems, and validate
+the filesystem and sandbox paths in real Chromium rather than only mocked tests.
+
+In:
+- richer extension settings UX for discovery, enablement, removal, and status;
+- user-facing diagnostics for manifest, permission/capability, source/load, and
+  reload failures;
+- full browser coverage for FSA/OPFS discovery, permissions, mtime conflicts,
+  sandbox execution, capability calls, command registration, and the
+  settings/diagnostic flows.
+
+Out:
+- new extension capabilities or a broader runtime API;
+- TypeScript execution, package installation, network imports, or an in-app LLM;
+- replacing the filesystem as the source of truth or weakening mtime guards.
+
+Phases: [`milestones/M42.md`](milestones/M42.md).
 
 ## Later / backlog (out of MVP, on purpose)
 
