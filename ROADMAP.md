@@ -30,11 +30,11 @@ Every technical decision defers to that.
 > **M40** (File System Observer acceleration) remains queued as a future milestone
 > for making external-change detection scale to large vaults while reducing
 > reliance on full recursive scans. **M41** (full extension workbench and
-> authoring kit) is **implemented and deployed, awaiting its live milestone
-> review**: a separate-window, multi-file authoring surface for users and LLM
-> agents. **M42** (extension UX, diagnostics, and browser validation) is queued
-> next.
-> Recently shipped: **M39** (local JavaScript extensions, P0–P2), **M37**
+> authoring kit) is **implemented, deployed, and reviewed live**: a
+> separate-window, multi-file authoring surface for users and LLM agents.
+> **M42** (extension UX, diagnostics, and browser validation) is queued next.
+> Recently shipped: **M41** (full extension workbench and authoring kit, P0–P5),
+> **M39** (local JavaScript extensions, P0–P2), **M37**
 > (sidebar tree follow-ups — F2 rename, typeahead, multi-select + batch
 > move/delete),
 > **M36** (keyboard navigation for the sidebar tree — arrow
