@@ -2636,6 +2636,7 @@ header button:hover {
 
 .api-docs-header-actions {
   display: flex;
+  align-items: center;
   flex: 0 0 auto;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -2644,6 +2645,9 @@ header button:hover {
 
 .api-docs-button,
 .api-docs-copy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 1.9rem;
   padding: 0.35rem 0.7rem;
   border: 1px solid var(--border-strong);

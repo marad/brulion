@@ -137,6 +137,16 @@ test("runs an enabled local command and keeps management separate from the workb
   const apiDocs = await apiPopupPromise
   await apiDocs.waitForLoadState()
   await expect(apiDocs).toHaveTitle("Brulion Extension API")
+  const headerControlStyles = await apiDocs.locator(".api-docs-header-actions").evaluate((actions) => ({
+    alignItems: getComputedStyle(actions).alignItems,
+    childDisplays: Array.from(actions.children).map((child) => getComputedStyle(child).display),
+    childAlignments: Array.from(actions.children).map((child) => getComputedStyle(child).alignItems),
+  }))
+  expect(headerControlStyles).toEqual({
+    alignItems: "center",
+    childDisplays: ["flex", "flex", "flex"],
+    childAlignments: ["center", "center", "center"],
+  })
   await expect(apiDocs.locator("#api-docs-content")).toContainText("brulion.commands")
   await expect(apiDocs.locator("#api-docs-reference")).toContainText("notes.write")
   await expect(apiDocs.locator("#api-docs-reference")).toContainText("expectedLastModified")
