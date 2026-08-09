@@ -119,7 +119,7 @@ test("dragging a folder onto another folder moves it and its contents (AC-6)", a
   await folderHeader(page, "projects").dragTo(folderHeader(page, "archive"))
 
   await expect.poll(() => noteExists(page, "archive/projects/a.md")).toBe(true)
-  expect(await folderExists(page, "projects")).toBe(false)
+  await expect.poll(() => folderExists(page, "projects")).toBe(false)
 })
 
 test("dropping a folder onto itself does not move it (AC-7)", async ({ page }) => {

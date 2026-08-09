@@ -68,6 +68,7 @@ test("choosing Dark applies the dark palette live and persists (AC-2, AC-5)", as
 
   // AC-2: the root carries data-theme="dark" and the page background goes dark.
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark")
+  await expect.poll(() => rootBg(page)).not.toBe(lightBg)
   const darkBg = await rootBg(page)
   expect(darkBg).not.toBe(lightBg)
   // A genuinely dark background: each RGB channel is low.

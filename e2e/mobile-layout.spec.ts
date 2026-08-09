@@ -83,7 +83,7 @@ test.describe("narrow viewport (drawer)", () => {
     await toggle(page).click()
     await expect(sidebar(page)).toBeVisible() // opened
     await page.mouse.move(200, 450) // move off the toggle so :hover doesn't skew the bg
-    expect(await bgColor(page, "#toggle-sidebar")).toBe(closedBg) // no pressed-state highlight
+    await expect.poll(() => bgColor(page, "#toggle-sidebar")).toBe(closedBg) // no pressed-state highlight
     await toggle(page).click()
     await expect(sidebar(page)).not.toBeVisible() // closed again
   })

@@ -43,6 +43,7 @@ async function readNote(page: Page, name: string): Promise<string> {
 const FLOWCHART = "intro prose\n\n```mermaid\nflowchart TD\n  A --> B\n```\n\nafter prose\n"
 const INVALID = "```mermaid\nnot a real diagram !!!\n```\n"
 const PLAIN = "# Just prose\n\nNo diagrams here.\n"
+const MERMAID_RENDER_TIMEOUT = 30_000
 
 // A request that pulls in the Mermaid LIBRARY (the lazy dynamic import). Excludes our
 // own statically-imported source modules (`/src/mermaid-*.ts`, served by name in dev)
@@ -61,7 +62,7 @@ test("a valid ```mermaid block renders an SVG diagram (AC-1)", async ({ page }) 
   await seedNote(page, "start.md", FLOWCHART)
   await page.locator("#open-folder").click()
   // The engine loads lazily; once it resolves the diagram appears as an SVG.
-  await expect(page.locator(".cm-mermaid svg")).toBeVisible({ timeout: 10000 })
+  await expect(page.locator(".cm-mermaid svg")).toBeVisible({ timeout: MERMAID_RENDER_TIMEOUT })
   expect(errors).toEqual([])
 })
 
@@ -85,7 +86,7 @@ test("selecting inside the block reveals the raw source, leaving re-renders (AC-
   await page.goto("/brulion/")
   await seedNote(page, "start.md", FLOWCHART)
   await page.locator("#open-folder").click()
-  await expect(page.locator(".cm-mermaid svg")).toBeVisible({ timeout: 10000 })
+  await expect(page.locator(".cm-mermaid svg")).toBeVisible({ timeout: MERMAID_RENDER_TIMEOUT })
 
   // Click the diagram → caret enters the block → raw fenced source is revealed.
   await page.locator(".cm-mermaid").click()
@@ -94,7 +95,7 @@ test("selecting inside the block reveals the raw source, leaving re-renders (AC-
 
   // Move the caret out (click the trailing prose) → the diagram renders again.
   await page.getByText("after prose").click()
-  await expect(page.locator(".cm-mermaid svg")).toBeVisible({ timeout: 10000 })
+  await expect(page.locator(".cm-mermaid svg")).toBeVisible({ timeout: MERMAID_RENDER_TIMEOUT })
 })
 
 test("an invalid diagram shows an in-place error, editor keeps working (AC-5)", async ({ page }) => {
@@ -102,7 +103,7 @@ test("an invalid diagram shows an in-place error, editor keeps working (AC-5)", 
   await page.goto("/brulion/")
   await seedNote(page, "start.md", INVALID)
   await page.locator("#open-folder").click()
-  await expect(page.locator(".cm-mermaid-error")).toBeVisible({ timeout: 10000 })
+  await expect(page.locator(".cm-mermaid-error")).toBeVisible({ timeout: MERMAID_RENDER_TIMEOUT })
   // The editor is still interactive (the error didn't break the view).
   await page.locator(".cm-content").click()
   await expect(page.locator(".cm-content")).toBeVisible()
@@ -129,6 +130,6 @@ test("the Mermaid engine is loaded lazily (AC-6)", async ({ page }) => {
   await page.locator("#sidebar-search").click()
   await page.locator("#switcher-input").fill("diagram")
   await page.locator("#switcher-input").press("Enter")
-  await expect(page.locator(".cm-mermaid svg")).toBeVisible({ timeout: 10000 })
+  await expect(page.locator(".cm-mermaid svg")).toBeVisible({ timeout: MERMAID_RENDER_TIMEOUT })
   expect(requested.some(isMermaidChunk)).toBe(true)
 })

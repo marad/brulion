@@ -1855,3 +1855,20 @@ the behavior portable while the filesystem remains the source of truth.
 cadence, never silently overwrites a changed file, and keeps the selected dirty
 draft visible when disk changes underneath it. Observer-backed acceleration
 remains M40; runtime diagnostics and broader browser validation remain M42.
+
+## The cold-load budget is calibrated to the post-M41 static graph
+
+**What:** set the folder-less production cold-load budget to 1.75 MB uncompressed,
+up from 1.5 MB, while keeping the check below the roughly 626 kB Mermaid engine
+chunk that must remain lazy.
+
+**Why:** the full workbench milestone made the shared editor/runtime graph a
+measured ~1.64 MB. The old threshold failed deterministically without loading a
+lazy diagram engine, so it was a stale release baseline rather than a product
+regression.
+
+**Consequence (UI/project):** the bundle guard still catches accidental loading
+of Mermaid, Cytoscape, KaTeX, or other heavy lazy dependencies; ordinary static
+growth has a small explicit margin and must be reconsidered if it approaches the
+new ceiling. Mermaid's browser test continues to assert that its engine loads
+only when a diagram is opened.

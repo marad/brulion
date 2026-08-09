@@ -14,11 +14,11 @@ import { test, expect } from "@playwright/test"
 // a build-only concern, invisible on the unbundled dev server.
 const PREVIEW = "http://localhost:4173/brulion/"
 
-// Generous relative to the current main entry (~860kB uncompressed, ~291kB
-// gzip): enough headroom for normal growth, nowhere near enough to hide an
-// accidental multi-hundred-kB heavy dependency (Mermaid alone is ~2.8MB
-// uncompressed / ~765kB gzip).
-const MAX_COLD_LOAD_JS_BYTES = 1_500_000
+// The static cold graph is currently ~1.64MB uncompressed: the main entry,
+// shared editor/runtime code, and the language-data wrapper. Keep a measured
+// headroom for ordinary growth, but stay well below the additional ~626kB
+// Mermaid engine chunk that must remain lazy.
+const MAX_COLD_LOAD_JS_BYTES = 1_750_000
 
 test("a folder-less cold load never downloads a heavy lazy dependency by accident", async ({ page }) => {
   let totalBytes = 0
