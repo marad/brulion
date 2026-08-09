@@ -8,10 +8,13 @@ import { defineConfig, devices } from "@playwright/test"
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
-  // One retry: the fully-parallel suite saturates the dev server + CPU, and a few
-  // timing-sensitive specs (poll-based file reads, rename-then-read) occasionally
-  // lose that race under full load while passing in isolation. A retry absorbs those
-  // transient load-flakes; a real bug still fails deterministically on the retry.
+  // Four workers keep the real Chromium/OPFS suite below the dev server and CPU
+  // saturation point. More parallelism makes unrelated lazy-render and layout
+  // assertions race for time without increasing coverage.
+  workers: 4,
+  // One retry: a few timing-sensitive specs (poll-based file reads,
+  // rename-then-read) can still lose a race under load while passing in isolation.
+  // A retry absorbs those transient flakes; a real bug still fails deterministically.
   retries: 1,
   reporter: "list",
   use: {
