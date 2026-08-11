@@ -1,3 +1,11 @@
+import {
+  isExternalLink,
+  normalizeNoteName,
+  resolveNotePath,
+  resolveWikilink,
+  splitAnchor,
+} from "./note-name"
+
 /** Public navigation result and resolver contracts for M43. */
 
 export interface ActiveNote {
@@ -55,8 +63,59 @@ export function resolveNavigationLink(
   options: ResolveLinkOptions,
   context: NavigationResolutionContext,
 ): LinkResolution {
-  void target
-  void options
-  void context
-  throw new Error("resolveNavigationLink stub")
+  const invalid = (): LinkResolution => ({ status: "invalid", target })
+  const trimmed = target.trim()
+
+  // External destinations keep their original fragment and do not need an
+  // active note. Check before splitAnchor: a URL's `#fragment` is not a note
+  // anchor, matching the editor's existing markdown-link rule.
+  if (isExternalLink(trimmed)) return { status: "external", target }
+
+  if (options.kind === "markdown") {
+    const { path: rawPath, anchor } = splitAnchor(trimmed)
+    const sourceInput = options.from ?? context.activeNote
+    const source = sourceInput ? normalizeNoteName(sourceInput) : null
+    if (!source?.ok) return invalid()
+
+    if (rawPath === "") {
+      if (anchor === null) return invalid()
+      const path = source.filename
+      return context.notePaths.has(path)
+        ? { status: "resolved", path, anchor }
+        : { status: "missing", path, anchor }
+    }
+    if (rawPath.startsWith("/")) return invalid()
+
+    const resolved = resolveNotePath(source.filename, rawPath)
+    if (!resolved) return invalid()
+    const canonical = normalizeNoteName(resolved)
+    if (!canonical.ok) return invalid()
+    return context.notePaths.has(canonical.filename)
+      ? { status: "resolved", path: canonical.filename, anchor }
+      : { status: "missing", path: canonical.filename, anchor }
+  }
+
+  if (options.kind === "wikilink") {
+    const { path: rawPath, anchor } = splitAnchor(trimmed)
+    if (rawPath === "") {
+      if (anchor === null) return invalid()
+      const sourceInput = options.from ?? context.activeNote
+      const source = sourceInput ? normalizeNoteName(sourceInput) : null
+      if (!source?.ok) return invalid()
+      return context.notePaths.has(source.filename)
+        ? { status: "resolved", path: source.filename, anchor }
+        : { status: "missing", path: source.filename, anchor }
+    }
+
+    const canonicalTarget = normalizeNoteName(rawPath)
+    if (!canonicalTarget.ok) return invalid()
+    const wikilink = resolveWikilink(canonicalTarget.filename, context.notePaths)
+    const path = normalizeNoteName(wikilink.createPath)
+    if (!path.ok) return invalid()
+    return wikilink.resolved
+      ? { status: "resolved", path: wikilink.resolved, anchor }
+      : { status: "missing", path: path.filename, anchor }
+  }
+
+  return invalid()
 }
