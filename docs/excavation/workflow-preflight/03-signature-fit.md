@@ -44,3 +44,13 @@ The signatures were regenerated around named `LedgerParseResult`,
 `MilestonePathResult` payloads. The implementation now preserves command output,
 rejects root escapes, reports unreadable milestones, and validates CLI operands;
 those behaviors are covered by discriminating Node tests.
+
+## Round 2 review response
+
+An independent review found three boundary gaps: missing CLI operands could
+throw, absolute/symlinked paths could escape the root, and permission/read
+failures could be misclassified or thrown. The implementation contract was
+extended with `MilestonePathResult`, `collectionErrors`, explicit operand
+validation, conservative symlink rejection, and structured unreadable-path
+errors. Tests now cover a dangling/external symlink, an unreadable directory and
+file when the platform permits the probe, and the missing operand.

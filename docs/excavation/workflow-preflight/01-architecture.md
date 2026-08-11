@@ -88,8 +88,11 @@ flowchart LR
 ## Failure boundaries
 
 - Missing required path → `missing-path` with the exact relative path.
-- Absolute or symlinked milestone outside root → `milestone-outside-root`.
-- Existing but unreadable milestone → `milestone-unreadable`.
+- Absolute milestone outside root → `milestone-outside-root`.
+- Symlinked milestone path → `milestone-symlink` (fail closed, including
+  dangling links).
+- Existing but unreadable milestone/path → `milestone-unreadable` or
+  `path-unreadable`.
 - Missing CLI operand → usage output and exit 2.
 - Untracked `AGENTS.md` → `agents-untracked`.
 - Dirty/untracked worktree → `dirty-worktree`.

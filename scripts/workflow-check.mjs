@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
  * @typedef {{ currentPhase: string, lastCompletedGate: string, nextAction: string }} LedgerState
  * @typedef {{ code: string, path?: string, message: string }} WorkflowError
  * @typedef {{ status: number | null, stdout: string, stderr: string, error?: string }} CommandObservation
- * @typedef {{ root: string, milestonePath: string, requiredPaths: string[], paths: Record<string, boolean>, agentsTracked: boolean, mapping: CommandObservation, specman: CommandObservation, worktreePorcelain: string[], ledgerText: string, collectionErrors: WorkflowError[] }} PreflightObservation
+ * @typedef {{ root: string, milestonePath: string, requiredPaths: string[], paths: Record<string, boolean | null>, agentsTracked: boolean, mapping: CommandObservation, specman: CommandObservation, worktreePorcelain: string[], ledgerText: string, collectionErrors: WorkflowError[] }} PreflightObservation
  * @typedef {{ state: LedgerState | null, errors: WorkflowError[] }} LedgerParseResult
  * @typedef {{ ok: boolean, milestonePath: string, ledger: LedgerState | null, checks: Record<string, boolean>, errors: WorkflowError[] }} PreflightResult
  * @typedef {{ exitCode: number, stdout: string, stderr: string }} PreflightReport
@@ -51,6 +51,23 @@ const isWithin = (root, candidate) => {
   return path === "" || (!path.startsWith(`..${sep}`) && path !== ".." && !isAbsolute(path));
 };
 
+const findSymlink = (root, candidate) => {
+  const path = relative(root, candidate);
+  if (!path || path === ".." || path.startsWith(`..${sep}`)) return null;
+
+  let current = root;
+  for (const segment of path.split(sep)) {
+    current = join(current, segment);
+    try {
+      if (lstatSync(current).isSymbolicLink()) return current;
+    } catch (error) {
+      if (error?.code === "ENOENT") return null;
+      throw error;
+    }
+  }
+  return null;
+};
+
 /** @param {string} root @param {string} requested @returns {MilestonePathResult} */
 export function resolveMilestonePath(root, requested) {
   const resolvedRoot = resolve(root);
@@ -77,6 +94,17 @@ export function resolveMilestonePath(root, requested) {
   }
 
   try {
+    const symlink = findSymlink(resolvedRoot, absolutePath);
+    if (symlink) {
+      return {
+        ok: false,
+        error: {
+          code: "milestone-symlink",
+          path: requested,
+          message: `Milestone path contains a symlink: ${relative(resolvedRoot, symlink)}.`,
+        },
+      };
+    }
     const realRoot = realpathSync(resolvedRoot);
     const realPath = realpathSync(absolutePath);
     if (!isWithin(realRoot, realPath)) {
@@ -85,12 +113,12 @@ export function resolveMilestonePath(root, requested) {
         error: {
           code: "milestone-outside-root",
           path: requested,
-          message: "Milestone symlink resolves outside the repository root.",
+          message: "Milestone path resolves outside the repository root.",
         },
       };
     }
   } catch (error) {
-    if (/** @type {{ code?: string }} */ (error)?.code !== "ENOENT") {
+    if (error?.code !== "ENOENT") {
       return {
         ok: false,
         error: {
@@ -152,7 +180,7 @@ export function evaluatePreflight(observation) {
   errors.push(...ledgerResult.errors);
 
   for (const path of observation.requiredPaths) {
-    if (observation.paths[path] !== true) {
+    if (observation.paths[path] === false) {
       errors.push({
         code: "missing-path",
         path,
@@ -215,8 +243,9 @@ export function evaluatePreflight(observation) {
     specmanAvailable: observation.specman.status === 0,
     worktreeClean: observation.worktreePorcelain.length === 0,
     ledgerValid: ledgerResult.errors.length === 0,
-    milestonePathSafe: observation.collectionErrors.every(
-      (error) => error.code !== "milestone-outside-root",
+    milestonePathSafe: errors.every(
+      (error) =>
+        error.code !== "milestone-outside-root" && error.code !== "milestone-symlink",
     ),
   };
 
@@ -229,6 +258,21 @@ export function evaluatePreflight(observation) {
   };
 }
 
+const inspectPath = (root, path, isMilestone, collectionErrors) => {
+  try {
+    lstatSync(resolve(root, path));
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    collectionErrors.push({
+      code: isMilestone ? "milestone-unreadable" : "path-unreadable",
+      path,
+      message: `Path could not be inspected: ${error instanceof Error ? error.message : String(error)}`,
+    });
+    return null;
+  }
+};
+
 /** @param {{ root: string, milestonePath: string }} request @returns {PreflightObservation} */
 export function collectPreflightObservation(request) {
   const root = resolve(request.root);
@@ -239,10 +283,13 @@ export function collectPreflightObservation(request) {
   const requiredPaths = pathResult.ok
     ? requiredPathNames(milestonePath)
     : ["AGENTS.md", "ROADMAP.md", "DECISIONS.md", ...projectSkillPaths];
-  const paths = Object.fromEntries(
-    requiredPaths.map((path) => [path, existsSync(resolve(root, path))]),
-  );
   const collectionErrors = pathResult.ok ? [] : [pathResult.error];
+  const paths = Object.fromEntries(
+    requiredPaths.map((path) => [
+      path,
+      inspectPath(root, path, path === milestonePath, collectionErrors),
+    ]),
+  );
   const mapping = shellCommand(
     process.execPath,
     [resolve(root, "scripts/workflow-mapping-check.mjs"), root],
@@ -260,7 +307,7 @@ export function collectPreflightObservation(request) {
     root,
   );
   let ledgerText = "";
-  if (pathResult.ok && paths[milestonePath]) {
+  if (pathResult.ok && paths[milestonePath] === true) {
     try {
       ledgerText = readFileSync(pathResult.absolutePath, "utf8");
     } catch (error) {

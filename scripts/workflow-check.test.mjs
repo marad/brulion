@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  chmodSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -83,7 +84,7 @@ test("rejects absolute and symlinked milestone paths outside the root", () => {
     assert.equal(resolveMilestonePath(root, "/etc/hosts").ok, false);
     const symlinkResult = resolveMilestonePath(root, "milestones/escape.md");
     assert.equal(symlinkResult.ok, false);
-    assert.equal(symlinkResult.error.code, "milestone-outside-root");
+    assert.equal(symlinkResult.error.code, "milestone-symlink");
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
@@ -105,6 +106,40 @@ test("reports an unreadable milestone path instead of throwing", () => {
       result.errors.some((error) => error.code === "milestone-unreadable"),
     );
   } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("reports an unreadable milestone file when permissions allow the probe", (t) => {
+  if (typeof process.getuid === "function" && process.getuid() === 0) {
+    t.skip("root can bypass file permissions");
+    return;
+  }
+
+  const root = mkdtempSync(join(process.cwd(), "workflow-root-"));
+  const milestone = join(root, "milestones", "blocked.md");
+
+  try {
+    mkdirSync(join(root, "milestones"));
+    writeFileSync(milestone, validLedger);
+    chmodSync(milestone, 0o000);
+    const observation = collectPreflightObservation({
+      root,
+      milestonePath: "milestones/blocked.md",
+    });
+    const result = evaluatePreflight(observation);
+
+    assert.ok(
+      result.errors.some((error) => error.code === "milestone-unreadable"),
+    );
+    assert.equal(
+      result.errors.some(
+        (error) => error.code === "missing-path" && error.path === "milestones/blocked.md",
+      ),
+      false,
+    );
+  } finally {
+    chmodSync(milestone, 0o600);
     rmSync(root, { recursive: true, force: true });
   }
 });
