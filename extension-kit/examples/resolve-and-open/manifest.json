@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": 1,
+  "id": "resolve-and-open",
+  "name": "Resolve and open",
+  "version": "0.1.0",
+  "entry": "main.js",
+  "permissions": ["commands", "navigation:read", "navigation:write"]
+}

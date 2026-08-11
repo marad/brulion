@@ -6,6 +6,10 @@ import declarations from "../extension-kit/brulion-extension.d.ts?raw"
 import apiContract from "../extension-kit/api-contract.json?raw"
 import exampleManifest from "../extension-kit/examples/hello-world/manifest.json?raw"
 import exampleSource from "../extension-kit/examples/hello-world/main.js?raw"
+import journalExampleManifest from "../extension-kit/examples/open-journal/manifest.json?raw"
+import journalExampleSource from "../extension-kit/examples/open-journal/main.js?raw"
+import resolveExampleManifest from "../extension-kit/examples/resolve-and-open/manifest.json?raw"
+import resolveExampleSource from "../extension-kit/examples/resolve-and-open/main.js?raw"
 import apiReference from "../extension-kit/API.md?raw"
 import agents from "../extension-kit/AGENTS.md?raw"
 import skill from "../extension-kit/llm-skill.md?raw"
@@ -26,6 +30,10 @@ const FILES: readonly AuthoringKitFile[] = [
   { path: "api-contract.json", content: apiContract },
   { path: "examples/hello-world/manifest.json", content: exampleManifest },
   { path: "examples/hello-world/main.js", content: exampleSource },
+  { path: "examples/open-journal/manifest.json", content: journalExampleManifest },
+  { path: "examples/open-journal/main.js", content: journalExampleSource },
+  { path: "examples/resolve-and-open/manifest.json", content: resolveExampleManifest },
+  { path: "examples/resolve-and-open/main.js", content: resolveExampleSource },
   { path: "API.md", content: apiReference },
   { path: "AGENTS.md", content: agents },
   { path: "llm-skill.md", content: skill },

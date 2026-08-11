@@ -18,6 +18,10 @@ describe("versioned extension authoring kit", () => {
       "api-contract.json",
       "examples/hello-world/manifest.json",
       "examples/hello-world/main.js",
+      "examples/open-journal/manifest.json",
+      "examples/open-journal/main.js",
+      "examples/resolve-and-open/manifest.json",
+      "examples/resolve-and-open/main.js",
       "API.md",
       "AGENTS.md",
       "llm-skill.md",
@@ -39,5 +43,22 @@ describe("versioned extension authoring kit", () => {
       bundle.indexOf("===== template/main.js ====="),
     )
     expect(getAuthoringKitFile("missing.txt")).toBeUndefined()
+  })
+
+  it("ships least-privilege navigation examples without host escape hatches", () => {
+    const journalManifest = JSON.parse(getAuthoringKitFile("examples/open-journal/manifest.json")!.content)
+    const journalSource = getAuthoringKitFile("examples/open-journal/main.js")!.content
+    const resolveManifest = JSON.parse(getAuthoringKitFile("examples/resolve-and-open/manifest.json")!.content)
+    const resolveSource = getAuthoringKitFile("examples/resolve-and-open/main.js")!.content
+
+    expect(journalManifest.permissions).toEqual(["commands", "navigation:write"])
+    expect(resolveManifest.permissions).toEqual(["commands", "navigation:read", "navigation:write"])
+    expect(journalSource).toContain('result.status === "conflict"')
+    expect(resolveSource).toContain('link.status === "missing"')
+    expect(resolveSource).toContain("api.navigation.openNote")
+    for (const source of [journalSource, resolveSource]) {
+      expect(source).not.toMatch(/document\.|window\.|navigator\.|showDirectoryPicker|fetch\(|https?:\/\//)
+      expect(source).not.toContain("api.notes.create")
+    }
   })
 })
