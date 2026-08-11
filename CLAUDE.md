@@ -36,19 +36,27 @@ A **milestone** (`ROADMAP.md`) is split into **phases** (`milestones/MX.md`).
 This is an executable protocol, not advice: do not silently replace a required
 command or phase gate with an ad-hoc equivalent.
 
-**Operating pattern: build first with `/goal`, review after with `/elicit`.**
-Kick a milestone off with **`/goal`** (e.g. *"implement MX"*) and build the
-**whole** milestone — every phase, end-to-end, autonomously — without stopping
-between phases. Only once it's implemented and deployed, run the **milestone
-review with `/elicit`** to talk through the recorded decisions and apply any
-corrections. Don't invert this (no per-decision questions mid-build); the review
-is the single, batched, live checkpoint at the end.
+**Operating pattern: build first with `/skill:goal`, review after with
+`/skill:elicit`.** Kick a milestone off with **`/skill:goal`** (e.g. *"implement
+MX"*) and build the **whole** milestone — every phase, end-to-end,
+autonomously — without stopping between phases. Only once it's implemented and
+deployed, run the **milestone review with `/skill:elicit`** to talk through the
+recorded decisions and apply any corrections. Don't invert this (no per-
+decision questions mid-build); the review is the single, batched, live
+checkpoint at the end.
 
-**Command availability is a gate.** If `/goal`, `/spec`, `/excavate`,
-`/chisel`, `/review-until-clean`, `/code-review`, or another required command is
-not available in the current runtime, do not pretend to have run it and do not
+**Command availability is a gate.** In pi, project skills use the real
+`/skill:<name>` command form. The canonical workflow commands are
+`/skill:goal`, `/skill:excavate`, `/skill:chisel`,
+`/skill:review-until-clean`, `/skill:code-review`, and `/skill:elicit`.
+Specman lifecycle operations use the `specman` CLI (`new`, `sync`, `verify`,
+`seal`, `validate`, and `status`), with `/skill:specman` providing guidance.
+The historical bare labels `/goal`, `/spec`, `/excavate`, `/chisel`,
+`/review-until-clean`, `/code-review`, and `/elicit` are conceptual aliases,
+not claims that those exact commands exist in pi. If a canonical command or
+project-local skill is unavailable, do not pretend to have run it and do not
 silently substitute a custom subagent review. Stop before writing code, report
-the missing command, and fix the command/skill mapping before continuing.
+the missing mapping, and fix it before continuing.
 
 **Preflight before the first phase:**
 
@@ -74,19 +82,21 @@ is exactly what these rules exist to stop (it has cost us real bugs — a render
 contract bug that a tests-first pass would have caught surfaced only from a user
 report instead).
 
-1. **Spec** it with **specman** (`/spec`) — Intent + Given/When/Then ACs — before
-   any code. One spec per phase (`FEAT-000N`); keep it to that phase's scope.
+1. **Spec** it with the **`specman` CLI** — Intent + Given/When/Then ACs —
+   before any code. One spec per phase (`FEAT-000N`); keep it to that phase's
+   scope. Use `/skill:specman` for the routing guidance.
 2. **Plan with `specman sync` BEFORE writing any code.** The sync plan is the
    implementation guide, not paperwork generated afterward. Commit the plan
    before implementation and do not edit production code or tests until the
    plan exists.
-3. **Implement by invoking the skill — always:** **`excavate`** for any **new
-   module** (top-down: module diagram → signature stubs → signature-fit review
-   → tests → bodies), **`chisel`** for a **small change** (~1–3 files, no new
-   module). Do **not** hand-write a module straight into existence. **Tests come
-   before bodies** — write the failing test first, then the implementation.
-4. **Review**: run **`/review-until-clean`**, which loops
-   **`/code-review --fix`**, every phase — not an ad-hoc reviewer — until no
+3. **Implement by invoking the skill — always:** **`/skill:excavate`** for any
+   **new module** (top-down: module diagram → signature stubs → signature-fit
+   review → tests → bodies), **`/skill:chisel`** for a **small change** (~1–3
+   files, no new module). Do **not** hand-write a module straight into
+   existence. **Tests come before bodies** — write the failing test first, then
+   the implementation.
+4. **Review**: run **`/skill:review-until-clean`**, which loops
+   **`/skill:code-review`** every phase — not an ad-hoc reviewer — until no
    noteworthy findings remain. Honor that skill's two rules: **restructure after
    2 rounds of the same class of finding** (stop patching effects, fix the cause),
    and make every test added for a fix **discriminating** (it must fail against
@@ -132,7 +142,7 @@ permission prompt, real-disk writes surviving a browser restart) is checked
 ## Milestone review
 
 Once the whole milestone is implemented and deployed, review it **with the user
-via the `elicit` skill** (one decision at a time), against the live app: walk
+via `/skill:elicit`** (one decision at a time), against the live app: walk
 through every decision recorded for the milestone, spell out its consequences in
 the UI and the project, and let the user confirm or change each on the spot.
 This is the moment for course-correction — cheap because it's batched and live,
