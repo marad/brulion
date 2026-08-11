@@ -82,7 +82,7 @@ test("a markdown link with an anchor switches to the note and scrolls to the hea
   expect(await mdSnapshot(page)).toEqual(before)
 })
 
-test("a wikilink with an anchor switches and scrolls (AC-2)", async ({ page }) => {
+test("a wikilink with an anchor switches and scrolls (FEAT-0061 regression)", async ({ page }) => {
   await openWith(page, {
     "home.md": "home top\n\n[[other#section-two]]\n",
     "other.md": `other top\n\n${PAD}## Section two\n\nsection two body\n`,
@@ -97,7 +97,7 @@ test("a wikilink with an anchor switches and scrolls (AC-2)", async ({ page }) =
   expect(await mdSnapshot(page)).toEqual(before)
 })
 
-test("a same-note anchor scrolls within the open note, no switch (AC-3)", async ({ page }) => {
+test("a same-note anchor scrolls within the open note, no switch (AC-2)", async ({ page }) => {
   await openWith(page, {
     "solo.md": `[jump](#here)\n\n${PAD}## Here\n\nhere body\n`,
   })
@@ -112,7 +112,7 @@ test("a same-note anchor scrolls within the open note, no switch (AC-3)", async 
   expect(await mdSnapshot(page)).toEqual(before)
 })
 
-test("a missing target heading opens the note without scrolling, no error (AC-5)", async ({
+test("a missing target heading opens the note without scrolling, no error (AC-3)", async ({
   page,
 }) => {
   await openWith(page, {
@@ -132,7 +132,7 @@ test("a missing target heading opens the note without scrolling, no error (AC-5)
   expect(await mdSnapshot(page)).toEqual(before)
 })
 
-test("an external link's #fragment is kept and opens a tab, no in-editor scroll (AC-6)", async ({
+test("an external link's #fragment is kept and opens a tab, no in-editor scroll (AC-4)", async ({
   page,
 }) => {
   await openWith(page, {
@@ -149,7 +149,7 @@ test("an external link's #fragment is kept and opens a tab, no in-editor scroll 
   expect(await mdSnapshot(page)).toEqual(before)
 })
 
-test("anchored navigation writes no note files (AC-8)", async ({ page }) => {
+test("anchored navigation writes no note files (AC-5)", async ({ page }) => {
   await openWith(page, {
     "home.md": "home top\n\n[go](other.md#section-two) [[other#section-two]]\n",
     "other.md": `other top\n\n${PAD}## Section two\n\nsection two body\n`,
