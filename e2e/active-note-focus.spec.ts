@@ -39,15 +39,23 @@ async function snapshotNotes(page: Page, folder: string): Promise<Record<string,
   }, folder)
 }
 
-async function openFixture(page: Page, folder: string) {
+async function openFixture(page: Page, folder: string, selectA = true) {
   await stubPicker(page, folder)
   await page.goto("/brulion/")
   await writeFile(page, folder, "a.md", "A\n\n[go](b.md)\n")
   await writeFile(page, folder, "b.md", "B\n")
   await page.locator("#open-folder").click()
   await expect(page.locator("#note-identity")).toBeVisible()
-  await page.locator(".note-name", { hasText: "a" }).click()
+  if (selectA) await page.locator(".note-name", { hasText: "a" }).click()
 }
+
+test("opening a vault does not focus its initial active row (AC-4)", async ({ page }) => {
+  const folder = "e2e-active-note-focus-initial"
+  await openFixture(page, folder, false)
+
+  await expect(page.locator(".note-row.active .note-name")).toHaveText("a")
+  expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.path)).not.toBe("a.md")
+})
 
 async function followToB(page: Page) {
   await page.locator(".cm-content").click()

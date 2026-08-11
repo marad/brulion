@@ -1162,6 +1162,10 @@ describe("renderNoteList keyboard navigation (FEAT-0075)", () => {
     nestedOutside.focus()
     expect(updateActiveNoteRow(nested, "sub/a.md", true)).toBe(false)
     expect(document.activeElement).toBe(nestedOutside)
+    const visible = [...nested.querySelectorAll<HTMLElement>(".folder-header, .note-name")].filter(
+      (row) => !row.closest(".folder-children[hidden]"),
+    )
+    expect(visible.filter((row) => row.tabIndex === 0)).toHaveLength(1)
   })
 })
 

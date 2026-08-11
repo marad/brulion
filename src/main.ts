@@ -952,7 +952,10 @@ controller = createNoteController(view, {
     })
     // Feed the editor the open note + known paths so links render valid-vs-broken
     // and a follow resolves relative to the right note (FEAT-0025).
-    const activeChanged = currentActive !== active
+    // An initial folder attach establishes the active note; it is not a
+    // navigation from one already-announced note and must not steal focus from
+    // the opening flow. Subsequent path changes are genuine navigation.
+    const activeChanged = currentActive !== "" && currentActive !== active
     currentActive = active
     const listUnchanged = notes === currentNotes
     currentNotes = notes

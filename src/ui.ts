@@ -384,12 +384,16 @@ function visibleRowFocusables(container: HTMLElement): HTMLElement[] {
   return rowFocusables(container).filter((el) => !el.closest(".folder-children[hidden]"))
 }
 
-/** Promote exactly one row to `tabindex="0"` (the tab stop) and demote the rest
- * to `-1`. Prefers the active note's row; falls back to the first row. */
+/** Promote exactly one visible row to `tabindex="0"` (the tab stop) and demote
+ * the rest to `-1`. Prefers the active note's row when it is visible; otherwise
+ * falls back to the first visible row so a collapsed subtree never leaves the
+ * visible tree without a tab stop. */
 function applyRovingTabindex(container: HTMLElement, active: string): void {
   const focusables = rowFocusables(container)
+  const visible = visibleRowFocusables(container)
   const chosen =
-    focusables.find((el) => el.dataset.path === active && el.classList.contains("note-name")) ??
+    visible.find((el) => el.dataset.path === active && el.classList.contains("note-name")) ??
+    visible[0] ??
     focusables[0]
   for (const el of focusables) el.tabIndex = el === chosen ? 0 : -1
 }
