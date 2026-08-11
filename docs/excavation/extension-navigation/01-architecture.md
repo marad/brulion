@@ -116,6 +116,9 @@ flowchart LR
 - **Anchor status:** transiently owned by the application adapter after the
   controller has loaded a successful target; the existing heading scanner
   supplies found/not-found. It is not persisted and never changes note bytes.
+  The adapter serializes the controller result through anchor scrolling as one
+  callback operation, so concurrent extension calls cannot report one note
+  while scrolling another.
 - **Vault binding:** owned by the attach lifecycle. Each injected callback closes
   over one directory handle and generation, and fails closed if that vault is no
   longer current.
