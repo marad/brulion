@@ -1,0 +1,67 @@
+---
+id: FEAT-0097
+title: Commit, push, and CI workflow gates
+status: draft
+depends_on: [FEAT-0096]
+---
+
+## Intent
+
+The mapping and preflight checker now make the first workflow gate executable,
+but a developer can still commit or push without the required spec trailer,
+diff hygiene, tests, build, E2E, or spec validation. Add one checked-in gate
+entrypoint used by opt-in local hooks and authoritative GitHub Actions so local
+convenience cannot weaken the source-of-truth workflow.
+
+## Behavior
+
+The gate entrypoint has fast `pre-commit` checks, a `commit-message` check, and
+full `pre-push`/`ci` checks. The fast checks reject cached whitespace errors and
+missing project-local workflow mapping. The commit-message check requires at
+least one `Spec: FEAT-NNNN/AC-M` trailer when staged implementation or workflow
+files are present, while documentation/spec-only commits remain possible.
+
+The full gate runs the read-only preflight, `specman validate`, workflow tests,
+the full Vitest suite, the production build, and Playwright E2E in that order.
+It stops on the first failed command, reports the command and output, and does
+not invent a pass after a failed or interrupted command. Local hooks are
+opt-in through a checked-in installer and are not the authority: CI runs the
+same gate on pull requests and main, and the deployment job depends on the
+quality checks.
+
+The gate never imposes hard subagent timeouts. It bounds no substantive command
+by a wall-clock limit; process interruption remains a manual operator decision.
+
+## Acceptance criteria
+
+- AC-1: Given staged files with whitespace errors, when the pre-commit gate
+  runs, then it exits nonzero and identifies the cached diff error without
+  modifying files.
+- AC-2: Given staged implementation/workflow files and a commit message without
+  a `Spec: FEAT-NNNN/AC-M` trailer, when the commit-message gate runs, then it
+  exits nonzero; given a valid trailer, it exits zero.
+- AC-3: Given documentation/spec-only staged files, when the commit-message
+  gate runs without a trailer, then it exits zero so process documentation does
+  not need a fabricated feature reference.
+- AC-4: Given a clean checkout and installed browser dependencies, when the
+  `ci` or pre-push gate runs, then it invokes preflight, spec validation,
+  workflow tests, Vitest, build, and E2E in order and stops on the first failure.
+- AC-5: Given any failed full-gate command, when the gate exits, then it returns
+  nonzero with the failed command and captured output and does not run later
+  commands as if the gate passed.
+- AC-6: Given a fresh clone, when the opt-in hook installer runs, then Git's
+  `core.hooksPath` points to the checked-in `.githooks` directory and the hooks
+  delegate to the checked-in gate entrypoint without global configuration.
+- AC-7: Given a pull request or a push to `main`, when GitHub Actions runs, then
+  the quality job executes the same checked-in full gate on a clean checkout,
+  and the Pages deployment cannot proceed unless the quality job succeeds.
+- AC-8: Given the gate scripts and hooks, when they are inspected, then no
+  substantive subagent receives a hard wall-clock, hard turn, or hard tool
+  timeout by default, and local-hook bypass cannot bypass CI.
+
+## Out of scope
+
+- Automatically killing, retrying, or steering a substantive worker.
+- Creating a hosted service, GitHub issue automation, or release manager.
+- Replacing the existing Pages deployment or changing application behavior.
+- Running native OS folder-picker/permission checks in CI.
