@@ -147,6 +147,10 @@ test("runs an enabled local command and keeps management separate from the workb
     childDisplays: ["flex", "flex", "flex"],
     childAlignments: ["center", "center", "center"],
   })
+  await expect(apiDocs.locator(".api-docs-static-handoff")).toContainText("For agents")
+  await expect(apiDocs.locator('.api-docs-static-handoff a[href="api.md"]')).toBeVisible()
+  await expect(apiDocs.locator('.api-docs-static-handoff a[href="api-contract.json"]')).toBeVisible()
+  await expect(apiDocs.locator('.api-docs-static-handoff a[href="brulion-extension.d.ts"]')).toBeVisible()
   await expect(apiDocs.locator("#api-docs-content")).toContainText("brulion.commands")
   await expect(apiDocs.locator("#api-docs-reference")).toContainText("notes.write")
   await expect(apiDocs.locator("#api-docs-reference")).toContainText("expectedLastModified")

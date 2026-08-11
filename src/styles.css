@@ -2612,6 +2612,22 @@ header button:hover {
   line-height: 1.55;
 }
 
+.api-docs-static-handoff {
+  max-width: 52rem;
+  margin: 0.75rem 0 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.api-docs-static-handoff a {
+  color: var(--link);
+}
+
 .api-docs-badges {
   display: flex;
   flex-wrap: wrap;

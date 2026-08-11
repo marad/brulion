@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "cp extension-kit/API.md public/api.md && cp extension-kit/api-contract.json public/api-contract.json && cp extension-kit/brulion-extension.d.ts public/brulion-extension.d.ts",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest",
