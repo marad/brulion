@@ -40,14 +40,16 @@ async function writeNote(page: Page, file: string, content: string) {
   )
 }
 
-async function mdCount(page: Page): Promise<number> {
+async function mdSnapshot(page: Page): Promise<Record<string, string>> {
   return await page.evaluate(async () => {
     const root = await navigator.storage.getDirectory()
     const dir = await root.getDirectoryHandle("e2e-link-anchors-folder", { create: true })
-    let n = 0
+    const files: Record<string, string> = {}
     // @ts-expect-error async iterator over a directory handle
-    for await (const [name] of dir.entries()) if (name.endsWith(".md")) n++
-    return n
+    for await (const [name, handle] of dir.entries()) {
+      if (name.endsWith(".md")) files[name] = await (handle as FileSystemFileHandle).getFile().then((file) => file.text())
+    }
+    return files
   })
 }
 
@@ -139,10 +141,10 @@ test("anchored navigation writes no note files (AC-8)", async ({ page }) => {
     "home.md": "home top\n\n[go](other.md#section-two) [[other#section-two]]\n",
     "other.md": `other top\n\n${PAD}## Section two\n\nsection two body\n`,
   })
-  const before = await mdCount(page)
+  const before = await mdSnapshot(page)
   await page.locator(".note-row", { hasText: "home" }).click()
   await link(page, "go").click()
   await expect(editor(page)).toContainText("section two body")
 
-  expect(await mdCount(page)).toBe(before)
+  expect(await mdSnapshot(page)).toEqual(before)
 })
