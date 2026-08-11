@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -52,6 +53,7 @@ const validObservation = () => ({
   specman: { status: 0, stdout: "FEAT-0096 new", stderr: "" },
   worktreePorcelain: [],
   ledgerText: validLedger,
+  ledgerReadable: true,
   collectionErrors: [],
 });
 
@@ -75,16 +77,20 @@ test("rejects absolute and symlinked milestone paths outside the root", () => {
   const outside = mkdtempSync(join(process.cwd(), "workflow-outside-"));
   const outsideFile = join(outside, "secret.md");
   const symlinkPath = join(root, "milestones", "escape.md");
+  const danglingPath = join(root, "milestones", "dangling.md");
 
   try {
     mkdirSync(join(root, "milestones"));
     writeFileSync(outsideFile, "secret");
     symlinkSync(outsideFile, symlinkPath);
+    symlinkSync(join(outside, "missing.md"), danglingPath);
 
     assert.equal(resolveMilestonePath(root, "/etc/hosts").ok, false);
-    const symlinkResult = resolveMilestonePath(root, "milestones/escape.md");
-    assert.equal(symlinkResult.ok, false);
-    assert.equal(symlinkResult.error.code, "milestone-symlink");
+    for (const candidate of ["milestones/escape.md", "milestones/dangling.md"]) {
+      const symlinkResult = resolveMilestonePath(root, candidate);
+      assert.equal(symlinkResult.ok, false, candidate);
+      assert.equal(symlinkResult.error.code, "milestone-symlink", candidate);
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
@@ -104,6 +110,10 @@ test("reports an unreadable milestone path instead of throwing", () => {
 
     assert.ok(
       result.errors.some((error) => error.code === "milestone-unreadable"),
+    );
+    assert.equal(
+      result.errors.some((error) => error.code.startsWith("ledger-missing-")),
+      false,
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -241,16 +251,23 @@ test("malformed ledger blocks preflight", () => {
   );
 });
 
-test("valid results expose observations without write capability", () => {
-  const result = evaluatePreflight(validObservation());
+test("collector and CLI succeed without writing repository state", () => {
+  const entriesBefore = readdirSync(process.cwd()).sort();
   const scriptBefore = statSync("scripts/workflow-check.mjs").mtimeMs;
   const ledgerBefore = readFileSync("milestones/M45.md", "utf8");
+  const observation = collectPreflightObservation({
+    root: process.cwd(),
+    milestonePath,
+  });
+  const result = evaluatePreflight(observation);
 
   assert.equal(result.ok, true);
   assert.equal(result.checks.worktreeClean, true);
   assert.equal(result.checks.specmanAvailable, true);
   assert.equal("write" in result, false);
   assert.equal("repair" in result, false);
+  assert.equal(run(["preflight", "--milestone", milestonePath]), 0);
+  assert.deepEqual(readdirSync(process.cwd()).sort(), entriesBefore);
   assert.equal(statSync("scripts/workflow-check.mjs").mtimeMs, scriptBefore);
   assert.equal(readFileSync("milestones/M45.md", "utf8"), ledgerBefore);
 });

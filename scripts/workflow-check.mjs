@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
  * @typedef {{ currentPhase: string, lastCompletedGate: string, nextAction: string }} LedgerState
  * @typedef {{ code: string, path?: string, message: string }} WorkflowError
  * @typedef {{ status: number | null, stdout: string, stderr: string, error?: string }} CommandObservation
- * @typedef {{ root: string, milestonePath: string, requiredPaths: string[], paths: Record<string, boolean | null>, agentsTracked: boolean, mapping: CommandObservation, specman: CommandObservation, worktreePorcelain: string[], ledgerText: string, collectionErrors: WorkflowError[] }} PreflightObservation
+ * @typedef {{ root: string, milestonePath: string, requiredPaths: string[], paths: Record<string, boolean | null>, agentsTracked: boolean, mapping: CommandObservation, specman: CommandObservation, worktreePorcelain: string[], ledgerText: string, ledgerReadable: boolean, collectionErrors: WorkflowError[] }} PreflightObservation
  * @typedef {{ state: LedgerState | null, errors: WorkflowError[] }} LedgerParseResult
  * @typedef {{ ok: boolean, milestonePath: string, ledger: LedgerState | null, checks: Record<string, boolean>, errors: WorkflowError[] }} PreflightResult
  * @typedef {{ exitCode: number, stdout: string, stderr: string }} PreflightReport
@@ -176,7 +176,9 @@ export function parseLedger(markdown) {
 /** @param {PreflightObservation} observation @returns {PreflightResult} */
 export function evaluatePreflight(observation) {
   const errors = [...observation.collectionErrors];
-  const ledgerResult = parseLedger(observation.ledgerText);
+  const ledgerResult = observation.ledgerReadable
+    ? parseLedger(observation.ledgerText)
+    : { state: null, errors: [] };
   errors.push(...ledgerResult.errors);
 
   for (const path of observation.requiredPaths) {
@@ -242,7 +244,7 @@ export function evaluatePreflight(observation) {
     mappingAvailable: observation.mapping.status === 0,
     specmanAvailable: observation.specman.status === 0,
     worktreeClean: observation.worktreePorcelain.length === 0,
-    ledgerValid: ledgerResult.errors.length === 0,
+    ledgerValid: observation.ledgerReadable && ledgerResult.errors.length === 0,
     milestonePathSafe: errors.every(
       (error) =>
         error.code !== "milestone-outside-root" && error.code !== "milestone-symlink",
@@ -307,9 +309,11 @@ export function collectPreflightObservation(request) {
     root,
   );
   let ledgerText = "";
+  let ledgerReadable = false;
   if (pathResult.ok && paths[milestonePath] === true) {
     try {
       ledgerText = readFileSync(pathResult.absolutePath, "utf8");
+      ledgerReadable = true;
     } catch (error) {
       collectionErrors.push({
         code: "milestone-unreadable",
@@ -332,6 +336,7 @@ export function collectPreflightObservation(request) {
       .map((line) => line.trimEnd())
       .filter(Boolean),
     ledgerText,
+    ledgerReadable,
     collectionErrors,
   };
 }
