@@ -810,6 +810,25 @@ Out:
 
 Phases: [`milestones/M44.md`](milestones/M44.md).
 
+### M45 — Workflow enforcement and recovery
+**Goal:** make the development protocol executable: discoverable command mapping,
+fail-closed preflight and phase state, then local and CI gates that cannot be
+silently skipped. This is infrastructure only; it does not alter application
+behavior or user-owned markdown bytes.
+
+In:
+- project-local pi skill mapping for milestone kickoff and adversarial review;
+- read-only preflight and durable phase-ledger validation;
+- opt-in commit/push hooks plus authoritative GitHub Actions checks;
+- explicit worker isolation, checkpoint, and no-hard-timeout recovery guidance.
+
+Out:
+- product features, UI changes, extension API changes, or markdown format work;
+- global pi configuration or machine-local aliases;
+- automatic killing or retrying of substantive mutation workers.
+
+Phases: [`milestones/M45.md`](milestones/M45.md).
+
 ## Later / backlog (out of MVP, on purpose)
 
 Everything concrete is now scheduled in M5–M10 above. What remains here is

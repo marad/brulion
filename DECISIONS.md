@@ -1996,3 +1996,24 @@ Tests must verify their presence, content parity with `extension-kit/`, and the
 static instruction in the HTML. The interactive reference is not removed; it is
 no longer the only representation of the extension API, and agents are explicitly
 told which files to fetch.
+
+## M45: enforce the workflow in layers, with attention instead of hard timeouts
+
+**What:** treat workflow enforcement as a separate infrastructure milestone.
+First make the canonical pi skill mapping and a read-only preflight/ledger
+checker available in the repository; then add opt-in local hooks and
+authoritative CI checks. Substantive workers remain asynchronous without hard
+wall-clock, turn, or tool timeouts by default; liveness is handled through
+watchdog attention, checkpoints, and explicit recovery.
+
+**Why:** prose instructions alone allowed M43 to skip or substitute gates, while
+a hard timeout can interrupt valid implementation work and leave ambiguous
+partial changes. Layering cheap local checks with CI catches process drift early
+without making a local hook the sole authority, and a durable ledger survives
+compaction better than chat context.
+
+**Consequence (UI/project):** no product UI or `.md` bytes change. The repository
+will gain project-local workflow skills, machine-readable preflight failures,
+optional hook setup, and CI jobs that block deploy-quality pushes when required
+spec/review/test evidence is absent. A worker that needs attention remains alive
+until a parent makes the recovery decision.
