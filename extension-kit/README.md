@@ -1,6 +1,6 @@
 # Brulion Extension Authoring Kit
 
-Kit version: 1.1.1.
+Kit version: 1.2.0.
 
 Copy the template/ directory to .brulion/scripts/<id>/, change the manifest
 id/name, and review the JavaScript before explicitly enabling the extension.
