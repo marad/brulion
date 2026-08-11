@@ -1937,3 +1937,62 @@ returns canonical `resolved`/`missing` paths or `external`/`invalid` statuses.
 The Authoring Kit now includes least-privilege journal-open and
 resolve-then-open examples, and Chromium/OPFS coverage exercises conflicts,
 anchors, missing targets, resolution, explicit creation, and vault isolation.
+
+## M44: preserve anchor semantics, default to active-note focus, and quiet the heading hierarchy
+
+**What:** group three daily-use observations and one documentation observation
+into one small polish milestone. The
+Markdown-link request begins as a compatibility/regression audit because M32 /
+FEAT-0061 already supports `[text](note.md#section-title)`, `[text](#section-title)`,
+and the equivalent wikilink forms. Do not duplicate the anchor resolver or
+reinterpret external URL fragments. Add a `focusActiveNote` boolean to the
+vault's existing `.brulion.json` settings, defaulting to `true`; when enabled,
+a genuine active-note change may move DOM focus to the matching sidebar row, but
+a same-note background repaint must not steal focus and a collapsed sidebar must
+not be forced open. Keep the first heading treatment simple: H1 about `1.35em`,
+H2 about `1.15em`, and H3–H6 at body size with bold weight; do not add colors or
+indentation in the first cut.
+
+**Why:** the first item is already a shipped capability, so a reproduction-first
+check avoids needless parser churn and makes any new test fail against a real
+pre-fix behavior. Programmatic sidebar focus is the behavior requested for
+keyboard navigation, but it can be disruptive while typing; a per-vault default-on
+setting gives the requested behavior while preserving an explicit escape hatch.
+The settings file is already the portable preference boundary for vault-specific
+UI choices, whereas sidebar collapse remains a browser-local layout state. Size
+and weight solve the heading-avoidance complaint with less theme coupling and
+less horizontal noise than color or indentation, while preserving the rich-view
+/ plain-file boundary.
+
+**Consequence (UI/project):** M44 adds one normalized/persisted settings field and
+one Settings-modal control, plus focus-aware sidebar rendering that preserves
+roving tabindex and does not react to unchanged poller paints. It adds compact
+heading CSS and targeted unit/browser assertions across text sizes and themes.
+The link phase may produce no production change if M32's behavior is confirmed;
+the four phases remain UI/docs work and must not alter user-owned `.md` bytes.
+
+## M44 API documentation is static-first for agents, JavaScript-enhanced for people
+
+**What:** keep the interactive `api.html` page, but make JavaScript optional for
+finding the API content. Publish three ordinary static artifacts alongside it:
+`api.md` for the human-readable guide, `api-contract.json` for the authoritative
+machine-readable method contract, and `brulion-extension.d.ts` for editor/type
+hints. The static HTML shell includes a direct agent instruction/link to those
+files, so an agent can fetch them with a plain HTTP client instead of executing
+browser JavaScript. The deployed artifacts are derived or copied from the
+existing `extension-kit/` sources and checked for drift.
+
+**Why:** the current page is a shell whose meaningful content is rendered by
+`src/api-docs-main.ts`; a crawler or coding agent that fetches `api.html` without
+running JS therefore gets almost no reference content. A raw Markdown/JSON/declaration surface is easier to consume, cache, diff, and
+use from any agent, while the browser can keep search, syntax highlighting,
+generated method cards, and copy buttons as optional enhancements. Keeping the
+Authoring Kit files as the
+source of truth avoids a second hand-maintained documentation system.
+
+**Consequence (UI/project):** `api.html` must expose a no-JavaScript hand-off,
+and the Pages build must serve stable relative URLs for the three static files.
+Tests must verify their presence, content parity with `extension-kit/`, and the
+static instruction in the HTML. The interactive reference is not removed; it is
+no longer the only representation of the extension API, and agents are explicitly
+told which files to fetch.

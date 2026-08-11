@@ -34,7 +34,9 @@ Every technical decision defers to that.
 > separate-window, multi-file authoring surface for users and LLM agents.
 > **M42** (extension UX, diagnostics, and browser validation) is queued next.
 > **M43** (extension navigation API — active-note access, `openNote()`, and
-> `resolveLink()`) is queued after M42.
+> `resolveLink()`) is queued after M42. **M44** (daily-use polish — anchor-link
+> compatibility, togglable active-note sidebar focus, compact heading hierarchy,
+> and static agent-readable API docs) is queued after M43.
 > Recently shipped: **M41** (full extension workbench and authoring kit, P0–P5),
 > **M39** (local JavaScript extensions, P0–P2), **M37**
 > (sidebar tree follow-ups — F2 rename, typeahead, multi-select + batch
@@ -770,6 +772,43 @@ Out:
   handles, TypeScript execution, packages, or network imports.
 
 Phases: [`milestones/M43.md`](milestones/M43.md).
+
+### M44 — Daily-use polish and agent-readable API docs
+**Goal:** remove four small sources of friction observed in daily use and extension
+authoring without changing the markdown format or adding a new document model.
+This milestone is editor/sidebar/chrome/docs polish over the existing
+M8/M16/M32/M41 foundations.
+
+In:
+- **Markdown section-anchor compatibility.** M32/FEAT-0061 already implements
+  local links with an optional `#section-title` and scroll-to-heading behavior.
+  M44 starts by reproducing the exact standard Markdown forms from the report and
+  closes only any remaining compatibility/regression gap; it must not duplicate
+  the existing anchor resolver or broaden external URL fragment handling.
+- **Togglable active-note focus.** Add a vault setting that, when enabled, moves
+  keyboard focus to the currently open note's sidebar row whenever the active note
+  genuinely changes. The active row is still visually/ARIA-marked when the setting
+  is off. Background list repaints must not steal focus, and collapsing the sidebar
+  must remain an independent user choice.
+- **Compact heading hierarchy.** Make H1 and H2 modestly larger and clearly
+  distinct, while rendering H3–H6 at body size with bold weight, so headings remain
+  useful without taking over a quick-capture note. The first cut uses size and
+  weight, not color or indentation, to keep the hierarchy quiet across themes.
+- **Static API docs for agents.** Keep the interactive `api.html` reference as
+  optional JS enhancement, but expose a plain Markdown entry point plus the
+  machine-readable contract and type declarations as ordinary static files. The
+  page must visibly tell agents which URLs to fetch, even when JavaScript is
+  disabled; the static artifacts remain derived from the Authoring Kit sources.
+
+Out:
+- changing `.md` bytes, link syntax, heading slug rules, or the extension API;
+- a table of contents, heading navigation UI, custom heading colors, or automatic
+  heading margins/indentation;
+- forcing the sidebar open or moving focus during an unchanged background refresh;
+- replacing the API reference with a separately hand-maintained copy of the
+  extension contract.
+
+Phases: [`milestones/M44.md`](milestones/M44.md).
 
 ## Later / backlog (out of MVP, on purpose)
 
