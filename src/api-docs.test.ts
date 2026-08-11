@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest"
 import apiHtml from "../api.html?raw"
 import apiReference from "../extension-kit/API.md?raw"
 import contractSource from "../extension-kit/api-contract.json?raw"
+import staticApiReference from "../public/api.md?raw"
+import staticContractSource from "../public/api-contract.json?raw"
+import staticDeclarations from "../public/brulion-extension.d.ts?raw"
+import declarations from "../extension-kit/brulion-extension.d.ts?raw"
 import { contractMethods, parseExtensionApiContract } from "./extension-api-contract"
 
 describe("extension API documentation surface", () => {
@@ -11,6 +15,19 @@ describe("extension API documentation surface", () => {
     expect(apiHtml).toContain('id="api-docs-reference"')
     expect(apiHtml).toContain('id="api-docs-contract"')
     expect(apiHtml).toContain('href="workbench.html"')
+  })
+
+  it("exposes an agent hand-off in static HTML", () => {
+    expect(apiHtml).toContain("For agents")
+    expect(apiHtml).toContain('href="api.md"')
+    expect(apiHtml).toContain('href="api-contract.json"')
+    expect(apiHtml).toContain('href="brulion-extension.d.ts"')
+  })
+
+  it("keeps the published static artifacts byte-identical to the Authoring Kit", () => {
+    expect(staticApiReference).toBe(apiReference)
+    expect(staticContractSource).toBe(contractSource)
+    expect(staticDeclarations).toBe(declarations)
   })
 
   it("keeps the human guide focused on safe, file-faithful authoring", () => {
