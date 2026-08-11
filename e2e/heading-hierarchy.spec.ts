@@ -95,6 +95,8 @@ test("headings use the compact hierarchy, scale with text size, and preserve Mar
   await page.locator('input[name="settings-theme"][value="light"]').check()
   await page.keyboard.press("Escape")
   const light = await metrics(page)
+  expect(light.levels[1].size / light.bodySize).toBeCloseTo(1.35, 2)
+  expect(light.levels[2].size / light.bodySize).toBeCloseTo(1.15, 2)
   for (const level of [1, 2, 3, 4, 5, 6]) {
     expect(light.levels[level].weight).toBeGreaterThanOrEqual(600)
     expect(light.levels[level].opacity).toBe("1")
