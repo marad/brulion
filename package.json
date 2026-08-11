@@ -10,7 +10,8 @@
     "test": "vitest",
     "e2e": "playwright test",
     "workflow:mapping-check": "node scripts/workflow-mapping-check.mjs",
-    "workflow:test": "node --test scripts/workflow-command-mapping.test.mjs"
+    "workflow:check": "node scripts/workflow-check.mjs",
+    "workflow:test": "node --test scripts/workflow-command-mapping.test.mjs && node --test scripts/workflow-check.test.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
