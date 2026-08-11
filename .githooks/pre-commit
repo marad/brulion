@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+# Signature-only hook stub. Delegates to scripts/workflow-gate.mjs after tests.
