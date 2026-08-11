@@ -99,6 +99,7 @@ test("a wikilink with an anchor switches and scrolls (FEAT-0061 regression)", as
 
 test("a same-note anchor scrolls within the open note, no switch (AC-2)", async ({ page }) => {
   await openWith(page, {
+    "other.md": "other note\n",
     "solo.md": `[jump](#here)\n\n${PAD}## Here\n\nhere body\n`,
   })
   await page.locator(".note-row", { hasText: "solo" }).click()
@@ -109,6 +110,7 @@ test("a same-note anchor scrolls within the open note, no switch (AC-2)", async 
 
   await expect.poll(() => scrollTop(page)).toBeGreaterThan(0) // scrolled to "Here"
   await expect(editor(page)).toContainText("here body") // same note
+  await expect(page.locator(".note-row.active .note-name")).toHaveText("solo")
   expect(await mdSnapshot(page)).toEqual(before)
 })
 
@@ -146,6 +148,7 @@ test("an external link's #fragment is kept and opens a tab, no in-editor scroll 
   const clicked = await page.evaluate(() => (window as unknown as { __clicked: string[] }).__clicked)
   expect(clicked).toContain("https://example.com/p#frag") // fragment intact
   await expect(editor(page)).toContainText("home top") // still on home
+  expect(await scrollTop(page)).toBe(0) // external navigation does not scroll the editor
   expect(await mdSnapshot(page)).toEqual(before)
 })
 
