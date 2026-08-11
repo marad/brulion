@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 
 /**
+ * @typedef {{ command: string, args: string[], status: number | null, stdout: string, stderr: string }} CommandResult
  * @typedef {{ requiresTrailer: boolean, implementationPaths: string[] }} CommitClassification
  * @typedef {{ ok: boolean, requiresTrailer: boolean, hasTrailer: boolean, errors: string[] }} CommitGateResult
+ * @typedef {{ root: string, cachedDiff: CommandResult, mappingResult: CommandResult, runner: (command: string, args: string[]) => CommandResult }} FastGateRequest
+ * @typedef {{ ok: boolean, checks: Record<string, boolean>, errors: string[], evidence: CommandResult[] }} FastGateResult
+ * @typedef {{ root: string, milestonePath: string, mode: "pre-push" | "ci", runner: (command: string, args: string[]) => CommandResult }} FullGateRequest
  * @typedef {{ command: string, args: string[] }} CommandDescriptor
- * @typedef {{ command: string, status: number | null, stdout: string, stderr: string }} CommandResult
  * @typedef {{ ok: boolean, completed: CommandResult[], failed: CommandResult | null, evidence: CommandResult[] }} FullGateResult
  */
 
@@ -18,12 +21,12 @@ export function validateCommitMessage(message, paths) {
   throw new Error("workflow-gate stub: validateCommitMessage");
 }
 
-/** @param {string} root @param {(command: string, args: string[]) => CommandResult} runner @returns {FullGateResult} */
-export function runFastGate(root, runner) {
+/** @param {FastGateRequest} request @returns {FastGateResult} */
+export function runFastGate(request) {
   throw new Error("workflow-gate stub: runFastGate");
 }
 
-/** @param {{ root: string, milestonePath: string, runner: (command: string, args: string[]) => CommandResult }} request @returns {CommandDescriptor[]} */
+/** @param {FullGateRequest} request @returns {CommandDescriptor[]} */
 export function buildFullGatePlan(request) {
   throw new Error("workflow-gate stub: buildFullGatePlan");
 }
