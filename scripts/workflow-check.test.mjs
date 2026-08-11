@@ -1,0 +1,161 @@
+import assert from "node:assert/strict";
+import { readFileSync, statSync } from "node:fs";
+import test from "node:test";
+
+import { evaluatePreflight, parseLedger } from "./workflow-check.mjs";
+
+const milestonePath = "milestones/M45.md";
+const validLedger = `
+## Workflow ledger
+
+- **Current phase:** P1 — read-only preflight and phase-ledger checker
+- **Last completed gate:** P0 — FEAT-0095 sealed
+- **Next action:** implement FEAT-0096
+`;
+
+const validObservation = () => ({
+  root: process.cwd(),
+  milestonePath,
+  paths: {
+    "AGENTS.md": true,
+    "ROADMAP.md": true,
+    "DECISIONS.md": true,
+    [milestonePath]: true,
+    ".pi/skills/goal/SKILL.md": true,
+    ".pi/skills/code-review/SKILL.md": true,
+    ".pi/skills/review-until-clean/SKILL.md": true,
+  },
+  requiredPaths: [
+    "AGENTS.md",
+    "ROADMAP.md",
+    "DECISIONS.md",
+    milestonePath,
+  ],
+  agentsTracked: true,
+  mapping: { status: 0, stdout: "workflow mapping OK", stderr: "" },
+  specman: { status: 0, stdout: "FEAT-0096 new", stderr: "" },
+  worktreePorcelain: [],
+  ledgerText: validLedger,
+});
+
+test("parses a valid workflow ledger", () => {
+  const result = parseLedger(validLedger);
+
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.state, {
+    currentPhase: "P1 — read-only preflight and phase-ledger checker",
+    lastCompletedGate: "P0 — FEAT-0095 sealed",
+    nextAction: "implement FEAT-0096",
+  });
+});
+
+test("reports a distinct error for every missing ledger label", () => {
+  const cases = [
+    ["Current phase", "ledger-missing-current-phase"],
+    ["Last completed gate", "ledger-missing-last-completed-gate"],
+    ["Next action", "ledger-missing-next-action"],
+  ];
+
+  for (const [label, code] of cases) {
+    const malformed = validLedger
+      .split("\n")
+      .filter((line) => !line.includes(`**${label}:**`))
+      .join("\n");
+    const result = parseLedger(malformed);
+
+    assert.equal(result.state, null, label);
+    assert.ok(result.errors.some((error) => error.code === code), label);
+  }
+});
+
+test("evaluates a valid preflight observation", () => {
+  const result = evaluatePreflight(validObservation());
+
+  assert.equal(result.ok, true);
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.milestonePath, milestonePath);
+  assert.deepEqual(result.ledger, {
+    currentPhase: "P1 — read-only preflight and phase-ledger checker",
+    lastCompletedGate: "P0 — FEAT-0095 sealed",
+    nextAction: "implement FEAT-0096",
+  });
+});
+
+test("aggregates every missing-path error", () => {
+  const observation = validObservation();
+  observation.paths = {
+    ...observation.paths,
+    "ROADMAP.md": false,
+    "DECISIONS.md": false,
+  };
+
+  const result = evaluatePreflight(observation);
+  const missing = result.errors.filter((error) => error.code === "missing-path");
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(
+    missing.map((error) => error.path),
+    ["ROADMAP.md", "DECISIONS.md"],
+  );
+});
+
+test("blocks a dirty worktree", () => {
+  const observation = validObservation();
+  observation.worktreePorcelain = [" M src/example.ts", "?? scratch.txt"];
+
+  const result = evaluatePreflight(observation);
+
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((error) => error.code === "dirty-worktree"));
+});
+
+test("preserves a failing specman observation as specman-unavailable", () => {
+  const observation = validObservation();
+  observation.specman = {
+    status: 1,
+    stdout: "partial output",
+    stderr: "specman: command failed",
+    error: "exit 1",
+  };
+
+  const result = evaluatePreflight(observation);
+  const failure = result.errors.find(
+    (error) => error.code === "specman-unavailable",
+  );
+
+  assert.equal(result.ok, false);
+  assert.ok(failure);
+  assert.match(failure.message, /partial output/);
+  assert.match(failure.message, /specman: command failed/);
+});
+
+test("malformed ledger blocks preflight", () => {
+  const observation = validObservation();
+  observation.ledgerText = "## Workflow ledger\n- **Current phase:** P1\n";
+
+  const result = evaluatePreflight(observation);
+
+  assert.equal(result.ok, false);
+  assert.ok(
+    result.errors.some(
+      (error) => error.code === "ledger-missing-last-completed-gate",
+    ),
+  );
+  assert.ok(
+    result.errors.some((error) => error.code === "ledger-missing-next-action"),
+  );
+});
+
+test("valid results expose observations without write capability", () => {
+  const result = evaluatePreflight(validObservation());
+  const scriptBefore = statSync("scripts/workflow-check.mjs").mtimeMs;
+  const ledgerBefore = readFileSync("milestones/M45.md", "utf8");
+
+  assert.equal(result.ok, true);
+  assert.equal(result.checks.worktreeClean, true);
+  assert.equal(result.checks.specmanAvailable, true);
+  assert.equal("write" in result, false);
+  assert.equal("repair" in result, false);
+  assert.equal(statSync("scripts/workflow-check.mjs").mtimeMs, scriptBefore);
+  assert.equal(readFileSync("milestones/M45.md", "utf8"), ledgerBefore);
+});
