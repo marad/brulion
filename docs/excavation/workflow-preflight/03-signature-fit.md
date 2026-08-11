@@ -36,3 +36,11 @@ tests are written in the next phase.
 - The parser must return field-specific errors rather than throw for user-owned
   ledger text; the CLI may throw only for invalid command syntax.
 - No tests or bodies are accepted yet; the next gate is contract-driven tests.
+
+## Regeneration result
+
+The signatures were regenerated around named `LedgerParseResult`,
+`PreflightObservation`, `PreflightResult`, `PreflightReport`, and
+`MilestonePathResult` payloads. The implementation now preserves command output,
+rejects root escapes, reports unreadable milestones, and validates CLI operands;
+those behaviors are covered by discriminating Node tests.

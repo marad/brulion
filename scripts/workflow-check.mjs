@@ -1,18 +1,19 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { isAbsolute, relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
  * @typedef {{ currentPhase: string, lastCompletedGate: string, nextAction: string }} LedgerState
  * @typedef {{ code: string, path?: string, message: string }} WorkflowError
  * @typedef {{ status: number | null, stdout: string, stderr: string, error?: string }} CommandObservation
- * @typedef {{ root: string, milestonePath: string, requiredPaths: string[], paths: Record<string, boolean>, agentsTracked: boolean, mapping: CommandObservation, specman: CommandObservation, worktreePorcelain: string[], ledgerText: string }} PreflightObservation
+ * @typedef {{ root: string, milestonePath: string, requiredPaths: string[], paths: Record<string, boolean>, agentsTracked: boolean, mapping: CommandObservation, specman: CommandObservation, worktreePorcelain: string[], ledgerText: string, collectionErrors: WorkflowError[] }} PreflightObservation
  * @typedef {{ state: LedgerState | null, errors: WorkflowError[] }} LedgerParseResult
  * @typedef {{ ok: boolean, milestonePath: string, ledger: LedgerState | null, checks: Record<string, boolean>, errors: WorkflowError[] }} PreflightResult
  * @typedef {{ exitCode: number, stdout: string, stderr: string }} PreflightReport
+ * @typedef {{ ok: true, relativePath: string, absolutePath: string } | { ok: false, error: WorkflowError }} MilestonePathResult
  */
 
 const projectSkillPaths = [
@@ -45,6 +46,68 @@ const shellCommand = (command, args, cwd) => {
 };
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const isWithin = (root, candidate) => {
+  const path = relative(root, candidate);
+  return path === "" || (!path.startsWith(`..${sep}`) && path !== ".." && !isAbsolute(path));
+};
+
+/** @param {string} root @param {string} requested @returns {MilestonePathResult} */
+export function resolveMilestonePath(root, requested) {
+  const resolvedRoot = resolve(root);
+  if (typeof requested !== "string" || requested.trim() === "") {
+    return {
+      ok: false,
+      error: {
+        code: "milestone-missing",
+        message: "A non-empty milestone path is required.",
+      },
+    };
+  }
+
+  const absolutePath = resolve(resolvedRoot, requested);
+  if (!isWithin(resolvedRoot, absolutePath)) {
+    return {
+      ok: false,
+      error: {
+        code: "milestone-outside-root",
+        path: requested,
+        message: "Milestone path must remain inside the repository root.",
+      },
+    };
+  }
+
+  try {
+    const realRoot = realpathSync(resolvedRoot);
+    const realPath = realpathSync(absolutePath);
+    if (!isWithin(realRoot, realPath)) {
+      return {
+        ok: false,
+        error: {
+          code: "milestone-outside-root",
+          path: requested,
+          message: "Milestone symlink resolves outside the repository root.",
+        },
+      };
+    }
+  } catch (error) {
+    if (/** @type {{ code?: string }} */ (error)?.code !== "ENOENT") {
+      return {
+        ok: false,
+        error: {
+          code: "milestone-unreadable",
+          path: requested,
+          message: `Milestone path could not be inspected: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    relativePath: relative(resolvedRoot, absolutePath),
+    absolutePath,
+  };
+}
 
 /** @param {string} markdown @returns {LedgerParseResult} */
 export function parseLedger(markdown) {
@@ -84,7 +147,7 @@ export function parseLedger(markdown) {
 
 /** @param {PreflightObservation} observation @returns {PreflightResult} */
 export function evaluatePreflight(observation) {
-  const errors = [];
+  const errors = [...observation.collectionErrors];
   const ledgerResult = parseLedger(observation.ledgerText);
   errors.push(...ledgerResult.errors);
 
@@ -152,6 +215,9 @@ export function evaluatePreflight(observation) {
     specmanAvailable: observation.specman.status === 0,
     worktreeClean: observation.worktreePorcelain.length === 0,
     ledgerValid: ledgerResult.errors.length === 0,
+    milestonePathSafe: observation.collectionErrors.every(
+      (error) => error.code !== "milestone-outside-root",
+    ),
   };
 
   return {
@@ -166,13 +232,17 @@ export function evaluatePreflight(observation) {
 /** @param {{ root: string, milestonePath: string }} request @returns {PreflightObservation} */
 export function collectPreflightObservation(request) {
   const root = resolve(request.root);
-  const milestonePath = isAbsolute(request.milestonePath)
-    ? relative(root, request.milestonePath)
+  const pathResult = resolveMilestonePath(root, request.milestonePath);
+  const milestonePath = pathResult.ok
+    ? pathResult.relativePath
     : request.milestonePath;
-  const requiredPaths = requiredPathNames(milestonePath);
+  const requiredPaths = pathResult.ok
+    ? requiredPathNames(milestonePath)
+    : ["AGENTS.md", "ROADMAP.md", "DECISIONS.md", ...projectSkillPaths];
   const paths = Object.fromEntries(
     requiredPaths.map((path) => [path, existsSync(resolve(root, path))]),
   );
+  const collectionErrors = pathResult.ok ? [] : [pathResult.error];
   const mapping = shellCommand(
     process.execPath,
     [resolve(root, "scripts/workflow-mapping-check.mjs"), root],
@@ -189,9 +259,18 @@ export function collectPreflightObservation(request) {
     ["status", "--porcelain", "--untracked-files=all"],
     root,
   );
-  const ledgerText = paths[milestonePath]
-    ? readFileSync(resolve(root, milestonePath), "utf8")
-    : "";
+  let ledgerText = "";
+  if (pathResult.ok && paths[milestonePath]) {
+    try {
+      ledgerText = readFileSync(pathResult.absolutePath, "utf8");
+    } catch (error) {
+      collectionErrors.push({
+        code: "milestone-unreadable",
+        path: milestonePath,
+        message: `Milestone file could not be read: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  }
 
   return {
     root,
@@ -206,6 +285,7 @@ export function collectPreflightObservation(request) {
       .map((line) => line.trimEnd())
       .filter(Boolean),
     ledgerText,
+    collectionErrors,
   };
 }
 
@@ -248,10 +328,18 @@ export function run(argv) {
   let milestonePath;
   let root = process.cwd();
   for (let index = 1; index < argv.length; index += 1) {
-    if (argv[index] === "--milestone") milestonePath = argv[++index];
-    else if (argv[index] === "--root") root = argv[++index];
-    else {
-      console.error(`Unknown argument: ${argv[index]}`);
+    const argument = argv[index];
+    if (argument === "--milestone" || argument === "--root") {
+      const value = argv[index + 1];
+      if (!value || value.startsWith("--")) {
+        console.error(`Missing value for ${argument}.`);
+        return 2;
+      }
+      if (argument === "--milestone") milestonePath = value;
+      else root = value;
+      index += 1;
+    } else {
+      console.error(`Unknown argument: ${argument}`);
       return 2;
     }
   }

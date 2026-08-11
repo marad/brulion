@@ -1,8 +1,23 @@
 import assert from "node:assert/strict";
-import { readFileSync, statSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 
-import { evaluatePreflight, parseLedger } from "./workflow-check.mjs";
+import {
+  collectPreflightObservation,
+  evaluatePreflight,
+  parseLedger,
+  resolveMilestonePath,
+  run,
+} from "./workflow-check.mjs";
 
 const milestonePath = "milestones/M45.md";
 const validLedger = `
@@ -36,6 +51,7 @@ const validObservation = () => ({
   specman: { status: 0, stdout: "FEAT-0096 new", stderr: "" },
   worktreePorcelain: [],
   ledgerText: validLedger,
+  collectionErrors: [],
 });
 
 test("parses a valid workflow ledger", () => {
@@ -47,6 +63,50 @@ test("parses a valid workflow ledger", () => {
     lastCompletedGate: "P0 — FEAT-0095 sealed",
     nextAction: "implement FEAT-0096",
   });
+});
+
+test("rejects a missing CLI option operand", () => {
+  assert.equal(run(["preflight", "--root"]), 2);
+});
+
+test("rejects absolute and symlinked milestone paths outside the root", () => {
+  const root = mkdtempSync(join(process.cwd(), "workflow-root-"));
+  const outside = mkdtempSync(join(process.cwd(), "workflow-outside-"));
+  const outsideFile = join(outside, "secret.md");
+  const symlinkPath = join(root, "milestones", "escape.md");
+
+  try {
+    mkdirSync(join(root, "milestones"));
+    writeFileSync(outsideFile, "secret");
+    symlinkSync(outsideFile, symlinkPath);
+
+    assert.equal(resolveMilestonePath(root, "/etc/hosts").ok, false);
+    const symlinkResult = resolveMilestonePath(root, "milestones/escape.md");
+    assert.equal(symlinkResult.ok, false);
+    assert.equal(symlinkResult.error.code, "milestone-outside-root");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test("reports an unreadable milestone path instead of throwing", () => {
+  const root = mkdtempSync(join(process.cwd(), "workflow-root-"));
+
+  try {
+    mkdirSync(join(root, "milestones"));
+    const observation = collectPreflightObservation({
+      root,
+      milestonePath: "milestones",
+    });
+    const result = evaluatePreflight(observation);
+
+    assert.ok(
+      result.errors.some((error) => error.code === "milestone-unreadable"),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("reports a distinct error for every missing ledger label", () => {

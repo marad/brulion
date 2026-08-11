@@ -88,12 +88,16 @@ flowchart LR
 ## Failure boundaries
 
 - Missing required path → `missing-path` with the exact relative path.
+- Absolute or symlinked milestone outside root → `milestone-outside-root`.
+- Existing but unreadable milestone → `milestone-unreadable`.
+- Missing CLI operand → usage output and exit 2.
 - Untracked `AGENTS.md` → `agents-untracked`.
 - Dirty/untracked worktree → `dirty-worktree`.
 - Missing ledger label → `ledger-missing-current-phase`,
   `ledger-missing-last-completed-gate`, or `ledger-missing-next-action`.
 - Specman launch/nonzero failure → `specman-unavailable` with command output.
-- Any error causes exit 1; no partial success is reported.
+- Any preflight error causes exit 1; CLI syntax errors cause exit 2; no partial
+  success is reported.
 
 ## Open questions deferred
 
