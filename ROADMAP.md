@@ -33,6 +33,8 @@ Every technical decision defers to that.
 > authoring kit) is **implemented, deployed, and reviewed live**: a
 > separate-window, multi-file authoring surface for users and LLM agents.
 > **M42** (extension UX, diagnostics, and browser validation) is queued next.
+> **M43** (extension navigation API — active-note access, `openNote()`, and
+> `resolveLink()`) is queued after M42.
 > Recently shipped: **M41** (full extension workbench and authoring kit, P0–P5),
 > **M39** (local JavaScript extensions, P0–P2), **M37**
 > (sidebar tree follow-ups — F2 rename, typeahead, multi-select + batch
@@ -740,6 +742,34 @@ Out:
 - replacing the filesystem as the source of truth or weakening mtime guards.
 
 Phases: [`milestones/M42.md`](milestones/M42.md).
+
+### M43 — Extension navigation API
+**Goal:** extend local JavaScript extensions from filesystem/editor access to
+safe navigation of the active notes view, without exposing DOM, URL, or FSA
+handles and without weakening the file-fidelity boundary.
+
+In:
+- a permission-gated `navigation` namespace with `getActiveNote()` and
+  `openNote(path, { anchor? })`;
+- discriminated navigation results for opened/already-open, missing, and
+  mtime-conflict cases; missing notes are never created implicitly;
+- `resolveLink(target, { from?, kind })` for markdown and wikilink targets,
+  reusing Brulion's existing relative-path, basename/path, anchor, external-link,
+  and invalid-target rules;
+- serialized controller integration that revalidates targets from the filesystem,
+  updates the active editor/sidebar/route/recency, and handles create-then-open
+  without relying on a stale note-list snapshot;
+- API v1 contract/declaration/docs updates, least-privilege navigation
+  permissions, and unit + real Chromium/OPFS coverage.
+
+Out:
+- automatic extension triggers/events, `next`/`previous`, or direct browser
+  back/forward APIs;
+- implicit note creation or mutation through navigation;
+- custom extension UI, external browser navigation, folder picking, DOM/FSA
+  handles, TypeScript execution, packages, or network imports.
+
+Phases: [`milestones/M43.md`](milestones/M43.md).
 
 ## Later / backlog (out of MVP, on purpose)
 

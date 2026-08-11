@@ -1856,6 +1856,45 @@ cadence, never silently overwrites a changed file, and keeps the selected dirty
 draft visible when disk changes underneath it. Observer-backed acceleration
 remains M40; runtime diagnostics and broader browser validation remain M42.
 
+## Extension navigation is a separate, additive capability (M43)
+
+**What:** M43 will add a permission-gated `navigation` namespace to the local
+extension API. Its core surface is `getActiveNote()` and `openNote(path,
+{anchor?})`; `resolveLink(target, {from?, kind})` takes a raw link destination
+(without brackets or a display alias), requires explicit `markdown`/`wikilink`
+syntax, and resolves it through Brulion's existing link/path/anchor resolvers.
+The runtime API remains v1 because this is additive; new `navigation:read` and
+`navigation:write` permissions fail closed, so existing manifests are unchanged.
+
+`openNote()` uses canonical folder-relative POSIX note paths and behaves like
+ordinary note selection: it goes through the serialized controller, flushes
+pending editor changes through the existing mtime guard, updates the active
+editor/sidebar/route/recency, and returns discriminated `opened`, `already-open`,
+`missing`, or `conflict` results. It never creates a missing file implicitly.
+`resolveLink()` is read-only and returns a canonical existing or missing target,
+anchor, or an explicit external/invalid classification; it does not verify that
+the heading exists, change the active note, push history, open a browser, or write
+a file. An extension composes a successful resolution with `openNote()` when it
+wants to navigate.
+
+**Why:** `notes.*` is the filesystem API and `editor.*` is the content API;
+putting navigation into either would blur side effects and make it easier for an
+extension to change the user's view or files unexpectedly. Reusing the same
+resolvers as the UI prevents extensions from developing incompatible semantics
+for relative markdown links, wikilinks, duplicate basenames, and section
+anchors. Keeping creation separate protects the plain-file moat and makes a
+missing target an explicit user/extension decision.
+
+**Consequence (UI/project):** the host must provide a vault-bound navigation
+capability rather than exposing `currentNotes`, `location`, DOM, or handles. The
+`openNote()` path must revalidate against the filesystem and reconcile the
+controller, so an extension can create a note and open it without waiting for a
+stale sidebar snapshot. Navigation preserves normal browser note history but
+does not add direct `back()`/`forward()` or `next()`/`previous()` methods. The
+Authoring Kit, contract drift tests, diagnostics, and Chromium/OPFS tests become
+part of M43; no `.md` bytes change except a normal guarded flush caused by
+switching away from a dirty note.
+
 ## The cold-load budget is calibrated to the post-M41 static graph
 
 **What:** set the folder-less production cold-load budget to 1.75 MB uncompressed,
