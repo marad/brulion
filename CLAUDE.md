@@ -33,6 +33,8 @@ path (this is why CodeMirror won over Tiptap; see `DECISIONS.md`).
 
 Work descends through four levels: **milestone → phase → spec → implementation**.
 A **milestone** (`ROADMAP.md`) is split into **phases** (`milestones/MX.md`).
+This is an executable protocol, not advice: do not silently replace a required
+command or phase gate with an ad-hoc equivalent.
 
 **Operating pattern: build first with `/goal`, review after with `/elicit`.**
 Kick a milestone off with **`/goal`** (e.g. *"implement MX"*) and build the
@@ -41,6 +43,21 @@ between phases. Only once it's implemented and deployed, run the **milestone
 review with `/elicit`** to talk through the recorded decisions and apply any
 corrections. Don't invert this (no per-decision questions mid-build); the review
 is the single, batched, live checkpoint at the end.
+
+**Command availability is a gate.** If `/goal`, `/spec`, `/excavate`,
+`/chisel`, `/review-until-clean`, `/code-review`, or another required command is
+not available in the current runtime, do not pretend to have run it and do not
+silently substitute a custom subagent review. Stop before writing code, report
+the missing command, and fix the command/skill mapping before continuing.
+
+**Preflight before the first phase:**
+
+- Confirm `AGENTS.md` is present and tracked by Git; do not begin a milestone
+  with an untracked process file.
+- Read `ROADMAP.md`, `DECISIONS.md`, and the active `milestones/MX.md`.
+- Run `git status --short --branch` and `specman status --verbose`.
+- Create or update a durable phase ledger in `milestones/MX.md` (current phase,
+  last completed gate, and exact next action). A chat summary is not enough.
 
 **Decisions are made autonomously, reviewed at the end.** Don't stop to ask the
 user about a milestone's open decisions up front. Make the call yourself — pick
@@ -60,24 +77,50 @@ report instead).
 1. **Spec** it with **specman** (`/spec`) — Intent + Given/When/Then ACs — before
    any code. One spec per phase (`FEAT-000N`); keep it to that phase's scope.
 2. **Plan with `specman sync` BEFORE writing any code.** The sync plan is the
-   implementation guide, not paperwork generated afterward. Implement from it.
+   implementation guide, not paperwork generated afterward. Commit the plan
+   before implementation and do not edit production code or tests until the
+   plan exists.
 3. **Implement by invoking the skill — always:** **`excavate`** for any **new
-   module** (top-down: module diagram → signature stubs → signature-fit review →
-   tests → bodies), **`chisel`** for a **small change** (~1–3 files, no new
+   module** (top-down: module diagram → signature stubs → signature-fit review
+   → tests → bodies), **`chisel`** for a **small change** (~1–3 files, no new
    module). Do **not** hand-write a module straight into existence. **Tests come
-   before bodies** — write the failing test first, then the implementation
-   (`excavate`/`chisel` enforce this; honor it even on the rare direct edit).
-4. **Review**: run the loop via **`/review-until-clean`** (which loops
-   **`/code-review --fix`**, every phase — not an ad-hoc reviewer) until no
-   noteworthy findings remain (it has caught real concurrency bugs, data-loss
-   bugs, and weak tests here — take it seriously, and improve tests it flags).
-   Honor that skill's two rules: **restructure after 2 rounds of the same class
-   of finding** (stop patching effects, fix the cause), and make every test added
-   for a fix **discriminating** (it must fail against the pre-fix behavior).
-5. **Verify & seal**: `specman verify` then `specman seal`. Every implementation
-   commit carries a `Spec: FEAT-000N/AC-M` trailer.
-6. **Ship**: push to `main` → GitHub Actions redeploys to Pages. Tick the phase
-   in `milestones/MX.md` only once its "**Done =**" is met.
+   before bodies** — write the failing test first, then the implementation.
+4. **Review**: run **`/review-until-clean`**, which loops
+   **`/code-review --fix`**, every phase — not an ad-hoc reviewer — until no
+   noteworthy findings remain. Honor that skill's two rules: **restructure after
+   2 rounds of the same class of finding** (stop patching effects, fix the cause),
+   and make every test added for a fix **discriminating** (it must fail against
+   the pre-fix behavior).
+5. **Verify & seal**: run the phase's targeted tests, then `specman verify`, then
+   `specman seal` (or the explicitly justified initial-seal form for a new
+   snapshot). Confirm the feature is `in-sync` with `specman status --verbose`.
+   Every implementation commit carries a `Spec: FEAT-000N/AC-M` trailer.
+6. **Close the phase**: update the phase ledger and tick its checkbox in
+   `milestones/MX.md` only after its concrete "**Done =**" condition is met.
+   Do not begin the next phase while any previous phase is unverified or
+   unsealed.
+7. **Ship only after the whole milestone is closed**: require a clean source
+   worktree, all active specs `in-sync`, `specman validate`, and these commands:
+   `npm test -- --run`, `npm run build`, and `npm run e2e`; then push to `main`.
+   GitHub Actions redeploys to Pages.
+
+**Subagent isolation and liveness are also gates.** Keep one writer per
+worktree. Mutation-capable workers use `worktree:true`; review/scout agents are
+read-only and must not share a writer's active worktree. Substantive workers and
+reviews run asynchronously without a hard wall-clock timeout by default. Do not
+pass `timeoutMs`/`maxRuntimeMs`, a hard turn budget, or a hard tool budget to a
+mutation-capable worker. Use watchdog attention events, progress checkpoints,
+and explicit handoffs to detect inactivity; `needs_attention` is not a failure
+and must not silently kill a worker. Hard timeouts are reserved for explicitly
+bounded disposable probes or commands that are known to be safe to abort. If a
+worker is genuinely stuck, stop or steer it manually, inspect ownership, and
+only then resume or replace it. Never continue by silently committing partial
+changes from a stopped, failed, or timed-out worker.
+
+**After compaction, restart, or context loss:** stop before the next edit. Re-read
+this file, `ROADMAP.md`, the active milestone, the phase ledger, `git status`,
+and `specman status`. Resume only from the ledger's exact next action; do not
+infer that a high-level compaction summary satisfies a skipped gate.
 
 Drive this end-to-end without pausing for the user — don't seek approval
 between phases. The only hard stops are steps that genuinely can't proceed
