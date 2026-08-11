@@ -1911,3 +1911,28 @@ of Mermaid, Cytoscape, KaTeX, or other heavy lazy dependencies; ordinary static
 growth has a small explicit margin and must be reconsidered if it approaches the
 new ceiling. Mermaid's browser test continues to assert that its engine loads
 only when a diagram is opened.
+
+## M43 navigation is serialized at both controller and adapter boundaries
+
+**What:** implement the navigation contract as three host-owned layers: a pure
+resolver reusing Brulion's path/link primitives, a vault-bound application
+adapter, and the existing serialized note controller. Extension-driven opens
+are serialized through anchor scrolling as one adapter operation; callbacks are
+bound to the exact folder handle and controller opens carry an expected-folder
+guard. External or syntactically invalid link resolutions short-circuit before
+reading the note listing.
+
+**Why:** the controller queue protects file/editor consistency, but it does not
+by itself prevent two asynchronous extension callbacks from reporting one note
+while scrolling another. The folder guard prevents an old runner from routing a
+late callback into a newly attached vault. Avoiding unnecessary listings keeps
+read-only external/invalid resolution inert and makes the filesystem edge
+explicit rather than incidental.
+
+**Consequence (UI/project):** navigation uses the normal active-note callback,
+route, sidebar, recency, and guarded-save paths; a stale result rejects before
+it can scroll or mutate the new view. `resolveLink()` remains read-only and
+returns canonical `resolved`/`missing` paths or `external`/`invalid` statuses.
+The Authoring Kit now includes least-privilege journal-open and
+resolve-then-open examples, and Chromium/OPFS coverage exercises conflicts,
+anchors, missing targets, resolution, explicit creation, and vault isolation.
