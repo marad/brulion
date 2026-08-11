@@ -106,4 +106,33 @@ describe("extension navigation adapter", () => {
     })).resolves.toEqual({ status: "invalid", target: "../outside.md" })
     expect(listNotePaths).not.toHaveBeenCalled()
   })
+
+  it("resolves relative links against the active-note snapshot taken before listing", async () => {
+    let active = "journal/week.md"
+    let releaseListing!: () => void
+    const listing = new Promise<void>((resolve) => {
+      releaseListing = resolve
+    })
+    const source: NavigationAdapterSource = {
+      assertActive: vi.fn(),
+      getActivePath: () => active,
+      openNote: vi.fn(),
+      listNotePaths: vi.fn(async () => {
+        await listing
+        return ["tasks/today.md"]
+      }),
+      scrollToHeading: vi.fn(),
+      expectedFolder: DIR,
+    }
+    const navigation = createExtensionNavigationAdapter(source)
+
+    const pending = navigation.resolveLink("../tasks/today.md", { kind: "markdown" })
+    active = "other/current.md"
+    releaseListing()
+    await expect(pending).resolves.toEqual({
+      status: "resolved",
+      path: "tasks/today.md",
+      anchor: null,
+    })
+  })
 })

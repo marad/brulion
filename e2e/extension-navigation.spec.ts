@@ -14,10 +14,16 @@ const manifest = JSON.stringify({
   name: "Navigation tools",
   version: "0.1.0",
   entry: "main.js",
-  permissions: ["commands", "navigation:read", "navigation:write", "notes:write"],
+  permissions: ["commands", "editor:read", "navigation:read", "navigation:write", "notes:write"],
 })
 
 const source = `export default async function activate(api) {
+  let releaseConflict
+  const conflictGate = new Promise((resolve) => { releaseConflict = resolve })
+  await api.commands.register({ id: "release-conflict", label: "Release conflict navigation" }, async () => {
+    releaseConflict()
+  })
+
   const active = await api.navigation.getActiveNote()
   await api.commands.register({
     id: "active",
@@ -26,9 +32,10 @@ const source = `export default async function activate(api) {
 
   await api.commands.register({ id: "open-beta", label: "Open beta at done" }, async () => {
     const result = await api.navigation.openNote("beta", { anchor: "done" })
+      const selection = await api.editor.getSelection()
     await api.commands.register({
       id: "opened-result",
-      label: "Navigation "+result.status+" "+result.path+" "+(result.anchorStatus || ""),
+      label: "Navigation "+result.status+" "+result.path+" "+(result.anchorStatus || "")+" cursor "+selection.from,
     }, async () => {})
   })
 
@@ -69,7 +76,8 @@ const source = `export default async function activate(api) {
   })
 
   await api.commands.register({ id: "conflicting-open", label: "Open beta after external edit" }, async () => {
-    await new Promise((resolve) => setTimeout(resolve, 150))
+    await api.commands.register({ id: "conflict-ready", label: "Conflict navigation ready" }, async () => {})
+    await conflictGate
     const result = await api.navigation.openNote("beta")
     await api.commands.register({
       id: "conflict-result",
@@ -94,8 +102,9 @@ const source = `export default async function activate(api) {
   })
 
   await api.commands.register({ id: "stale-navigation", label: "Start stale navigation" }, async () => {
-    await new Promise((resolve) => setTimeout(resolve, 200))
-    const result = await api.navigation.openNote("zeta")
+    const pending = api.navigation.openNote("zeta")
+    await api.commands.register({ id: "stale-in-flight", label: "Stale navigation in flight" }, async () => {})
+    const result = await pending
     await api.commands.register({
       id: "stale-result",
       label: "Stale navigation "+result.status+" "+result.path,
@@ -198,7 +207,7 @@ test("reads the active note, opens a heading, and returns a missing result witho
   await runCommand(page, "Open beta at done")
   await expect.poll(async () => {
     await page.keyboard.press("Control+Shift+K")
-    await page.locator("#palette-input").fill("Navigation opened beta.md found")
+    await page.locator("#palette-input").fill("Navigation opened beta.md found cursor 8")
     return paletteRows(page).count()
   }).toBe(1)
   await page.keyboard.press("Escape")
@@ -263,11 +272,18 @@ test("resolves wikilink, missing, external, and invalid cases without navigating
 
 test("returns conflict and preserves external bytes when a dirty note changed on disk", async ({ page }) => {
   const editor = page.locator("#editor .cm-content")
+  await runCommand(page, "Open beta after external edit")
+  await expect.poll(async () => {
+    await page.keyboard.press("Control+Shift+K")
+    await page.locator("#palette-input").fill("Conflict navigation ready")
+    return paletteRows(page).count()
+  }).toBe(1)
+  await page.keyboard.press("Escape")
   await editor.click()
   await page.keyboard.press("Control+A")
   await page.keyboard.type("local unsaved draft")
-  await runCommand(page, "Open beta after external edit")
   await writeFile(page, "alpha.md", "external bytes")
+  await runCommand(page, "Release conflict navigation")
   await expect(page.locator("#conflict")).toBeVisible()
   await page.locator("#conflict-disk").click()
   await expect(page.locator("#conflict")).toBeHidden()
@@ -284,6 +300,12 @@ test("does not let a stale runner open a note in the newly attached vault", asyn
   await writeFile(page, "zeta.md", "# Zeta\n\nzeta body", SECOND_FOLDER)
 
   await runCommand(page, "Start stale navigation")
+  await expect.poll(async () => {
+    await page.keyboard.press("Control+Shift+K")
+    await page.locator("#palette-input").fill("Stale navigation in flight")
+    return paletteRows(page).count()
+  }).toBe(1)
+  await page.keyboard.press("Escape")
   await page.locator("#open-settings").click()
   await expect(page.locator("#settings-backdrop")).toBeVisible()
   await page.locator(".settings-switch-folder").click()
@@ -303,7 +325,9 @@ test("opens an explicitly extension-created note without waiting for the sidebar
     return paletteRows(page).count()
   }).toBe(1)
   await page.keyboard.press("Escape")
-  await expect(page.locator(".cm-content")).toHaveText("")
+  await expect(page.locator("#editor .cm-content")).toHaveText("")
+  await expect(page.locator('.note-row[data-path="created.md"]')).toHaveClass(/active/)
+  await expect(page).toHaveURL(/#\/created$/)
   await expect.poll(async () => {
     try {
       return await readFile(page, "created.md")

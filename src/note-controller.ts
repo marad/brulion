@@ -210,7 +210,11 @@ export interface NoteController {
   /** Switch the editor to `name`, flushing the open note's edits first. */
   switchTo(name: string): Promise<void>
   /** Revalidate and open a note for an extension; never creates a missing file. */
-  openNote(name: string, expectedFolder?: FileSystemDirectoryHandle): Promise<ControllerOpenNoteResult>
+  openNote(
+    name: string,
+    expectedFolder?: FileSystemDirectoryHandle,
+    assertCurrent?: () => void,
+  ): Promise<ControllerOpenNoteResult>
   /** Create a note from a user-typed name and open it. Reports why it failed. */
   addNote(name: string): Promise<AddNoteResult>
   /** Delete `name`'s file; if it was active, switch to another note. Reports
@@ -344,25 +348,40 @@ export function createNoteController(
   // the loop picks them up in another pass — so nothing is lost and the file is
   // never written concurrently. Awaiting the returned promise drains all edits
   // that were dirty at resolution time (used by switchTo to flush before load).
-  const doSave = (): Promise<void> => {
-    if (savePromise) return savePromise
-    if (!dir || conflict || !dirty) return Promise.resolve()
+  const doSave = (guard?: () => void): Promise<void> => {
+    if (savePromise) return savePromise.then(() => guard?.())
+    if (!dir || conflict || !dirty) {
+      guard?.()
+      return Promise.resolve()
+    }
     savePromise = (async () => {
       try {
         while (dirty && !conflict) {
+          guard?.()
           dirty = false // claim the current edits before the await
-          const result = await saveNote(dir!, activeName, view.state.doc.toString(), lastModified)
-          if (result.status === "conflict") {
-            await raiseConflict() // the reactive path into the one conflict state
-            return
-          }
-          lastModified = result.lastModified
-          contentCache.set(activeName, { content: view.state.doc.toString(), lastModified: result.lastModified })
-          // A first save can materialize a note that wasn't listed yet (the
-          // lazy seed). Surface it in the list.
-          if (!notes.includes(activeName)) {
-            notes = await listNotes(dir!)
-            opts.onListChanged?.(notes, activeName)
+          try {
+            const result = await saveNote(dir!, activeName, view.state.doc.toString(), lastModified)
+            if (result.status === "conflict") {
+              guard?.()
+              await raiseConflict(guard) // the reactive path into the one conflict state
+              return
+            }
+            lastModified = result.lastModified
+            contentCache.set(activeName, { content: view.state.doc.toString(), lastModified: result.lastModified })
+            guard?.()
+            // A first save can materialize a note that wasn't listed yet (the
+            // lazy seed). Surface it in the list.
+            if (!notes.includes(activeName)) {
+              const freshNotes = await listNotes(dir!)
+              guard?.()
+              notes = freshNotes
+              opts.onListChanged?.(notes, activeName)
+            }
+          } catch (error) {
+            // A stale navigation must not discard the only in-memory copy before
+            // the queued vault switch gets a chance to flush it.
+            if (guard) dirty = true
+            throw error
           }
         }
       } finally {
@@ -375,9 +394,9 @@ export function createNoteController(
   const autosave = debounce(() => void doSave(), opts.debounceMs ?? 600)
 
   // Cancel the pending debounce and run a save to completion.
-  const flushAndWait = (): Promise<void> => {
+  const flushAndWait = (guard?: () => void): Promise<void> => {
     autosave.cancel()
-    return doSave()
+    return doSave(guard)
   }
 
   // Point the editor at `name`: load its content and reset the save state.
@@ -391,6 +410,7 @@ export function createNoteController(
     folder: FileSystemDirectoryHandle,
     name: string,
     prefetched?: NoteContent,
+    guard?: () => void,
   ): Promise<void> => {
     const cached = contentCache.get(name)
     if (cached) mark(`cache hit: ${name}`)
@@ -398,7 +418,9 @@ export function createNoteController(
     // Nothing below commits until the read above has actually succeeded — a
     // mid-read failure (permission revoked, a transient FS error) must leave
     // activeName/lastModified/dirty exactly as they were, not pointing at a
-    // note whose content was never actually loaded into the editor.
+    // note whose content was never actually loaded into the editor. A vault
+    // guard is checked at this same commit boundary for stale extension calls.
+    guard?.()
     activeName = name
     if (conflict) {
       conflict = false
@@ -423,9 +445,12 @@ export function createNoteController(
     folder: FileSystemDirectoryHandle,
     name: string,
     prefetched?: NoteContent,
+    guard?: () => void,
   ): Promise<void> => {
-    await load(folder, name, prefetched)
+    await load(folder, name, prefetched, guard)
+    guard?.()
     await saveActiveNote(name)
+    guard?.()
     opts.onListChanged?.(notes, name)
   }
 
@@ -471,18 +496,21 @@ export function createNoteController(
   // (e.g. a permission lapse or I/O race), we still fire `onConflict` so the
   // modal appears and the editor is locked — leaving `conflict` true without
   // surfacing it would freeze the editor silently, with no way out.
-  const raiseConflict = async (): Promise<void> => {
+  const raiseConflict = async (guard?: () => void): Promise<void> => {
+    guard?.()
     conflict = true // stop autosaving so we never clobber the on-disk change
     const mine = view.state.doc.toString()
     let theirs: string | null = null
     if (dir) {
       try {
         const disk = await readNote(dir, activeName)
+        guard?.()
         theirs = disk.lastModified === null ? null : disk.content
       } catch {
         theirs = null // couldn't read the disk side; still surface the conflict
       }
     }
+    guard?.()
     opts.onConflict?.({ mine, theirs })
   }
 
@@ -746,12 +774,16 @@ export function createNoteController(
         await activate(folder, active, prefetched ?? undefined)
       })
     },
-    openNote(name, expectedFolder) {
+    openNote(name, expectedFolder, isCurrent) {
       abortPendingRelist()
       return serialize(async () => {
-        if (!dir) throw new Error("No notes folder is open")
-        if (expectedFolder && dir !== expectedFolder) throw new Error("Notes folder is no longer active")
-        const folder = dir
+        const assertOperationActive = () => {
+          if (!dir) throw new Error("No notes folder is open")
+          if (expectedFolder && dir !== expectedFolder) throw new Error("Notes folder is no longer active")
+          isCurrent?.()
+        }
+        assertOperationActive()
+        const folder = dir!
         if (conflict) return { status: "conflict", path: activeName }
         const normalized = normalizeNoteName(name)
         if (!normalized.ok) throw new Error(normalized.reason)
@@ -761,8 +793,10 @@ export function createNoteController(
         // so an extension can create a file and open it before the sidebar poll
         // has caught up.
         if ((await statNote(folder, target)) === null) {
+          assertOperationActive()
           return { status: "missing", path: target }
         }
+        assertOperationActive()
         if (target === activeName) {
           return { status: "already-open", path: target }
         }
@@ -770,19 +804,22 @@ export function createNoteController(
         // Switching is the same guarded flush as a click/blur/Ctrl+S. A stale
         // write raises the existing modal conflict and leaves the current view
         // active; never navigate around an unresolved edit.
-        await flushAndWait()
+        await flushAndWait(assertOperationActive)
+        assertOperationActive()
         if (conflict) return { status: "conflict", path: activeName }
 
         // Re-read after the flush: the target may have disappeared or changed
         // while the current note was being saved. The prefetched content is
         // handed to activate so it cannot be replaced by a stale cache entry.
         const fresh = await readNote(folder, target)
+        assertOperationActive()
         if (fresh.lastModified === null) return { status: "missing", path: target }
         const freshNotes = await listNotes(folder)
+        assertOperationActive()
         if (!freshNotes.includes(target)) return { status: "missing", path: target }
         notes = freshNotes
         contentCache.delete(target)
-        await activate(folder, target, fresh)
+        await activate(folder, target, fresh, assertOperationActive)
         return { status: "opened", path: target }
       })
     },

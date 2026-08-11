@@ -241,6 +241,7 @@ describe("FEAT-0091 extension navigation host boundary", () => {
     for (const params of [
       { path: "safe", options: { anchor: 42 } },
       { path: "safe", options: { anchor: "#heading" } },
+      { path: "safe", options: { anchor: null } },
       { path: "safe", options: "bad" },
     ]) {
       await expect(extension.call("navigation.openNote", params)).rejects.toMatchObject({

@@ -455,7 +455,7 @@ const reloadExtensions = async (): Promise<void> => {
       navigation: createExtensionNavigationAdapter({
         assertActive,
         getActivePath: () => currentActive,
-        openNote: (path, expectedFolder) => controller.openNote(path, expectedFolder),
+        openNote: (path, expectedFolder) => controller.openNote(path, expectedFolder, assertActive),
         listNotePaths: () => listNotes(root),
         scrollToHeading: (anchor) => scrollEditorToHeading(view, anchor),
         expectedFolder: root,

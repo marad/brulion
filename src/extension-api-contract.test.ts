@@ -65,6 +65,30 @@ describe("versioned extension API contract", () => {
       { id: "navigation.openNote", permission: "navigation:write", returns: "OpenNoteResult" },
       { id: "navigation.resolveLink", permission: "navigation:read", returns: "LinkResolution" },
     ])
+    expect(
+      methods
+        .filter((method) => method.id.startsWith("navigation."))
+        .map(({ id, parameters }) => ({
+          id,
+          parameters: parameters.map(({ name, type, required }) => ({ name, type, required })),
+        })),
+    ).toEqual([
+      { id: "navigation.getActiveNote", parameters: [] },
+      {
+        id: "navigation.openNote",
+        parameters: [
+          { name: "path", type: "string", required: true },
+          { name: "options", type: "OpenNoteOptions", required: false },
+        ],
+      },
+      {
+        id: "navigation.resolveLink",
+        parameters: [
+          { name: "target", type: "string", required: true },
+          { name: "options", type: "ResolveLinkOptions", required: true },
+        ],
+      },
+    ])
     for (const type of contract.types) expect(declarations).toContain(type.declaration)
     expect(declarations).toContain("export type ExtensionIconName = string")
     expect(declarations).toContain("interface ActiveNote")
@@ -72,6 +96,9 @@ describe("versioned extension API contract", () => {
     expect(declarations).toContain("type OpenNoteResult")
     expect(declarations).toContain("interface ResolveLinkOptions")
     expect(declarations).toContain("type LinkResolution")
+    expect(declarations).toMatch(/getActiveNote\(\): Promise<ActiveNote \| null>/)
+    expect(declarations).toMatch(/openNote\(path: string, options\?: OpenNoteOptions\): Promise<OpenNoteResult>/)
+    expect(declarations).toMatch(/resolveLink\(target: string, options: ResolveLinkOptions\): Promise<LinkResolution>/)
     expect(apiReference).toContain("brulion.navigation")
     expect(apiReference).toContain("getActiveNote()")
     expect(apiReference).toContain("api.navigation.openNote")

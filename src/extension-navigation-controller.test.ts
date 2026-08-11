@@ -155,4 +155,37 @@ describe("extension-driven active-note navigation", () => {
     expect(saveActiveNote).toHaveBeenLastCalledWith("b.md")
     expect(onListChanged).toHaveBeenLastCalledWith(["a.md", "b.md", "start.md"], "b.md")
   })
+
+  it("does not commit a target after its application vault guard becomes stale", async () => {
+    const view = mountView()
+    const onListChanged = vi.fn()
+    listNotes.mockResolvedValue(["start.md", "target.md"])
+    const controller = createNoteController(view, { onListChanged })
+    await controller.open(DIR)
+    onListChanged.mockClear()
+
+    let releaseTarget!: () => void
+    const targetRead = new Promise<void>((resolve) => {
+      releaseTarget = resolve
+    })
+    readNote.mockImplementation(async (_dir, path) => {
+      if (path === "target.md") {
+        await targetRead
+        return { content: "target body", lastModified: 2 }
+      }
+      return { content: "start body", lastModified: 1 }
+    })
+    let current = true
+    const pending = controller.openNote("target.md", DIR, () => {
+      if (!current) throw new Error("Extension vault is no longer active")
+    })
+    await vi.waitFor(() => expect(readNote).toHaveBeenCalledWith(DIR, "target.md"))
+
+    current = false
+    releaseTarget()
+    await expect(pending).rejects.toThrow("Extension vault is no longer active")
+    expect(view.state.doc.toString()).toBe("start body")
+    expect(saveActiveNote).not.toHaveBeenLastCalledWith("target.md")
+    expect(onListChanged).not.toHaveBeenCalledWith(expect.anything(), "target.md")
+  })
 })

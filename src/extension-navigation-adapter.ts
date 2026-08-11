@@ -83,7 +83,7 @@ export function createExtensionNavigationAdapter(
       const notePaths = await source.listNotePaths()
       source.assertActive()
       return resolveNavigationLink(target, options, {
-        activeNote: source.getActivePath() || null,
+        activeNote,
         notePaths: new Set(notePaths),
       })
     },

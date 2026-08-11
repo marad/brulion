@@ -233,6 +233,7 @@ function openNoteOptions(value: unknown): OpenNoteOptions | undefined {
     if (key !== "anchor") throw new Error("Open note options contain an unknown field")
   }
   if (!("anchor" in params)) return {}
+  if (params.anchor === null) throw new Error("Anchor must be a string when provided")
   return { anchor: nullableAnchor(params.anchor, "Anchor") as string }
 }
 
