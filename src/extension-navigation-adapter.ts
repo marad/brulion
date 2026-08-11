@@ -73,6 +73,13 @@ export function createExtensionNavigationAdapter(
       }),
     resolveLink: async (target, options) => {
       source.assertActive()
+      const activeNote = source.getActivePath() || null
+      const preliminary = resolveNavigationLink(target, options, {
+        activeNote,
+        notePaths: new Set(),
+      })
+      if (preliminary.status === "external" || preliminary.status === "invalid") return preliminary
+
       const notePaths = await source.listNotePaths()
       source.assertActive()
       return resolveNavigationLink(target, options, {

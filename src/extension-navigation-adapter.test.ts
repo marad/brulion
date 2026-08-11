@@ -63,4 +63,47 @@ describe("extension navigation adapter", () => {
     await expect(navigation.getActiveNote()).resolves.toEqual({ path: "notes/current.md" })
     expect(assertActive).toHaveBeenCalledOnce()
   })
+
+  it("fails before invoking the controller when the captured vault is stale", async () => {
+    const stale = new Error("Extension vault is no longer active")
+    const assertActive = vi.fn(() => {
+      throw stale
+    })
+    const openNote = vi.fn()
+    const source: NavigationAdapterSource = {
+      assertActive,
+      getActivePath: () => "old.md",
+      openNote,
+      listNotePaths: vi.fn(async () => ["old.md"]),
+      scrollToHeading: vi.fn(),
+      expectedFolder: DIR,
+    }
+    const navigation = createExtensionNavigationAdapter(source)
+
+    await expect(navigation.openNote("new.md")).rejects.toBe(stale)
+    expect(openNote).not.toHaveBeenCalled()
+  })
+
+  it("does not read the note listing for external or invalid destinations", async () => {
+    const listNotePaths = vi.fn(async () => ["current.md"])
+    const source: NavigationAdapterSource = {
+      assertActive: vi.fn(),
+      getActivePath: () => "current.md",
+      openNote: vi.fn(),
+      listNotePaths,
+      scrollToHeading: vi.fn(),
+      expectedFolder: DIR,
+    }
+    const navigation = createExtensionNavigationAdapter(source)
+
+    await expect(navigation.resolveLink("https://example.test", { kind: "markdown" })).resolves.toEqual({
+      status: "external",
+      target: "https://example.test",
+    })
+    await expect(navigation.resolveLink("../outside.md", {
+      kind: "markdown",
+      from: "current.md",
+    })).resolves.toEqual({ status: "invalid", target: "../outside.md" })
+    expect(listNotePaths).not.toHaveBeenCalled()
+  })
 })

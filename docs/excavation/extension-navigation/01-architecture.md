@@ -108,8 +108,10 @@ flowchart LR
 - **Authoritative note listing for `openNote`:** owned by the controller after a
   fresh filesystem check; navigation must not rely on the UI's paint snapshot.
 - **Fresh note listing for `resolveLink`:** read by the application adapter from
-  the currently bound vault for that call, then passed to the pure resolver. The
-  adapter's `currentNotes` paint snapshot is never used to decide resolution.
+  the currently bound vault only when the pure resolver needs existence/matching
+  data, then passed to the resolver. External and syntax-invalid destinations
+  short-circuit without a filesystem listing. The adapter's `currentNotes` paint
+  snapshot is never used to decide resolution.
 - **Route, sidebar, and recency:** owned by the existing application callback
   path, updated from the controller's normal active-note notification.
   `resolveLink` never reaches this state.
