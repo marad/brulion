@@ -27,19 +27,29 @@ interface ExtensionNavigationCapabilities {
 ```
 
 The existing controller contract now declares a separate serialized
-`ControllerOpenNoteResult` without anchor presentation fields:
+`ControllerOpenNoteResult` without anchor presentation fields. Its extension
+entry point also accepts an optional expected folder and application guard:
 
 ```ts
 type ControllerOpenNoteResult =
   | { status: "opened" | "already-open"; path: string }
   | { status: "missing"; path: string }
   | { status: "conflict"; path: string }
+
+openNote(
+  name: string,
+  expectedFolder?: FileSystemDirectoryHandle,
+  assertCurrent?: () => void,
+): Promise<ControllerOpenNoteResult>
 ```
 
-The application adapter will map that result to the public `OpenNoteResult` and
-perform heading scrolling. A resolver call with no active note and no explicit
-valid source returns semantic `invalid`; a fresh filesystem/listing failure is
-an exceptional capability failure and is reported by the host RPC boundary.
+The guard is checked after filesystem awaits and at controller commit points, so
+an attach that has already changed the application vault cannot let an old
+callback announce or paint into the new one. The application adapter maps that
+result to the public `OpenNoteResult` and performs heading scrolling. A resolver
+call with no active note and no explicit valid source returns semantic `invalid`;
+a fresh filesystem/listing failure is an exceptional capability failure and is
+reported by the host RPC boundary.
 
 The controller method is currently a compile-checked stub for the excavation
 signature layer. Its body is intentionally deferred until the P1 tests are

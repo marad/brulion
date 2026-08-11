@@ -1919,8 +1919,9 @@ resolver reusing Brulion's path/link primitives, a vault-bound application
 adapter, and the existing serialized note controller. Extension-driven opens
 are serialized through anchor scrolling as one adapter operation; callbacks are
 bound to the exact folder handle and controller opens carry an expected-folder
-guard. External or syntactically invalid link resolutions short-circuit before
-reading the note listing.
+plus application-generation guard, checked again at filesystem-to-view commit
+boundaries. External or syntactically invalid link resolutions short-circuit
+before reading the note listing.
 
 **Why:** the controller queue protects file/editor consistency, but it does not
 by itself prevent two asynchronous extension callbacks from reporting one note
