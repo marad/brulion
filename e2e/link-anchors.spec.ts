@@ -72,12 +72,14 @@ test("a markdown link with an anchor switches to the note and scrolls to the hea
     "home.md": "home top\n\n[go](other.md#section-two)\n",
     "other.md": `other top\n\n${PAD}## Section two\n\nsection two body\n`,
   })
+  const before = await mdSnapshot(page)
   await page.locator(".note-row", { hasText: "home" }).click()
 
   await link(page, "go").click()
 
   await expect(editor(page)).toContainText("section two body") // switched to other
   await expect.poll(() => scrollTop(page)).toBeGreaterThan(0) // scrolled down to the heading
+  expect(await mdSnapshot(page)).toEqual(before)
 })
 
 test("a wikilink with an anchor switches and scrolls (AC-2)", async ({ page }) => {
@@ -85,12 +87,14 @@ test("a wikilink with an anchor switches and scrolls (AC-2)", async ({ page }) =
     "home.md": "home top\n\n[[other#section-two]]\n",
     "other.md": `other top\n\n${PAD}## Section two\n\nsection two body\n`,
   })
+  const before = await mdSnapshot(page)
   await page.locator(".note-row", { hasText: "home" }).click()
 
   await link(page, "other").click()
 
   await expect(editor(page)).toContainText("section two body")
   await expect.poll(() => scrollTop(page)).toBeGreaterThan(0)
+  expect(await mdSnapshot(page)).toEqual(before)
 })
 
 test("a same-note anchor scrolls within the open note, no switch (AC-3)", async ({ page }) => {
@@ -100,10 +104,12 @@ test("a same-note anchor scrolls within the open note, no switch (AC-3)", async 
   await page.locator(".note-row", { hasText: "solo" }).click()
   expect(await scrollTop(page)).toBe(0) // starts at the top
 
+  const before = await mdSnapshot(page)
   await link(page, "jump").click()
 
   await expect.poll(() => scrollTop(page)).toBeGreaterThan(0) // scrolled to "Here"
   await expect(editor(page)).toContainText("here body") // same note
+  expect(await mdSnapshot(page)).toEqual(before)
 })
 
 test("a missing target heading opens the note without scrolling, no error (AC-5)", async ({
@@ -113,12 +119,17 @@ test("a missing target heading opens the note without scrolling, no error (AC-5)
     "home.md": "home top\n\n[go](other.md#no-such-heading)\n",
     "other.md": `other top\n\n${PAD}## Section two\n\nsection two body\n`,
   })
+  const before = await mdSnapshot(page)
   await page.locator(".note-row", { hasText: "home" }).click()
 
   await link(page, "go").click()
 
   await expect(editor(page)).toContainText("other top") // switched to other…
   expect(await scrollTop(page)).toBe(0) // …but no scroll (heading not found)
+  await expect(page.locator("#dialog-backdrop")).toBeHidden()
+  await expect(page.locator("#conflict-backdrop")).toBeHidden()
+  await expect(page.locator(".missing-note-banner")).toBeHidden()
+  expect(await mdSnapshot(page)).toEqual(before)
 })
 
 test("an external link's #fragment is kept and opens a tab, no in-editor scroll (AC-6)", async ({
@@ -127,6 +138,7 @@ test("an external link's #fragment is kept and opens a tab, no in-editor scroll 
   await openWith(page, {
     "home.md": "home top\n\n[ext](https://example.com/p#frag)\n",
   })
+  const before = await mdSnapshot(page)
   await page.locator(".note-row", { hasText: "home" }).click()
 
   await link(page, "ext").click()
@@ -134,6 +146,7 @@ test("an external link's #fragment is kept and opens a tab, no in-editor scroll 
   const clicked = await page.evaluate(() => (window as unknown as { __clicked: string[] }).__clicked)
   expect(clicked).toContain("https://example.com/p#frag") // fragment intact
   await expect(editor(page)).toContainText("home top") // still on home
+  expect(await mdSnapshot(page)).toEqual(before)
 })
 
 test("anchored navigation writes no note files (AC-8)", async ({ page }) => {
