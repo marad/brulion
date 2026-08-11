@@ -229,6 +229,13 @@ export function evaluatePreflight(observation) {
     });
   }
 
+  if (!observation.worktreeCommandOk && !errors.some((error) => error.code === "git-unavailable")) {
+    errors.push({
+      code: "git-unavailable",
+      message: "git status observation was unavailable.",
+    });
+  }
+
   if (observation.worktreePorcelain.length > 0) {
     errors.push({
       code: "dirty-worktree",

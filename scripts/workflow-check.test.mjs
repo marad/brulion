@@ -16,6 +16,7 @@ import test from "node:test";
 import {
   collectPreflightObservation,
   evaluatePreflight,
+  formatPreflightResult,
   parseLedger,
   resolveMilestonePath,
   run,
@@ -185,6 +186,9 @@ test("evaluates a valid preflight observation", () => {
     lastCompletedGate: "P0 — FEAT-0095 sealed",
     nextAction: "implement FEAT-0096",
   });
+  const report = formatPreflightResult(result);
+  assert.equal(report.exitCode, 0);
+  assert.match(report.stdout, /Workflow preflight OK/);
 });
 
 test("aggregates every missing-path error", () => {
@@ -218,9 +222,6 @@ test("blocks a dirty worktree", () => {
 test("blocks an unavailable Git status command", () => {
   const observation = validObservation();
   observation.worktreeCommandOk = false;
-  observation.collectionErrors = [
-    { code: "git-unavailable", message: "git status failed" },
-  ];
 
   const result = evaluatePreflight(observation);
 

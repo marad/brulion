@@ -69,3 +69,11 @@ to reviewer-generated `.pi-subagents` artifacts, and a failed `git status` could
 look clean. The no-write test now accepts the expected blocked exit while still
 asserting no mutation; the collector carries `worktreeCommandOk` and emits
 `git-unavailable`, so Git observation failures fail closed.
+
+## Round 5 review response
+
+The evaluator now independently derives `git-unavailable` when the observation
+says Git status failed, even if a caller omitted the collection error. The valid
+pure result also exercises the successful report/exit contract, while the real
+collector/CLI test remains focused on read-only behavior and accepts the
+expected blocked status when the checkout is dirty.
