@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest"
 import contractSource from "../extension-kit/api-contract.json?raw"
 import declarations from "../extension-kit/brulion-extension.d.ts?raw"
+import apiReference from "../extension-kit/API.md?raw"
 import { EXTENSION_API_METHODS } from "./extension-host"
 import { AUTHORING_KIT_VERSION } from "./authoring-kit"
+import { SCRIPT_PERMISSIONS } from "./script-manifest"
 import {
   contractMethods,
   parseExtensionApiContract,
@@ -21,6 +23,9 @@ const expectedMethodIds = [
   "notes.write",
   "notes.delete",
   "notes.move",
+  "navigation.getActiveNote",
+  "navigation.openNote",
+  "navigation.resolveLink",
 ]
 
 describe("versioned extension API contract", () => {
@@ -44,11 +49,36 @@ describe("versioned extension API contract", () => {
       "editor:write",
       "notes:read",
       "notes:write",
+      "navigation:read",
+      "navigation:write",
     ])
-    expect(contractMethods(contract).map((method) => method.id)).toEqual(expectedMethodIds)
+    expect([...SCRIPT_PERMISSIONS]).toEqual(contract.permissions.map((permission) => permission.id))
+    const methods = contractMethods(contract)
+    expect(methods.map((method) => method.id)).toEqual(expectedMethodIds)
     expect([...EXTENSION_API_METHODS]).toEqual(expectedMethodIds)
+    expect(
+      methods
+        .filter((method) => method.id.startsWith("navigation."))
+        .map(({ id, permission, returns }) => ({ id, permission, returns })),
+    ).toEqual([
+      { id: "navigation.getActiveNote", permission: "navigation:read", returns: "ActiveNote | null" },
+      { id: "navigation.openNote", permission: "navigation:write", returns: "OpenNoteResult" },
+      { id: "navigation.resolveLink", permission: "navigation:read", returns: "LinkResolution" },
+    ])
     for (const type of contract.types) expect(declarations).toContain(type.declaration)
     expect(declarations).toContain("export type ExtensionIconName = string")
+    expect(declarations).toContain("interface ActiveNote")
+    expect(declarations).toContain("interface OpenNoteOptions")
+    expect(declarations).toContain("type OpenNoteResult")
+    expect(declarations).toContain("interface ResolveLinkOptions")
+    expect(declarations).toContain("type LinkResolution")
+    expect(apiReference).toContain("brulion.navigation")
+    expect(apiReference).toContain("getActiveNote()")
+    expect(apiReference).toContain("openNote(path")
+    expect(apiReference).toContain("resolveLink(target")
+    expect(apiReference).toContain("navigation:read")
+    expect(apiReference).toContain("navigation:write")
+    expect(apiReference).toContain("never implicitly creates or mutates")
     expect(declarations).not.toContain('export type ExtensionIconName = "braces"')
   })
 

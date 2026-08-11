@@ -85,6 +85,12 @@ const POLL_RELIST_CONCURRENCY = 1
 /** The outcome of {@link NoteController.addNote}. */
 export type AddNoteResult = { ok: true } | { ok: false; reason: string }
 
+/** Serialized result for extension-driven navigation before anchor scrolling. */
+export type ControllerOpenNoteResult =
+  | { status: "opened" | "already-open"; path: string }
+  | { status: "missing"; path: string }
+  | { status: "conflict"; path: string }
+
 /** How the active note changed on disk (relative to what the controller saw). */
 export type ActiveDiskState =
   | { kind: "changed"; lastModified: number; dirty: boolean }
@@ -203,6 +209,8 @@ export interface NoteController {
   open(dir: FileSystemDirectoryHandle): Promise<void>
   /** Switch the editor to `name`, flushing the open note's edits first. */
   switchTo(name: string): Promise<void>
+  /** Revalidate and open a note for an extension; never creates a missing file. */
+  openNote(name: string): Promise<ControllerOpenNoteResult>
   /** Create a note from a user-typed name and open it. Reports why it failed. */
   addNote(name: string): Promise<AddNoteResult>
   /** Delete `name`'s file; if it was active, switch to another note. Reports
@@ -737,6 +745,9 @@ export function createNoteController(
         const prefetched = active === guess ? await speculativeRead : null
         await activate(folder, active, prefetched ?? undefined)
       })
+    },
+    openNote(_name) {
+      return Promise.reject(new Error("openNote stub"))
     },
     switchTo(name) {
       abortPendingRelist() // don't make the user's switch wait behind our own background scan
