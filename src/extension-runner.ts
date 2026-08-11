@@ -7,6 +7,7 @@ import {
 import { ExtensionRpcPeer, type RpcValue } from "./extension-rpc"
 import { MAX_SCRIPT_SOURCE_BYTES } from "./script-storage"
 import type { ScriptManifest } from "./script-manifest"
+import type { ExtensionNavigationCapabilities } from "./extension-navigation"
 
 export const EXTENSION_BOOTSTRAP_CHANNEL = "brulion-extension-bootstrap" as const
 export const DEFAULT_EXTENSION_TIMEOUT_MS = 5_000 as const
@@ -241,6 +242,7 @@ export interface ExtensionRunnerOptions {
   source: string
   editor: ExtensionEditorCapabilities
   notes: ExtensionNoteCapabilities
+  navigation?: ExtensionNavigationCapabilities
   container?: HTMLElement
   onActionsChanged?: () => void
   onError?: (error: unknown) => void
@@ -320,6 +322,7 @@ export class ExtensionRunner {
       peer: this.peer,
       editor: options.editor,
       notes: options.notes,
+      navigation: options.navigation,
       permissions: options.manifest.permissions,
       onActionsChanged: options.onActionsChanged,
       onError: options.onError,

@@ -210,7 +210,7 @@ export interface NoteController {
   /** Switch the editor to `name`, flushing the open note's edits first. */
   switchTo(name: string): Promise<void>
   /** Revalidate and open a note for an extension; never creates a missing file. */
-  openNote(name: string): Promise<ControllerOpenNoteResult>
+  openNote(name: string, expectedFolder?: FileSystemDirectoryHandle): Promise<ControllerOpenNoteResult>
   /** Create a note from a user-typed name and open it. Reports why it failed. */
   addNote(name: string): Promise<AddNoteResult>
   /** Delete `name`'s file; if it was active, switch to another note. Reports
@@ -746,8 +746,45 @@ export function createNoteController(
         await activate(folder, active, prefetched ?? undefined)
       })
     },
-    openNote(_name) {
-      return Promise.reject(new Error("openNote stub"))
+    openNote(name, expectedFolder) {
+      abortPendingRelist()
+      return serialize(async () => {
+        if (!dir) throw new Error("No notes folder is open")
+        if (expectedFolder && dir !== expectedFolder) throw new Error("Notes folder is no longer active")
+        const folder = dir
+        if (conflict) return { status: "conflict", path: activeName }
+        const normalized = normalizeNoteName(name)
+        if (!normalized.ok) throw new Error(normalized.reason)
+        const target = normalized.filename
+
+        // The UI list is only a paint snapshot. Stat the requested path directly
+        // so an extension can create a file and open it before the sidebar poll
+        // has caught up.
+        if ((await statNote(folder, target)) === null) {
+          return { status: "missing", path: target }
+        }
+        if (target === activeName) {
+          return { status: "already-open", path: target }
+        }
+
+        // Switching is the same guarded flush as a click/blur/Ctrl+S. A stale
+        // write raises the existing modal conflict and leaves the current view
+        // active; never navigate around an unresolved edit.
+        await flushAndWait()
+        if (conflict) return { status: "conflict", path: activeName }
+
+        // Re-read after the flush: the target may have disappeared or changed
+        // while the current note was being saved. The prefetched content is
+        // handed to activate so it cannot be replaced by a stale cache entry.
+        const fresh = await readNote(folder, target)
+        if (fresh.lastModified === null) return { status: "missing", path: target }
+        const freshNotes = await listNotes(folder)
+        if (!freshNotes.includes(target)) return { status: "missing", path: target }
+        notes = freshNotes
+        contentCache.delete(target)
+        await activate(folder, target, fresh)
+        return { status: "opened", path: target }
+      })
     },
     switchTo(name) {
       abortPendingRelist() // don't make the user's switch wait behind our own background scan

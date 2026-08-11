@@ -104,6 +104,11 @@ import { createPoller } from "./watch"
 import { registerServiceWorker } from "./pwa"
 import { createInstallPrompt, type DeferredInstallPrompt } from "./install-prompt"
 import { ExtensionRegistry } from "./extension-registry"
+import {
+  resolveNavigationLink,
+  type ExtensionNavigationCapabilities,
+  type OpenNoteResult,
+} from "./extension-navigation"
 import { mountExtensionManager, type ExtensionManagerHandle } from "./extension-manager"
 import { createWorkbenchUrl } from "./workbench"
 
@@ -451,6 +456,42 @@ const reloadExtensions = async (): Promise<void> => {
           return moveNote(root, from, to)
         },
       },
+      navigation: {
+        getActiveNote: async () => {
+          assertActive()
+          return currentActive ? { path: currentActive } : null
+        },
+        openNote: async (path, options) => {
+          assertActive()
+          const outcome = await controller.openNote(path, root)
+          assertActive()
+          if (outcome.status === "missing") {
+            return { status: "missing", path: outcome.path, anchor: options?.anchor ?? null }
+          }
+          if (outcome.status === "conflict") return outcome
+          const anchor = options?.anchor ?? null
+          const anchorStatus = anchor
+            ? scrollEditorToHeading(view, anchor)
+              ? "found"
+              : "not-found"
+            : "not-requested"
+          return {
+            status: outcome.status,
+            path: outcome.path,
+            anchor,
+            anchorStatus,
+          } satisfies OpenNoteResult
+        },
+        resolveLink: async (target, options) => {
+          assertActive()
+          const paths = await listNotes(root)
+          assertActive()
+          return resolveNavigationLink(target, options, {
+            activeNote: currentActive || null,
+            notePaths: new Set(paths),
+          })
+        },
+      } satisfies ExtensionNavigationCapabilities,
     },
     currentSettings.extensions ?? [],
   )

@@ -133,7 +133,7 @@ describe("extension-driven active-note navigation", () => {
     })
 
     expect(view.state.doc.toString()).toBe("start body local")
-    expect(onConflict).toHaveBeenCalledWith({ mine: "start body local", theirs: "start.md body" })
+    expect(onConflict).toHaveBeenCalledWith({ mine: "start body local", theirs: "start body" })
     expect(onListChanged).not.toHaveBeenCalledWith(expect.anything(), "other.md")
   })
 

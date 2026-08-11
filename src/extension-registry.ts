@@ -1,6 +1,7 @@
 import type { Action } from "./actions"
 import { ExtensionRunner } from "./extension-runner"
 import type { ExtensionEditorCapabilities, ExtensionNoteCapabilities } from "./extension-host"
+import type { ExtensionNavigationCapabilities } from "./extension-navigation"
 import {
   listScripts,
   readScript,
@@ -32,7 +33,11 @@ export class ExtensionRegistry {
 
   async load(
     root: FileSystemDirectoryHandle,
-    capabilities: { editor: ExtensionEditorCapabilities; notes: ExtensionNoteCapabilities },
+    capabilities: {
+      editor: ExtensionEditorCapabilities
+      notes: ExtensionNoteCapabilities
+      navigation?: ExtensionNavigationCapabilities
+    },
     enabledIds: readonly string[] = [],
   ): Promise<ScriptDiscovery[]> {
     const generation = ++this.generation
@@ -62,6 +67,7 @@ export class ExtensionRegistry {
           source: record.source,
           editor: capabilities.editor,
           notes: capabilities.notes,
+          navigation: capabilities.navigation,
           onActionsChanged: () => this.notifyActionsChanged(),
           onError: (error) => this.reportError(error, item.id),
         })
