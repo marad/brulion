@@ -1,3 +1,6 @@
 #!/usr/bin/env bash
-# Signature-only stub for the opt-in repository-local hook installer.
-# The implementation is added after contract tests.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+git -C "$root" config core.hooksPath .githooks
+printf 'Installed repository-local hooks at %s/.githooks\n' "$root"

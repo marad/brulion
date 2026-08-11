@@ -11,7 +11,9 @@
     "e2e": "playwright test",
     "workflow:mapping-check": "node scripts/workflow-mapping-check.mjs",
     "workflow:check": "node scripts/workflow-check.mjs",
-    "workflow:test": "node --test scripts/workflow-command-mapping.test.mjs && node --test scripts/workflow-check.test.mjs"
+    "workflow:gate": "node scripts/workflow-gate.mjs",
+    "workflow:install-hooks": "bash scripts/install-hooks.sh",
+    "workflow:test": "node --test scripts/workflow-command-mapping.test.mjs && node --test scripts/workflow-check.test.mjs && node --test scripts/workflow-gate.test.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",

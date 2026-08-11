@@ -1,2 +1,6 @@
 #!/usr/bin/env bash
-# Signature-only hook stub. Delegates to scripts/workflow-gate.mjs after tests.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+exec node scripts/workflow-gate.mjs pre-commit

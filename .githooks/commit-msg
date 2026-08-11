@@ -1,2 +1,10 @@
 #!/usr/bin/env bash
-# Signature-only hook stub. Delegates to scripts/workflow-gate.mjs after tests.
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then
+  echo "commit-msg hook requires the commit message path" >&2
+  exit 2
+fi
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+exec node scripts/workflow-gate.mjs commit-message --file "$1"
