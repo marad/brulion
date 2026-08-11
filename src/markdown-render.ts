@@ -655,12 +655,12 @@ const blockRenderingField = StateField.define<{
 /** Visual styling for the rendered rich-text spans. */
 const renderTheme = EditorView.baseTheme({
   ".cm-heading": { fontWeight: "600", lineHeight: "1.3" },
-  ".cm-h1": { fontSize: "1.8em" },
-  ".cm-h2": { fontSize: "1.5em" },
-  ".cm-h3": { fontSize: "1.25em" },
-  ".cm-h4": { fontSize: "1.1em" },
+  ".cm-h1": { fontSize: "1.35em" },
+  ".cm-h2": { fontSize: "1.15em" },
+  ".cm-h3": { fontSize: "1em" },
+  ".cm-h4": { fontSize: "1em" },
   ".cm-h5": { fontSize: "1em" },
-  ".cm-h6": { fontSize: "0.9em", opacity: "0.8" },
+  ".cm-h6": { fontSize: "1em" },
   ".cm-strong": { fontWeight: "700" },
   ".cm-em": { fontStyle: "italic" },
   // Links (FEAT-0025): styled text, markup hidden. A broken internal link (no

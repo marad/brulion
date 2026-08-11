@@ -73,7 +73,7 @@ async function metrics(page: Page) {
   }
 }
 
-test("headings use the compact hierarchy, scale with text size, and preserve Markdown bytes (AC-1, AC-2, AC-4)", async ({
+test("headings use the compact hierarchy, scale with text size, and preserve Markdown bytes (AC-1, AC-2, AC-3, AC-4)", async ({
   page,
 }) => {
   const folder = "e2e-heading-hierarchy"
