@@ -80,6 +80,9 @@ function mount(initial: Settings = DEFAULT_SETTINGS, folderName = "vault") {
 const checkbox = (root: HTMLElement) =>
   root.querySelector<HTMLInputElement>('input[type="checkbox"]')!
 
+const focusActiveCheckbox = (root: HTMLElement) =>
+  root.querySelector<HTMLInputElement>(".settings-focus-active")!
+
 const fontSelect = (root: HTMLElement) => root.querySelector<HTMLSelectElement>("select")!
 
 const buttons = (root: HTMLElement) => [...root.querySelectorAll<HTMLButtonElement>("button")]
@@ -155,6 +158,7 @@ describe("mountSettingsModal open/seed (FEAT-0048 AC-1)", () => {
       journalPath: "",
       theme: "system",
       workspace: "",
+      focusActiveNote: false,
     }
     const { backdrop, handle } = mount(initial)
 
@@ -180,6 +184,31 @@ describe("mountSettingsModal open/seed (FEAT-0048 AC-1)", () => {
     expect(checkbox(backdrop).checked).toBe(false)
     // empty font means the default-stack option is selected (empty value)
     expect(fontSelect(backdrop).value).toBe("")
+  })
+})
+
+describe("mountSettingsModal active-note focus (FEAT-0099 AC-2)", () => {
+  it("seeds the focus checkbox and emits a patch when toggled", async () => {
+    const { backdrop, handle, onChange, state } = mount({ ...DEFAULT_SETTINGS, focusActiveNote: false })
+    handle.open()
+    await flush()
+
+    const focus = focusActiveCheckbox(backdrop)
+    expect(focus.checked).toBe(false)
+    focus.click()
+    expect(onChange).toHaveBeenLastCalledWith({ focusActiveNote: true })
+    expect(state.current.focusActiveNote).toBe(true)
+
+    handle.sync()
+    expect(focusActiveCheckbox(backdrop).checked).toBe(true)
+  })
+
+  it("defaults the control to enabled", async () => {
+    const { backdrop, handle } = mount()
+    handle.open()
+    await flush()
+
+    expect(focusActiveCheckbox(backdrop).checked).toBe(true)
   })
 })
 

@@ -155,6 +155,15 @@ describe("normalizeSettings (AC-3)", () => {
     expect(normalizeSettings({ workspace: "my notes" }).workspace).toBe("my notes")
   })
 
+  it("FEAT-0099 AC-1: defaults active-note focus on and preserves valid booleans", () => {
+    expect(DEFAULT_SETTINGS.focusActiveNote).toBe(true)
+    expect(normalizeSettings({}).focusActiveNote).toBe(true)
+    expect(normalizeSettings({ focusActiveNote: "yes" }).focusActiveNote).toBe(true)
+    expect(normalizeSettings({ focusActiveNote: 0 }).focusActiveNote).toBe(true)
+    expect(normalizeSettings({ focusActiveNote: false }).focusActiveNote).toBe(false)
+    expect(normalizeSettings({ focusActiveNote: true }).focusActiveNote).toBe(true)
+  })
+
   it("M39: keeps explicit extension enablement ids and removes duplicates", () => {
     expect(normalizeSettings({ extensions: ["daily-tools", "daily-tools", 7, null] }).extensions).toEqual([
       "daily-tools",
@@ -206,6 +215,7 @@ describe("loadSettings / saveSettings round-trip (AC-5, AC-2)", () => {
       theme: "dark",
       journalPath: "Journal/Week/{mondayOfTheWeek}",
       workspace: "notes",
+      focusActiveNote: false,
     }
     await saveSettings(folder.dir, settings)
     expect(folder.has(SETTINGS_FILE)).toBe(true)
@@ -241,6 +251,7 @@ describe("loadSettings / saveSettings round-trip (AC-5, AC-2)", () => {
       journalPath: "",
       theme: "system",
       workspace: "",
+      focusActiveNote: true,
     })
   })
 })
@@ -252,7 +263,7 @@ describe("applySettings DOM variables", () => {
     try {
       applySettings(
         view,
-        { font: [], textSize: 20, editorWidth: "wider", vim: false, actionBar: [], journalPath: "", theme: "system", workspace: "" },
+        { font: [], textSize: 20, editorWidth: "wider", vim: false, actionBar: [], journalPath: "", theme: "system", workspace: "", focusActiveNote: true },
         root,
       )
       expect(root.style.getPropertyValue("--editor-font-size")).toBe("20px")
@@ -283,7 +294,7 @@ describe("applySettings DOM variables", () => {
     try {
       applySettings(
         view,
-        { font: ["Menlo", "Courier New"], textSize: 16, editorWidth: "narrow", vim: false, actionBar: [], journalPath: "", theme: "system", workspace: "" },
+        { font: ["Menlo", "Courier New"], textSize: 16, editorWidth: "narrow", vim: false, actionBar: [], journalPath: "", theme: "system", workspace: "", focusActiveNote: true },
         root,
       )
       expect(root.style.getPropertyValue("--font-stack")).toBe(

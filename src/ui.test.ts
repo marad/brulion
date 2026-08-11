@@ -16,6 +16,7 @@ import {
   clampSidebarWidth,
   wireSidebarResize,
   renderActionBar,
+  updateActiveNoteRow,
   markMotionReady,
   clearTreeSelection,
   repaintTreeSelection,
@@ -1132,6 +1133,35 @@ describe("renderNoteList keyboard navigation (FEAT-0075)", () => {
     expect((document.activeElement as HTMLElement).classList.contains("folder-header")).toBe(true)
     key(document.activeElement as HTMLElement, "ArrowDown") // sub header is last visible → no move
     expect((document.activeElement as HTMLElement).classList.contains("folder-header")).toBe(true)
+  })
+
+  it("updates the active row and focuses it without breaking roving tabindex (FEAT-0099 AC-3)", () => {
+    const c = mount(["a.md", "b.md"], "a.md")
+    expect(updateActiveNoteRow(c, "b.md", true)).toBe(true)
+
+    const rows = names(c)
+    expect(document.activeElement).toBe(rows[1])
+    expect(rows[1].closest(".note-row")?.classList.contains("active")).toBe(true)
+    expect(rows[1].closest(".note-row")?.getAttribute("aria-current")).toBe("true")
+    expect(rows.filter((row) => row.tabIndex === 0)).toEqual([rows[1]])
+  })
+
+  it("updates active state without moving outside focus, and refuses hidden rows (FEAT-0099 AC-4)", () => {
+    const c = mount(["a.md", "b.md"], "a.md")
+    const outside = document.createElement("input")
+    document.body.append(outside)
+    outside.focus()
+
+    expect(updateActiveNoteRow(c, "b.md")).toBe(false)
+    expect(document.activeElement).toBe(outside)
+    expect(c.querySelector<HTMLElement>('[data-path="b.md"]')?.closest(".note-row")?.classList.contains("active")).toBe(true)
+
+    const nested = mount(["other.md", "sub/a.md"], "other.md")
+    const nestedOutside = document.createElement("input")
+    document.body.append(nestedOutside)
+    nestedOutside.focus()
+    expect(updateActiveNoteRow(nested, "sub/a.md", true)).toBe(false)
+    expect(document.activeElement).toBe(nestedOutside)
   })
 })
 
