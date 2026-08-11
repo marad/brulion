@@ -18,7 +18,8 @@ added for a fix must be discriminating: it must fail against the pre-fix
 behavior.
 
 **Blocking kinds:** `missing-mapping`, `shared-writer`, `worker-blocked`, and
-`insufficient-evidence`.
+`insufficient-evidence`. A failed or stopped worker is never a successful review
+result.
 
 ## Required protocol
 
