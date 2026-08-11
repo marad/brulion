@@ -59,6 +59,7 @@ async function metrics(page: Page) {
           {
             size: parseFloat(style.fontSize),
             weight: Number(style.fontWeight),
+            opacity: style.opacity,
             indent: style.textIndent,
             color: style.color,
           },
@@ -69,7 +70,7 @@ async function metrics(page: Page) {
   }) as {
     bodySize: number
     bodyColor: string
-    levels: Record<number, { size: number; weight: number; indent: string; color: string }>
+    levels: Record<number, { size: number; weight: number; opacity: string; indent: string; color: string }>
   }
 }
 
@@ -95,6 +96,8 @@ test("headings use the compact hierarchy, scale with text size, and preserve Mar
   await page.keyboard.press("Escape")
   const light = await metrics(page)
   for (const level of [1, 2, 3, 4, 5, 6]) {
+    expect(light.levels[level].weight).toBeGreaterThanOrEqual(600)
+    expect(light.levels[level].opacity).toBe("1")
     expect(light.levels[level].indent).toBe("0px")
     expect(light.levels[level].color).toBe(light.bodyColor)
   }
@@ -116,10 +119,14 @@ test("headings use the compact hierarchy, scale with text size, and preserve Mar
   expect(dark.levels[2].size / dark.bodySize).toBeCloseTo(1.15, 2)
   for (const level of [3, 4, 5, 6]) {
     expect(dark.levels[level].size / dark.bodySize).toBeCloseTo(1, 2)
+    expect(dark.levels[level].weight).toBeGreaterThanOrEqual(600)
+    expect(dark.levels[level].opacity).toBe("1")
     expect(dark.levels[level].indent).toBe("0px")
     expect(dark.levels[level].color).toBe(dark.bodyColor)
   }
   for (const level of [1, 2]) {
+    expect(dark.levels[level].weight).toBeGreaterThanOrEqual(600)
+    expect(dark.levels[level].opacity).toBe("1")
     expect(dark.levels[level].indent).toBe("0px")
     expect(dark.levels[level].color).toBe(dark.bodyColor)
   }
