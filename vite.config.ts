@@ -1,8 +1,34 @@
 import { defineConfig } from "vitest/config"
 
+/** Keep the declaration artifact a text response in local/preview HTTP checks.
+ * Vite's MIME table classifies `.d.ts` as video/mp2t; the artifact is a text
+ * editor/type-hint surface, so intercept only this one generated file and leave
+ * the rest of the static server untouched. GitHub Pages still serves the same
+ * immutable bytes; this keeps the production-preview contract honest. */
+const declarationTextPlugin = {
+  name: "brulion-declaration-text",
+  configureServer(server: any) {
+    server.middlewares.use((req: any, res: any, next: () => void) => {
+      if ((req.url?.split("?", 1)[0] ?? "").endsWith("/brulion-extension.d.ts")) {
+        res.setHeader("Content-Type", "text/plain; charset=utf-8")
+      }
+      next()
+    })
+  },
+  configurePreviewServer(server: any) {
+    server.middlewares.use((req: any, res: any, next: () => void) => {
+      if ((req.url?.split("?", 1)[0] ?? "").endsWith("/brulion-extension.d.ts")) {
+        res.setHeader("Content-Type", "text/plain; charset=utf-8")
+      }
+      next()
+    })
+  },
+}
+
 // GitHub Pages serves this project site under /brulion/, so assets must be
 // resolved relative to that sub-path rather than the domain root.
 export default defineConfig({
+  plugins: [declarationTextPlugin],
   base: "/brulion/",
   build: {
     modulePreload: {

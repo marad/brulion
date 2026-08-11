@@ -36,6 +36,7 @@ test("the deployed static artifacts contain the current Authoring Kit contract",
   expect(guide.ok()).toBe(true)
   expect(contract.ok()).toBe(true)
   expect(declarations.ok()).toBe(true)
+  expect(declarations.headers()["content-type"]).toMatch(/^text\/plain(?:;|$)/)
   expect(await guide.text()).toContain("## Start here")
   expect((await contract.json()).apiVersion).toBe(1)
   expect(await declarations.text()).toContain("interface BrulionApi")
