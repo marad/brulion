@@ -44,6 +44,7 @@ import {
   renderNoteList,
   derivedFolderPaths,
   renderActionBar,
+  updateActiveNoteRow,
   wireToggle,
   wireSidebarResize,
   showWorkspace,
@@ -951,6 +952,7 @@ controller = createNoteController(view, {
     })
     // Feed the editor the open note + known paths so links render valid-vs-broken
     // and a follow resolves relative to the right note (FEAT-0025).
+    const activeChanged = currentActive !== active
     currentActive = active
     const listUnchanged = notes === currentNotes
     currentNotes = notes
@@ -964,14 +966,16 @@ controller = createNoteController(view, {
     syncRouteToActive(active) // mirror the open note into the URL hash (FEAT-0036)
     identity.update(active) // keep the header naming the open note (FEAT-0035)
     trackSync("setLinkContext", () => setLinkContext(view, { activeNote: active, notePaths: new Set(notes) }))
+    const shouldFocusActiveRow =
+      activeChanged &&
+      currentSettings.focusActiveNote &&
+      !sidebarEl.hidden &&
+      !workspaceEl.classList.contains("sidebar-collapsed")
     if (listUnchanged) {
-      // List unchanged — only active note changed. Toggle the highlighted row
-      // instead of tearing down and rebuilding the entire sidebar DOM.
-      for (const row of listEl.querySelectorAll<HTMLElement>(".note-row")) {
-        const isActive = row.dataset.path === active
-        row.classList.toggle("active", isActive)
-        row.toggleAttribute("aria-current", isActive)
-      }
+      // List unchanged — only active note changed. Update the highlighted row and
+      // roving tab stop in place. Focus is gated by genuine navigation and the
+      // vault preference; a same-note repaint cannot steal focus.
+      updateActiveNoteRow(listEl, active, shouldFocusActiveRow)
     } else {
       // currentFolders (M35/FEAT-0069): refreshed on vault attach and by
       // onFoldersChanged below, not re-fetched here — an ordinary note change
@@ -979,6 +983,7 @@ controller = createNoteController(view, {
       trackSync("renderNoteList", () =>
         renderNoteList(listEl, notes, active, noteListHandlers, expandedFolders, currentFolders),
       )
+      if (shouldFocusActiveRow) updateActiveNoteRow(listEl, active, true)
       cachedNoteList = notes
       void saveNoteList(currentVaultId, notes) // the fresh, authoritative list — this vault's next attach paints from it
     }

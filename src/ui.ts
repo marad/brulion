@@ -400,6 +400,34 @@ function focusRow(container: HTMLElement, el: HTMLElement): void {
   el.focus()
 }
 
+/**
+ * Update the active-note row without rebuilding the tree (FEAT-0099). The active
+ * visual/ARIA state and roving tab stop are always updated; `focus` is an explicit
+ * opt-in used only after a genuine navigation, so callers can repaint a poller
+ * result without stealing focus from the editor or an open dialog. A hidden row
+ * (inside a collapsed folder) is never focused.
+ */
+export function updateActiveNoteRow(
+  container: HTMLElement,
+  active: string,
+  focus = false,
+): boolean {
+  for (const row of container.querySelectorAll<HTMLElement>(".note-row")) {
+    const isActive = row.dataset.path === active
+    row.classList.toggle("active", isActive)
+    if (isActive) row.setAttribute("aria-current", "true")
+    else row.removeAttribute("aria-current")
+  }
+  applyRovingTabindex(container, active)
+  if (!focus) return false
+  const row = [...container.querySelectorAll<HTMLElement>(".note-name")].find(
+    (candidate) => candidate.dataset.path === active,
+  )
+  if (!row || row.closest(".folder-children[hidden]")) return false
+  focusRow(container, row)
+  return true
+}
+
 /** Paint the current multi-selection (M37/FEAT-0078) onto the rows: a selected
  * row gets `aria-selected="true"` and a `.selected` class; an unselected row
  * carries neither. Called on every render and after each incremental selection

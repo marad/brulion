@@ -39,6 +39,8 @@ export interface Settings {
    * portable `?ws=` carries and matches against. Travels with the folder in
    * `.brulion.json`. Empty means "use the folder name" — see `effectiveVaultName`. */
   workspace: string
+  /** Whether genuine active-note changes move DOM focus to the sidebar row. */
+  focusActiveNote: boolean
   /** Script ids explicitly enabled in the local extension workbench. */
   extensions?: string[]
 }
@@ -63,6 +65,7 @@ export const DEFAULT_SETTINGS: Settings = {
   journalPath: "",
   theme: "system",
   workspace: "",
+  focusActiveNote: true,
 }
 
 /** Each width preset's CSS `max-width` value for the content column. */
@@ -95,6 +98,8 @@ export function normalizeSettings(raw: unknown): Settings {
     journalPath: typeof r.journalPath === "string" ? r.journalPath : "",
     theme: isTheme(r.theme) ? r.theme : "system",
     workspace: typeof r.workspace === "string" ? r.workspace.trim() : "",
+    focusActiveNote:
+      typeof r.focusActiveNote === "boolean" ? r.focusActiveNote : DEFAULT_SETTINGS.focusActiveNote,
     ...(extensions === undefined ? {} : { extensions }),
   }
 }

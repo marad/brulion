@@ -182,6 +182,20 @@ export function mountSettingsModal(
   vimControl.append(vimCheckbox, vimHint)
   const vimRow = labeledRow("Vim mode", vimControl)
 
+  // Active-note focus (FEAT-0099): an opt-out for users who prefer to keep
+  // keyboard focus in the editor while navigation changes the active row.
+  const focusActiveCheckbox = document.createElement("input")
+  focusActiveCheckbox.type = "checkbox"
+  focusActiveCheckbox.className = "settings-focus-active"
+  focusActiveCheckbox.setAttribute("aria-label", "Focus active note in sidebar")
+  const focusActiveControl = document.createElement("div")
+  focusActiveControl.className = "settings-focus-active-control"
+  focusActiveControl.append(focusActiveCheckbox)
+  const focusActiveRow = labeledRow("Focus active note", focusActiveControl)
+  focusActiveCheckbox.addEventListener("change", () =>
+    emit({ focusActiveNote: focusActiveCheckbox.checked }),
+  )
+
   // Folder — the open folder's name + a button that switches folders (FEAT-0054).
   // Switching reloads the workspace and this folder's settings, so the click closes
   // the modal (below) before handing off to the host's open-folder flow.
@@ -291,6 +305,7 @@ export function mountSettingsModal(
     widthRow,
     themeRow,
     vimRow,
+    focusActiveRow,
     folderRow,
     workspaceRow,
     journalRow,
@@ -400,6 +415,7 @@ export function mountSettingsModal(
     for (const r of widthRadios) r.checked = r.value === s.editorWidth
     for (const r of themeRadios) r.checked = r.value === s.theme
     vimCheckbox.checked = s.vim
+    focusActiveCheckbox.checked = s.focusActiveNote
     // Only reassign when it actually differs: the input emits per keystroke and the
     // host's updateSettings calls sync()→seed() right back, and reassigning `.value`
     // to the string just typed would jump the caret to the end mid-edit.

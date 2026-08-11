@@ -75,6 +75,7 @@ test("the Settings checkbox disables focus without disabling active-row state (A
 }) => {
   const folder = "e2e-active-note-focus-disabled"
   await openFixture(page, folder)
+  const before = await snapshotNotes(page, folder)
   await page.locator("#open-settings").click()
   const focus = page.locator(".settings-focus-active")
   await expect(focus).toBeChecked()
@@ -93,6 +94,7 @@ test("the Settings checkbox disables focus without disabling active-row state (A
 
   expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.path)).not.toBe("b.md")
   await expect(page.locator(".note-row.active .note-name")).toHaveText("b")
+  expect(await snapshotNotes(page, folder)).toEqual(before)
 })
 
 test("collapsed sidebar stays collapsed and does not receive focus during navigation (AC-4)", async ({
@@ -100,6 +102,7 @@ test("collapsed sidebar stays collapsed and does not receive focus during naviga
 }) => {
   const folder = "e2e-active-note-focus-collapsed"
   await openFixture(page, folder)
+  const before = await snapshotNotes(page, folder)
   await page.locator("#toggle-sidebar").click()
   await expect(page.locator(".workspace")).toHaveClass(/sidebar-collapsed/)
 
@@ -107,4 +110,5 @@ test("collapsed sidebar stays collapsed and does not receive focus during naviga
 
   await expect(page.locator(".workspace")).toHaveClass(/sidebar-collapsed/)
   expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.path)).not.toBe("b.md")
+  expect(await snapshotNotes(page, folder)).toEqual(before)
 })
