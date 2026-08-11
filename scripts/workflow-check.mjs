@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
  * @typedef {{ currentPhase: string, lastCompletedGate: string, nextAction: string }} LedgerState
  * @typedef {{ code: string, path?: string, message: string }} WorkflowError
  * @typedef {{ status: number | null, stdout: string, stderr: string, error?: string }} CommandObservation
- * @typedef {{ root: string, milestonePath: string, requiredPaths: string[], paths: Record<string, boolean | null>, agentsTracked: boolean, mapping: CommandObservation, specman: CommandObservation, worktreePorcelain: string[], ledgerText: string, ledgerReadable: boolean, collectionErrors: WorkflowError[] }} PreflightObservation
+ * @typedef {{ root: string, milestonePath: string, requiredPaths: string[], paths: Record<string, boolean | null>, agentsTracked: boolean, mapping: CommandObservation, specman: CommandObservation, worktreePorcelain: string[], worktreeCommandOk: boolean, ledgerText: string, ledgerReadable: boolean, collectionErrors: WorkflowError[] }} PreflightObservation
  * @typedef {{ state: LedgerState | null, errors: WorkflowError[] }} LedgerParseResult
  * @typedef {{ ok: boolean, milestonePath: string, ledger: LedgerState | null, checks: Record<string, boolean>, errors: WorkflowError[] }} PreflightResult
  * @typedef {{ exitCode: number, stdout: string, stderr: string }} PreflightReport
@@ -243,7 +243,8 @@ export function evaluatePreflight(observation) {
     agentsTracked: observation.agentsTracked,
     mappingAvailable: observation.mapping.status === 0,
     specmanAvailable: observation.specman.status === 0,
-    worktreeClean: observation.worktreePorcelain.length === 0,
+    worktreeClean:
+      observation.worktreeCommandOk && observation.worktreePorcelain.length === 0,
     ledgerValid: observation.ledgerReadable && ledgerResult.errors.length === 0,
     milestonePathSafe: errors.every(
       (error) =>
@@ -308,6 +309,20 @@ export function collectPreflightObservation(request) {
     ["status", "--porcelain", "--untracked-files=all"],
     root,
   );
+  if (worktreeStatus.status !== 0) {
+    collectionErrors.push({
+      code: "git-unavailable",
+      message: [
+        "git status failed.",
+        worktreeStatus.stdout,
+        worktreeStatus.stderr,
+        worktreeStatus.error,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .trim(),
+    });
+  }
   let ledgerText = "";
   let ledgerReadable = false;
   if (pathResult.ok && paths[milestonePath] === true) {
@@ -335,6 +350,7 @@ export function collectPreflightObservation(request) {
       .split("\n")
       .map((line) => line.trimEnd())
       .filter(Boolean),
+    worktreeCommandOk: worktreeStatus.status === 0,
     ledgerText,
     ledgerReadable,
     collectionErrors,

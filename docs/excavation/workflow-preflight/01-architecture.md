@@ -95,6 +95,7 @@ flowchart LR
   `path-unreadable`.
 - Missing CLI operand → usage output and exit 2.
 - Untracked `AGENTS.md` → `agents-untracked`.
+- Failed Git status observation → `git-unavailable`.
 - Dirty/untracked worktree → `dirty-worktree`.
 - Missing ledger label → `ledger-missing-current-phase`,
   `ledger-missing-last-completed-gate`, or `ledger-missing-next-action`.

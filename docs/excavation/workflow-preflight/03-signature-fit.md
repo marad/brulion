@@ -45,6 +45,13 @@ The signatures were regenerated around named `LedgerParseResult`,
 rejects root escapes, reports unreadable milestones, and validates CLI operands;
 those behaviors are covered by discriminating Node tests.
 
+## Round 3 review response
+
+The review found that a milestone read failure could still trigger misleading
+ledger errors, and the existing symlink test did not cover a dangling link. The
+contract now carries `ledgerReadable`, skips parsing when the file cannot be
+read, and the test suite rejects both existing and dangling symlink paths.
+
 ## Round 2 review response
 
 An independent review found three boundary gaps: missing CLI operands could
@@ -54,3 +61,11 @@ extended with `MilestonePathResult`, `collectionErrors`, explicit operand
 validation, conservative symlink rejection, and structured unreadable-path
 errors. Tests now cover a dangling/external symlink, an unreadable directory and
 file when the platform permits the probe, and the missing operand.
+
+## Round 4 review response
+
+The review identified two operational edges: a clean-CLI assertion was coupled
+to reviewer-generated `.pi-subagents` artifacts, and a failed `git status` could
+look clean. The no-write test now accepts the expected blocked exit while still
+asserting no mutation; the collector carries `worktreeCommandOk` and emits
+`git-unavailable`, so Git observation failures fail closed.

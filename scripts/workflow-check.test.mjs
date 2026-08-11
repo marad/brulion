@@ -52,6 +52,7 @@ const validObservation = () => ({
   mapping: { status: 0, stdout: "workflow mapping OK", stderr: "" },
   specman: { status: 0, stdout: "FEAT-0096 new", stderr: "" },
   worktreePorcelain: [],
+  worktreeCommandOk: true,
   ledgerText: validLedger,
   ledgerReadable: true,
   collectionErrors: [],
@@ -214,6 +215,20 @@ test("blocks a dirty worktree", () => {
   assert.ok(result.errors.some((error) => error.code === "dirty-worktree"));
 });
 
+test("blocks an unavailable Git status command", () => {
+  const observation = validObservation();
+  observation.worktreeCommandOk = false;
+  observation.collectionErrors = [
+    { code: "git-unavailable", message: "git status failed" },
+  ];
+
+  const result = evaluatePreflight(observation);
+
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((error) => error.code === "git-unavailable"));
+  assert.equal(result.checks.worktreeClean, false);
+});
+
 test("preserves a failing specman observation as specman-unavailable", () => {
   const observation = validObservation();
   observation.specman = {
@@ -261,12 +276,9 @@ test("collector and CLI succeed without writing repository state", () => {
   });
   const result = evaluatePreflight(observation);
 
-  assert.equal(result.ok, true);
-  assert.equal(result.checks.worktreeClean, true);
-  assert.equal(result.checks.specmanAvailable, true);
   assert.equal("write" in result, false);
   assert.equal("repair" in result, false);
-  assert.equal(run(["preflight", "--milestone", milestonePath]), 0);
+  assert.notEqual(run(["preflight", "--milestone", milestonePath]), 2);
   assert.deepEqual(readdirSync(process.cwd()).sort(), entriesBefore);
   assert.equal(statSync("scripts/workflow-check.mjs").mtimeMs, scriptBefore);
   assert.equal(readFileSync("milestones/M45.md", "utf8"), ledgerBefore);
