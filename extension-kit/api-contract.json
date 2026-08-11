@@ -1,7 +1,7 @@
 {
   "kind": "brulion.extension-api",
   "apiVersion": 1,
-  "kitVersion": "1.1.1",
+  "kitVersion": "1.2.0",
   "title": "Brulion Extension API",
   "summary": "A small JSON-like capability API for explicitly enabled local JavaScript extensions.",
   "runtime": {
@@ -47,49 +47,69 @@
         "type": "1",
         "required": true,
         "description": "Manifest schema version.",
-        "constraints": ["must equal 1"]
+        "constraints": [
+          "must equal 1"
+        ]
       },
       {
         "name": "apiVersion",
         "type": "1",
         "required": true,
         "description": "Brulion extension API version used by the entry source.",
-        "constraints": ["must equal 1"]
+        "constraints": [
+          "must equal 1"
+        ]
       },
       {
         "name": "id",
         "type": "string",
         "required": true,
         "description": "Stable extension directory identity.",
-        "constraints": ["lowercase safe id", "starts with a letter", "maximum 64 characters"]
+        "constraints": [
+          "lowercase safe id",
+          "starts with a letter",
+          "maximum 64 characters"
+        ]
       },
       {
         "name": "name",
         "type": "string",
         "required": true,
         "description": "Human-readable extension name.",
-        "constraints": ["non-empty", "maximum 160 characters"]
+        "constraints": [
+          "non-empty",
+          "maximum 160 characters"
+        ]
       },
       {
         "name": "version",
         "type": "semver string",
         "required": true,
         "description": "Extension version.",
-        "constraints": ["valid semantic version"]
+        "constraints": [
+          "valid semantic version"
+        ]
       },
       {
         "name": "entry",
         "type": "relative .js path",
         "required": true,
         "description": "JavaScript ESM entry file inside the extension directory.",
-        "constraints": ["POSIX separators", "no traversal segments", "must end in .js"]
+        "constraints": [
+          "POSIX separators",
+          "no traversal segments",
+          "must end in .js"
+        ]
       },
       {
         "name": "permissions",
         "type": "string[]",
         "required": true,
         "description": "Capabilities explicitly granted to the extension.",
-        "constraints": ["known permissions only", "no duplicates"]
+        "constraints": [
+          "known permissions only",
+          "no duplicates"
+        ]
       }
     ],
     "example": "{\n  \"schemaVersion\": 1,\n  \"apiVersion\": 1,\n  \"id\": \"daily-tools\",\n  \"name\": \"Daily tools\",\n  \"version\": \"0.1.0\",\n  \"entry\": \"main.js\",\n  \"permissions\": [\"commands\", \"editor:write\"]\n}"
@@ -97,33 +117,67 @@
   "permissions": [
     {
       "id": "commands",
-      "grants": ["commands.register", "commands.unregister"],
+      "grants": [
+        "commands.register",
+        "commands.unregister"
+      ],
       "description": "Publish and remove commands in Brulion's palette and action bar.",
       "risk": "Adds user-invoked actions; it does not grant automatic execution."
     },
     {
       "id": "editor:read",
-      "grants": ["editor.getText", "editor.getSelection", "editor.focus"],
+      "grants": [
+        "editor.getText",
+        "editor.getSelection",
+        "editor.focus"
+      ],
       "description": "Read the active editor and focus it.",
       "risk": "Can read the note currently open in the editor."
     },
     {
       "id": "editor:write",
-      "grants": ["editor.replaceSelection"],
+      "grants": [
+        "editor.replaceSelection"
+      ],
       "description": "Replace the active editor selection.",
       "risk": "Can change the current editor buffer and trigger its normal save behavior."
     },
     {
       "id": "notes:read",
-      "grants": ["notes.list", "notes.read"],
+      "grants": [
+        "notes.list",
+        "notes.read"
+      ],
       "description": "List and read markdown notes in the granted vault.",
       "risk": "Can read user-owned markdown files in the vault."
     },
     {
       "id": "notes:write",
-      "grants": ["notes.create", "notes.write", "notes.delete", "notes.move"],
+      "grants": [
+        "notes.create",
+        "notes.write",
+        "notes.delete",
+        "notes.move"
+      ],
       "description": "Create, modify, remove, and move markdown notes.",
       "risk": "Can change user-owned files; guarded writes prevent silent overwrite."
+    },
+    {
+      "id": "navigation:read",
+      "grants": [
+        "navigation.getActiveNote",
+        "navigation.resolveLink"
+      ],
+      "description": "Read the active note and resolve raw markdown or wikilink destinations.",
+      "risk": "Can read which note is open and the note paths used for link resolution; it cannot change the view or files."
+    },
+    {
+      "id": "navigation:write",
+      "grants": [
+        "navigation.openNote"
+      ],
+      "description": "Open an existing note through Brulion's active notes view.",
+      "risk": "Can change the active view and flush its pending edit through the normal guarded save path; it cannot create a missing note."
     }
   ],
   "types": [
@@ -171,6 +225,41 @@
       "name": "MoveResult",
       "description": "A note move never replaces an occupied destination.",
       "declaration": "export type MoveResult =\n  | { status: \"moved\" }\n  | { status: \"exists\" }\n  | { status: \"missing\" }"
+    },
+    {
+      "name": "ActiveNote",
+      "declaration": "export interface ActiveNote {\n  path: string\n}",
+      "description": "Canonical active note identity."
+    },
+    {
+      "name": "OpenNoteOptions",
+      "declaration": "export interface OpenNoteOptions {\n  anchor?: string\n}",
+      "description": "Optional heading anchor for an active-view open."
+    },
+    {
+      "name": "AnchorStatus",
+      "declaration": "export type AnchorStatus = \"not-requested\" | \"found\" | \"not-found\"",
+      "description": "Outcome of an optional heading scroll attempt."
+    },
+    {
+      "name": "OpenNoteResult",
+      "declaration": "export type OpenNoteResult =\n  | {\n      status: \"opened\" | \"already-open\"\n      path: string\n      anchor: string | null\n      anchorStatus: AnchorStatus\n    }\n  | { status: \"missing\"; path: string; anchor: string | null }\n  | { status: \"conflict\"; path: string }",
+      "description": "Discriminated result for opening an existing note."
+    },
+    {
+      "name": "LinkKind",
+      "declaration": "export type LinkKind = \"markdown\" | \"wikilink\"",
+      "description": "Explicit link syntax accepted by resolveLink."
+    },
+    {
+      "name": "ResolveLinkOptions",
+      "declaration": "export interface ResolveLinkOptions {\n  from?: string\n  kind: LinkKind\n}",
+      "description": "Source-note and syntax options for link resolution."
+    },
+    {
+      "name": "LinkResolution",
+      "declaration": "export type LinkResolution =\n  | { status: \"resolved\"; path: string; anchor: string | null }\n  | { status: \"missing\"; path: string; anchor: string | null }\n  | { status: \"external\"; target: string }\n  | { status: \"invalid\"; target: string }",
+      "description": "Discriminated, read-only link resolution result."
     }
   ],
   "namespaces": [
@@ -190,7 +279,14 @@
               "type": "BrulionCommand",
               "required": true,
               "description": "Label, stable local id, optional description, and optional icon name string.",
-              "constraints": ["id starts with a lowercase letter", "id uses lowercase letters, numbers, -, _, or .", "id maximum 64 characters", "label is non-empty and at most 120 characters", "description is optional and at most 240 characters", "any non-blank icon string is accepted; unavailable names fall back to puzzle"]
+              "constraints": [
+                "id starts with a lowercase letter",
+                "id uses lowercase letters, numbers, -, _, or .",
+                "id maximum 64 characters",
+                "label is non-empty and at most 120 characters",
+                "description is optional and at most 240 characters",
+                "any non-blank icon string is accepted; unavailable names fall back to puzzle"
+              ]
             },
             {
               "name": "run",
@@ -200,8 +296,15 @@
             }
           ],
           "returns": "RegisterResult",
-          "errors": ["Rejects if the permission is missing, metadata is invalid, the id is duplicated, or the command limit is reached."],
-          "behavior": ["The returned action id is namespaced as <extension-id>:<command-id>.", "The callback runs only after explicit user invocation.", "The callback return value is ignored.", "Any non-blank icon string crosses the API as metadata; names in the bundled Lucide catalog are rendered and missing or unavailable names use puzzle."],
+          "errors": [
+            "Rejects if the permission is missing, metadata is invalid, the id is duplicated, or the command limit is reached."
+          ],
+          "behavior": [
+            "The returned action id is namespaced as <extension-id>:<command-id>.",
+            "The callback runs only after explicit user invocation.",
+            "The callback return value is ignored.",
+            "Any non-blank icon string crosses the API as metadata; names in the bundled Lucide catalog are rendered and missing or unavailable names use puzzle."
+          ],
           "example": "await api.commands.register(\n  { id: \"insert-date\", label: \"Insert date\", icon: \"sparkles\" },\n  async () => {\n    await api.editor.replaceSelection(new Date().toISOString().slice(0, 10))\n  },\n)",
           "since": 1
         },
@@ -220,8 +323,13 @@
             }
           ],
           "returns": "void",
-          "errors": ["Rejects if the permission is missing or the id is invalid."],
-          "behavior": ["Unregistering an unknown id is a no-op.", "An extension can remove only its own commands."],
+          "errors": [
+            "Rejects if the permission is missing or the id is invalid."
+          ],
+          "behavior": [
+            "Unregistering an unknown id is a no-op.",
+            "An extension can remove only its own commands."
+          ],
           "example": "await api.commands.unregister(\"insert-date\")",
           "since": 1
         }
@@ -239,8 +347,12 @@
           "description": "Returns the complete markdown text in the active editor.",
           "parameters": [],
           "returns": "string",
-          "errors": ["Rejects if editor:read is missing or the editor/vault is no longer active."],
-          "behavior": ["Returns the file-format text, including markdown markers hidden by Brulion's visual editor."],
+          "errors": [
+            "Rejects if editor:read is missing or the editor/vault is no longer active."
+          ],
+          "behavior": [
+            "Returns the file-format text, including markdown markers hidden by Brulion's visual editor."
+          ],
           "example": "const markdown = await api.editor.getText()",
           "since": 1
         },
@@ -252,8 +364,13 @@
           "description": "Returns the primary editor selection and its text.",
           "parameters": [],
           "returns": "EditorSelection",
-          "errors": ["Rejects if editor:read is missing or the editor/vault is no longer active."],
-          "behavior": ["from and to are zero-based document offsets.", "When there is no selected range, from equals to."],
+          "errors": [
+            "Rejects if editor:read is missing or the editor/vault is no longer active."
+          ],
+          "behavior": [
+            "from and to are zero-based document offsets.",
+            "When there is no selected range, from equals to."
+          ],
           "example": "const selection = await api.editor.getSelection()\nconsole.log(selection.text)",
           "since": 1
         },
@@ -269,12 +386,19 @@
               "type": "string",
               "required": true,
               "description": "Replacement markdown text.",
-              "constraints": ["maximum 1 MiB of text"]
+              "constraints": [
+                "maximum 1 MiB of text"
+              ]
             }
           ],
           "returns": "void",
-          "errors": ["Rejects if editor:write is missing, text is too large, or the editor/vault is no longer active."],
-          "behavior": ["Uses the editor's normal document change and save path.", "Does not expose the CodeMirror instance or DOM."],
+          "errors": [
+            "Rejects if editor:write is missing, text is too large, or the editor/vault is no longer active."
+          ],
+          "behavior": [
+            "Uses the editor's normal document change and save path.",
+            "Does not expose the CodeMirror instance or DOM."
+          ],
           "example": "await api.editor.replaceSelection(\"- captured item\")",
           "since": 1
         },
@@ -286,8 +410,12 @@
           "description": "Places keyboard focus in the active editor.",
           "parameters": [],
           "returns": "void",
-          "errors": ["Rejects if editor:read is missing or the editor/vault is no longer active."],
-          "behavior": ["This is a narrow focus action; it does not return a DOM element."],
+          "errors": [
+            "Rejects if editor:read is missing or the editor/vault is no longer active."
+          ],
+          "behavior": [
+            "This is a narrow focus action; it does not return a DOM element."
+          ],
           "example": "await api.editor.focus()",
           "since": 1
         }
@@ -305,8 +433,14 @@
           "description": "Lists every markdown note path in the granted vault.",
           "parameters": [],
           "returns": "readonly string[]",
-          "errors": ["Rejects if notes:read is missing or the vault cannot be read."],
-          "behavior": ["Paths are folder-relative POSIX paths and include the .md suffix.", "The reserved .brulion directory is excluded.", "Results are sorted case-insensitively."],
+          "errors": [
+            "Rejects if notes:read is missing or the vault cannot be read."
+          ],
+          "behavior": [
+            "Paths are folder-relative POSIX paths and include the .md suffix.",
+            "The reserved .brulion directory is excluded.",
+            "Results are sorted case-insensitively."
+          ],
           "example": "const paths = await api.notes.list()\nfor (const path of paths) console.log(path)",
           "since": 1
         },
@@ -322,12 +456,22 @@
               "type": "string",
               "required": true,
               "description": "Folder-relative note name or path.",
-              "constraints": [".md is optional", "POSIX / separators", "no . or .. traversal", "maximum 512 characters"]
+              "constraints": [
+                ".md is optional",
+                "POSIX / separators",
+                "no . or .. traversal",
+                "maximum 512 characters"
+              ]
             }
           ],
           "returns": "NoteContent",
-          "errors": ["Rejects if notes:read is missing, the path is unsafe, or the vault cannot be read."],
-          "behavior": ["A missing note returns { content: \"\", lastModified: null } instead of throwing.", "The normalized path always targets a .md file."],
+          "errors": [
+            "Rejects if notes:read is missing, the path is unsafe, or the vault cannot be read."
+          ],
+          "behavior": [
+            "A missing note returns { content: \"\", lastModified: null } instead of throwing.",
+            "The normalized path always targets a .md file."
+          ],
           "example": "const note = await api.notes.read(\"Journal/today\")\nconsole.log(note.content, note.lastModified)",
           "since": 1
         },
@@ -343,12 +487,19 @@
               "type": "string",
               "required": true,
               "description": "Folder-relative note name or path.",
-              "constraints": ["same safe path rules as read()"]
+              "constraints": [
+                "same safe path rules as read()"
+              ]
             }
           ],
           "returns": "CreateResult",
-          "errors": ["Rejects if notes:write is missing, the path is unsafe, or the vault cannot be written."],
-          "behavior": ["Creates missing parent folders.", "Returns { status: \"exists\" } and leaves bytes untouched when the destination exists."],
+          "errors": [
+            "Rejects if notes:write is missing, the path is unsafe, or the vault cannot be written."
+          ],
+          "behavior": [
+            "Creates missing parent folders.",
+            "Returns { status: \"exists\" } and leaves bytes untouched when the destination exists."
+          ],
           "example": "const result = await api.notes.create(\"Journal/today\")\nif (result.status === \"exists\") console.log(\"Already created\")",
           "since": 1
         },
@@ -364,14 +515,18 @@
               "type": "string",
               "required": true,
               "description": "Folder-relative note name or path.",
-              "constraints": ["same safe path rules as read()"]
+              "constraints": [
+                "same safe path rules as read()"
+              ]
             },
             {
               "name": "content",
               "type": "string",
               "required": true,
               "description": "Complete markdown bytes to write.",
-              "constraints": ["maximum 8 MiB of text"]
+              "constraints": [
+                "maximum 8 MiB of text"
+              ]
             },
             {
               "name": "expectedLastModified",
@@ -381,8 +536,14 @@
             }
           ],
           "returns": "SaveResult",
-          "errors": ["Rejects if notes:write is missing, a parameter is invalid, or the vault cannot be written."],
-          "behavior": ["Returns { status: \"conflict\" } and writes nothing when the on-disk mtime differs.", "A null expectedLastModified refuses to replace an existing file.", "Creates missing parent folders and preserves the markdown file as the source of truth."],
+          "errors": [
+            "Rejects if notes:write is missing, a parameter is invalid, or the vault cannot be written."
+          ],
+          "behavior": [
+            "Returns { status: \"conflict\" } and writes nothing when the on-disk mtime differs.",
+            "A null expectedLastModified refuses to replace an existing file.",
+            "Creates missing parent folders and preserves the markdown file as the source of truth."
+          ],
           "example": "const current = await api.notes.read(\"todo\")\nconst result = await api.notes.write(\n  \"todo\",\n  current.content + \"\\n- New item\",\n  current.lastModified,\n)\nif (result.status === \"conflict\") console.warn(\"Changed externally\")",
           "since": 1
         },
@@ -398,12 +559,19 @@
               "type": "string",
               "required": true,
               "description": "Folder-relative note name or path.",
-              "constraints": ["same safe path rules as read()"]
+              "constraints": [
+                "same safe path rules as read()"
+              ]
             }
           ],
           "returns": "void",
-          "errors": ["Rejects if notes:write is missing, the path is unsafe, or the vault cannot be written."],
-          "behavior": ["Deleting an already absent note is an idempotent no-op.", "The containing folder is not removed automatically."],
+          "errors": [
+            "Rejects if notes:write is missing, the path is unsafe, or the vault cannot be written."
+          ],
+          "behavior": [
+            "Deleting an already absent note is an idempotent no-op.",
+            "The containing folder is not removed automatically."
+          ],
           "example": "await api.notes.delete(\"old-note\")",
           "since": 1
         },
@@ -419,20 +587,128 @@
               "type": "string",
               "required": true,
               "description": "Existing folder-relative note name or path.",
-              "constraints": ["same safe path rules as read()"]
+              "constraints": [
+                "same safe path rules as read()"
+              ]
             },
             {
               "name": "to",
               "type": "string",
               "required": true,
               "description": "New folder-relative note name or path.",
-              "constraints": ["same safe path rules as read()"]
+              "constraints": [
+                "same safe path rules as read()"
+              ]
             }
           ],
           "returns": "MoveResult",
-          "errors": ["Rejects if notes:write is missing, either path is unsafe, or the vault cannot be written."],
-          "behavior": ["Returns { status: \"exists\" } when the destination is occupied and leaves the source untouched.", "Returns { status: \"missing\" } when the source is absent.", "Moves the file bytes without rewriting links or content."],
+          "errors": [
+            "Rejects if notes:write is missing, either path is unsafe, or the vault cannot be written."
+          ],
+          "behavior": [
+            "Returns { status: \"exists\" } when the destination is occupied and leaves the source untouched.",
+            "Returns { status: \"missing\" } when the source is absent.",
+            "Moves the file bytes without rewriting links or content."
+          ],
           "example": "const result = await api.notes.move(\"inbox/item\", \"archive/item\")\nif (result.status === \"moved\") console.log(\"Archived\")",
+          "since": 1
+        }
+      ]
+    },
+    {
+      "name": "navigation",
+      "summary": "Inspect and navigate the active notes view without exposing DOM, URL, or filesystem handles.",
+      "methods": [
+        {
+          "id": "navigation.getActiveNote",
+          "name": "getActiveNote",
+          "signature": "navigation.getActiveNote()",
+          "permission": "navigation:read",
+          "description": "Returns the canonical path of the note currently open in Brulion, or null when no note is active.",
+          "parameters": [],
+          "returns": "ActiveNote | null",
+          "errors": [
+            "Rejects if navigation:read is missing, the vault is no longer active, or the active-view callback fails."
+          ],
+          "behavior": [
+            "Returns a folder-relative POSIX path including .md.",
+            "Does not read or write note bytes and does not expose the editor or DOM."
+          ],
+          "example": "const active = await api.navigation.getActiveNote()\nif (active) console.log(active.path)",
+          "since": 1
+        },
+        {
+          "id": "navigation.openNote",
+          "name": "openNote",
+          "signature": "navigation.openNote(path, options?)",
+          "permission": "navigation:write",
+          "description": "Revalidates and opens an existing note through the normal active-note view.",
+          "parameters": [
+            {
+              "name": "path",
+              "type": "string",
+              "required": true,
+              "description": "Folder-relative note name or path.",
+              "constraints": [
+                ".md is optional",
+                "POSIX separators",
+                "no . or .. traversal",
+                "maximum 512 characters"
+              ]
+            },
+            {
+              "name": "options",
+              "type": "OpenNoteOptions",
+              "required": false,
+              "description": "Optional heading anchor without a leading #."
+            }
+          ],
+          "returns": "OpenNoteResult",
+          "errors": [
+            "Rejects if navigation:write is missing, arguments are unsafe, the vault is unavailable, or the capability call fails."
+          ],
+          "behavior": [
+            "Returns opened or already-open for an existing target, missing for an absent target, and conflict when a guarded flush cannot safely switch.",
+            "A missing target is never created implicitly.",
+            "A successful anchor attempt reports not-requested, found, or not-found.",
+            "Uses the normal route, sidebar, recency, and guarded-save behavior."
+          ],
+          "example": "const result = await api.navigation.openNote(\"Journal/today\", { anchor: \"done\" })\nif (result.status === \"missing\") console.log(\"Create it explicitly first\")",
+          "since": 1
+        },
+        {
+          "id": "navigation.resolveLink",
+          "name": "resolveLink",
+          "signature": "navigation.resolveLink(target, options)",
+          "permission": "navigation:read",
+          "description": "Resolves one raw markdown or wikilink destination without changing the active view.",
+          "parameters": [
+            {
+              "name": "target",
+              "type": "string",
+              "required": true,
+              "description": "Destination only, without brackets or a display alias.",
+              "constraints": [
+                "maximum 4096 characters"
+              ]
+            },
+            {
+              "name": "options",
+              "type": "ResolveLinkOptions",
+              "required": true,
+              "description": "Explicit markdown or wikilink kind and optional source note."
+            }
+          ],
+          "returns": "LinkResolution",
+          "errors": [
+            "Rejects if navigation:read is missing, options or source paths are unsafe, or the vault/listing callback fails."
+          ],
+          "behavior": [
+            "Reuses Brulion relative-path, basename/path, anchor, external-link, and invalid-target rules.",
+            "Returns resolved or missing with a canonical path and anchor, or external/invalid with the original target.",
+            "Does not verify heading existence, open a browser, navigate, create a note, or write bytes."
+          ],
+          "example": "const result = await api.navigation.resolveLink(\"../tasks/today.md#done\", { kind: \"markdown\", from: \"Journal/week.md\" })",
           "since": 1
         }
       ]

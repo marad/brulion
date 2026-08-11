@@ -4,7 +4,7 @@ import {
   type ExtensionEditorCapabilities,
   type ExtensionNoteCapabilities,
 } from "./extension-host"
-import { ExtensionRpcPeer, type RpcEndpoint } from "./extension-rpc"
+import { ExtensionRpcPeer, type RpcEndpoint, type RpcValue } from "./extension-rpc"
 import type {
   ExtensionNavigationCapabilities,
   LinkResolution,
@@ -159,7 +159,7 @@ describe("FEAT-0091 extension navigation host boundary", () => {
     const writeOnly = await setup({ permissions: [...oldPermissions, "navigation:write"] })
     await expect(
       writeOnly.extension.call("navigation.openNote", { path: "Journal/tomorrow" }),
-    ).resolves.toMatchObject({ status: "opened", path: "Journal/tomorrow" })
+    ).resolves.toMatchObject({ status: "opened", path: "Journal/tomorrow.md" })
     await expect(writeOnly.extension.call("navigation.getActiveNote", null)).rejects.toMatchObject({
       code: "handler_error",
     })
@@ -254,7 +254,7 @@ describe("FEAT-0091 extension navigation host boundary", () => {
       { target: "target", options: { kind: "markdown", from: "folder\\note" } },
       { target: "target", options: { kind: "markdown", from: 12 } },
       { target: "target", options: null },
-    ]) {
+    ] as RpcValue[]) {
       await expect(extension.call("navigation.resolveLink", params)).rejects.toMatchObject({
         code: "handler_error",
       })

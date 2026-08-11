@@ -35,6 +35,16 @@ describe("script manifest validation (FEAT-0082)", () => {
     expect(parseScriptManifest({ ...valid, permissions: "commands" })).toMatchObject({ ok: false })
   })
 
+  it("accepts the additive navigation permissions without changing old manifests", () => {
+    expect(
+      parseScriptManifest({
+        ...valid,
+        permissions: ["navigation:read", "navigation:write"],
+      }),
+    ).toMatchObject({ ok: true })
+    expect(parseScriptManifest(valid)).toMatchObject({ ok: true, manifest: valid })
+  })
+
   it("rejects duplicate and unknown permissions", () => {
     expect(parseScriptManifest({ ...valid, permissions: ["commands", "commands"] })).toMatchObject({
       ok: false,

@@ -186,6 +186,11 @@ export function createExtensionBootstrapHtml(): string {
         delete: (path) => call("notes.delete", { path }),
         move: (from, to) => call("notes.move", { from, to }),
       },
+      navigation: {
+        getActiveNote: () => call("navigation.getActiveNote", null),
+        openNote: (path, options) => call("navigation.openNote", { path, ...(options === undefined ? {} : { options }) }),
+        resolveLink: (target, options) => call("navigation.resolveLink", { target, ...(options === undefined ? {} : { options }) }),
+      },
     }
     globalThis.brulion = Object.freeze(api)
     register("commands.invoke", async (params) => {

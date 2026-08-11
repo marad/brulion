@@ -12,7 +12,7 @@ import skill from "../extension-kit/llm-skill.md?raw"
 import prompt from "../extension-kit/authoring-prompt.md?raw"
 import readme from "../extension-kit/README.md?raw"
 
-export const AUTHORING_KIT_VERSION = "1.1.1"
+export const AUTHORING_KIT_VERSION = "1.2.0"
 
 export interface AuthoringKitFile {
   path: string

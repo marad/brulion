@@ -72,6 +72,8 @@ closed before the application callback is called.
 - `editor:write` — replace the active selection.
 - `notes:read` — list and read markdown notes.
 - `notes:write` — create, guarded-write, delete, and move markdown notes.
+- `navigation:read` — read the active note and resolve raw link destinations.
+- `navigation:write` — open an existing note through the active notes view.
 
 Request the smallest set that the extension needs. Note writes change files the
 user owns, so handle the returned conflict status instead of overwriting a
@@ -105,6 +107,43 @@ Namespaces:
 - `brulion.commands` — user-invoked command registration.
 - `brulion.editor` — the active editor and primary selection.
 - `brulion.notes` — folder-relative markdown file operations.
+- `brulion.navigation` — inspect and navigate the active notes view without exposing the DOM, URL, or filesystem handles.
+
+## Navigation
+
+Navigation is additive to API v1 and is separately permissioned. Request
+`navigation:read` for `getActiveNote()` and `resolveLink()`; request
+`navigation:write` for `openNote()`. A missing permission rejects before the host
+callback runs.
+
+```js
+const active = await api.navigation.getActiveNote()
+if (active) console.log(`Open note: ${active.path}`)
+
+const link = await api.navigation.resolveLink("Journal/today#done", {
+  kind: "wikilink",
+})
+if (link.status === "resolved") {
+  const result = await api.navigation.openNote(link.path, { anchor: link.anchor ?? undefined })
+  if (result.status === "conflict") console.warn(`Review ${result.path} before navigating`)
+}
+```
+
+`openNote()` accepts a canonical folder-relative note path (the `.md` suffix is
+optional like the notes API) and never creates a missing file. It returns
+`opened`, `already-open`, `missing`, or `conflict`; a successful anchor attempt
+also reports `not-requested`, `found`, or `not-found`. The controller flushes a
+dirty active buffer through the normal mtime guard before switching, so a
+conflict never silently overwrites another tool's edit.
+
+`resolveLink()` receives only the raw destination and an explicit `kind` of
+`markdown` or `wikilink`. Its optional `from` path defaults to the active note.
+It reuses Brulion's relative-path, basename/path, anchor, external-link, and
+invalid-target rules and returns `resolved`, `missing`, `external`, or `invalid`.
+It does not verify heading existence, change the active note, push history, open a
+browser, create a file, or mutate markdown bytes. To create and then open a
+missing target, call `notes.create()` explicitly and pass the canonical path to
+`openNote()`.
 
 ## Errors and result statuses
 
@@ -116,6 +155,8 @@ are returned as discriminated statuses instead of silently replacing content:
 - `notes.write()` returns `saved` with a new `lastModified`, or `conflict`.
 - `notes.move()` returns `moved`, `exists`, or `missing`.
 - `notes.delete()` is idempotent when the note is already absent.
+- Navigation returns discriminated `opened`/`already-open`, `missing`, and
+  `conflict` results; it never implicitly creates or mutates a note.
 
 ## Safe note update
 

@@ -40,6 +40,39 @@ export type MoveResult =
   | { status: "exists" }
   | { status: "missing" }
 
+export interface ActiveNote {
+  path: string
+}
+
+export interface OpenNoteOptions {
+  anchor?: string
+}
+
+export type AnchorStatus = "not-requested" | "found" | "not-found"
+
+export type OpenNoteResult =
+  | {
+      status: "opened" | "already-open"
+      path: string
+      anchor: string | null
+      anchorStatus: AnchorStatus
+    }
+  | { status: "missing"; path: string; anchor: string | null }
+  | { status: "conflict"; path: string }
+
+export type LinkKind = "markdown" | "wikilink"
+
+export interface ResolveLinkOptions {
+  from?: string
+  kind: LinkKind
+}
+
+export type LinkResolution =
+  | { status: "resolved"; path: string; anchor: string | null }
+  | { status: "missing"; path: string; anchor: string | null }
+  | { status: "external"; target: string }
+  | { status: "invalid"; target: string }
+
 export interface BrulionApi {
   commands: {
     register(
@@ -71,6 +104,14 @@ export interface BrulionApi {
     delete(path: string): Promise<void>
     /** Moves bytes without replacing an occupied destination. */
     move(from: string, to: string): Promise<MoveResult>
+  }
+  navigation: {
+    /** Returns the canonical active note path, or null when no note is active. */
+    getActiveNote(): Promise<ActiveNote | null>
+    /** Opens an existing note; missing targets are never created. */
+    openNote(path: string, options?: OpenNoteOptions): Promise<OpenNoteResult>
+    /** Resolves one raw markdown or wikilink destination without side effects. */
+    resolveLink(target: string, options: ResolveLinkOptions): Promise<LinkResolution>
   }
 }
 

@@ -13,8 +13,8 @@ describe("FEAT-0083 extension runner bootstrap", () => {
     expect(html).toContain("commands.register")
     expect(html).toContain("navigation: {")
     expect(html).toContain('getActiveNote: () => call("navigation.getActiveNote", null)')
-    expect(html).toContain('openNote: (path, options) => call("navigation.openNote", { path, options })')
-    expect(html).toContain('resolveLink: (target, options) => call("navigation.resolveLink", { target, options })')
+    expect(html).toContain('openNote: (path, options) => call("navigation.openNote", { path, ...(options === undefined ? {} : { options }) })')
+    expect(html).toContain('resolveLink: (target, options) => call("navigation.resolveLink", { target, ...(options === undefined ? {} : { options }) })')
     expect(html).not.toContain("globalThis.brulion.getActiveNote")
   })
 

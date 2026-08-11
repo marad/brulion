@@ -16,6 +16,14 @@ import {
   type ScriptPermission,
 } from "./script-manifest"
 import { resolveExtensionIcon, sanitizeExtensionIconName } from "./extension-icons"
+import type {
+  ActiveNote,
+  ExtensionNavigationCapabilities,
+  LinkResolution,
+  OpenNoteOptions,
+  OpenNoteResult,
+  ResolveLinkOptions,
+} from "./extension-navigation"
 
 /** Maximum number of commands one extension may publish in the MVP host. */
 export const MAX_EXTENSION_COMMANDS = 64
@@ -24,6 +32,8 @@ const MAX_COMMAND_LABEL_LENGTH = 120
 const MAX_COMMAND_DESCRIPTION_LENGTH = 240
 const COMMAND_ID = /^[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)*$/
 const BRULION_DIRECTORY = ".brulion"
+const MAX_NAVIGATION_TARGET_LENGTH = 4096
+const MAX_NAVIGATION_ANCHOR_LENGTH = 512
 
 /** Every public capability registered by the host-side extension bridge. */
 export const EXTENSION_API_METHODS = [
@@ -39,6 +49,9 @@ export const EXTENSION_API_METHODS = [
   "notes.write",
   "notes.delete",
   "notes.move",
+  "navigation.getActiveNote",
+  "navigation.openNote",
+  "navigation.resolveLink",
 ] as const
 
 export interface ExtensionSelection {
@@ -74,6 +87,8 @@ export interface ExtensionHostOptions {
   peer: ExtensionRpcPeer
   editor: ExtensionEditorCapabilities
   notes: ExtensionNoteCapabilities
+  /** Active-view callbacks; omitted when the runner has no navigation binding. */
+  navigation?: ExtensionNavigationCapabilities
   /** Called after this host's action list changes. Errors are isolated. */
   onActionsChanged?: () => void
   /** Receives action invocation/notification errors without breaking the host. */
@@ -190,6 +205,101 @@ function moveResultValue(value: MoveResult): MoveResult {
   throw new Error("Note move result is invalid")
 }
 
+function hasControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index++) {
+    if (value.charCodeAt(index) < 0x20) return true
+  }
+  return false
+}
+
+function nullableAnchor(value: unknown, label: string): string | null {
+  if (value === null) return null
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > MAX_NAVIGATION_ANCHOR_LENGTH ||
+    value.includes("#") ||
+    hasControlCharacter(value)
+  ) {
+    throw new Error(`${label} must be a bounded heading slug without #`)
+  }
+  return value
+}
+
+function openNoteOptions(value: unknown): OpenNoteOptions | undefined {
+  if (value === undefined) return undefined
+  const params = record(value as RpcValue, "Open note options")
+  for (const key of Object.keys(params)) {
+    if (key !== "anchor") throw new Error("Open note options contain an unknown field")
+  }
+  if (!("anchor" in params)) return {}
+  return { anchor: nullableAnchor(params.anchor, "Anchor") as string }
+}
+
+function resolveLinkOptions(value: unknown): ResolveLinkOptions {
+  const params = record(value as RpcValue, "Resolve link options")
+  for (const key of Object.keys(params)) {
+    if (key !== "from" && key !== "kind") throw new Error("Resolve link options contain an unknown field")
+  }
+  if (params.kind !== "markdown" && params.kind !== "wikilink") {
+    throw new Error("Link kind must be markdown or wikilink")
+  }
+  if (!("from" in params)) return { kind: params.kind }
+  return { kind: params.kind, from: notePath(params.from) }
+}
+
+function activeNoteValue(value: ActiveNote | null): ActiveNote | null {
+  if (value === null) return null
+  return { path: notePath(value.path) }
+}
+
+function openNoteResultValue(value: OpenNoteResult): OpenNoteResult {
+  const result = record(value as unknown as RpcValue, "Open note result")
+  if (result.status === "conflict") return { status: "conflict", path: notePath(result.path) }
+  if (result.status === "missing") {
+    return {
+      status: "missing",
+      path: notePath(result.path),
+      anchor: nullableAnchor(result.anchor, "Open note result anchor"),
+    }
+  }
+  if (result.status !== "opened" && result.status !== "already-open") {
+    throw new Error("Open note result is invalid")
+  }
+  const anchor = nullableAnchor(result.anchor, "Open note result anchor")
+  if (
+    result.anchorStatus !== "not-requested" &&
+    result.anchorStatus !== "found" &&
+    result.anchorStatus !== "not-found"
+  ) {
+    throw new Error("Open note result anchor status is invalid")
+  }
+  return {
+    status: result.status,
+    path: notePath(result.path),
+    anchor,
+    anchorStatus: result.anchorStatus,
+  }
+}
+
+function linkResolutionValue(value: LinkResolution): LinkResolution {
+  const result = record(value as unknown as RpcValue, "Link resolution")
+  if (result.status === "external" || result.status === "invalid") {
+    return {
+      status: result.status,
+      target: boundedString(result.target, "Link target", MAX_NAVIGATION_TARGET_LENGTH, true),
+    }
+  }
+  if (result.status !== "resolved" && result.status !== "missing") {
+    throw new Error("Link resolution status is invalid")
+  }
+  return {
+    status: result.status,
+    path: notePath(result.path),
+    anchor: nullableAnchor(result.anchor, "Link resolution anchor"),
+  }
+}
+
 /**
  * Transport-agnostic host side of the local extension API (FEAT-0083).
  *
@@ -203,6 +313,7 @@ export class ExtensionHost {
   private readonly peer: ExtensionRpcPeer
   private readonly editor: ExtensionEditorCapabilities
   private readonly notes: ExtensionNoteCapabilities
+  private readonly navigation?: ExtensionNavigationCapabilities
   private readonly maxCommands: number
   private readonly onActionsChanged?: () => void
   private readonly onError?: (error: unknown) => void
@@ -225,6 +336,7 @@ export class ExtensionHost {
     this.peer = options.peer
     this.editor = options.editor
     this.notes = options.notes
+    this.navigation = options.navigation
     this.maxCommands = options.maxCommands ?? MAX_EXTENSION_COMMANDS
     this.onActionsChanged = options.onActionsChanged
     this.onError = options.onError
@@ -243,6 +355,9 @@ export class ExtensionHost {
       this.peer.register("notes.write", (params) => this.writeNote(params)),
       this.peer.register("notes.delete", (params) => this.deleteNote(params)),
       this.peer.register("notes.move", (params) => this.moveNote(params)),
+      this.peer.register("navigation.getActiveNote", (params) => this.getActiveNote(params)),
+      this.peer.register("navigation.openNote", (params) => this.openNote(params)),
+      this.peer.register("navigation.resolveLink", (params) => this.resolveLink(params)),
     )
   }
 
@@ -383,6 +498,33 @@ export class ExtensionHost {
     const from = notePath(value.from)
     const to = notePath(value.to)
     return moveResultValue(await this.notes.move(from, to))
+  }
+
+  private async getActiveNote(params: RpcValue): Promise<RpcValue> {
+    this.requirePermission("navigation:read")
+    if (params !== null) throw new Error("navigation.getActiveNote expects null")
+    return activeNoteValue(await this.requireNavigation().getActiveNote()) as unknown as RpcValue
+  }
+
+  private async openNote(params: RpcValue): Promise<RpcValue> {
+    this.requirePermission("navigation:write")
+    const value = record(params, "Open note")
+    const path = notePath(value.path)
+    const options = openNoteOptions(value.options)
+    return openNoteResultValue(await this.requireNavigation().openNote(path, options)) as unknown as RpcValue
+  }
+
+  private async resolveLink(params: RpcValue): Promise<RpcValue> {
+    this.requirePermission("navigation:read")
+    const value = record(params, "Resolve link")
+    const target = boundedString(value.target, "Link target", MAX_NAVIGATION_TARGET_LENGTH, true)
+    const options = resolveLinkOptions(value.options)
+    return linkResolutionValue(await this.requireNavigation().resolveLink(target, options)) as unknown as RpcValue
+  }
+
+  private requireNavigation(): ExtensionNavigationCapabilities {
+    if (!this.navigation) throw new Error("Extension navigation capability is unavailable")
+    return this.navigation
   }
 
   private notifyActionsChanged(): void {
