@@ -17,9 +17,17 @@ import { fileURLToPath } from "node:url";
  */
 
 const implementationPath = (path) =>
-  /^(src|e2e|scripts|\.githooks|\.github|\.pi)\//.test(path) ||
-  path === "package.json" ||
-  path === "package-lock.json";
+  /^(src|e2e|scripts|\.githooks|\.github|\.pi|public|extension-kit)\//.test(path) ||
+  new Set([
+    "index.html",
+    "api.html",
+    "workbench.html",
+    "vite.config.ts",
+    "tsconfig.json",
+    "playwright.config.ts",
+    "package.json",
+    "package-lock.json",
+  ]).has(path);
 
 const runCommand = (root, command, args) => {
   const result = spawnSync(command, args, {
@@ -141,7 +149,7 @@ const stagedPaths = (root) => {
     "diff",
     "--cached",
     "--name-only",
-    "--diff-filter=ACMR",
+    "--diff-filter=ACMRD",
   ]);
   return result.status === 0
     ? result.stdout.split("\n").map((path) => path.trim()).filter(Boolean)

@@ -25,6 +25,10 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.8.3
+      - run: bash scripts/install-specman.sh
       - run: npx playwright install --with-deps chromium
       - run: npm run workflow:gate -- ci --milestone milestones/M45.md
 

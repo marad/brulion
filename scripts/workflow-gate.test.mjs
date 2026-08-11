@@ -28,6 +28,10 @@ test("classifies implementation and workflow paths separately from documentation
     "scripts/workflow-gate.mjs",
     ".githooks/pre-push",
     ".github/workflows/quality.yml",
+    "index.html",
+    "vite.config.ts",
+    "public/icons/icon.svg",
+    "extension-kit/api-contract.json",
     "package.json",
   ]);
   const docs = classifyStagedPaths([
@@ -43,6 +47,10 @@ test("classifies implementation and workflow paths separately from documentation
     "scripts/workflow-gate.mjs",
     ".githooks/pre-push",
     ".github/workflows/quality.yml",
+    "index.html",
+    "vite.config.ts",
+    "public/icons/icon.svg",
+    "extension-kit/api-contract.json",
     "package.json",
   ]);
   assert.equal(docs.requiresTrailer, false);
@@ -157,8 +165,13 @@ test("quality workflow invokes ci and deploy waits for quality", () => {
 
   assert.match(quality, /workflow-gate\.mjs|workflow:gate/);
   assert.match(quality, /ci/);
+  assert.match(quality, /setup-deno/);
+  assert.match(quality, /install-specman\.sh/);
   assert.match(deploy, /quality/);
   assert.match(deploy, /needs:\s*quality/);
+  assert.match(deploy, /setup-deno/);
+  assert.match(deploy, /install-specman\.sh/);
+  assert.match(read("scripts/install-specman.sh"), /8c9b5fc/);
 });
 
 test("gate adapters contain no hard timeout controls", () => {
@@ -171,4 +184,5 @@ test("gate adapters contain no hard timeout controls", () => {
   ].map(read).join("\n");
 
   assert.doesNotMatch(sources, /timeoutMs|maxRuntimeMs|turnBudget|toolBudget/);
+  assert.match(read("scripts/workflow-gate.mjs"), /--diff-filter=ACMRD/);
 });

@@ -2017,3 +2017,35 @@ will gain project-local workflow skills, machine-readable preflight failures,
 optional hook setup, and CI jobs that block deploy-quality pushes when required
 spec/review/test evidence is absent. A worker that needs attention remains alive
 until a parent makes the recovery decision.
+
+## M45 CI provisions the pinned SpecMan tool explicitly
+
+**What:** CI downloads the SpecMan source archive at commit `8c9b5fc` from the
+canonical `marad/specman` repository, compiles it with the pinned Deno `v2.8.3`,
+and adds the resulting binary to the job path before invoking the shared gate.
+
+**Why:** SpecMan is a developer-local standalone binary, not an application npm
+dependency. Relying on the workstation's `~/.local/bin/specman` would make the
+CI gate appear green locally while failing on a clean GitHub runner. Pinning the
+source commit and Deno version makes the external tool explicit and reviewable.
+
+**Consequence (UI/project):** the quality and deployment workflows perform the
+same provisioning step; no global installation or binary is committed to the
+repository. Updating SpecMan requires an intentional ref/version change and a
+review of the resulting gate behavior.
+
+## M45 trailer gate covers all behavior-bearing paths
+
+**What:** require a `Spec: FEAT-NNNN/AC-M` trailer not only for `src/` and
+`e2e/`, but also for scripts, hooks, workflows, package/build configuration,
+`public/`, and `extension-kit/`; include deleted paths in staged-path discovery.
+Documentation, roadmap, milestone prose, and standalone specs remain exempt.
+
+**Why:** a UI or API change can be made in `index.html`, a Vite/TypeScript
+configuration file, a static asset, or the Authoring Kit without touching
+`src/`. Restricting the classifier to source directories would create a false
+traceability pass and deletions would be an easy bypass.
+
+**Consequence (UI/project):** behavioral and delivery changes must carry a
+spec/AC reference regardless of which layer owns the bytes; editorial project
+history remains lightweight.
