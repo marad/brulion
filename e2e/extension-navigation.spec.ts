@@ -162,7 +162,10 @@ async function runCommand(page: Page, query: string) {
   await page.keyboard.press("Control+Shift+K")
   await page.locator("#palette-input").fill(query)
   await expect(paletteRows(page).first()).toBeVisible()
-  await paletteRows(page).first().click()
+  // Keyboard activation stays reliable even if the conflict modal appears between
+  // opening the palette and dispatching the command (the pointer path is then
+  // correctly blocked by the modal backdrop).
+  await page.keyboard.press("Enter")
 }
 
 async function seedVault(page: Page, folder = FOLDER, activeContent = "# Alpha\n\nalpha body") {
