@@ -333,6 +333,17 @@ const restoreRoutePosition = (state: unknown): void => {
   })
 }
 
+/** Queue a route-owned operation and invalidate any older traversal callback. */
+const queueRouteOperation = (operation: (token: number) => Promise<void>): void => {
+  const token = ++routeNavigationToken
+  routeNavigationChain = routeNavigationChain
+    .then(
+      () => (token === routeNavigationToken ? operation(token) : undefined),
+      () => (token === routeNavigationToken ? operation(token) : undefined),
+    )
+    .catch(() => undefined)
+}
+
 // Mirror the active note into the route. No-op when the current route already
 // names the active path, including an anchor that a preceding navigation owns.
 // A genuine note change pushes; an old route naming a deleted/renamed note is
@@ -403,37 +414,36 @@ const showMissingBanner = (target: string) => {
 // create it (shared by markdown links and wikilinks — FEAT-0026/0027).
 // Follow a resolved internal note path, optionally jumping to a section anchor
 // (FEAT-0061/0098). A successful local anchor jump captures the source editor
-// position, then pushes one route containing the target note + anchor. Cross-note
-// switching temporarily suppresses the ordinary active-note route mirror so it
-// cannot create a second note-only history entry.
+// position, then pushes one route containing the target note + anchor. The
+// operation shares the browser-route queue: Back/Forward during an in-flight
+// switch invalidates this callback before it can push a stale route.
+const openAnchoredNotePath = (path: string, anchor: string): void => {
+  captureCurrentRoutePosition()
+  queueRouteOperation(async (token) => {
+    suppressRouteSync = true
+    try {
+      if (path !== currentActive) await controller.switchTo(path)
+      if (token !== routeNavigationToken || currentActive !== path) return
+      const found = scrollEditorToHeading(view, anchor)
+      if (token !== routeNavigationToken) return
+      pushNoteRoute(path, found ? anchor : null)
+    } finally {
+      // A newer queued route operation owns suppression once this operation is
+      // stale; clearing it here would expose an intermediate onListChanged.
+      if (token === routeNavigationToken) suppressRouteSync = false
+    }
+  })
+}
+
 const openNotePath = (path: string, anchor: string | null = null) => {
   if (path === currentActive) {
-    if (!anchor) return
-    captureCurrentRoutePosition()
-    if (scrollEditorToHeading(view, anchor)) pushNoteRoute(path, anchor)
+    if (anchor) openAnchoredNotePath(path, anchor)
     return
   }
 
   if (currentNotes.includes(path)) {
-    if (!anchor) {
-      void controller.switchTo(path)
-      return
-    }
-    captureCurrentRoutePosition()
-    void (async () => {
-      suppressRouteSync = true
-      try {
-        await controller.switchTo(path)
-        if (currentActive !== path) return
-        const found = scrollEditorToHeading(view, anchor)
-        pushNoteRoute(path, found ? anchor : null)
-      } catch {
-        // The controller owns conflict/permission reporting; a failed switch must
-        // not leave a phantom route or anchor entry behind.
-      } finally {
-        suppressRouteSync = false
-      }
-    })()
+    if (anchor) openAnchoredNotePath(path, anchor)
+    else void controller.switchTo(path)
     return
   }
 
@@ -1327,13 +1337,7 @@ const handleRouteChange = () => {
   const key = routeHistoryKey()
   if (key === lastHandledRouteKey) return
   lastHandledRouteKey = key
-  const token = ++routeNavigationToken
-  routeNavigationChain = routeNavigationChain
-    .then(
-      () => (token === routeNavigationToken ? applyCurrentRoute(token) : undefined),
-      () => (token === routeNavigationToken ? applyCurrentRoute(token) : undefined),
-    )
-    .catch(() => undefined)
+  queueRouteOperation((token) => applyCurrentRoute(token))
 }
 window.addEventListener("hashchange", handleRouteChange)
 window.addEventListener("popstate", handleRouteChange)

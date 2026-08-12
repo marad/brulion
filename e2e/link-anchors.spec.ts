@@ -224,3 +224,27 @@ test("rapid Back/Forward route changes cannot let a stale note switch win (AC-6)
   await expect.poll(() => page.locator(".note-row.active .note-name").textContent()).toBe("home")
   await expect(editor(page)).toContainText("home top")
 })
+
+test("Back/Forward wins over an in-flight anchored link switch (AC-6)", async ({ page }) => {
+  await openWith(page, {
+    "home.md": `[jump](#here)\n\n${PAD}## Here\n\n[go](other.md#section-two)\n`,
+    "other.md": `${"slow content\n".repeat(20000)}other top\n\n${PAD}## Section two\n`,
+  })
+  await page.locator(".note-row", { hasText: "home" }).click()
+  await link(page, "jump").click()
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("#/home#here")
+  await page.goBack()
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("#/home")
+
+  await link(page, "go").evaluate((element) => {
+    element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }))
+    history.forward()
+  })
+
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("#/home#here")
+  await expect.poll(() => page.locator(".note-row.active .note-name").textContent()).toBe("home")
+  await expect(editor(page)).toContainText("jump")
+  await page.waitForTimeout(250)
+  await expect(page).toHaveURL(/#\/home#here$/)
+  await expect(page.locator(".note-row.active .note-name")).toHaveText("home")
+})
