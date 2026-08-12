@@ -2088,3 +2088,19 @@ when the user later opens a root note; the user can collapse them normally, and
 that choice is persisted through the existing tree state. Background repaints,
 disabled preference mode, and a collapsed sidebar still do not move focus or
 scroll.
+
+## M45 review: CI is authoritative without branch protection
+
+**What:** keep local workflow hooks opt-in and leave `main` unprotected. The
+GitHub Actions Quality job remains the authoritative full gate for pull requests
+and pushes, and Pages deployment depends on that job succeeding.
+
+**Why:** this is the lean operational boundary the user accepted for M45:
+repository CI prevents a failing checkout from being deployed, while enabling
+GitHub branch-administration policy is not required to make the workflow gate
+executable and would add an external repository setting to maintain.
+
+**Consequence (UI/project):** a direct push can still land on `main` before CI
+reports a failure, but it cannot pass the Pages deployment path through the
+Quality dependency. Contributors may install the same checks locally, but the
+local hooks are convenience rather than the source of truth.

@@ -37,8 +37,9 @@ Every technical decision defers to that.
 > `resolveLink()`) is queued after M42. **M44** (daily-use polish — anchor-link
 > compatibility, togglable active-note sidebar focus, compact heading hierarchy,
 > and static agent-readable API docs) is **implemented, deployed, and reviewed
-> live**.
-> Recently shipped: **M44** (daily-use polish and static agent-readable API docs),
+> live**. **M45** (workflow enforcement and recovery) is **implemented, deployed,
+> and reviewed live**.
+> Recently shipped: **M45** (workflow enforcement and recovery), **M44** (daily-use polish and static agent-readable API docs),
 > **M41** (full extension workbench and authoring kit, P0–P5),
 > **M39** (local JavaScript extensions, P0–P2), **M37**
 > (sidebar tree follow-ups — F2 rename, typeahead, multi-select + batch
