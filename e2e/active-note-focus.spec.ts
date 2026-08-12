@@ -16,8 +16,11 @@ async function writeFile(page: Page, folder: string, name: string, content: stri
   await page.evaluate(
     async ([f, file, body]) => {
       const root = await navigator.storage.getDirectory()
-      const dir = await root.getDirectoryHandle(f, { create: true })
-      const handle = await dir.getFileHandle(file, { create: true })
+      let dir = await root.getDirectoryHandle(f, { create: true })
+      const segments = file.split("/")
+      const leaf = segments.pop()!
+      for (const segment of segments) dir = await dir.getDirectoryHandle(segment, { create: true })
+      const handle = await dir.getFileHandle(leaf, { create: true })
       const writable = await handle.createWritable()
       await writable.write(body)
       await writable.close()
@@ -119,4 +122,39 @@ test("collapsed sidebar stays collapsed and does not receive focus during naviga
   await expect(page.locator(".workspace")).toHaveClass(/sidebar-collapsed/)
   expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.path)).not.toBe("b.md")
   expect(await snapshotNotes(page, folder)).toEqual(before)
+})
+
+test("active-note focus reveals, persists, and centers nested note rows (AC-6)", async ({ page }) => {
+  const folder = "e2e-active-note-focus-nested"
+  await stubPicker(page, folder)
+  await page.goto("/brulion/")
+  await writeFile(page, folder, "home.md", "Home\\n")
+  for (let i = 0; i < 40; i++) await writeFile(page, folder, `root-${String(i).padStart(2, "0")}.md`, `Root ${i}\\n`)
+  await writeFile(page, folder, "nested/deep/target.md", "Target\\n")
+  await page.locator("#open-folder").click()
+  await expect(page.locator("#note-identity")).toBeVisible()
+
+  await page.evaluate(() => {
+    location.hash = "#/nested/deep/target"
+  })
+  const target = page.locator('.note-name[data-path="nested/deep/target.md"]')
+  await expect(target).toBeVisible()
+  await expect(page.locator('.folder-header[data-path="nested"]')).toHaveAttribute("aria-expanded", "true")
+  await expect(page.locator('.folder-header[data-path="nested/deep"]')).toHaveAttribute("aria-expanded", "true")
+  await expect.poll(() => page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.path)).toBe(
+    "nested/deep/target.md",
+  )
+
+  const centered = await page.locator("#note-list").evaluate((list, row) => {
+    const listRect = list.getBoundingClientRect()
+    const rowRect = (row as HTMLElement).getBoundingClientRect()
+    return Math.abs(rowRect.top + rowRect.height / 2 - (listRect.top + listRect.height / 2))
+  }, await target.elementHandle())
+  expect(centered).toBeLessThan(60)
+
+  await page.reload()
+  await expect(page.locator("#note-identity")).toBeVisible()
+  await expect(page.locator('.note-name[data-path="nested/deep/target.md"]')).toBeVisible()
+  await expect(page.locator('.folder-header[data-path="nested"]')).toHaveAttribute("aria-expanded", "true")
+  await expect(page.locator('.folder-header[data-path="nested/deep"]')).toHaveAttribute("aria-expanded", "true")
 })

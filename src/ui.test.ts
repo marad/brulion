@@ -1135,8 +1135,12 @@ describe("renderNoteList keyboard navigation (FEAT-0075)", () => {
     expect((document.activeElement as HTMLElement).classList.contains("folder-header")).toBe(true)
   })
 
-  it("updates the active row and focuses it without breaking roving tabindex (FEAT-0099 AC-3)", () => {
+  it("updates the active row, focuses it, and centers it without breaking roving tabindex (FEAT-0099 AC-3/AC-6)", () => {
     const c = mount(["a.md", "b.md"], "a.md")
+    const target = c.querySelector<HTMLElement>('[data-path="b.md"]')!
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(target, "scrollIntoView", { value: scrollIntoView })
+
     expect(updateActiveNoteRow(c, "b.md", true)).toBe(true)
 
     const rows = names(c)
@@ -1144,6 +1148,7 @@ describe("renderNoteList keyboard navigation (FEAT-0075)", () => {
     expect(rows[1].closest(".note-row")?.classList.contains("active")).toBe(true)
     expect(rows[1].closest(".note-row")?.getAttribute("aria-current")).toBe("true")
     expect(rows.filter((row) => row.tabIndex === 0)).toEqual([rows[1]])
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "center", inline: "nearest", behavior: "auto" })
   })
 
   it("updates active state without moving outside focus, and refuses hidden rows (FEAT-0099 AC-4)", () => {

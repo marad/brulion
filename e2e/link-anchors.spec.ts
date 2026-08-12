@@ -164,3 +164,46 @@ test("anchored navigation writes no note files (AC-5)", async ({ page }) => {
 
   expect(await mdSnapshot(page)).toEqual(before)
 })
+
+test("same-note anchors participate in browser Back/Forward and restore the scroll position (AC-6)", async ({
+  page,
+}) => {
+  await openWith(page, {
+    "solo.md": `[jump](#here)\n\n${PAD}## Here\n\nhere body\n`,
+  })
+  await page.locator(".note-row", { hasText: "solo" }).click()
+  expect(await scrollTop(page)).toBe(0)
+
+  await link(page, "jump").click()
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("#/solo#here")
+  await expect.poll(() => scrollTop(page)).toBeGreaterThan(0)
+
+  await page.goBack()
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("#/solo")
+  await expect.poll(() => scrollTop(page)).toBe(0)
+
+  await page.goForward()
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("#/solo#here")
+  await expect.poll(() => scrollTop(page)).toBeGreaterThan(0)
+})
+
+test("cross-note anchors keep the note and section together in history (AC-6)", async ({ page }) => {
+  await openWith(page, {
+    "home.md": "home top\n\n[go](other.md#section-two)\n",
+    "other.md": `other top\n\n${PAD}## Section two\n\nsection two body\n`,
+  })
+  await page.locator(".note-row", { hasText: "home" }).click()
+
+  await link(page, "go").click()
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("#/other#section-two")
+  await expect.poll(() => scrollTop(page)).toBeGreaterThan(0)
+
+  await page.goBack()
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("#/home")
+  await expect(editor(page)).toContainText("home top")
+  await expect.poll(() => scrollTop(page)).toBe(0)
+
+  await page.goForward()
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("#/other#section-two")
+  await expect.poll(() => scrollTop(page)).toBeGreaterThan(0)
+})

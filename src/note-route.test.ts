@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { pathToHash, hashToPath } from "./note-route"
+import { pathToHash, hashToPath, hashToRoute } from "./note-route"
 
 describe("pathToHash", () => {
   it("encodes a root-level note as a bare hash without .md (AC-1)", () => {
@@ -13,6 +13,10 @@ describe("pathToHash", () => {
   it("strips the .md case-insensitively", () => {
     expect(pathToHash("Notes/Idea.MD")).toBe("#/Notes/Idea")
   })
+
+  it("adds an encoded local anchor without changing path segments", () => {
+    expect(pathToHash("Notes/Idea.md", "Section two")).toBe("#/Notes/Idea#Section%20two")
+  })
 })
 
 describe("hashToPath", () => {
@@ -22,6 +26,16 @@ describe("hashToPath", () => {
 
   it("decodes percent-encoded segments", () => {
     expect(hashToPath("#/Allegro/Journal/Week%2022")).toBe("Allegro/Journal/Week 22.md")
+  })
+
+  it("decodes an optional local anchor while keeping the legacy path helper", () => {
+    expect(hashToRoute("#/Allegro/Journal/Week%2022#Section%20two")).toEqual({
+      path: "Allegro/Journal/Week 22.md",
+      anchor: "Section two",
+    })
+    expect(hashToPath("#/Allegro/Journal/Week%2022#Section%20two")).toBe(
+      "Allegro/Journal/Week 22.md",
+    )
   })
 
   it.each([
@@ -35,8 +49,11 @@ describe("hashToPath", () => {
     ["smuggled separator (%2F)", "#/a%2Fb"],
     ["dot-dot traversal", "#/..%2F..%2Fsecret"],
     ["lone dot segment", "#/."],
+    ["empty anchor", "#/start#"],
+    ["malformed anchor escape", "#/start#bad%2"],
   ])("decodes %s to null (AC-4)", (_label, hash) => {
     expect(hashToPath(hash)).toBeNull()
+    expect(hashToRoute(hash)).toBeNull()
   })
 })
 
@@ -47,4 +64,9 @@ describe("round-trip (AC-3)", () => {
       expect(hashToPath(pathToHash(path))).toBe(path)
     },
   )
+
+  it("round-trips a path and anchor together", () => {
+    const hash = pathToHash("a/b c.md", "Zażółć gęślą jaźń")
+    expect(hashToRoute(hash)).toEqual({ path: "a/b c.md", anchor: "Zażółć gęślą jaźń" })
+  })
 })
