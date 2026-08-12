@@ -207,3 +207,20 @@ test("cross-note anchors keep the note and section together in history (AC-6)", 
   await expect.poll(() => page.evaluate(() => location.hash)).toBe("#/other#section-two")
   await expect.poll(() => scrollTop(page)).toBeGreaterThan(0)
 })
+
+test("rapid Back/Forward route changes cannot let a stale note switch win (AC-6)", async ({ page }) => {
+  await openWith(page, {
+    "home.md": "home top\n",
+    "other.md": `${"slow content\\n".repeat(20000)}other body\\n`,
+  })
+  await page.locator(".note-row", { hasText: "home" }).click()
+
+  await page.evaluate(() => {
+    location.hash = "#/other"
+    location.hash = "#/home"
+  })
+
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("#/home")
+  await expect.poll(() => page.locator(".note-row.active .note-name").textContent()).toBe("home")
+  await expect(editor(page)).toContainText("home top")
+})

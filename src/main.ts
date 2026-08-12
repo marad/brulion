@@ -276,6 +276,8 @@ type RouteHistoryState = {
 
 let nextRouteId = 0
 let lastHandledRouteKey = ""
+let routeNavigationToken = 0
+let routeNavigationChain: Promise<void> = Promise.resolve()
 
 const copyHistoryState = (): RouteHistoryState =>
   history.state && typeof history.state === "object"
@@ -1287,30 +1289,51 @@ const openNote = async (dir: FileSystemDirectoryHandle) => {
 
 // URL → open note (FEAT-0036/0098): Back/Forward, the mouse back button, or an
 // edited URL can fire `popstate` and/or `hashchange`. The route key deduplicates
-// the two browser events for one history traversal. A same-note route restores
-// its saved scroll position or heading; a cross-note route waits for the normal
-// serialized controller switch before restoring it.
+// the two browser events for one history traversal. Route resolutions are also
+// serialized at this boundary: a late switch from an earlier traversal must not
+// overwrite a newer Back/Forward target or let `syncRouteToActive` push a phantom
+// route in the middle of the traversal.
+const applyCurrentRoute = async (token: number): Promise<void> => {
+  suppressRouteSync = true
+  try {
+    const resolution = resolveHash()
+    if (resolution.kind === "switch") {
+      await controller.switchTo(resolution.path)
+      if (token !== routeNavigationToken) return
+      const route = hashToRoute(location.hash)
+      if (!route || route.path !== currentActive || route.path !== resolution.path) return
+      if (route.anchor) scrollEditorToHeading(view, route.anchor)
+      else restoreRoutePosition(history.state)
+    } else if (resolution.kind === "same") {
+      if (token !== routeNavigationToken) return
+      if (resolution.anchor) scrollEditorToHeading(view, resolution.anchor)
+      else restoreRoutePosition(history.state)
+      clearMissingBanner()
+    } else if (resolution.kind === "missing") {
+      if (token !== routeNavigationToken) return
+      showMissingBanner(resolution.path)
+    } else {
+      if (token === routeNavigationToken) clearMissingBanner() // malformed route
+    }
+  } finally {
+    // Keep route mirroring suppressed across a stale queued switch. The newest
+    // queued traversal owns the release after its own controller operation lands.
+    if (token === routeNavigationToken) suppressRouteSync = false
+  }
+}
+
 const handleRouteChange = () => {
   if (!workspaceShown) return
   const key = routeHistoryKey()
   if (key === lastHandledRouteKey) return
   lastHandledRouteKey = key
-  const resolution = resolveHash()
-  if (resolution.kind === "switch") {
-    void controller.switchTo(resolution.path).then(() => {
-      if (currentActive !== resolution.path) return
-      if (resolution.anchor) scrollEditorToHeading(view, resolution.anchor)
-      else restoreRoutePosition(history.state)
-    })
-  } else if (resolution.kind === "same") {
-    if (resolution.anchor) scrollEditorToHeading(view, resolution.anchor)
-    else restoreRoutePosition(history.state)
-    clearMissingBanner()
-  } else if (resolution.kind === "missing") {
-    showMissingBanner(resolution.path)
-  } else {
-    clearMissingBanner() // malformed route — drop any stale notice
-  }
+  const token = ++routeNavigationToken
+  routeNavigationChain = routeNavigationChain
+    .then(
+      () => (token === routeNavigationToken ? applyCurrentRoute(token) : undefined),
+      () => (token === routeNavigationToken ? applyCurrentRoute(token) : undefined),
+    )
+    .catch(() => undefined)
 }
 window.addEventListener("hashchange", handleRouteChange)
 window.addEventListener("popstate", handleRouteChange)
