@@ -34,10 +34,17 @@ async function snapshotNotes(page: Page, folder: string): Promise<Record<string,
     const root = await navigator.storage.getDirectory()
     const dir = await root.getDirectoryHandle(f, { create: true })
     const files: Record<string, string> = {}
-    // @ts-expect-error async iterator over a directory handle
-    for await (const [name, handle] of dir.entries()) {
-      if (name.endsWith(".md")) files[name] = await (handle as FileSystemFileHandle).getFile().then((file) => file.text())
+    const walk = async (current: FileSystemDirectoryHandle, prefix: string): Promise<void> => {
+      // @ts-expect-error async iterator over a directory handle
+      for await (const [name, handle] of current.entries()) {
+        if (handle.kind === "file" && name.endsWith(".md")) {
+          files[prefix + name] = await (handle as FileSystemFileHandle).getFile().then((file) => file.text())
+        } else if (handle.kind === "directory") {
+          await walk(handle as FileSystemDirectoryHandle, `${prefix + name}/`)
+        }
+      }
     }
+    await walk(dir, "")
     return files
   }, folder)
 }
@@ -146,6 +153,7 @@ test("active-note focus reveals, persists, and centers nested note rows (AC-6)",
       Object.defineProperty(performance, "now", { configurable: true, value: original })
     }
   })
+  const before = await snapshotNotes(page, folder)
   await page.locator("#open-folder").click()
   await expect(page.locator("#note-identity")).toBeVisible()
   await page.evaluate(() => (window as unknown as { restorePerfNow: () => void }).restorePerfNow())
@@ -165,10 +173,12 @@ test("active-note focus reveals, persists, and centers nested note rows (AC-6)",
     return Math.abs(rowRect.top + rowRect.height / 2 - (listRect.top + listRect.height / 2))
   }, await target.elementHandle())
   expect(centered).toBeLessThan(60)
+  expect(await snapshotNotes(page, folder)).toEqual(before)
 
   await page.reload()
   await expect(page.locator("#note-identity")).toBeVisible()
   await expect(page.locator('.note-name[data-path="zzzz-nested/deep/target.md"]')).toBeVisible()
   await expect(page.locator('.folder-header[data-path="zzzz-nested"]')).toHaveAttribute("aria-expanded", "true")
   await expect(page.locator('.folder-header[data-path="zzzz-nested/deep"]')).toHaveAttribute("aria-expanded", "true")
+  expect(await snapshotNotes(page, folder)).toEqual(before)
 })
