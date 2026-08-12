@@ -2104,3 +2104,21 @@ executable and would add an external repository setting to maintain.
 reports a failure, but it cannot pass the Pages deployment path through the
 Quality dependency. Contributors may install the same checks locally, but the
 local hooks are convenience rather than the source of truth.
+
+## Extension note listings skip unaddressable legacy filenames
+
+**What:** keep strict `notePath()` validation for every extension path argument,
+but validate each app-side result independently in `notes.list()` and omit entries
+that fail, while retaining canonical normalization and deduplication for valid
+paths.
+
+**Why:** the app-side vault walk intentionally exposes every `.md` file, including
+legacy names that contain unsafe characters or an empty name. An extension cannot
+address those files through `notes.read()` or `notes.write()` without violating the
+safe path contract, so one such file must not make the whole read-only listing
+unusable.
+
+**Consequence (UI/project):** Brulion's own note list remains unchanged; extensions
+see only paths they could pass to the address-based note APIs. Direct reads, writes,
+creates, deletes, moves, and navigation inputs still reject invalid paths, and the
+Authoring Kit documents the omission explicitly.
