@@ -104,6 +104,28 @@ describe("open", () => {
     expect(saveActiveNote).toHaveBeenCalledWith("apple.md")
   })
 
+  it("announces notes discovered after an incomplete initial sweep instead of aliasing the partial list", async () => {
+    const view = mountView()
+    const sweep = { pending: [{ dir: DIR, prefix: "" }], files: ["start.md"] }
+    startSweep.mockReturnValue(sweep)
+    continueSweep.mockResolvedValueOnce(false).mockImplementationOnce(async () => {
+      sweep.files.push("zz-nested/deep/target.md")
+      sweep.pending = []
+      return true
+    })
+    sweepResult.mockImplementation((current) => current.files.sort())
+    const onListChanged = vi.fn()
+    const controller = createNoteController(view, { onListChanged })
+
+    await controller.open(DIR)
+    expect(onListChanged).toHaveBeenLastCalledWith(["start.md"], "start.md")
+    onListChanged.mockClear()
+
+    await controller.refreshFromDisk()
+
+    expect(onListChanged).toHaveBeenCalledWith(["start.md", "zz-nested/deep/target.md"], "start.md")
+  })
+
   it("keeps the previously open note when re-opening a folder whose listing fails", async () => {
     const view = mountView()
     sweepResult.mockReturnValueOnce(["apple.md", "start.md"])

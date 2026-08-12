@@ -125,7 +125,7 @@ test("collapsed sidebar stays collapsed and does not receive focus during naviga
 })
 
 test("active-note focus reveals, persists, and centers nested note rows (AC-6)", async ({ page }) => {
-  const folder = "e2e-active-note-focus-nested"
+  const folder = `e2e-active-note-focus-nested-${Date.now()}`
   await stubPicker(page, folder)
   await page.goto("/brulion/")
   await page.evaluate(() => {
@@ -135,8 +135,28 @@ test("active-note focus reveals, persists, and centers nested note rows (AC-6)",
   for (let i = 0; i < 40; i++) await writeFile(page, folder, `root-${String(i).padStart(2, "0")}.md`, `Root ${i}\\n`)
   await writeFile(page, folder, "zz-nested/deep/target.md", "Target\\n")
   for (let i = 0; i < 40; i++) await writeFile(page, folder, `zzz-after-${String(i).padStart(2, "0")}.md`, `After ${i}\\n`)
+  await page.evaluate(() => {
+    const original = performance.now.bind(performance)
+    let ticks = 0
+    Object.defineProperty(performance, "now", {
+      configurable: true,
+      value: () => original() + ++ticks * 100,
+    })
+    ;(window as unknown as { restorePerfNow: () => void }).restorePerfNow = () => {
+      Object.defineProperty(performance, "now", { configurable: true, value: original })
+    }
+  })
   await page.locator("#open-folder").click()
   await expect(page.locator("#note-identity")).toBeVisible()
+  await page.evaluate(() => (window as unknown as { restorePerfNow: () => void }).restorePerfNow())
+  await expect(page.locator(".missing-note-banner")).toBeVisible()
+  await page.waitForTimeout(4500)
+  console.log("PENDING_ROUTE_DEBUG", await page.evaluate(() => ({
+    hash: location.hash,
+    active: document.querySelector(".note-row.active .note-name")?.getAttribute("data-path"),
+    rows: [...document.querySelectorAll<HTMLElement>(".note-name")].map((row) => row.dataset.path),
+    banner: !document.querySelector<HTMLElement>(".missing-note-banner")?.hidden,
+  })))
 
   const target = page.locator('.note-name[data-path="zz-nested/deep/target.md"]')
   await expect(target).toBeVisible()

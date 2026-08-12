@@ -126,16 +126,15 @@ test("folders open collapsed by default; the expansion persists and toggling wri
   await page.keyboard.press("Control+s")
   await expect.poll(() => readNote(page, "sub/one.md")).toBe("body")
 
-  // Switch to a root note: `sub` is no longer an ancestor and was never expanded,
-  // so it falls back to the collapsed default (AC-1) — only its header remains.
+  // Switch to a root note: the active-note focus preference has made `sub` an
+  // ordinary persisted expansion, so it stays open even when the active note is
+  // no longer inside it.
   await createNote(page, "top")
   await expect(folderHeader(page, "sub")).toBeVisible()
-  await expect(nested).toBeHidden()
-
-  // Expanding, then collapsing, then expanding again touches only browser-local
-  // state — the note's bytes are untouched (AC-7).
-  await folderHeader(page, "sub").click()
   await expect(nested).toBeVisible()
+
+  // Collapsing, then expanding again touches only browser-local state — the
+  // note's bytes are untouched (AC-7).
   await folderHeader(page, "sub").click()
   await expect(nested).toBeHidden()
   await folderHeader(page, "sub").click()
