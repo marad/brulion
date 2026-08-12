@@ -276,6 +276,7 @@ type RouteHistoryState = {
 
 let nextRouteId = 0
 let lastHandledRouteKey = ""
+let pendingRouteKey: string | null = null
 let routeNavigationToken = 0
 let routeNavigationChain: Promise<void> = Promise.resolve()
 
@@ -292,8 +293,13 @@ const routeUrl = (hash: string): string => {
 const routeHistoryKey = (): string =>
   `${location.href}|${typeof history.state?.brulionRouteId === "number" ? history.state.brulionRouteId : ""}`
 
+const markPendingRoute = (): void => {
+  pendingRouteKey = routeHistoryKey()
+}
+
 const markCurrentRouteHandled = (): void => {
   lastHandledRouteKey = routeHistoryKey()
+  pendingRouteKey = null
 }
 
 /** Capture the editor position in the current browser entry before a local jump. */
@@ -1081,6 +1087,9 @@ controller = createNoteController(view, {
     currentActive = active
     const listUnchanged = notes === currentNotes
     currentNotes = notes
+    const pendingRoute = pendingRouteKey === routeHistoryKey() ? hashToRoute(location.hash) : null
+    const shouldApplyPendingRoute =
+      pendingRoute !== null && pendingRoute.path !== active && currentNotes.includes(pendingRoute.path)
     // Record the visit (FEAT-0039) on a genuine active-note change only — skip the
     // redundant re-touch when an external list change fires with the same active.
     if (active && recency[0] !== active) {
@@ -1088,7 +1097,9 @@ controller = createNoteController(view, {
       void saveRecency(currentVaultId, recency)
     }
     clearMissingBanner() // the active note changed — drop any stale missing-note notice
-    syncRouteToActive(active) // mirror the open note into the URL hash (FEAT-0036)
+    if (!shouldApplyPendingRoute) {
+      syncRouteToActive(active) // mirror the open note into the URL hash (FEAT-0036)
+    }
     identity.update(active) // keep the header naming the open note (FEAT-0035)
     trackSync("setLinkContext", () => setLinkContext(view, { activeNote: active, notePaths: new Set(notes) }))
     const shouldRevealActiveRow =
@@ -1119,6 +1130,9 @@ controller = createNoteController(view, {
       if (shouldRevealActiveRow) updateActiveNoteRow(listEl, active, true)
       cachedNoteList = notes
       void saveNoteList(currentVaultId, notes) // the fresh, authoritative list — this vault's next attach paints from it
+    }
+    if (shouldApplyPendingRoute) {
+      queueRouteOperation((token) => applyCurrentRoute(token))
     }
   },
   onFoldersChanged: (folders) => {
@@ -1274,6 +1288,7 @@ const openNote = async (dir: FileSystemDirectoryHandle) => {
         initialAnchor = resolution.anchor
       } else if (resolution.kind === "missing") {
         missing = resolution.path
+        markPendingRoute()
       }
       if (initialAnchor) scrollEditorToHeading(view, initialAnchor)
     } finally {
@@ -1313,17 +1328,21 @@ const applyCurrentRoute = async (token: number): Promise<void> => {
       if (token !== routeNavigationToken) return
       const route = hashToRoute(location.hash)
       if (!route || route.path !== currentActive || route.path !== resolution.path) return
+      pendingRouteKey = null
       if (route.anchor) scrollEditorToHeading(view, route.anchor)
       else restoreRoutePosition(history.state, token)
     } else if (resolution.kind === "same") {
       if (token !== routeNavigationToken) return
+      pendingRouteKey = null
       if (resolution.anchor) scrollEditorToHeading(view, resolution.anchor)
       else restoreRoutePosition(history.state, token)
       clearMissingBanner()
     } else if (resolution.kind === "missing") {
       if (token !== routeNavigationToken) return
+      markPendingRoute()
       showMissingBanner(resolution.path)
     } else {
+      pendingRouteKey = null
       if (token === routeNavigationToken) clearMissingBanner() // malformed route
     }
   } finally {

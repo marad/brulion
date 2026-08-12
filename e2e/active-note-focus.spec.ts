@@ -128,6 +128,9 @@ test("active-note focus reveals, persists, and centers nested note rows (AC-6)",
   const folder = "e2e-active-note-focus-nested"
   await stubPicker(page, folder)
   await page.goto("/brulion/")
+  await page.evaluate(() => {
+    location.hash = "#/zz-nested/deep/target"
+  })
   await writeFile(page, folder, "home.md", "Home\\n")
   for (let i = 0; i < 40; i++) await writeFile(page, folder, `root-${String(i).padStart(2, "0")}.md`, `Root ${i}\\n`)
   await writeFile(page, folder, "zz-nested/deep/target.md", "Target\\n")
@@ -135,9 +138,6 @@ test("active-note focus reveals, persists, and centers nested note rows (AC-6)",
   await page.locator("#open-folder").click()
   await expect(page.locator("#note-identity")).toBeVisible()
 
-  await page.evaluate(() => {
-    location.hash = "#/zz-nested/deep/target"
-  })
   const target = page.locator('.note-name[data-path="zz-nested/deep/target.md"]')
   await expect(target).toBeVisible()
   await expect(page.locator('.folder-header[data-path="zz-nested"]')).toHaveAttribute("aria-expanded", "true")
