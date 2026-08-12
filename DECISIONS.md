@@ -2049,3 +2049,42 @@ traceability pass and deletions would be an easy bypass.
 **Consequence (UI/project):** behavioral and delivery changes must carry a
 spec/AC reference regardless of which layer owns the bytes; editorial project
 history remains lightweight.
+
+## M44 review: local anchor routes use the browser's existing history
+
+**What:** represent a successful local section jump as `#/note#anchor`, while
+keeping legacy `#/note` routes valid. Before the jump, store the editor's current
+scroll position in the current `history.state`; the new route stores the target
+position. Browser Back/Forward remains the only history mechanism, with route
+operation tokens guarding delayed async switches and scroll callbacks.
+
+**Why:** the live review found that scrolling worked but left no history entry,
+so Back could not return to the previous position. Extending the existing note
+route gives the user an inspectable section permalink without adding a second
+navigation stack or changing Markdown bytes. Stale-operation guards are needed
+because FSA reads and note switches are asynchronous.
+
+**Consequence (UI/project):** local Markdown and wikilink anchors participate in
+Back/Forward; external URL fragments remain external. An incomplete initial
+vault sweep keeps a pending route and retries it when the target appears, and
+partial sweep results are copied before continuation so newly found notes reach
+the sidebar.
+
+## M44 review: active-note focus persists ordinary ancestor expansion
+
+**What:** when the active-note focus preference is enabled and genuine navigation
+lands on a nested note, add every ancestor folder to the existing per-vault
+expanded set, persist it, then center and focus the visible note row. The
+sidebar's own collapsed state remains independent and is never forced open.
+
+**Why:** the live review requested the active note to be visible even inside a
+collapsed folder, and explicitly preferred a simple ordinary expansion over a
+temporary exception or a second expansion model. Persisting the existing set is
+simpler and makes the behavior predictable after reload; centering makes the
+focused row useful in a long tree.
+
+**Consequence (UI/project):** navigation may leave ancestor folders expanded
+when the user later opens a root note; the user can collapse them normally, and
+that choice is persisted through the existing tree state. Background repaints,
+disabled preference mode, and a collapsed sidebar still do not move focus or
+scroll.
