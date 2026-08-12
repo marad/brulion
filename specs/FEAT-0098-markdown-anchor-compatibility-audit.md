@@ -18,10 +18,12 @@ create a second resolver or reinterpret external URLs.
 
 The browser-level link-follow path is exercised with `[text](note.md#section)`
 and `[text](#section)`. A matching heading receives the existing scroll behavior,
-while a missing heading leaves navigation successful without an error. An
-`http(s)` link containing `#fragment` remains an external URL and is passed to the
-browser unchanged. The checks use existing notes and do not write or rewrite any
-Markdown bytes.
+while a missing heading leaves navigation successful without an error. A
+successful local anchor navigation also becomes a browser-history route: the
+note path and anchor are represented together, and Back/Forward can restore the
+previous position or requested heading. An `http(s)` link containing `#fragment`
+remains an external URL and is passed to the browser unchanged. The checks use
+existing notes and do not write or rewrite any Markdown bytes.
 
 ## Acceptance criteria
 
@@ -41,9 +43,14 @@ Markdown bytes.
 - AC-5: Given any of the anchored navigation cases above, when the browser
   completes the interaction, then the set and bytes of the existing `.md` files
   are unchanged and no new note is created.
+- AC-6: Given a successful local same-note or cross-note anchor navigation, when
+  the user uses browser Back and Forward, then the route records the local note
+  path and anchor, Back restores the prior note/scroll position, and Forward
+  restores the anchored heading without changing any Markdown bytes.
 
 ## Out of scope
 
 - A new anchor parser, resolver, heading-slug rule, or link interaction model.
 - Wikilink behavior already covered by FEAT-0061 and its existing regression suite.
 - Anchors in external URLs being interpreted as local note fragments.
+- A new history stack separate from the browser's own History API.
