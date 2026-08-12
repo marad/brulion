@@ -177,6 +177,9 @@ describe("FEAT-0083 ExtensionHost", () => {
     ).resolves.toEqual({ status: "saved", lastModified: 21 })
     expect(write).toHaveBeenCalledWith("notes/todo.md", "next", 20)
 
+    await expect(extension.call("notes.read", { path: "../secret" })).rejects.toMatchObject({
+      code: "handler_error",
+    })
     await expect(
       extension.call("notes.write", { path: "../secret", content: "nope", expectedLastModified: null }),
     ).rejects.toMatchObject({ code: "handler_error" })
@@ -184,6 +187,21 @@ describe("FEAT-0083 ExtensionHost", () => {
       extension.call("notes.write", { path: ".brulion/internal", content: "nope", expectedLastModified: null }),
     ).rejects.toMatchObject({ code: "handler_error" })
     expect(write).toHaveBeenCalledTimes(1)
+    host.dispose()
+  })
+
+  it("omits invalid legacy paths from note listings and deduplicates valid paths", async () => {
+    const list = vi.fn(async () => [
+      "ok.md",
+      ".md",
+      "bad?.md",
+      "dir with newline\n/x.md",
+      "ok.md",
+    ])
+    const { host, extension } = await setup({ notes: { list } })
+
+    await expect(extension.call("notes.list", null)).resolves.toEqual(["ok.md"])
+    expect(list).toHaveBeenCalledOnce()
     host.dispose()
   })
 
