@@ -22,12 +22,15 @@ available in the Settings modal as a labeled checkbox. Toggling it applies live
 and persists through the existing settings update path.
 
 When the active note path changes from the previously announced path, and the
-preference is enabled, the host focuses the matching visible `.note-name` row
-after the sidebar projection is current. The row becomes the tree's roving tab
-stop and the browser may reveal it inside the scrollable tree. If the preference
-is disabled, or the sidebar is collapsed/hidden, no programmatic focus occurs;
-visual active and ARIA state still update. Repainting the same active note never
-moves focus, and no path changes or settings writes alter Markdown bytes.
+preference is enabled, the host reveals the active note's ancestor folders,
+focuses the matching `.note-name` row, and asks the scrollable tree to place the
+row near its vertical center after the sidebar projection is current. Ancestor
+folder expansion is an ordinary persisted expanded-state change; the separate
+sidebar collapse choice is not changed. If the preference is disabled, or the
+sidebar itself is collapsed/hidden, no programmatic focus or sidebar reveal
+occurs; visual active and ARIA state still update. Repainting the same active
+note never moves focus or scrolls, and no path changes or settings writes alter
+Markdown bytes.
 
 ## Acceptance criteria
 
@@ -44,17 +47,22 @@ moves focus, and no path changes or settings writes alter Markdown bytes.
   visible note row receives DOM focus, has the active visual/ARIA state, and is
   the sole roving `tabindex="0"` row.
 - AC-4: Given the editor or a dialog currently has focus, when a poller repaint
-  announces the same active note, then DOM focus stays where it was; given the
-  preference is disabled, an active-note change updates visual/ARIA state but
-  does not move DOM focus; given the sidebar is collapsed, navigation does not
-  force it open or focus a hidden row.
+  announces the same active note, then DOM focus and sidebar scroll stay where
+  they were; given the preference is disabled, an active-note change updates
+  visual/ARIA state but does not move DOM focus or scroll; given the sidebar
+  itself is collapsed, navigation does not force it open or focus a hidden row.
 - AC-5: Given either preference value, when notes are opened, switched, or
   repainted, then no Markdown file is created, modified, or rewritten by the
   focus behavior.
+- AC-6: Given the preference is enabled and a genuinely opened note is nested
+  below a collapsed folder, when the active-note announcement reaches the
+  sidebar, then every ancestor folder is expanded and persisted, the note row
+  receives focus, and the sidebar scrolls it toward the vertical center; the
+  sidebar's own collapsed state remains unchanged.
 
 ## Out of scope
 
-- Changing the sidebar's persisted collapsed state or automatically opening the
-  sidebar/drawer.
+- Automatically opening the sidebar/drawer; folder expansion is part of
+  revealing the active note and may update the existing persisted expanded set.
 - New note navigation commands, a focus ring redesign, or a second tree model.
 - Focusing on mere list membership changes when the active path is unchanged.
