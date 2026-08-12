@@ -430,7 +430,7 @@
           "name": "list",
           "signature": "notes.list()",
           "permission": "notes:read",
-          "description": "Lists every markdown note path in the granted vault.",
+          "description": "Lists every markdown note path in the granted vault. Paths that fail note-name validation are omitted from the listing.",
           "parameters": [],
           "returns": "readonly string[]",
           "errors": [

@@ -181,7 +181,8 @@ if (result.status === "conflict") {
 Note paths are folder-relative POSIX paths. The `.md` suffix is optional when
 calling the API and is added during normalization. `.` and `..`, the reserved
 `.brulion` directory, unsafe filename characters, and paths outside the granted
-vault are rejected.
+vault are rejected. Paths that fail note-name validation are omitted from the
+`notes.list()` listing.
 
 ## File fidelity
 

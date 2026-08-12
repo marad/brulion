@@ -153,6 +153,16 @@ function notePath(value: unknown): string {
   return normalized.filename
 }
 
+function notePathOrNull(value: unknown): string | null {
+  // Do not let normalization trim a control character out of a legacy filename.
+  if (typeof value !== "string" || hasControlCharacter(value)) return null
+  try {
+    return notePath(value)
+  } catch {
+    return null
+  }
+}
+
 function expectedMtime(value: unknown): number | null {
   if (value === null) return null
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
@@ -461,7 +471,10 @@ export class ExtensionHost {
   private async listNotes(_params: RpcValue): Promise<RpcValue> {
     this.requirePermission("notes:read")
     const paths: string[] = []
-    for (const path of await this.notes.list()) paths.push(notePath(path))
+    for (const path of await this.notes.list()) {
+      const normalized = notePathOrNull(path)
+      if (normalized !== null) paths.push(normalized)
+    }
     return [...new Set(paths)]
   }
 
