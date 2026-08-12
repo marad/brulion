@@ -27,10 +27,12 @@ Only strings, numeric positions, and serializable records cross the RPC boundary
 
 **Note capabilities.** The host exposes `notes.list`, `notes.read`, `notes.create`,
 `notes.write`, `notes.delete`, and `notes.move`. Note paths are normalized with the
-existing safe `.md` path rules before callbacks run. Writes return `saved` with a
-new mtime or `conflict`; the host never receives or returns a raw file handle. Each
-handler is gated by the corresponding manifest permission and rejects closed
-capabilities before invoking its injected callback.
+existing safe `.md` path rules before callbacks run. `notes.list` omits individual
+entries that fail note-name validation while preserving valid normalization and
+deduplication. Writes return `saved` with a new mtime or `conflict`; the host never
+receives or returns a raw file handle. Each handler is gated by the corresponding
+manifest permission and rejects closed capabilities before invoking its injected
+callback.
 
 ## Acceptance criteria
 
@@ -57,6 +59,13 @@ injected `saved`/`conflict` result without bypassing its mtime argument.
 **AC-5** — Host lifecycle is explicit and errors are isolated.
 Given a disposed or not-ready host, calls fail closed; a handler error becomes a
 structured RPC error; disposing one host does not mutate another host's actions.
+
+- AC-6: Given the injected `notes.list` callback returns valid, duplicate, and
+  legacy paths that fail note-name validation, when an extension calls
+  `notes.list()`, then the call resolves with only valid normalized paths,
+  deduplicated as before. Given an invalid path passed directly to
+  `notes.read`, `notes.write`, `notes.create`, `notes.delete`, `notes.move`, or a
+  navigation path input, then that call still rejects before its callback runs.
 
 ## Out of scope
 
