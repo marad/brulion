@@ -248,3 +248,40 @@ test("Back/Forward wins over an in-flight anchored link switch (AC-6)", async ({
   await expect(page).toHaveURL(/#\/home#here$/)
   await expect(page.locator(".note-row.active .note-name")).toHaveText("home")
 })
+
+test("a stale scroll restoration cannot overwrite a newer anchor route (AC-6)", async ({ page }) => {
+  await openWith(page, {
+    "solo.md": `[jump](#here)\n\n${PAD}## Here\n\nhere body\n`,
+  })
+  await page.locator(".note-row", { hasText: "solo" }).click()
+  await page.evaluate(() => {
+    const callbacks: FrameRequestCallback[] = []
+    ;(window as unknown as { __deferredRafs: FrameRequestCallback[]; __realRaf: typeof requestAnimationFrame }).__deferredRafs = callbacks
+    ;(window as unknown as { __realRaf: typeof requestAnimationFrame }).__realRaf = requestAnimationFrame
+    window.requestAnimationFrame = (callback) => {
+      callbacks.push(callback)
+      return callbacks.length
+    }
+    const state = { ...(history.state || {}), brulionRouteId: 8101, brulionScrollTop: 110 }
+    history.replaceState(state, "", location.href)
+    history.pushState({ ...state, brulionRouteId: 8102, brulionScrollTop: 0 }, "", "#/solo#here")
+    addEventListener("popstate", () => setTimeout(() => history.forward(), 0), { once: true })
+    history.back()
+  })
+
+  await expect.poll(() => page.evaluate(() => location.hash)).toBe("#/solo#here")
+  const debugScrolls = await page.evaluate(() => {
+    const state = window as unknown as {
+      __deferredRafs: FrameRequestCallback[]
+      __realRaf: typeof requestAnimationFrame
+    }
+    window.requestAnimationFrame = state.__realRaf
+    const scrolls: number[] = []
+    for (const callback of [...state.__deferredRafs].reverse()) {
+      callback(performance.now())
+      scrolls.push(document.querySelector(".cm-scroller")?.scrollTop ?? -1)
+    }
+    return scrolls
+  })
+  await expect.poll(() => scrollTop(page)).toBeGreaterThan(500)
+})

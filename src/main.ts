@@ -324,11 +324,12 @@ const replaceNoteRoute = (path: string, anchor: string | null = null): void => {
   markCurrentRouteHandled()
 }
 
-const restoreRoutePosition = (state: unknown): void => {
+const restoreRoutePosition = (state: unknown, token: number): void => {
   const value = state && typeof state === "object" ? (state as RouteHistoryState).brulionScrollTop : undefined
   const top = typeof value === "number" && Number.isFinite(value) ? value : null
   if (top === null) return
   requestAnimationFrame(() => {
+    if (token !== routeNavigationToken) return
     view.scrollDOM.scrollTop = top
   })
 }
@@ -1313,11 +1314,11 @@ const applyCurrentRoute = async (token: number): Promise<void> => {
       const route = hashToRoute(location.hash)
       if (!route || route.path !== currentActive || route.path !== resolution.path) return
       if (route.anchor) scrollEditorToHeading(view, route.anchor)
-      else restoreRoutePosition(history.state)
+      else restoreRoutePosition(history.state, token)
     } else if (resolution.kind === "same") {
       if (token !== routeNavigationToken) return
       if (resolution.anchor) scrollEditorToHeading(view, resolution.anchor)
-      else restoreRoutePosition(history.state)
+      else restoreRoutePosition(history.state, token)
       clearMissingBanner()
     } else if (resolution.kind === "missing") {
       if (token !== routeNavigationToken) return
