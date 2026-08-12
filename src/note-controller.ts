@@ -739,7 +739,12 @@ export function createNoteController(
           throw err
         }
         dir = folder
-        notes = sweepResult(sweep)
+        // `sweepResult` returns the sweep's mutable `files` array. Clone an
+        // incomplete first result before handing it to the controller state;
+        // continuation must mutate the sweep independently so the next poll can
+        // detect and announce the newly discovered notes instead of seeing the
+        // same array reference on both sides of its equality check.
+        notes = [...sweepResult(sweep)]
         // The cache is keyed by relative path only, not by folder — reused
         // across every vault this one controller instance ever attaches to
         // (M33 multi-vault). Every vault's seed note shares the name

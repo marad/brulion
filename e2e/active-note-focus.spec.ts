@@ -129,11 +129,11 @@ test("active-note focus reveals, persists, and centers nested note rows (AC-6)",
   await stubPicker(page, folder)
   await page.goto("/brulion/")
   await page.evaluate(() => {
-    location.hash = "#/zz-nested/deep/target"
+    location.hash = "#/zzzz-nested/deep/target"
   })
   await writeFile(page, folder, "home.md", "Home\\n")
   for (let i = 0; i < 40; i++) await writeFile(page, folder, `root-${String(i).padStart(2, "0")}.md`, `Root ${i}\\n`)
-  await writeFile(page, folder, "zz-nested/deep/target.md", "Target\\n")
+  await writeFile(page, folder, "zzzz-nested/deep/target.md", "Target\\n")
   for (let i = 0; i < 40; i++) await writeFile(page, folder, `zzz-after-${String(i).padStart(2, "0")}.md`, `After ${i}\\n`)
   await page.evaluate(() => {
     const original = performance.now.bind(performance)
@@ -150,20 +150,13 @@ test("active-note focus reveals, persists, and centers nested note rows (AC-6)",
   await expect(page.locator("#note-identity")).toBeVisible()
   await page.evaluate(() => (window as unknown as { restorePerfNow: () => void }).restorePerfNow())
   await expect(page.locator(".missing-note-banner")).toBeVisible()
-  await page.waitForTimeout(4500)
-  console.log("PENDING_ROUTE_DEBUG", await page.evaluate(() => ({
-    hash: location.hash,
-    active: document.querySelector(".note-row.active .note-name")?.getAttribute("data-path"),
-    rows: [...document.querySelectorAll<HTMLElement>(".note-name")].map((row) => row.dataset.path),
-    banner: !document.querySelector<HTMLElement>(".missing-note-banner")?.hidden,
-  })))
 
-  const target = page.locator('.note-name[data-path="zz-nested/deep/target.md"]')
+  const target = page.locator('.note-name[data-path="zzzz-nested/deep/target.md"]')
   await expect(target).toBeVisible()
-  await expect(page.locator('.folder-header[data-path="zz-nested"]')).toHaveAttribute("aria-expanded", "true")
-  await expect(page.locator('.folder-header[data-path="zz-nested/deep"]')).toHaveAttribute("aria-expanded", "true")
+  await expect(page.locator('.folder-header[data-path="zzzz-nested"]')).toHaveAttribute("aria-expanded", "true")
+  await expect(page.locator('.folder-header[data-path="zzzz-nested/deep"]')).toHaveAttribute("aria-expanded", "true")
   await expect.poll(() => page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.path)).toBe(
-    "zz-nested/deep/target.md",
+    "zzzz-nested/deep/target.md",
   )
 
   const centered = await page.locator("#note-list").evaluate((list, row) => {
@@ -175,7 +168,7 @@ test("active-note focus reveals, persists, and centers nested note rows (AC-6)",
 
   await page.reload()
   await expect(page.locator("#note-identity")).toBeVisible()
-  await expect(page.locator('.note-name[data-path="zz-nested/deep/target.md"]')).toBeVisible()
-  await expect(page.locator('.folder-header[data-path="zz-nested"]')).toHaveAttribute("aria-expanded", "true")
-  await expect(page.locator('.folder-header[data-path="zz-nested/deep"]')).toHaveAttribute("aria-expanded", "true")
+  await expect(page.locator('.note-name[data-path="zzzz-nested/deep/target.md"]')).toBeVisible()
+  await expect(page.locator('.folder-header[data-path="zzzz-nested"]')).toHaveAttribute("aria-expanded", "true")
+  await expect(page.locator('.folder-header[data-path="zzzz-nested/deep"]')).toHaveAttribute("aria-expanded", "true")
 })
