@@ -1137,9 +1137,11 @@ describe("renderNoteList keyboard navigation (FEAT-0075)", () => {
 
   it("updates the active row, focuses it, and centers it without breaking roving tabindex (FEAT-0099 AC-3/AC-6)", () => {
     const c = mount(["a.md", "b.md"], "a.md")
-    const target = c.querySelector<HTMLElement>('[data-path="b.md"]')!
-    const scrollIntoView = vi.fn()
-    Object.defineProperty(target, "scrollIntoView", { value: scrollIntoView })
+    const target = c.querySelector<HTMLElement>('.note-name[data-path="b.md"]')!
+    Object.defineProperty(c, "clientHeight", { configurable: true, value: 200 })
+    Object.defineProperty(c, "scrollHeight", { configurable: true, value: 1000 })
+    vi.spyOn(c, "getBoundingClientRect").mockReturnValue({ top: 100 } as DOMRect)
+    vi.spyOn(target, "getBoundingClientRect").mockReturnValue({ top: 400, height: 20 } as DOMRect)
 
     expect(updateActiveNoteRow(c, "b.md", true)).toBe(true)
 
@@ -1148,7 +1150,7 @@ describe("renderNoteList keyboard navigation (FEAT-0075)", () => {
     expect(rows[1].closest(".note-row")?.classList.contains("active")).toBe(true)
     expect(rows[1].closest(".note-row")?.getAttribute("aria-current")).toBe("true")
     expect(rows.filter((row) => row.tabIndex === 0)).toEqual([rows[1]])
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: "center", inline: "nearest", behavior: "auto" })
+    expect(c.scrollTop).toBe(210)
   })
 
   it("updates active state without moving outside focus, and refuses hidden rows (FEAT-0099 AC-4)", () => {

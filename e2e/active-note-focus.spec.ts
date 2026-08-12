@@ -130,19 +130,20 @@ test("active-note focus reveals, persists, and centers nested note rows (AC-6)",
   await page.goto("/brulion/")
   await writeFile(page, folder, "home.md", "Home\\n")
   for (let i = 0; i < 40; i++) await writeFile(page, folder, `root-${String(i).padStart(2, "0")}.md`, `Root ${i}\\n`)
-  await writeFile(page, folder, "nested/deep/target.md", "Target\\n")
+  await writeFile(page, folder, "zz-nested/deep/target.md", "Target\\n")
+  for (let i = 0; i < 40; i++) await writeFile(page, folder, `zzz-after-${String(i).padStart(2, "0")}.md`, `After ${i}\\n`)
   await page.locator("#open-folder").click()
   await expect(page.locator("#note-identity")).toBeVisible()
 
   await page.evaluate(() => {
-    location.hash = "#/nested/deep/target"
+    location.hash = "#/zz-nested/deep/target"
   })
-  const target = page.locator('.note-name[data-path="nested/deep/target.md"]')
+  const target = page.locator('.note-name[data-path="zz-nested/deep/target.md"]')
   await expect(target).toBeVisible()
-  await expect(page.locator('.folder-header[data-path="nested"]')).toHaveAttribute("aria-expanded", "true")
-  await expect(page.locator('.folder-header[data-path="nested/deep"]')).toHaveAttribute("aria-expanded", "true")
+  await expect(page.locator('.folder-header[data-path="zz-nested"]')).toHaveAttribute("aria-expanded", "true")
+  await expect(page.locator('.folder-header[data-path="zz-nested/deep"]')).toHaveAttribute("aria-expanded", "true")
   await expect.poll(() => page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.path)).toBe(
-    "nested/deep/target.md",
+    "zz-nested/deep/target.md",
   )
 
   const centered = await page.locator("#note-list").evaluate((list, row) => {
@@ -154,7 +155,7 @@ test("active-note focus reveals, persists, and centers nested note rows (AC-6)",
 
   await page.reload()
   await expect(page.locator("#note-identity")).toBeVisible()
-  await expect(page.locator('.note-name[data-path="nested/deep/target.md"]')).toBeVisible()
-  await expect(page.locator('.folder-header[data-path="nested"]')).toHaveAttribute("aria-expanded", "true")
-  await expect(page.locator('.folder-header[data-path="nested/deep"]')).toHaveAttribute("aria-expanded", "true")
+  await expect(page.locator('.note-name[data-path="zz-nested/deep/target.md"]')).toBeVisible()
+  await expect(page.locator('.folder-header[data-path="zz-nested"]')).toHaveAttribute("aria-expanded", "true")
+  await expect(page.locator('.folder-header[data-path="zz-nested/deep"]')).toHaveAttribute("aria-expanded", "true")
 })

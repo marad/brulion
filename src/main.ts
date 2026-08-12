@@ -99,7 +99,7 @@ import { resolveFontChoices } from "./font-access"
 import { touchRecency } from "./note-search"
 import { displayName, isExternalLink, resolveNotePath, normalizeNoteName } from "./note-name"
 import { expandJournalPath } from "./journal"
-import { pathToHash, hashToPath } from "./note-route"
+import { pathToHash, hashToRoute } from "./note-route"
 import { wireFlushOnHide } from "./flush"
 import { createPoller } from "./watch"
 import { registerServiceWorker } from "./pwa"
@@ -260,33 +260,94 @@ let identity: NoteIdentityHandle
 // loading → welcome-vs-workspace resolution so the welcome never flashes before
 // an auto-restored folder loads (FEAT-0031).
 let workspaceShown = false
-// Note URL hash route (FEAT-0036). The open note mirrors into `#/path` so the
-// browser's own Back/Forward walks visit history. `suppressRouteSync` silences the
-// mirror while we resolve the initial hash on load (so that resolution leaves a
-// single history entry, settled with replaceState); `initialRouteConsumed` makes
-// the load-time hash resolution happen exactly once (the first folder open).
+// Note URL hash route (FEAT-0036/0098). The open note mirrors into `#/path`,
+// and a local section may extend it to `#/path#anchor`, so the browser's own
+// Back/Forward walks both note visits and anchored positions. `suppressRouteSync`
+// silences the mirror while we resolve the initial hash or complete an anchored
+// cross-note switch; `initialRouteConsumed` makes load-time resolution happen once.
 let suppressRouteSync = false
 let initialRouteConsumed = false
-// Mirror the active note into the location hash. No-op when already mirrored —
-// which both avoids a duplicate history entry and is the loop guard against the
-// hashchange listener reading our own write back as a fresh navigation. Comparing
-// decoded paths (not raw hash strings) stays robust to browser hash re-encoding.
-//
-// Push vs replace: a genuine navigation (the user opened a different, still-existing
-// note) pushes, so Back returns to the prior note. But when the note the URL points
-// at is gone from the list, the active note changed because the old one was
-// renamed/deleted out from under us — not navigation. Replacing the now-dead entry
-// keeps the URL in sync with the open note (else Back would land on a vanished note
-// and the address bar would disagree with what's open).
+
+type RouteHistoryState = {
+  brulionRouteId?: number
+  brulionScrollTop?: number
+  [key: string]: unknown
+}
+
+let nextRouteId = 0
+let lastHandledRouteKey = ""
+
+const copyHistoryState = (): RouteHistoryState =>
+  history.state && typeof history.state === "object"
+    ? { ...(history.state as Record<string, unknown>) }
+    : {}
+
+const routeUrl = (hash: string): string => {
+  const url = new URL(location.href)
+  return `${url.pathname}${url.search}${hash}`
+}
+
+const routeHistoryKey = (): string =>
+  `${location.href}|${typeof history.state?.brulionRouteId === "number" ? history.state.brulionRouteId : ""}`
+
+const markCurrentRouteHandled = (): void => {
+  lastHandledRouteKey = routeHistoryKey()
+}
+
+/** Capture the editor position in the current browser entry before a local jump. */
+const captureCurrentRoutePosition = (): void => {
+  const state = copyHistoryState()
+  if (typeof state.brulionRouteId !== "number") state.brulionRouteId = ++nextRouteId
+  state.brulionScrollTop = view.scrollDOM.scrollTop
+  history.replaceState(state, "", location.href)
+}
+
+/** Push a note/anchor route after the editor has reached its target position. */
+const pushNoteRoute = (path: string, anchor: string | null): void => {
+  const current = hashToRoute(location.hash)
+  if (current?.path === path && current.anchor === anchor) return
+  const state = copyHistoryState()
+  state.brulionRouteId = ++nextRouteId
+  state.brulionScrollTop = view.scrollDOM.scrollTop
+  history.pushState(state, "", routeUrl(pathToHash(path, anchor)))
+  markCurrentRouteHandled()
+}
+
+/** Replace the current entry when the active note is not a navigation target. */
+const replaceNoteRoute = (path: string, anchor: string | null = null): void => {
+  const state = copyHistoryState()
+  if (typeof state.brulionRouteId !== "number") state.brulionRouteId = ++nextRouteId
+  state.brulionScrollTop = view.scrollDOM.scrollTop
+  history.replaceState(state, "", routeUrl(pathToHash(path, anchor)))
+  markCurrentRouteHandled()
+}
+
+const restoreRoutePosition = (state: unknown): void => {
+  const value = state && typeof state === "object" ? (state as RouteHistoryState).brulionScrollTop : undefined
+  const top = typeof value === "number" && Number.isFinite(value) ? value : null
+  if (top === null) return
+  requestAnimationFrame(() => {
+    view.scrollDOM.scrollTop = top
+  })
+}
+
+// Mirror the active note into the route. No-op when the current route already
+// names the active path, including an anchor that a preceding navigation owns.
+// A genuine note change pushes; an old route naming a deleted/renamed note is
+// replaced so Back cannot land on a dead path.
 const syncRouteToActive = (active: string) => {
   if (suppressRouteSync) return
-  const current = hashToPath(location.hash)
-  if (current === active) return
+  const current = hashToRoute(location.hash)
+  if (current?.path === active) return
   const hash = pathToHash(active)
-  if (current !== null && !currentNotes.includes(current)) {
-    history.replaceState(null, "", hash) // old note vanished (rename/delete) — replace, don't push
+  if (current !== null && !currentNotes.includes(current.path)) {
+    replaceNoteRoute(active) // old note vanished (rename/delete) — not navigation
   } else {
-    location.hash = hash // genuine navigation — push a history entry
+    const state = copyHistoryState()
+    state.brulionRouteId = ++nextRouteId
+    state.brulionScrollTop = view.scrollDOM.scrollTop
+    history.pushState(state, "", routeUrl(hash))
+    markCurrentRouteHandled()
   }
 }
 // Classify what the current URL hash means against the open folder (FEAT-0036).
@@ -297,12 +358,16 @@ const syncRouteToActive = (active: string) => {
 // One classifier for both the load-time resolution and the hashchange path.
 type HashResolution =
   | { kind: "none" }
-  | { kind: "switch"; path: string }
-  | { kind: "missing"; path: string }
+  | { kind: "same"; path: string; anchor: string | null }
+  | { kind: "switch"; path: string; anchor: string | null }
+  | { kind: "missing"; path: string; anchor: string | null }
 const resolveHash = (): HashResolution => {
-  const target = hashToPath(location.hash)
-  if (target === null || target === currentActive) return { kind: "none" }
-  return currentNotes.includes(target) ? { kind: "switch", path: target } : { kind: "missing", path: target }
+  const route = hashToRoute(location.hash)
+  if (!route) return { kind: "none" }
+  if (route.path === currentActive) return { kind: "same", path: route.path, anchor: route.anchor }
+  return currentNotes.includes(route.path)
+    ? { kind: "switch", path: route.path, anchor: route.anchor }
+    : { kind: "missing", path: route.path, anchor: route.anchor }
 }
 // The missing-note banner (FEAT-0036). Shown when a hash names a note absent from
 // the folder; `pendingMissingTarget` is the note path it currently offers to
@@ -321,7 +386,7 @@ const missingBanner = mountMissingNoteBanner(missingNoteEl, {
   },
   onDismiss: () => {
     clearMissingBanner()
-    history.replaceState(null, "", pathToHash(currentActive)) // stop the URL naming an absent note
+    replaceNoteRoute(currentActive) // stop the URL naming an absent note
   },
 })
 const clearMissingBanner = () => {
@@ -335,17 +400,42 @@ const showMissingBanner = (target: string) => {
 // Follow a resolved internal note path: switch to it if it exists, else offer to
 // create it (shared by markdown links and wikilinks — FEAT-0026/0027).
 // Follow a resolved internal note path, optionally jumping to a section anchor
-// (FEAT-0061). Same note → just scroll to the heading; another existing note →
-// switch then scroll once it's loaded; a missing note → offer to create (the anchor
-// is moot, the new note has no heading).
+// (FEAT-0061/0098). A successful local anchor jump captures the source editor
+// position, then pushes one route containing the target note + anchor. Cross-note
+// switching temporarily suppresses the ordinary active-note route mirror so it
+// cannot create a second note-only history entry.
 const openNotePath = (path: string, anchor: string | null = null) => {
   if (path === currentActive) {
-    if (anchor) scrollEditorToHeading(view, anchor)
-  } else if (currentNotes.includes(path)) {
-    void controller.switchTo(path).then(() => {
-      if (anchor) scrollEditorToHeading(view, anchor)
-    })
-  } else if (window.confirm(`"${displayName(path)}" doesn't exist yet. Create it?`)) {
+    if (!anchor) return
+    captureCurrentRoutePosition()
+    if (scrollEditorToHeading(view, anchor)) pushNoteRoute(path, anchor)
+    return
+  }
+
+  if (currentNotes.includes(path)) {
+    if (!anchor) {
+      void controller.switchTo(path)
+      return
+    }
+    captureCurrentRoutePosition()
+    void (async () => {
+      suppressRouteSync = true
+      try {
+        await controller.switchTo(path)
+        if (currentActive !== path) return
+        const found = scrollEditorToHeading(view, anchor)
+        pushNoteRoute(path, found ? anchor : null)
+      } catch {
+        // The controller owns conflict/permission reporting; a failed switch must
+        // not leave a phantom route or anchor entry behind.
+      } finally {
+        suppressRouteSync = false
+      }
+    })()
+    return
+  }
+
+  if (window.confirm(`"${displayName(path)}" doesn't exist yet. Create it?`)) {
     void controller.addNote(path)
   }
 }
@@ -364,8 +454,9 @@ const view = mountEditor(editorEl, {
       return
     }
     if (href === "") {
-      // A same-note anchor `[text](#section)` — no note to resolve, just jump.
-      if (anchor) scrollEditorToHeading(view, anchor)
+      // A same-note anchor `[text](#section)` — route it just like a
+      // cross-note anchor so browser Back can restore the prior position.
+      if (anchor) openNotePath(currentActive, anchor)
       return
     }
     const target = resolveNotePath(currentActive, href)
@@ -528,6 +619,24 @@ let conflictDiff: ConflictDiff | null = null
 // the tree's first paint, so it matches the saved state instead of flashing fully
 // collapsed.
 let expandedFolders = new Set<string>()
+
+/** Return the folder prefixes that contain a nested note, outermost first. */
+const ancestorFolders = (notePath: string): string[] => {
+  const segments = notePath.split("/")
+  return segments.slice(0, -1).map((_, index) => segments.slice(0, index + 1).join("/"))
+}
+
+/** Reveal a genuinely navigated active note using the existing persisted tree state. */
+const revealActiveAncestors = (notePath: string): void => {
+  let changed = false
+  for (const folder of ancestorFolders(notePath)) {
+    if (expandedFolders.has(folder)) continue
+    expandedFolders.add(folder)
+    changed = true
+  }
+  if (changed) void saveExpandedFolders(currentVaultId, expandedFolders)
+}
+
 // This vault's last-known complete note list (session.ts), loaded in attachVault
 // before the first paint — a paint hint only, used to render a plausible sidebar
 // immediately on attach (see onPreviewReady) instead of an empty or stale one while
@@ -969,16 +1078,24 @@ controller = createNoteController(view, {
     syncRouteToActive(active) // mirror the open note into the URL hash (FEAT-0036)
     identity.update(active) // keep the header naming the open note (FEAT-0035)
     trackSync("setLinkContext", () => setLinkContext(view, { activeNote: active, notePaths: new Set(notes) }))
-    const shouldFocusActiveRow =
+    const shouldRevealActiveRow =
       activeChanged &&
       currentSettings.focusActiveNote &&
       !sidebarEl.hidden &&
       !workspaceEl.classList.contains("sidebar-collapsed")
+    if (shouldRevealActiveRow) revealActiveAncestors(active)
     if (listUnchanged) {
-      // List unchanged — only active note changed. Update the highlighted row and
-      // roving tab stop in place. Focus is gated by genuine navigation and the
-      // vault preference; a same-note repaint cannot steal focus.
-      updateActiveNoteRow(listEl, active, shouldFocusActiveRow)
+      // A genuine navigation may have moved into a collapsed nested folder. Rebuild
+      // once against the persisted expanded set so the active row is visible before
+      // focusing/centering it; ordinary same-note repaints stay incremental.
+      if (shouldRevealActiveRow) {
+        trackSync("renderNoteList (active reveal)", () =>
+          renderNoteList(listEl, notes, active, noteListHandlers, expandedFolders, currentFolders),
+        )
+        updateActiveNoteRow(listEl, active, true)
+      } else {
+        updateActiveNoteRow(listEl, active, false)
+      }
     } else {
       // currentFolders (M35/FEAT-0069): refreshed on vault attach and by
       // onFoldersChanged below, not re-fetched here — an ordinary note change
@@ -986,7 +1103,7 @@ controller = createNoteController(view, {
       trackSync("renderNoteList", () =>
         renderNoteList(listEl, notes, active, noteListHandlers, expandedFolders, currentFolders),
       )
-      if (shouldFocusActiveRow) updateActiveNoteRow(listEl, active, true)
+      if (shouldRevealActiveRow) updateActiveNoteRow(listEl, active, true)
       cachedNoteList = notes
       void saveNoteList(currentVaultId, notes) // the fresh, authoritative list — this vault's next attach paints from it
     }
@@ -1131,13 +1248,21 @@ const openNote = async (dir: FileSystemDirectoryHandle) => {
     initialRouteConsumed = true
     suppressRouteSync = true
     let missing: string | null = null
+    let initialAnchor: string | null = null
     try {
       await controller.open(dir)
       // The hash held steady across open() (mirroring is suppressed), so it still
       // names the bookmark; honor it over the persisted active note.
       const resolution = resolveHash()
-      if (resolution.kind === "switch") await controller.switchTo(resolution.path)
-      else if (resolution.kind === "missing") missing = resolution.path
+      if (resolution.kind === "switch") {
+        initialAnchor = resolution.anchor
+        await controller.switchTo(resolution.path)
+      } else if (resolution.kind === "same") {
+        initialAnchor = resolution.anchor
+      } else if (resolution.kind === "missing") {
+        missing = resolution.path
+      }
+      if (initialAnchor) scrollEditorToHeading(view, initialAnchor)
     } finally {
       suppressRouteSync = false
     }
@@ -1148,8 +1273,8 @@ const openNote = async (dir: FileSystemDirectoryHandle) => {
       showMissingBanner(missing)
     } else {
       // Settle the URL so landing leaves exactly one history entry (no phantom
-      // previous for Back to step onto).
-      history.replaceState(null, "", pathToHash(currentActive))
+      // previous for Back to step onto), preserving a requested local anchor.
+      replaceNoteRoute(currentActive, initialAnchor)
     }
   } else {
     await controller.open(dir)
@@ -1160,19 +1285,35 @@ const openNote = async (dir: FileSystemDirectoryHandle) => {
   void reloadExtensions()
 }
 
-// URL → open note (FEAT-0036): Back/Forward, the mouse back button, or an edited
-// URL fire hashchange. Before a folder is open the hash is inert. Otherwise resolve
-// it: switch to a named existing note; raise the missing-note banner for a
-// well-formed hash naming an absent note (keeping the hash, which names the note
-// the banner offers to create); ignore a malformed hash or one equal to the open
-// note (the loop guard — our own mirror writes land here too).
-window.addEventListener("hashchange", () => {
+// URL → open note (FEAT-0036/0098): Back/Forward, the mouse back button, or an
+// edited URL can fire `popstate` and/or `hashchange`. The route key deduplicates
+// the two browser events for one history traversal. A same-note route restores
+// its saved scroll position or heading; a cross-note route waits for the normal
+// serialized controller switch before restoring it.
+const handleRouteChange = () => {
   if (!workspaceShown) return
+  const key = routeHistoryKey()
+  if (key === lastHandledRouteKey) return
+  lastHandledRouteKey = key
   const resolution = resolveHash()
-  if (resolution.kind === "switch") void controller.switchTo(resolution.path)
-  else if (resolution.kind === "missing") showMissingBanner(resolution.path)
-  else clearMissingBanner() // hash now names the open note (or is malformed) — drop any stale notice
-})
+  if (resolution.kind === "switch") {
+    void controller.switchTo(resolution.path).then(() => {
+      if (currentActive !== resolution.path) return
+      if (resolution.anchor) scrollEditorToHeading(view, resolution.anchor)
+      else restoreRoutePosition(history.state)
+    })
+  } else if (resolution.kind === "same") {
+    if (resolution.anchor) scrollEditorToHeading(view, resolution.anchor)
+    else restoreRoutePosition(history.state)
+    clearMissingBanner()
+  } else if (resolution.kind === "missing") {
+    showMissingBanner(resolution.path)
+  } else {
+    clearMissingBanner() // malformed route — drop any stale notice
+  }
+}
+window.addEventListener("hashchange", handleRouteChange)
+window.addEventListener("popstate", handleRouteChange)
 
 // The two ways out of a conflict; the controller clears it via onConflictResolved.
 keepButton.addEventListener("click", () => void controller.resolveKeepMine())

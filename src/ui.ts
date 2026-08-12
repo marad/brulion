@@ -404,12 +404,29 @@ function focusRow(container: HTMLElement, el: HTMLElement): void {
   el.focus()
 }
 
+/** Center a focused row in the tree's own scroll container. Native
+ * `scrollIntoView({ block: "center" })` is not reliable when the row is nested
+ * inside flex-based folder groups, so calculate against the list's viewport and
+ * clamp to its real scroll range. */
+function centerRowInTree(container: HTMLElement, row: HTMLElement): void {
+  const containerRect = container.getBoundingClientRect()
+  const rowRect = row.getBoundingClientRect()
+  const desired =
+    container.scrollTop +
+    rowRect.top +
+    rowRect.height / 2 -
+    (containerRect.top + container.clientHeight / 2)
+  const max = Math.max(0, container.scrollHeight - container.clientHeight)
+  container.scrollTop = Math.max(0, Math.min(max, desired))
+}
+
 /**
  * Update the active-note row without rebuilding the tree (FEAT-0099). The active
  * visual/ARIA state and roving tab stop are always updated; `focus` is an explicit
  * opt-in used only after a genuine navigation, so callers can repaint a poller
- * result without stealing focus from the editor or an open dialog. A hidden row
- * (inside a collapsed folder) is never focused.
+ * result without stealing focus or scrolling away from the editor or an open
+ * dialog. A visible focused row is centered in the scrollable tree; a hidden row
+ * (inside a collapsed folder) is never focused or scrolled.
  */
 export function updateActiveNoteRow(
   container: HTMLElement,
@@ -429,6 +446,7 @@ export function updateActiveNoteRow(
   )
   if (!row || row.closest(".folder-children[hidden]")) return false
   focusRow(container, row)
+  centerRowInTree(container, row)
   return true
 }
 
