@@ -69,7 +69,7 @@ is reached, and conversion is one undo transaction.
 ## Out of scope
 
 - implementing the model, input rules, special renderers, persistence wiring, or
-  browser validation; those belong to FEAT-0108 through FEAT-0114;
+  browser validation; those belong to FEAT-0109 through FEAT-0115;
 - replacing CodeMirror or introducing ProseMirror/Tiptap;
 - metadata interpretation, whole-document Markdown reformatting, or HTML
   clipboard interoperability.

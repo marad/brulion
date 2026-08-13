@@ -2323,3 +2323,20 @@ recorded behavior matrix before implementation. A loaded file is parsed directly
 into rich/opaque state; only user input follows the pending-marker path. The raw
 Markdown API and M46 source-position contract remain stable through source-map
 translation, while visible selections and carets use the rich projection.
+
+## M47 phase specs use FEAT-0109 through FEAT-0115 because FEAT-0108 is occupied (M47 P0)
+
+**What:** Keep M47's seven implementation phase specs consecutive, but assign P1–P7
+`FEAT-0109` through `FEAT-0115` rather than the numbers in the initial milestone
+outline. `FEAT-0108` already names the shipped M45 workflow-evidence feature and
+is sealed/in-sync; it is not available for a rich-editor phase.
+
+**Why:** Reusing or renumbering an existing spec would make specman history
+ambiguous and could detach M45's implementation snapshot from its intent. A
+stable one-to-one phase/spec mapping is more valuable than preserving provisional
+numbers written before M45 closed.
+
+**Consequence (project):** The M47 ledger and FEAT-0107 cross-reference now point
+to FEAT-0109–FEAT-0115. Each phase will create and sync its own spec before code
+or test edits. No application behavior or user-owned Markdown changes follow from
+this numbering correction.
