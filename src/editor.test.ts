@@ -1,5 +1,65 @@
 import { describe, it, expect, vi } from "vitest"
-import { mountEditor, setEditorText, reloadEditorText, scrollEditorToHeading } from "./editor"
+import {
+  getEditorSelection,
+  mountEditor,
+  reloadEditorText,
+  scrollEditorToHeading,
+  setEditorSelection,
+  setEditorText,
+} from "./editor"
+
+describe("extension editor selection adapter", () => {
+  it("returns raw UTF-16 text and preserves a reverse primary selection", () => {
+    const view = mountEditor(document.createElement("div"))
+    setEditorText(view, "**café** <hidden>")
+    view.dispatch({ selection: { anchor: 15, head: 2 } })
+
+    expect(getEditorSelection(view)).toEqual({
+      anchor: 15,
+      head: 2,
+      text: "*café** <hidd",
+    })
+    view.destroy()
+  })
+
+  it("sets a selection without changing bytes, saves, or skipping focus/scroll", () => {
+    const onChange = vi.fn()
+    const view = mountEditor(document.createElement("div"), { onChange })
+    setEditorText(view, "0123456789")
+    const dispatch = vi.spyOn(view, "dispatch")
+    const focus = vi.spyOn(view, "focus")
+
+    setEditorSelection(view, { anchor: 8, head: 3 })
+
+    expect(view.state.doc.toString()).toBe("0123456789")
+    expect(view.state.selection.main.anchor).toBe(8)
+    expect(view.state.selection.main.head).toBe(3)
+    expect(dispatch).toHaveBeenCalledWith({
+      selection: { anchor: 8, head: 3 },
+      scrollIntoView: true,
+    })
+    expect(focus).toHaveBeenCalledOnce()
+    expect(onChange).not.toHaveBeenCalled()
+    view.destroy()
+  })
+
+  it("rejects invalid or out-of-document offsets before dispatch", () => {
+    const view = mountEditor(document.createElement("div"))
+    setEditorText(view, "short")
+    const dispatch = vi.spyOn(view, "dispatch")
+
+    for (const selection of [
+      { anchor: -1, head: 1 },
+      { anchor: 1.5, head: 1 },
+      { anchor: Number.MAX_SAFE_INTEGER + 1, head: 1 },
+      { anchor: 6, head: 1 },
+    ]) {
+      expect(() => setEditorSelection(view, selection)).toThrow("Selection is out of bounds")
+    }
+    expect(dispatch).not.toHaveBeenCalled()
+    view.destroy()
+  })
+})
 
 describe("mountEditor", () => {
   it("mounts a CodeMirror editor that is present and editable", () => {
