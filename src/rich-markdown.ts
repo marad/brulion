@@ -72,12 +72,14 @@ const BULLET = /^([*-])([ \t]+)(.*)$/
 const ORDERED = /^(\d+\.)([ \t]+)(.*)$/
 const FENCE = /^\s*(`{3,}|~{3,})(.*)$/
 const MARKER_LIKE = /\^\^[^\n]+\^\^/
-const STRIKETHROUGH = /~~[^\n]+~~/
+// P1 keeps the whole line raw as soon as it recognizes unsupported syntax,
+// including an incomplete construct. Dedicated parsing arrives in P4.
+const STRIKETHROUGH_LIKE = /~~/
 const MARKDOWN_LINK = /\[[^\]\n]+\]\([^\)\n]+\)/
 // Any bracketed source is kept raw in P1; link parsing belongs to P4.
 const LINK_LIKE = /\[[^\n]*$/
 const WIKILINK = /\[\[[^\]\n]+\]\]/
-const HTML_TAG = /<\/?[A-Za-z][^>]*>/
+const HTML_LIKE = /<\/?[A-Za-z][^>\n]*(?:>|$)/
 
 function push(
   fragments: Fragment[],
@@ -240,7 +242,7 @@ function lineBlock(line: string, offset: number): { body: string; bodyOffset: nu
 function opaqueLine(line: string): boolean {
   // P1 deliberately does not interpret links, tables, fences, HTML, frontmatter,
   // or application-specific marker syntax. Keep the complete line visible.
-  if (MARKDOWN_LINK.test(line) || LINK_LIKE.test(line) || WIKILINK.test(line) || MARKER_LIKE.test(line) || STRIKETHROUGH.test(line) || HTML_TAG.test(line)) return true
+  if (MARKDOWN_LINK.test(line) || LINK_LIKE.test(line) || WIKILINK.test(line) || MARKER_LIKE.test(line) || STRIKETHROUGH_LIKE.test(line) || HTML_LIKE.test(line)) return true
   if (/^\s*\|/.test(line)) return true
   return inlineFragments(line, 0, "paragraph").unmatched
 }
@@ -335,6 +337,7 @@ function visibleRangeAt(document: RichDocument, position: number, side: "start" 
   if (side === "start") {
     return visible.find((range) => position >= range.visibleFrom && position < range.visibleTo)
       ?? visible.find((range) => range.visibleFrom >= position)
+      ?? (position === document.visible.length ? visible.at(-1) : undefined)
   }
   return visible.find((range) => position > range.visibleFrom && position <= range.visibleTo)
     ?? [...visible].reverse().find((range) => range.visibleTo <= position)

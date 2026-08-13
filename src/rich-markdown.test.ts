@@ -18,6 +18,7 @@ describe("rich Markdown document", () => {
     expect(sourceToVisible(doc, 0)).toBe(0)
     expect(visibleToSource(doc, "Hé ".length)).toBe("# Hé **".length)
     expect(sourceToVisible(doc, "# Hé **".length)).toBe("Hé ".length)
+    expect(visibleToSource(importMarkdown("**x**"), 1)).toBe(3)
     expect(serializeMarkdown(doc)).toBe("# Hé **world**\n> *quote*")
   })
 
@@ -63,6 +64,10 @@ describe("rich Markdown document", () => {
     const incompleteLink = importMarkdown("[unknown] and [x](target")
     expect(incompleteLink.visible).toBe("[unknown] and [x](target")
     expect(incompleteLink.ranges[0]?.block).toBe("opaque")
+
+    const incompleteUnsupported = importMarkdown("~~strike and <div")
+    expect(incompleteUnsupported.visible).toBe("~~strike and <div")
+    expect(incompleteUnsupported.ranges[0]?.block).toBe("opaque")
   })
 
   it("changes only one mapped fragment while preserving its delimiters and unknown source", () => {
