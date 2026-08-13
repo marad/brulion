@@ -570,8 +570,13 @@ export class ExtensionRpcPeer {
         result,
       })
     } catch (error) {
-      const code = error instanceof RpcError && (error.code === "timeout" || error.code === "disposed")
-        ? error.code
+      // Host adapters may cross this boundary as plain errors (for example the
+      // dialog lifecycle deliberately avoids coupling to the transport class).
+      // Preserve only the two lifecycle codes; arbitrary error.code values must
+      // remain ordinary handler failures.
+      const candidate = error as { readonly code?: unknown } | null
+      const code = candidate?.code === "timeout" || candidate?.code === "disposed"
+        ? candidate.code
         : "handler_error"
       this.sendResponseError(request.id, code, errorMessage(error))
     }
