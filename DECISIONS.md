@@ -2237,6 +2237,47 @@ human-scale host deadline leads the child timer by a small cleanup reserve, so
 source disposal happens before a child timeout can leave an old host request
 alive. No modal coordination or timeout change touches Markdown bytes.
 
+## Workflow evidence is checked before review, while the full gate remains authoritative (M45 P3 → FEAT-0107)
+
+**What:** Keep the existing full quality gate — `specman validate`, workflow
+checks, Vitest, build, and Chromium — as the shipping authority, but add a
+read-only pre-review gate and make the full gate run two cheap consistency
+checks first. The pre-review command takes an exact base SHA and spec id,
+prints the owned range and changed paths, checks whitespace/spec status,
+verification-plan recursion, and checked-in derived Authoring Kit artifacts;
+it never repairs or regenerates files. The full gate uses the same plan and
+artifact checks before the existing test sequence.
+
+**Why:** The M46 review spent rounds finding issues that were mechanically
+detectable before a reviewer (a recursive verification command, duplicate
+browser fixture identity, and stale artifact assumptions). Running the cheap
+checks early reduces review churn without treating a script as a substitute
+for adversarial review or the final browser gate. Read-only behavior preserves
+file ownership and avoids a convenient auto-fix that could hide drift.
+
+**Consequence (project):** CI and pre-push no longer name a historical
+milestone; the gate resolves one open milestone ledger, or the latest numbered
+closed ledger when shipping a completed milestone, and fails closed on multiple
+open ledgers. Reviewers receive a precise base/HEAD handoff, while targeted
+tests remain the normal feedback loop during a round and the full suite still
+runs once before shipping.
+
+## Review evidence is a durable ledger, not chat context (M45 P3 → FEAT-0107)
+
+**What:** Each adversarial review loop records the base SHA, reviewed HEAD,
+round, status, material findings/dispositions, and commands/tests/evidence in
+the active milestone's review ledger. One canonical reviewer owns a round;
+failed, stopped, or blocked workers are recorded as blocked and never as clean.
+
+**Why:** A stale reviewer worktree and a contradictory source-forwarding claim
+made it expensive to distinguish current evidence from an old report. The
+ledger makes the review range and verdict auditable after compaction or a
+worker restart, while preserving the project's no-hard-timeout recovery rule.
+
+**Consequence (project):** The next session can resume from a durable round
+record instead of reconstructing review history from chat. This is process
+metadata only: it does not enter the application or user-owned Markdown.
+
 ## M47 keeps CodeMirror and moves Markdown out of the visible document
 
 **What:** the main note editor remains CodeMirror, but its visible document is a
