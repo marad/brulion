@@ -186,6 +186,63 @@ describe("mountDialog alert (FEAT-0073)", () => {
   })
 })
 
+describe("mountDialog host-modal coordination (FEAT-0105)", () => {
+  it("waits behind a host modal and resumes without stacking", async () => {
+    const els = elements()
+    const blocker = document.createElement("div")
+    blocker.hidden = true
+    document.body.append(blocker)
+    const dialog = mountDialog({
+      ...els,
+      isBlocked: () => !blocker.hidden,
+    })
+
+    const pending = dialog.extension.confirm("Behind settings", {
+      confirmLabel: "Use",
+      cancelLabel: "No",
+    }, "source")
+    expect(els.backdrop.hidden).toBe(true)
+
+    blocker.hidden = false
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(els.backdrop.hidden).toBe(true)
+
+    blocker.hidden = true
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(els.backdrop.hidden).toBe(false)
+    els.cancelButton.click()
+    await expect(pending).resolves.toBe(false)
+  })
+
+  it("suspends an active extension dialog if a host modal opens", async () => {
+    const els = elements()
+    const blocker = document.createElement("div")
+    blocker.hidden = true
+    document.body.append(blocker)
+    const dialog = mountDialog({
+      ...els,
+      isBlocked: () => !blocker.hidden,
+    })
+
+    const pending = dialog.extension.confirm("Pause me", {
+      confirmLabel: "Continue",
+      cancelLabel: "Stop",
+    }, "source")
+    expect(els.backdrop.hidden).toBe(false)
+
+    blocker.hidden = false
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(els.backdrop.hidden).toBe(true)
+    expect(blocker.hidden).toBe(false)
+
+    blocker.hidden = true
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(els.backdrop.hidden).toBe(false)
+    els.cancelButton.click()
+    await expect(pending).resolves.toBe(false)
+  })
+})
+
 describe("mountDialog focus restore and superseding (FEAT-0073)", () => {
   it("restores focus to whatever had it before opening", async () => {
     const els = elements()

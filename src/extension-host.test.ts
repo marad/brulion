@@ -53,14 +53,16 @@ async function setup(options: {
   maxCommands?: number
   permissions?: readonly ScriptPermission[]
   dialogTimeoutMs?: number
+  rpcTimeoutMs?: number
 } = {}): Promise<{
   host: ExtensionHost
   extension: ExtensionRpcPeer
   invoke: ReturnType<typeof vi.fn>
 }> {
   const [hostPort, extensionPort] = channel()
-  const hostPeer = new ExtensionRpcPeer(hostPort, { nonce: "nonce-1", timeoutMs: 50 })
-  const extension = new ExtensionRpcPeer(extensionPort, { nonce: "nonce-1", timeoutMs: 50 })
+  const rpcTimeoutMs = options.rpcTimeoutMs ?? 50
+  const hostPeer = new ExtensionRpcPeer(hostPort, { nonce: "nonce-1", timeoutMs: rpcTimeoutMs })
+  const extension = new ExtensionRpcPeer(extensionPort, { nonce: "nonce-1", timeoutMs: rpcTimeoutMs })
   const editor: ExtensionEditorCapabilities = {
     getText: vi.fn(async () => "editor text"),
     getSelection: vi.fn(async () => ({ anchor: 2, head: 5, text: "dit" })),
@@ -227,6 +229,31 @@ describe("FEAT-0083 ExtensionHost", () => {
       .rejects.toMatchObject({ code: "disposed", message: "dialog disposed" })
 
     host.dispose()
+  })
+
+  it("gives host cleanup a lead over an equal child deadline", async () => {
+    vi.useFakeTimers()
+    let release: (() => void) | undefined
+    const alert = vi.fn(() => new Promise<void>((resolve) => { release = resolve }))
+    const dispose = vi.fn()
+    const { host, extension } = await setup({
+      interaction: { alert, dispose },
+      permissions: ["dialogs"],
+      dialogTimeoutMs: 20,
+      rpcTimeoutMs: 20,
+    })
+
+    const pending = extension.call("dialogs.alert", {
+      message: "stuck",
+      options: { okLabel: "OK" },
+    })
+    await vi.advanceTimersByTimeAsync(19)
+    expect(dispose).toHaveBeenCalledWith("daily-tools")
+    await expect(pending).rejects.toMatchObject({ code: "timeout" })
+
+    release?.()
+    host.dispose()
+    vi.useRealTimers()
   })
 
   it("times out a dialog, disposes its source, and allows a later dialog", async () => {
