@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { discoverMilestonePath } from "./workflow-check.mjs";
 
 /**
  * @typedef {{ command: string, args: string[], status: number | null, stdout: string, stderr: string, error?: string }} CommandResult
@@ -14,6 +15,8 @@ import { fileURLToPath } from "node:url";
  * @typedef {{ root: string, milestonePath: string, mode: "pre-push" | "ci", runner: (command: string, args: string[]) => CommandResult }} FullGateRequest
  * @typedef {{ command: string, args: string[] }} CommandDescriptor
  * @typedef {{ ok: boolean, completed: CommandResult[], failed: CommandResult | null, evidence: CommandResult[] }} FullGateResult
+ * @typedef {{ code: string, path?: string, message: string }} WorkflowError
+ * @typedef {{ root: string, base: string, specId: string, milestonePath?: string }} PreReviewRequest
  */
 
 const implementationPath = (path) =>
@@ -48,6 +51,111 @@ const runCommand = (root, command, args) => {
 const commandFailed = (result) => result.status !== 0;
 const trailerPattern = /^Spec:\s+FEAT-\d+\/AC-\d+\s*$/m;
 const formatCommand = (result) => [result.command, ...result.args].join(" ");
+const artifactPairs = [
+  ["extension-kit/API.md", "public/api.md"],
+  ["extension-kit/api-contract.json", "public/api-contract.json"],
+  ["extension-kit/brulion-extension.d.ts", "public/brulion-extension.d.ts"],
+];
+
+const verificationSection = (planText) => {
+  const start = planText.indexOf("## Verification");
+  if (start < 0) return "";
+  const after = planText.slice(start + "## Verification".length);
+  const nextHeading = after.search(/\n##\s/);
+  return nextHeading < 0 ? after : after.slice(0, nextHeading);
+};
+
+/** @param {string} planId @param {string} planText @returns {string[]} */
+export function findRecursiveVerification(planId, planText) {
+  const commandPattern = /\bspecman\s+verify\s+(FEAT-\d+)(?![-\w])/;
+  return verificationSection(planText)
+    .split(/\r?\n/)
+    .filter((line) => /^\s*[-*]\s+/.test(line))
+    .filter((line) => line.match(commandPattern)?.[1] === planId);
+}
+
+/** @param {string} root @returns {WorkflowError[]} */
+export function checkVerificationPlans(root) {
+  const plansRoot = resolve(root, ".specman", "plans");
+  if (!existsSync(plansRoot)) return [];
+  const errors = [];
+  for (const name of readdirSync(plansRoot).filter((entry) => /^FEAT-\d+\.md$/.test(entry)).sort()) {
+    const planId = name.slice(0, -3);
+    const path = join(".specman", "plans", name);
+    let text;
+    try {
+      text = readFileSync(join(plansRoot, name), "utf8");
+    } catch (error) {
+      errors.push({
+        code: "plan-unreadable",
+        path,
+        message: `Verification plan could not be read: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      continue;
+    }
+    if (findRecursiveVerification(planId, text).length > 0) {
+      errors.push({
+        code: "recursive-verification",
+        path,
+        message: `${path} invokes specman verify ${planId} from its own verification section.`,
+      });
+    }
+  }
+  return errors;
+}
+
+/** @param {string} root @returns {WorkflowError[]} */
+export function checkDerivedArtifacts(root) {
+  const errors = [];
+  for (const [source, generated] of artifactPairs) {
+    const sourcePath = resolve(root, source);
+    const generatedPath = resolve(root, generated);
+    if (!existsSync(sourcePath) || !existsSync(generatedPath)) {
+      errors.push({
+        code: "derived-artifact-missing",
+        path: generated,
+        message: `Derived artifact pair is incomplete: ${source} → ${generated}.`,
+      });
+      continue;
+    }
+    if (readFileSync(sourcePath, "utf8") !== readFileSync(generatedPath, "utf8")) {
+      errors.push({
+        code: "derived-artifact-drift",
+        path: generated,
+        message: `Derived artifact differs from its source: ${source} → ${generated}.`,
+      });
+    }
+  }
+  return errors;
+}
+
+/** @param {string} root @param {string} specId @returns {string | null} */
+export function findSpecPath(root, specId) {
+  const specsRoot = resolve(root, "specs");
+  if (!existsSync(specsRoot)) return null;
+  const prefix = `${specId}-`;
+  const name = readdirSync(specsRoot)
+    .filter((entry) => entry.startsWith(prefix) && entry.endsWith(".md"))
+    .sort()[0];
+  return name ? join("specs", name) : null;
+}
+
+/** @param {PreReviewRequest} request @returns {CommandDescriptor[]} */
+export function buildPreReviewPlan(request) {
+  return [
+    { command: "git", args: ["rev-parse", "--verify", `${request.base}^{commit}`] },
+    { command: "git", args: ["rev-parse", "HEAD"] },
+    { command: "git", args: ["diff", `${request.base}...HEAD`, "--check"] },
+    { command: "git", args: ["diff", "--check"] },
+    { command: "git", args: ["diff", "--name-only", `${request.base}...HEAD`] },
+    { command: "git", args: ["diff", "--name-only"] },
+    { command: process.execPath, args: ["scripts/workflow-gate.mjs", "spec-check", "--spec", request.specId] },
+    { command: "specman", args: ["validate"] },
+    { command: "specman", args: ["status", "--verbose"] },
+    { command: process.execPath, args: ["scripts/workflow-gate.mjs", "plan-check"] },
+    { command: process.execPath, args: ["scripts/workflow-gate.mjs", "artifact-check"] },
+  ];
+}
 
 /** @param {string[]} paths @returns {CommitClassification} */
 export function classifyStagedPaths(paths) {
@@ -119,6 +227,8 @@ export function buildFullGatePlan(request) {
         request.milestonePath,
       ],
     },
+    { command: process.execPath, args: ["scripts/workflow-gate.mjs", "plan-check"] },
+    { command: process.execPath, args: ["scripts/workflow-gate.mjs", "artifact-check"] },
     { command: "specman", args: ["validate"] },
     { command: "npm", args: ["run", "workflow:test"] },
     { command: "npm", args: ["test", "--", "--run"] },
@@ -167,6 +277,23 @@ const printResult = (result) => {
   }
 };
 
+/** @param {WorkflowError[]} errors */
+const printWorkflowErrors = (errors) => {
+  for (const error of errors) {
+    console.error(`- [${error.code}] ${error.path ? `${error.path}: ` : ""}${error.message}`);
+  }
+};
+
+const runInvariantCheck = (label, errors) => {
+  if (errors.length > 0) {
+    console.error(`${label} blocked:`);
+    printWorkflowErrors(errors);
+    return 1;
+  }
+  console.log(`${label} OK.`);
+  return 0;
+};
+
 const parseValue = (argv, index, option) => {
   const value = argv[index + 1];
   if (!value || value.startsWith("--")) {
@@ -174,6 +301,64 @@ const parseValue = (argv, index, option) => {
     return null;
   }
   return value;
+};
+
+/** @param {PreReviewRequest} request @returns {number} */
+const runPreReview = (request) => {
+  const discovery = request.milestonePath
+    ? { ok: true, path: request.milestonePath, reason: "explicit" }
+    : discoverMilestonePath(request.root);
+  if (!discovery.ok) {
+    console.error("Pre-review milestone discovery blocked:");
+    printWorkflowErrors(discovery.errors);
+    return 1;
+  }
+  if (!existsSync(resolve(request.root, discovery.path))) {
+    printWorkflowErrors([
+      {
+        code: "milestone-missing",
+        path: discovery.path,
+        message: "Selected milestone ledger does not exist.",
+      },
+    ]);
+    return 1;
+  }
+
+  const result = executeFullGate(
+    buildPreReviewPlan(request),
+    (command, args) => runCommand(request.root, command, args),
+  );
+  if (!result.ok) {
+    if (result.failed?.command === "git" && result.failed.args[0] === "rev-parse" && result.failed.args[1] === "--verify") {
+      printWorkflowErrors([
+        {
+          code: "base-unavailable",
+          message: result.failed.stderr || result.failed.stdout || result.failed.error || "Base commit could not be resolved.",
+        },
+      ]);
+    }
+    printResult(result);
+    return 1;
+  }
+
+  const head = result.evidence.find(
+    (entry) => entry.command === "git" && entry.args[0] === "rev-parse" && entry.args[1] === "HEAD",
+  )?.stdout.trim();
+  const committedPaths = result.evidence.find(
+    (entry) => entry.command === "git" && entry.args[0] === "diff" && entry.args[1] === "--name-only",
+  )?.stdout.trim();
+  const workingPaths = result.evidence
+    .filter((entry) => entry.command === "git" && entry.args[0] === "diff" && entry.args[1] === "--name-only")
+    .at(-1)?.stdout.trim();
+  const paths = [...new Set([committedPaths, workingPaths].filter(Boolean).flatMap((value) => value.split(/\r?\n/).filter(Boolean)))];
+
+  console.log(`Workflow pre-review OK: ${discovery.path}`);
+  console.log(`base: ${request.base}`);
+  console.log(`HEAD: ${head || "unknown"}`);
+  console.log(`spec: ${request.specId}`);
+  console.log("changed paths:");
+  for (const path of paths.length > 0 ? paths : ["(none)"]) console.log(`- ${path}`);
+  return 0;
 };
 
 /** @param {string[]} argv @returns {number} */
@@ -211,13 +396,53 @@ export function run(argv) {
     return result.ok ? 0 : 1;
   }
 
+  if (mode === "plan-check") {
+    return runInvariantCheck("Verification plan check", checkVerificationPlans(root));
+  }
+
+  if (mode === "artifact-check") {
+    return runInvariantCheck("Derived artifact check", checkDerivedArtifacts(root));
+  }
+
+  if (mode === "spec-check") {
+    const specIndex = argv.indexOf("--spec");
+    const specId = specIndex >= 0 ? parseValue(argv, specIndex, "--spec") : null;
+    if (!specId) return 2;
+    const path = findSpecPath(root, specId);
+    return path
+      ? (console.log(`Spec check OK: ${specId} (${path})`), 0)
+      : (printWorkflowErrors([
+          { code: "spec-missing", path: specId, message: `No spec file found for ${specId}.` },
+        ]), 1);
+  }
+
+  if (mode === "pre-review") {
+    const baseIndex = argv.indexOf("--base");
+    const specIndex = argv.indexOf("--spec");
+    const milestoneIndex = argv.indexOf("--milestone");
+    const base = baseIndex >= 0 ? parseValue(argv, baseIndex, "--base") : null;
+    const specId = specIndex >= 0 ? parseValue(argv, specIndex, "--spec") : null;
+    const milestonePath = milestoneIndex >= 0 ? parseValue(argv, milestoneIndex, "--milestone") : undefined;
+    if (!base || !specId) {
+      console.error("Usage: workflow-gate pre-review --base <commit> --spec <FEAT-ID> [--milestone <path>]");
+      return 2;
+    }
+    return runPreReview({ root, base, specId, ...(milestonePath ? { milestonePath } : {}) });
+  }
+
   if (mode === "ci" || mode === "pre-push") {
     const milestoneIndex = argv.indexOf("--milestone");
-    const milestonePath =
-      milestoneIndex >= 0
-        ? parseValue(argv, milestoneIndex, "--milestone")
-        : "milestones/M45.md";
-    if (!milestonePath) return 2;
+    let milestonePath = milestoneIndex >= 0 ? parseValue(argv, milestoneIndex, "--milestone") : null;
+    if (milestoneIndex >= 0 && !milestonePath) return 2;
+    if (!milestonePath) {
+      const discovery = discoverMilestonePath(root);
+      if (!discovery.ok) {
+        console.error("Milestone discovery blocked:");
+        printWorkflowErrors(discovery.errors);
+        return 1;
+      }
+      milestonePath = discovery.path;
+    }
     const result = executeFullGate(
       buildFullGatePlan({ root, milestonePath, mode }),
       (command, args) => runCommand(root, command, args),
@@ -227,7 +452,7 @@ export function run(argv) {
   }
 
   console.error(
-    "Usage: workflow-gate <pre-commit|commit-message|pre-push|ci> [options]",
+    "Usage: workflow-gate <pre-commit|commit-message|pre-push|ci|pre-review|plan-check|artifact-check> [options]",
   );
   return 2;
 }

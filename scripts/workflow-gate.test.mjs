@@ -30,17 +30,17 @@ const commandResult = (command, args, status = 0, stdout = "", stderr = "") => (
 test("only flags same-spec verification commands, not prose mentions", () => {
   assert.deepEqual(
     findRecursiveVerification(
-      "FEAT-0107",
-      "The approach mentions `specman verify FEAT-0107`.\n\n## Verification\n- `npm test -- --run`\n",
+      "FEAT-0108",
+      "The approach mentions `specman verify FEAT-0108`.\n\n## Verification\n- `npm test -- --run`\n",
     ),
     [],
   );
   assert.deepEqual(
     findRecursiveVerification(
-      "FEAT-0107",
-      "## Verification\n- `specman verify FEAT-0107`\n",
+      "FEAT-0108",
+      "## Verification\n- `specman verify FEAT-0108`\n",
     ),
-    ["- `specman verify FEAT-0107`"],
+    ["- `specman verify FEAT-0108`"],
   );
 });
 
@@ -52,12 +52,16 @@ test("reports recursive plans and preserves matching artifact pairs", () => {
     mkdirSync(join(root, "extension-kit"));
     mkdirSync(join(root, "public"));
     writeFileSync(
-      join(root, ".specman", "plans", "FEAT-0107.md"),
-      "## Verification\n- `specman verify FEAT-0107`\n",
+      join(root, ".specman", "plans", "FEAT-0108.md"),
+      "## Verification\n- `specman verify FEAT-0108`\n",
     );
-    for (const name of ["API.md", "api-contract.json", "brulion-extension.d.ts"]) {
-      writeFileSync(join(root, "extension-kit", name), `${name}\n`);
-      writeFileSync(join(root, "public", name), `${name}\n`);
+    for (const [source, generated] of [
+      ["API.md", "api.md"],
+      ["api-contract.json", "api-contract.json"],
+      ["brulion-extension.d.ts", "brulion-extension.d.ts"],
+    ]) {
+      writeFileSync(join(root, "extension-kit", source), `${source}\n`);
+      writeFileSync(join(root, "public", generated), `${source}\n`);
     }
 
     const plans = checkVerificationPlans(root);
@@ -78,27 +82,27 @@ test("pre-review plan is observational and excludes the full browser suite", () 
   const commands = buildPreReviewPlan({
     root,
     base: "abc123",
-    specId: "FEAT-0107",
+    specId: "FEAT-0108",
     milestonePath: "milestones/M45.md",
   });
   const rendered = commands.map(({ command, args }) => [command, ...args].join(" ")).join("\n");
 
   assert.match(rendered, /git diff abc123\.\.\.HEAD --check/);
-  assert.match(rendered, /FEAT-0107/);
+  assert.match(rendered, /FEAT-0108/);
   assert.doesNotMatch(rendered, /npm run e2e/);
 });
 
 test("pre-review CLI reports the owned range without mutating or running E2E", () => {
   const result = spawnSync(
     process.execPath,
-    ["scripts/workflow-gate.mjs", "pre-review", "--base", "HEAD~1", "--spec", "FEAT-0107"],
+    ["scripts/workflow-gate.mjs", "pre-review", "--base", "HEAD~1", "--spec", "FEAT-0108", "--milestone", "milestones/M45.md"],
     { cwd: root, encoding: "utf8" },
   );
 
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /base:/);
   assert.match(result.stdout, /HEAD:/);
-  assert.match(result.stdout, /FEAT-0107/);
+  assert.match(result.stdout, /FEAT-0108/);
   assert.match(result.stdout, /changed paths:/);
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /npm run e2e/);
 });
@@ -106,7 +110,7 @@ test("pre-review CLI reports the owned range without mutating or running E2E", (
 test("pre-review rejects an unknown base commit", () => {
   const result = spawnSync(
     process.execPath,
-    ["scripts/workflow-gate.mjs", "pre-review", "--base", "does-not-exist", "--spec", "FEAT-0107"],
+    ["scripts/workflow-gate.mjs", "pre-review", "--base", "does-not-exist", "--spec", "FEAT-0108", "--milestone", "milestones/M45.md"],
     { cwd: root, encoding: "utf8" },
   );
 

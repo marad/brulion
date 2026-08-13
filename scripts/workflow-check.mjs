@@ -159,9 +159,12 @@ export function parseLedger(markdown) {
   const state = {};
 
   for (const [label, key, code] of fields) {
+    const labelPattern = label === "Next action"
+      ? "(?:Exact )?Next action"
+      : escapeRegExp(label);
     const pattern = new RegExp(
-      `^\\s*- \\*\\*${escapeRegExp(label)}:\\*\\*\\s*(.+?)\\s*$`,
-      "m",
+      `^\\s*- \\*\\*${labelPattern}:\\*\\*\\s*(.+?)\\s*$`,
+      "mi",
     );
     const match = markdown.match(pattern);
     if (!match || !match[1].trim()) {
@@ -296,11 +299,12 @@ export function discoverMilestonePath(root) {
 
   const candidates = entries
     .filter((entry) => entry.isFile())
-    .map((entry) => entry.name.match(/^M(\\d+)\\.md$/))
+    .map((entry) => entry.name.match(/^M(\d+)\.md$/))
     .filter(Boolean)
     .map((match) => ({ name: match[0], number: Number(match[1]) }))
     .sort((left, right) => left.number - right.number);
   const active = [];
+  const closed = [];
   const errors = [];
 
   for (const candidate of candidates) {
@@ -316,6 +320,7 @@ export function discoverMilestonePath(root) {
       });
       continue;
     }
+    if (!/^\s*- \*\*Current phase:\*\*/m.test(markdown)) continue;
     const ledger = parseLedger(markdown);
     if (ledger.errors.length > 0) {
       errors.push({
@@ -325,9 +330,19 @@ export function discoverMilestonePath(root) {
       });
       continue;
     }
-    if (!/milestone closed/i.test(ledger.state.currentPhase)) {
-      active.push(path);
+    if (/milestone closed/i.test(ledger.state.currentPhase)) {
+      closed.push(path);
+      continue;
     }
+    if (
+      /milestone definition complete/i.test(ledger.state.currentPhase) ||
+      /has not started/i.test(ledger.state.currentPhase) ||
+      /invoke [`']?\/skill:goal/i.test(ledger.state.nextAction) ||
+      /^Resume .* P\d+/i.test(ledger.state.nextAction)
+    ) {
+      continue;
+    }
+    active.push(path);
   }
 
   if (errors.length > 0) return { ok: false, errors };
@@ -345,21 +360,21 @@ export function discoverMilestonePath(root) {
   if (active.length === 1) {
     return { ok: true, path: active[0], reason: "active" };
   }
-  if (candidates.length === 0) {
+  if (closed.length === 0) {
     return {
       ok: false,
       errors: [
         {
           code: "milestone-missing",
           path: "milestones",
-          message: "No numbered milestone ledgers were found.",
+          message: "No active or closed milestone ledgers were found.",
         },
       ],
     };
   }
   return {
     ok: true,
-    path: `milestones/${candidates.at(-1).name}`,
+    path: closed.at(-1),
     reason: "latest-closed",
   };
 }
