@@ -36,6 +36,13 @@ const source = String.raw`export default async function activate(api) {
     const answer = await api.dialogs.confirm("Continue?", { confirmLabel: "Proceed", cancelLabel: "Stop" })
     await result("confirm-no-result", "Confirm result: " + answer)
   })
+  await api.commands.register({ id: "confirm-disposal", label: "Ask confirm disposal" }, async () => {
+    try {
+      await api.dialogs.confirm("This confirm is disposed", { confirmLabel: "Never", cancelLabel: "Never" })
+    } catch (error) {
+      console.log("confirm-disposal-result:" + error.code)
+    }
+  })
   await api.commands.register({ id: "prompt-single", label: "Ask single-line prompt" }, async () => {
     const answer = await api.dialogs.prompt("One line", {
       confirmLabel: "Save answer", cancelLabel: "Cancel answer", initial: "seed", placeholder: "type here",
@@ -53,6 +60,15 @@ const source = String.raw`export default async function activate(api) {
       confirmLabel: "Accept", cancelLabel: "Cancel", initial: "unchanged",
     })
     await result("prompt-cancel-result", answer === null ? "Cancel distinguished" : "Unexpected acceptance")
+  })
+  await api.commands.register({ id: "prompt-disposal", label: "Ask prompt disposal" }, async () => {
+    try {
+      await api.dialogs.prompt("This prompt is disposed", {
+        confirmLabel: "Never", cancelLabel: "Never", initial: "unchanged",
+      })
+    } catch (error) {
+      console.log("prompt-disposal-result:" + error.code)
+    }
   })
   await api.commands.register({ id: "prompt-empty", label: "Ask empty prompt" }, async () => {
     const answer = await api.dialogs.prompt("Accept empty", {
@@ -203,6 +219,30 @@ test("AC-8 runs formatted alert, confirm, and prompt flows in Chromium", async (
   await invoke(page, "Ask confirm no")
   await page.locator("#dialog-cancel").click()
   await expectResultAction(page, "Confirm result: false")
+
+  await invoke(page, "Ask confirm disposal")
+  await expect(page.locator("#dialog-backdrop")).toBeVisible()
+  await setEnabledExtensions(page, [])
+  await expect(page.locator("#dialog-backdrop")).toBeHidden()
+
+  await setEnabledExtensions(page, ["dialog-tools"])
+  await expect.poll(async () => {
+    await page.keyboard.press("Control+Shift+K")
+    await page.locator("#palette-input").fill("Ask prompt disposal")
+    return exactAction(page, "Ask prompt disposal").count()
+  }).toBe(1)
+
+  await exactAction(page, "Ask prompt disposal").first().click()
+  await expect(page.locator("#dialog-backdrop")).toBeVisible()
+  await setEnabledExtensions(page, [])
+  await expect(page.locator("#dialog-backdrop")).toBeHidden()
+
+  await setEnabledExtensions(page, ["dialog-tools"])
+  await expect.poll(async () => {
+    await page.keyboard.press("Control+Shift+K")
+    await page.locator("#palette-input").fill("Ask single-line prompt")
+    return exactAction(page, "Ask single-line prompt").count()
+  }).toBe(1)
 
   await invoke(page, "Ask single-line prompt")
   const input = page.locator("#dialog-input")
