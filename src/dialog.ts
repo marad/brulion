@@ -83,9 +83,8 @@ export function mountDialog(els: DialogElements): Dialog {
     backdrop.hidden = true
     if (textarea) textarea.hidden = true
     // Do not steal focus from a host modal that opened while this request was
-    // suspended. The host surface owns focus until it closes.
-    if (isBlocked()) restoreFocus = null
-    else focusRestore()
+    // suspended. The observer restores this target once the host surface closes.
+    if (!isBlocked()) focusRestore()
     if (error === undefined) request.resolve(value)
     else request.reject(error)
     pump()
@@ -213,6 +212,8 @@ export function mountDialog(els: DialogElements): Dialog {
         backdrop.hidden = true
       } else if (active && suspended) {
         focusActive()
+      } else if (!active && !isBlocked() && restoreFocus) {
+        focusRestore()
       }
       pump()
     })
