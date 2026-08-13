@@ -72,6 +72,7 @@ const BULLET = /^([*-])([ \t]+)(.*)$/
 const ORDERED = /^(\d+\.)([ \t]+)(.*)$/
 const FENCE = /^\s*(`{3,}|~{3,})(.*)$/
 const MARKER_LIKE = /\^\^[^\n]+\^\^/
+const STRIKETHROUGH = /~~[^\n]+~~/
 const MARKDOWN_LINK = /\[[^\]\n]+\]\([^\)\n]+\)/
 const WIKILINK = /\[\[[^\]\n]+\]\]/
 const HTML_TAG = /<\/?[A-Za-z][^>]*>/
@@ -119,10 +120,19 @@ function matchingDelimiter(text: string, delimiter: string, start: number): numb
 
 function delimiterAt(text: string, position: number): string {
   if (escapedAt(text, position)) return ""
+  const triple = text.slice(position, position + 3)
+  if (triple === "***" || triple === "___") return triple
   const pair = text.slice(position, position + 2)
   if (pair === "**" || pair === "__") return pair
   if (text[position] === "`" || text[position] === "*" || text[position] === "_") return text[position]
   return ""
+}
+
+function marksForDelimiter(delimiter: string): RichMark[] {
+  if (delimiter.length === 3) return ["bold", "italic"]
+  if (delimiter === "**" || delimiter === "__") return ["bold"]
+  if (delimiter === "`") return ["code"]
+  return ["italic"]
 }
 
 /** Parse emphasis/code only. Unsupported constructs are handled by opaqueLine. */
@@ -164,11 +174,8 @@ function inlineFragments(
     flushPlain(i)
     const innerStart = i + delimiter.length
     const innerEnd = end
-    const mark: RichMark = delimiter === "**" || delimiter === "__"
-      ? "bold"
-      : delimiter === "`"
-        ? "code"
-        : "italic"
+    const marks = marksForDelimiter(delimiter)
+    const inheritedMarks = [...inherited, ...marks]
     const nested = delimiter === "`"
       ? { fragments: [{
           text: text.slice(innerStart, innerEnd),
@@ -176,15 +183,15 @@ function inlineFragments(
           sourceTo: sourceFrom + innerEnd,
           contentFrom: sourceFrom + innerStart,
           contentTo: sourceFrom + innerEnd,
-          marks: [...inherited, mark],
+          marks: inheritedMarks,
           block,
         }], unmatched: false }
-      : inlineFragments(text.slice(innerStart, innerEnd), sourceFrom + innerStart, block, [...inherited, mark])
+      : inlineFragments(text.slice(innerStart, innerEnd), sourceFrom + innerStart, block, inheritedMarks)
 
     if (nested.unmatched) unmatched = true
-    pushHidden(fragments, sourceFrom + i, sourceFrom + innerStart, [...inherited, mark], block)
+    pushHidden(fragments, sourceFrom + i, sourceFrom + innerStart, inheritedMarks, block)
     fragments.push(...nested.fragments)
-    pushHidden(fragments, sourceFrom + innerEnd, sourceFrom + end + delimiter.length, [...inherited, mark], block)
+    pushHidden(fragments, sourceFrom + innerEnd, sourceFrom + end + delimiter.length, inheritedMarks, block)
 
     i = end + delimiter.length
     plainStart = i
@@ -220,7 +227,7 @@ function lineBlock(line: string, offset: number): { body: string; bodyOffset: nu
 function opaqueLine(line: string): boolean {
   // P1 deliberately does not interpret links, tables, fences, HTML, frontmatter,
   // or application-specific marker syntax. Keep the complete line visible.
-  if (MARKDOWN_LINK.test(line) || WIKILINK.test(line) || MARKER_LIKE.test(line) || HTML_TAG.test(line)) return true
+  if (MARKDOWN_LINK.test(line) || WIKILINK.test(line) || MARKER_LIKE.test(line) || STRIKETHROUGH.test(line) || HTML_TAG.test(line)) return true
   if (/^\s*\|/.test(line)) return true
   return inlineFragments(line, 0, "paragraph").unmatched
 }

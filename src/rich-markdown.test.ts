@@ -34,6 +34,10 @@ describe("rich Markdown document", () => {
     expect(sourceToVisible(doc, "*outer **".length)).toBe(inner)
     expect(visibleToSource(doc, inner)).toBe("*outer **".length)
     expect(sourceToVisible(doc, "*outer **inner".length)).toBe(inner + "inner".length)
+
+    const triple = importMarkdown("***both***")
+    expect(triple.visible).toBe("both")
+    expect(triple.ranges.find((r) => r.visible)?.marks).toEqual(["bold", "italic"])
   })
 
   it("preserves unknown syntax as an opaque visible region", () => {
@@ -42,6 +46,10 @@ describe("rich Markdown document", () => {
     const opaque = doc.ranges.find((r) => r.visible && r.sourceFrom === "before ^^future^^ after\n".length)
     expect(opaque?.block).toBe("opaque")
     expect(opaque?.marks).toEqual([])
+
+    const unsupported = importMarkdown("before ~~strike~~ after")
+    expect(unsupported.visible).toBe("before ~~strike~~ after")
+    expect(unsupported.ranges[0]?.block).toBe("opaque")
   })
 
   it("changes only one mapped fragment while preserving its delimiters and unknown source", () => {
