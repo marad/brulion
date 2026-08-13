@@ -2122,3 +2122,37 @@ unusable.
 see only paths they could pass to the address-based note APIs. Direct reads, writes,
 creates, deletes, moves, and navigation inputs still reject invalid paths, and the
 Authoring Kit documents the omission explicitly.
+
+## Extension interaction API: directional selection, shared messages, and host dialogs (M46)
+
+**What:** M46 extends the local JavaScript extension API with three deliberately
+narrow interaction surfaces. The editor selection is represented by `anchor` and
+`head`: `anchor` is where selection began and `head` is the active cursor position;
+a collapsed selection has equal values. `editor.setSelection()` changes only the
+active primary selection, focuses and scrolls the editor, and never changes
+markdown bytes. Notifications and dialogs share one host-owned `MessageContent`
+format: plain, `strong`, and `code` text fragments, with `\n` rendered as a real
+line break. `notifications.show()` provides permission-gated in-app toasts;
+`dialogs.alert()`, `confirm()`, and `prompt()` provide formatted modal feedback
+and input, with extension-defined plain-text button labels and explicit
+cancellation semantics.
+
+**Why:** `from`/`to` looks like an ordinary normalized interval and invites the
+wrong assumption when a selection is made backwards. `anchor`/`head` makes the
+selection direction explicit and matches the editor's actual model. A single
+message renderer prevents notifications and dialogs from growing incompatible
+formatting dialects, while structured text avoids HTML injection and keeps the
+file-fidelity boundary irrelevant to UI feedback. Reusing the existing host modal
+surface is safer and leaner than exposing custom extension UI. System
+notifications, picker/choice integration, and automatic event/background APIs
+are intentionally separate capabilities rather than hidden expansions of this
+interaction slice.
+
+**Consequence (UI/project):** the host must validate bounded selection positions,
+message fragments, newlines, and button labels before rendering; all rendered
+content uses safe text nodes and host-owned semantics. Notifications never steal
+focus. Dialog calls share modal queuing/focus restoration and use a human-scale
+RPC timeout; disposing an extension or detaching its vault settles pending
+interactions deterministically. New permissions are least-privilege and fail
+closed, and the Authoring Kit, contract, sandbox bootstrap, unit tests, and
+Chromium tests must remain synchronized.

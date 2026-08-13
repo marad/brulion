@@ -38,7 +38,9 @@ Every technical decision defers to that.
 > compatibility, togglable active-note sidebar focus, compact heading hierarchy,
 > and static agent-readable API docs) is **implemented, deployed, and reviewed
 > live**. **M45** (workflow enforcement and recovery) is **implemented, deployed,
-> and reviewed live**.
+> and reviewed live**. **M46** (extension interaction API — direction-aware
+> editor selection, formatted in-app notifications, and formatted host dialogs)
+> is now scoped for the next extension API round.
 > Recently shipped: **M45** (workflow enforcement and recovery), **M44** (daily-use polish and static agent-readable API docs),
 > **M41** (full extension workbench and authoring kit, P0–P5),
 > **M39** (local JavaScript extensions, P0–P2), **M37**
@@ -831,6 +833,27 @@ Out:
 - automatic killing or retrying of substantive mutation workers.
 
 Phases: [`milestones/M45.md`](milestones/M45.md).
+
+### M46 — Extension interaction API
+**Goal:** let explicitly enabled local JavaScript extensions read and control the
+active primary selection, show safe formatted in-app feedback, and collect
+bounded user input through host-owned dialogs — without exposing DOM, CodeMirror,
+filesystem handles, or system notification capabilities.
+
+In:
+- direction-aware `editor` selection read/write using `anchor`/`head`;
+- a shared plain/strong/code message format with semantic newlines;
+- permission-gated in-app notifications with severity levels;
+- permission-gated formatted `alert`, `confirm`, and `prompt` dialogs with
+  per-button labels and optional multiline input;
+- interactive RPC lifecycle, disposal, documentation, and browser validation.
+
+Out:
+- system notifications, `choose()`/picker integration, automatic events,
+  timers/background execution, custom extension UI, clipboard, and any DOM,
+  filesystem-handle, package, TypeScript, or network capability.
+
+Phases: [`milestones/M46.md`](milestones/M46.md).
 
 ## Later / backlog (out of MVP, on purpose)
 
