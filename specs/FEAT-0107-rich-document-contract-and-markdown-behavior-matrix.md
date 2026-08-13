@@ -26,6 +26,20 @@ created or explicitly changed nodes; it never silently drops or reformats other
 spans. A pending marker remains visible until its construct-specific boundary
 is reached, and conversion is one undo transaction.
 
+## Behavior matrix
+
+| Construct | Recognition / pending state | Boundary and caret rule | Source editing and round-trip |
+|---|---|---|---|
+| Paragraph | Fallback line text; no pending marker | Enter inserts a visible newline | Original bytes preserved |
+| Heading | `#{1,6}` followed by space; incomplete prefix stays literal | Space commits prefix; caret starts at visible content | Prefix is mapped source; changed heading uses `# ` |
+| Bold / italic / inline code | Closed delimiter pair only; unmatched markers stay visible | Closing delimiter plus space commits; caret follows visible content | Imported delimiter spelling is retained; changed spans use `**`, `*`, `` ` `` |
+| Quote / unordered / ordered list | Line prefix plus boundary whitespace | Enter continues; Enter on empty item exits to paragraph | Prefix is mapped and preserved until block edit |
+| Markdown link / wikilink | Complete destination/target only | Link label is visible; target editing is explicit source mode | Target bytes remain untouched unless link is edited |
+| Fence / Mermaid | Paired fence; open fence remains an opaque source island | Enter stays in explicit source editing; no cursor reveal exception | Entire fence is byte-preserved; Mermaid rendering is separate |
+| Table | Header and separator rows form a contiguous block | Cell editing is explicit source editing | Pipes, spacing, and alignment bytes are retained |
+| Frontmatter | Leading `---` pair only | Collapsed/expanded via explicit source affordance | Opaque and byte-identical |
+| Unknown syntax | Opaque raw island | No inferred conversion or hidden caret stops | Never dropped or normalized |
+
 ## Acceptance criteria
 
 - AC-1: Given Markdown containing supported nodes and unknown syntax, when it is
