@@ -189,9 +189,15 @@ describe("mountDialog alert (FEAT-0073)", () => {
 describe("mountDialog host-modal coordination (FEAT-0105)", () => {
   it("allows a host-owned alert triggered by a picker callback to show while the picker remains open", async () => {
     const els = elements()
+    const blocker = document.createElement("div")
+    blocker.hidden = false
+    document.body.append(blocker)
     const dialog = mountDialog({
       ...els,
-      isBlocked: (source) => source !== undefined,
+      // The callback reports the real host-modal state for every request. The
+      // dialog adapter must still bypass it for source-less host alerts while
+      // keeping extension requests behind the picker.
+      isBlocked: () => !blocker.hidden,
     })
 
     const pending = dialog.alert("Some items could not be moved")
