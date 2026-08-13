@@ -48,6 +48,10 @@ describe("rich Markdown document", () => {
     const intraword = importMarkdown("**foo_bar_baz**")
     expect(intraword.visible).toBe("foo_bar_baz")
     expect(intraword.ranges.find((r) => r.visible)?.marks).toEqual(["bold"])
+
+    const unicodeIntraword = importMarkdown("café_bar_baz")
+    expect(unicodeIntraword.visible).toBe("café_bar_baz")
+    expect(unicodeIntraword.ranges.every((r) => !r.marks.includes("italic"))).toBe(true)
   })
 
   it("preserves unknown syntax as an opaque visible region", () => {
@@ -76,6 +80,11 @@ describe("rich Markdown document", () => {
     const incompleteMarker = importMarkdown("^^future")
     expect(incompleteMarker.visible).toBe("^^future")
     expect(incompleteMarker.ranges[0]?.block).toBe("opaque")
+
+    const malformedList = importMarkdown("* x*")
+    expect(malformedList.visible).toBe("* x*")
+    expect(malformedList.ranges).toHaveLength(1)
+    expect(malformedList.ranges[0]?.block).toBe("opaque")
 
     const multilineComment = importMarkdown("<!--\n**x**\n-->")
     expect(multilineComment.visible).toBe("<!--\n**x**\n-->")

@@ -135,8 +135,10 @@ function delimiterAt(text: string, position: number): string {
   if (text[position] === "_") {
     const previous = text[position - 1]
     const next = text[position + 1]
-    // CommonMark-style intraword underscores are literal text.
-    if (previous && next && /\w/.test(previous) && /\w/.test(next)) return ""
+    // CommonMark-style intraword underscores are literal text. Use Unicode
+    // letters/numbers so names such as `café_bar` are not split either.
+    const word = /[\p{L}\p{N}_]/u
+    if (previous && next && word.test(previous) && word.test(next)) return ""
   }
   if (text[position] === "`" || text[position] === "*") return text[position]
   if (text[position] === "_") return text[position]
@@ -306,13 +308,14 @@ export function importMarkdown(source: string): RichDocument {
       }
     } else {
       const info = lineBlock(line, lineStart)
-      if (info.prefixTo > lineStart) pushHidden(fragments, lineStart, info.prefixTo, [], info.block)
       const parsed = inlineFragments(info.body, info.bodyOffset, info.block)
       if (parsed.unmatched) {
-        // This is defensive: opaqueLine performs the same check, but keeping the
-        // fallback here prevents a future parser change from hiding raw syntax.
+        // Keep the entire malformed line as one raw island. Do not emit the
+        // otherwise-recognized block prefix first: overlapping source ranges
+        // would make delimiter/source mapping ambiguous.
         push(fragments, line, lineStart, lineStart + line.length, [], "opaque")
       } else {
+        if (info.prefixTo > lineStart) pushHidden(fragments, lineStart, info.prefixTo, [], info.block)
         fragments.push(...parsed.fragments)
       }
     }
