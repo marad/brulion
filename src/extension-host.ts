@@ -41,6 +41,7 @@ export const EXTENSION_API_METHODS = [
   "commands.unregister",
   "editor.getText",
   "editor.getSelection",
+  "editor.setSelection",
   "editor.replaceSelection",
   "editor.focus",
   "notes.list",
@@ -52,18 +53,28 @@ export const EXTENSION_API_METHODS = [
   "navigation.getActiveNote",
   "navigation.openNote",
   "navigation.resolveLink",
+  "notifications.show",
+  "dialogs.alert",
+  "dialogs.confirm",
+  "dialogs.prompt",
 ] as const
 
 export interface ExtensionSelection {
-  from: number
-  to: number
+  anchor: number
+  head: number
   text: string
+}
+
+export interface ExtensionSelectionRequest {
+  anchor: number
+  head: number
 }
 
 /** The editor surface deliberately contains no EditorView or DOM value. */
 export interface ExtensionEditorCapabilities {
   getText: () => string | Promise<string>
   getSelection: () => ExtensionSelection | Promise<ExtensionSelection>
+  setSelection: (selection: ExtensionSelectionRequest) => void | Promise<void>
   replaceSelection: (text: string) => void | Promise<void>
   focus: () => void | Promise<void>
 }
@@ -82,6 +93,29 @@ export interface ExtensionNoteCapabilities {
   move: (from: string, to: string) => MoveResult | Promise<MoveResult>
 }
 
+export type MessagePartType = "text" | "strong" | "code"
+export interface MessagePart { type: MessagePartType; text: string }
+export type MessageContent = string | readonly MessagePart[]
+export type NotificationLevel = "info" | "success" | "warning" | "error"
+export interface NotificationOptions { level?: NotificationLevel }
+export interface AlertOptions { okLabel: string }
+export interface ConfirmOptions { confirmLabel: string; cancelLabel: string }
+export interface PromptOptions {
+  okLabel: string
+  cancelLabel: string
+  initial?: string
+  placeholder?: string
+  multiline?: boolean
+}
+
+export interface ExtensionInteractionCapabilities {
+  setSelection: (selection: ExtensionSelectionRequest) => void | Promise<void>
+  showNotification: (message: MessageContent, options?: NotificationOptions) => void | Promise<void>
+  alert: (message: MessageContent, options: AlertOptions) => void | Promise<void>
+  confirm: (message: MessageContent, options: ConfirmOptions) => boolean | Promise<boolean>
+  prompt: (message: MessageContent, options: PromptOptions) => string | null | Promise<string | null>
+}
+
 export interface ExtensionHostOptions {
   scriptId: string
   peer: ExtensionRpcPeer
@@ -89,6 +123,8 @@ export interface ExtensionHostOptions {
   notes: ExtensionNoteCapabilities
   /** Active-view callbacks; omitted when the runner has no navigation binding. */
   navigation?: ExtensionNavigationCapabilities
+  /** Host-owned interaction seams; omitted until the corresponding UI phases bind them. */
+  interaction?: ExtensionInteractionCapabilities
   /** Called after this host's action list changes. Errors are isolated. */
   onActionsChanged?: () => void
   /** Receives action invocation/notification errors without breaking the host. */
@@ -172,16 +208,66 @@ function expectedMtime(value: unknown): number | null {
 }
 
 function selectionValue(value: ExtensionSelection): ExtensionSelection {
+  const result = record(value as unknown as RpcValue, "Editor selection")
   if (
-    !Number.isSafeInteger(value.from) ||
-    !Number.isSafeInteger(value.to) ||
-    value.from < 0 ||
-    value.to < value.from ||
-    typeof value.text !== "string"
-  ) {
-    throw new Error("Editor selection is invalid")
+    Object.keys(result).length !== 3 ||
+    !Number.isSafeInteger(result.anchor) ||
+    !Number.isSafeInteger(result.head) ||
+    (result.anchor as number) < 0 ||
+    (result.head as number) < 0 ||
+    typeof result.text !== "string"
+  ) throw new Error("Editor selection is invalid")
+  return { anchor: result.anchor as number, head: result.head as number, text: result.text }
+}
+
+function selectionRequest(value: RpcValue): ExtensionSelectionRequest {
+  const result = record(value, "Editor selection request")
+  if (
+    Object.keys(result).length !== 2 ||
+    !Number.isSafeInteger(result.anchor) ||
+    !Number.isSafeInteger(result.head) ||
+    (result.anchor as number) < 0 ||
+    (result.head as number) < 0
+  ) throw new Error("Editor selection request is invalid")
+  return { anchor: result.anchor as number, head: result.head as number }
+}
+
+const MAX_MESSAGE_PARTS = 32
+const MAX_MESSAGE_PART_LENGTH = 2048
+const MAX_MESSAGE_LENGTH = 8192
+const MAX_LABEL_LENGTH = 80
+const MAX_PROMPT_LENGTH = 4096
+
+function messageContent(value: unknown): MessageContent {
+  if (typeof value === "string") {
+    if (value.length > MAX_MESSAGE_LENGTH) throw new Error("Message is too long")
+    return value
   }
-  return { from: value.from, to: value.to, text: value.text }
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_MESSAGE_PARTS) {
+    throw new Error("Message parts must be a non-empty bounded array")
+  }
+  let total = 0
+  const parts = value.map((item, index) => {
+    const part = record(item as unknown as RpcValue, `Message part ${index}`)
+    if (Object.keys(part).length !== 2 || (part.type !== "text" && part.type !== "strong" && part.type !== "code")) {
+      throw new Error("Message part has an invalid shape")
+    }
+    const text = boundedString(part.text, `Message part ${index} text`, MAX_MESSAGE_PART_LENGTH, true)
+    total += text.length
+    if (total > MAX_MESSAGE_LENGTH) throw new Error("Message is too long")
+    return { type: part.type as MessagePartType, text }
+  })
+  return parts
+}
+
+function label(value: unknown, name: string): string {
+  return boundedString(value, name, MAX_LABEL_LENGTH)
+}
+
+function interactionOptions(value: unknown, keys: readonly string[], name: string): Record<string, unknown> {
+  const options = record(value as unknown as RpcValue, name)
+  for (const key of Object.keys(options)) if (!keys.includes(key)) throw new Error(`${name} contains an unknown field`)
+  return options
 }
 
 function noteContentValue(value: NoteContent): NoteContent {
@@ -325,6 +411,7 @@ export class ExtensionHost {
   private readonly editor: ExtensionEditorCapabilities
   private readonly notes: ExtensionNoteCapabilities
   private readonly navigation?: ExtensionNavigationCapabilities
+  private readonly interaction?: ExtensionInteractionCapabilities
   private readonly maxCommands: number
   private readonly onActionsChanged?: () => void
   private readonly onError?: (error: unknown) => void
@@ -348,6 +435,7 @@ export class ExtensionHost {
     this.editor = options.editor
     this.notes = options.notes
     this.navigation = options.navigation
+    this.interaction = options.interaction
     this.maxCommands = options.maxCommands ?? MAX_EXTENSION_COMMANDS
     this.onActionsChanged = options.onActionsChanged
     this.onError = options.onError
@@ -358,6 +446,7 @@ export class ExtensionHost {
       this.peer.register("commands.unregister", (params) => this.unregisterCommand(params)),
       this.peer.register("editor.getText", (params) => this.getText(params)),
       this.peer.register("editor.getSelection", (params) => this.getSelection(params)),
+      this.peer.register("editor.setSelection", (params) => this.setSelection(params)),
       this.peer.register("editor.replaceSelection", (params) => this.replaceSelection(params)),
       this.peer.register("editor.focus", (params) => this.focus(params)),
       this.peer.register("notes.list", (params) => this.listNotes(params)),
@@ -369,6 +458,10 @@ export class ExtensionHost {
       this.peer.register("navigation.getActiveNote", (params) => this.getActiveNote(params)),
       this.peer.register("navigation.openNote", (params) => this.openNote(params)),
       this.peer.register("navigation.resolveLink", (params) => this.resolveLink(params)),
+      this.peer.register("notifications.show", (params) => this.showNotification(params)),
+      this.peer.register("dialogs.alert", (params) => this.alert(params)),
+      this.peer.register("dialogs.confirm", (params) => this.confirm(params)),
+      this.peer.register("dialogs.prompt", (params) => this.prompt(params)),
     )
   }
 
@@ -454,12 +547,58 @@ export class ExtensionHost {
     return selectionValue(await this.editor.getSelection()) as unknown as RpcValue
   }
 
+  private async setSelection(params: RpcValue): Promise<RpcValue> {
+    this.requirePermission("editor:selection")
+    await this.editor.setSelection(selectionRequest(params))
+    return null
+  }
+
   private async replaceSelection(params: RpcValue): Promise<RpcValue> {
     this.requirePermission("editor:write")
     const value = record(params, "Editor replacement")
     const text = boundedString(value.text, "Replacement text", 2 ** 20, true)
     await this.editor.replaceSelection(text)
     return null
+  }
+
+  private async showNotification(params: RpcValue): Promise<RpcValue> {
+    this.requirePermission("notifications")
+    const value = record(params, "Notification")
+    const options = value.options === undefined ? {} : interactionOptions(value.options, ["level"], "Notification options")
+    const level = options.level === undefined ? "info" : options.level
+    if (level !== "info" && level !== "success" && level !== "warning" && level !== "error") throw new Error("Notification level is invalid")
+    await this.requireInteraction().showNotification(messageContent(value.message), { level })
+    return null
+  }
+
+  private async alert(params: RpcValue): Promise<RpcValue> {
+    this.requirePermission("dialogs")
+    const value = record(params, "Alert")
+    const options = interactionOptions(value.options, ["okLabel"], "Alert options")
+    await this.requireInteraction().alert(messageContent(value.message), { okLabel: label(options.okLabel, "okLabel") })
+    return null
+  }
+
+  private async confirm(params: RpcValue): Promise<RpcValue> {
+    this.requirePermission("dialogs")
+    const value = record(params, "Confirm")
+    const options = interactionOptions(value.options, ["confirmLabel", "cancelLabel"], "Confirm options")
+    return await this.requireInteraction().confirm(messageContent(value.message), {
+      confirmLabel: label(options.confirmLabel, "confirmLabel"), cancelLabel: label(options.cancelLabel, "cancelLabel"),
+    })
+  }
+
+  private async prompt(params: RpcValue): Promise<RpcValue> {
+    this.requirePermission("dialogs")
+    const value = record(params, "Prompt")
+    const options = interactionOptions(value.options, ["okLabel", "cancelLabel", "initial", "placeholder", "multiline"], "Prompt options")
+    for (const key of ["initial", "placeholder"] as const) if (options[key] !== undefined && (typeof options[key] !== "string" || (options[key] as string).length > MAX_PROMPT_LENGTH)) throw new Error(`${key} must be bounded`)
+    if (options.multiline !== undefined && typeof options.multiline !== "boolean") throw new Error("multiline must be a boolean")
+    return await this.requireInteraction().prompt(messageContent(value.message), {
+      okLabel: label(options.okLabel, "okLabel"), cancelLabel: label(options.cancelLabel, "cancelLabel"),
+      ...(options.initial === undefined ? {} : { initial: options.initial as string }), ...(options.placeholder === undefined ? {} : { placeholder: options.placeholder as string }),
+      ...(options.multiline === undefined ? {} : { multiline: options.multiline as boolean }),
+    })
   }
 
   private async focus(_params: RpcValue): Promise<RpcValue> {
@@ -534,6 +673,11 @@ export class ExtensionHost {
     const target = boundedString(value.target, "Link target", MAX_NAVIGATION_TARGET_LENGTH, true)
     const options = resolveLinkOptions(value.options)
     return linkResolutionValue(await this.requireNavigation().resolveLink(target, options)) as unknown as RpcValue
+  }
+
+  private requireInteraction(): ExtensionInteractionCapabilities {
+    if (!this.interaction) throw new Error("Extension interaction capability is unavailable")
+    return this.interaction
   }
 
   private requireNavigation(): ExtensionNavigationCapabilities {

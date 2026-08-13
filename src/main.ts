@@ -522,10 +522,16 @@ const reloadExtensions = async (): Promise<void> => {
           assertActive()
           const selection = view.state.selection.main
           return {
-            from: selection.from,
-            to: selection.to,
+            anchor: selection.from,
+            head: selection.to,
             text: view.state.sliceDoc(selection.from, selection.to),
           }
+        },
+        setSelection: (selection) => {
+          assertActive()
+          if (!Number.isSafeInteger(selection.anchor) || !Number.isSafeInteger(selection.head) || selection.anchor < 0 || selection.head < 0 || selection.anchor > view.state.doc.length || selection.head > view.state.doc.length) throw new Error("Selection is out of bounds")
+          view.dispatch({ selection: { anchor: selection.anchor, head: selection.head }, scrollIntoView: true })
+          view.focus()
         },
         replaceSelection: (text: string) => {
           assertActive()

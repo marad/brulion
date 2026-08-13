@@ -3,6 +3,7 @@ import {
   ExtensionHost,
   type ExtensionEditorCapabilities,
   type ExtensionNoteCapabilities,
+  type ExtensionInteractionCapabilities,
 } from "./extension-host"
 import { ExtensionRpcPeer, type RpcValue } from "./extension-rpc"
 import { MAX_SCRIPT_SOURCE_BYTES } from "./script-storage"
@@ -11,6 +12,7 @@ import type { ExtensionNavigationCapabilities } from "./extension-navigation"
 
 export const EXTENSION_BOOTSTRAP_CHANNEL = "brulion-extension-bootstrap" as const
 export const DEFAULT_EXTENSION_TIMEOUT_MS = 5_000 as const
+export const DIALOG_EXTENSION_TIMEOUT_MS = 120_000 as const
 
 /** The child document is opaque-origin and has no network-capable CSP source. */
 export function createExtensionBootstrapHtml(): string {
@@ -25,6 +27,7 @@ export function createExtensionBootstrapHtml(): string {
   const BOOTSTRAP = "brulion-extension-bootstrap"
   const MAX_ERROR_LENGTH = 256
   const MAX_TIMEOUT_MS = 5000
+  const DIALOG_TIMEOUT_MS = 120000
   let port = null
   let nonce = null
   let state = "new"
@@ -87,7 +90,7 @@ export function createExtensionBootstrapHtml(): string {
         if (!pending.has(id)) return
         pending.delete(id)
         reject(new Error("RPC call timed out: " + method))
-      }, MAX_TIMEOUT_MS)
+      }, method.indexOf("dialogs.") === 0 ? DIALOG_TIMEOUT_MS : MAX_TIMEOUT_MS)
       pending.set(id, { resolve, reject, timer })
       if (!send("request", { id, method, params })) {
         clearTimeout(timer)
@@ -176,6 +179,7 @@ export function createExtensionBootstrapHtml(): string {
       editor: {
         getText: () => call("editor.getText", null),
         getSelection: () => call("editor.getSelection", null),
+        setSelection: (selection) => call("editor.setSelection", selection),
         replaceSelection: (text) => call("editor.replaceSelection", { text }),
         focus: () => call("editor.focus", null),
       },
@@ -186,6 +190,14 @@ export function createExtensionBootstrapHtml(): string {
         write: (path, content, expectedLastModified) => call("notes.write", { path, content, expectedLastModified }),
         delete: (path) => call("notes.delete", { path }),
         move: (from, to) => call("notes.move", { from, to }),
+      },
+      notifications: {
+        show: (message, options) => call("notifications.show", { message, ...(options === undefined ? {} : { options }) }),
+      },
+      dialogs: {
+        alert: (message, options) => call("dialogs.alert", { message, options }),
+        confirm: (message, options) => call("dialogs.confirm", { message, options }),
+        prompt: (message, options) => call("dialogs.prompt", { message, options }),
       },
       navigation: {
         getActiveNote: () => call("navigation.getActiveNote", null),
@@ -243,6 +255,7 @@ export interface ExtensionRunnerOptions {
   editor: ExtensionEditorCapabilities
   notes: ExtensionNoteCapabilities
   navigation?: ExtensionNavigationCapabilities
+  interaction?: ExtensionInteractionCapabilities
   container?: HTMLElement
   onActionsChanged?: () => void
   onError?: (error: unknown) => void
@@ -323,6 +336,7 @@ export class ExtensionRunner {
       editor: options.editor,
       notes: options.notes,
       navigation: options.navigation,
+      interaction: options.interaction,
       permissions: options.manifest.permissions,
       onActionsChanged: options.onActionsChanged,
       onError: options.onError,

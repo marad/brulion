@@ -11,6 +11,9 @@ export const SCRIPT_PERMISSIONS = [
   "notes:write",
   "navigation:read",
   "navigation:write",
+  "editor:selection",
+  "notifications",
+  "dialogs",
 ] as const
 
 export type ScriptPermission = (typeof SCRIPT_PERMISSIONS)[number]
