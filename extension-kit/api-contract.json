@@ -326,7 +326,7 @@
     {
       "name": "PromptOptions",
       "description": "Required labels and bounded prompt controls.",
-      "declaration": "export interface PromptOptions {\n  okLabel: string\n  cancelLabel: string\n  initial?: string\n  placeholder?: string\n  multiline?: boolean\n}"
+      "declaration": "export interface PromptOptions {\n  confirmLabel: string\n  cancelLabel: string\n  initial?: string\n  placeholder?: string\n  multiline?: boolean\n}"
     }
   ],
   "namespaces": [
@@ -936,7 +936,7 @@
             "Returns null on cancellation and an empty string when accepted empty.",
             "Uses the 120000 ms interactive deadline."
           ],
-          "example": "const value = await api.dialogs.prompt(\"Name\", { okLabel: \"Save\", cancelLabel: \"Cancel\" })",
+          "example": "const value = await api.dialogs.prompt(\"Name\", { confirmLabel: \"Save\", cancelLabel: \"Cancel\" })",
           "since": 1
         }
       ]

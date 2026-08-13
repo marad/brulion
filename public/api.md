@@ -207,7 +207,7 @@ Notifications and dialogs accept `MessageContent`: a string or a non-empty array
 
 ```js
 await api.notifications.show([{ type: "strong", text: "Saved" }], { level: "success" })
-const answer = await api.dialogs.prompt("Title", { okLabel: "Save", cancelLabel: "Cancel" })
+const answer = await api.dialogs.prompt("Title", { confirmLabel: "Save", cancelLabel: "Cancel" })
 ```
 
 Prompt cancellation returns `null`, distinct from an accepted empty string. Dialog work is host-owned and is rejected with `disposed` when the extension is disposed or its vault is stale.

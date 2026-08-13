@@ -38,7 +38,7 @@ export interface NotificationOptions { level?: "info" | "success" | "warning" | 
 export interface AlertOptions { okLabel: string }
 export interface ConfirmOptions { confirmLabel: string; cancelLabel: string }
 export interface PromptOptions {
-  okLabel: string
+  confirmLabel: string
   cancelLabel: string
   initial?: string
   placeholder?: string

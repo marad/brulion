@@ -101,7 +101,7 @@ export interface NotificationOptions { level?: NotificationLevel }
 export interface AlertOptions { okLabel: string }
 export interface ConfirmOptions { confirmLabel: string; cancelLabel: string }
 export interface PromptOptions {
-  okLabel: string
+  confirmLabel: string
   cancelLabel: string
   initial?: string
   placeholder?: string
@@ -567,7 +567,11 @@ export class ExtensionHost {
 
   private async setSelection(params: RpcValue): Promise<RpcValue> {
     this.requirePermission("editor:selection")
-    await this.editor.setSelection(selectionRequest(params))
+    const selection = selectionRequest(params)
+    const text = await this.editor.getText()
+    if (typeof text !== "string" || !Number.isSafeInteger(text.length) || text.length < 0) throw new Error("Editor text result is invalid")
+    if (selection.anchor > text.length || selection.head > text.length) throw new Error("Editor selection is out of document bounds")
+    await this.editor.setSelection(selection)
     return null
   }
 
@@ -611,11 +615,11 @@ export class ExtensionHost {
   private async prompt(params: RpcValue): Promise<RpcValue> {
     this.requirePermission("dialogs")
     const value = strictRecord(params, ["message", "options"], "Prompt")
-    const options = interactionOptions(value.options, ["okLabel", "cancelLabel", "initial", "placeholder", "multiline"], "Prompt options")
+    const options = interactionOptions(value.options, ["confirmLabel", "cancelLabel", "initial", "placeholder", "multiline"], "Prompt options")
     for (const key of ["initial", "placeholder"] as const) if (options[key] !== undefined && (typeof options[key] !== "string" || (options[key] as string).length > MAX_PROMPT_LENGTH)) throw new Error(`${key} must be bounded`)
     if (options.multiline !== undefined && typeof options.multiline !== "boolean") throw new Error("multiline must be a boolean")
     const result = await this.requireInteraction().prompt(messageContent(value.message), {
-      okLabel: label(options.okLabel, "okLabel"), cancelLabel: label(options.cancelLabel, "cancelLabel"),
+      confirmLabel: label(options.confirmLabel, "confirmLabel"), cancelLabel: label(options.cancelLabel, "cancelLabel"),
       ...(options.initial === undefined ? {} : { initial: options.initial as string }), ...(options.placeholder === undefined ? {} : { placeholder: options.placeholder as string }),
       ...(options.multiline === undefined ? {} : { multiline: options.multiline as boolean }),
     })
