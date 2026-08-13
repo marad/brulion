@@ -211,6 +211,33 @@ describe("mountDialog host-modal coordination (FEAT-0105)", () => {
     await expect(pending).resolves.toBe(false)
   })
 
+  it("restores a disposed dialog's focus target after a blocking host modal closes", async () => {
+    const els = elements()
+    const blocker = document.createElement("div")
+    blocker.hidden = true
+    const trigger = document.createElement("button")
+    document.body.append(blocker, trigger)
+    const dialog = mountDialog({
+      ...els,
+      isBlocked: () => !blocker.hidden,
+    })
+
+    trigger.focus()
+    const pending = dialog.extension.confirm("Dispose me", {
+      confirmLabel: "Continue",
+      cancelLabel: "Stop",
+    }, "source")
+    blocker.hidden = false
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    dialog.extension.dispose("source")
+    await expect(pending).rejects.toMatchObject({ code: "disposed" })
+    expect(document.activeElement).not.toBe(trigger)
+
+    blocker.hidden = true
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(document.activeElement).toBe(trigger)
+  })
+
   it("suspends an active extension dialog if a host modal opens", async () => {
     const els = elements()
     const blocker = document.createElement("div")
