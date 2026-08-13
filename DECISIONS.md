@@ -2199,6 +2199,26 @@ and autosave. The main app binds each callback to the captured vault and
 registry disposal removes stale entries. FEAT-0105 reuses the renderer but owns
 the serialized dialog lifecycle.
 
+**M46 P3 dialog policy:** Extend the existing single app modal instead of adding
+an extension-specific backdrop. Extension requests are FIFO behind the
+application dialog queue; one shared close path handles labels, Escape,
+backdrop, focus restoration, and promotion. Prompt uses a textarea only when
+`multiline: true`; otherwise it keeps the single-line input. Active and queued
+extension requests are source-scoped so disposal rejects them with `disposed`
+without cancelling unrelated app dialogs.
+
+**Why:** One modal owner prevents competing focus traps and backdrop races.
+Sharing the existing queue keeps the application's conflict/settings boundaries
+authoritative, while the explicit source scope gives extension teardown a
+precise cancellation boundary. The textarea distinction preserves normal Enter
+submit behavior without inventing keyboard rules for multiline text.
+
+**Consequence (UI/project):** The existing plain-string `Dialog` callers remain
+compatible, but the mount gains safe formatted rendering, custom labels, and
+multiline prompt controls. `ExtensionHost`/runner disposal must close extension
+requests before RPC shutdown; timeout cleanup must leave the modal reusable.
+No dialog value can alter Markdown bytes or cross the DOM/FSA boundary.
+
 ## M47 keeps CodeMirror and moves Markdown out of the visible document
 
 **What:** the main note editor remains CodeMirror, but its visible document is a
