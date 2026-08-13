@@ -30,6 +30,10 @@ describe("rich Markdown document", () => {
     const emoji = doc.visible.indexOf("😀")
     expect(visibleToSource(doc, emoji)).toBe("*outer **inner** end*\n- café ".length)
     expect(sourceToVisible(doc, visibleToSource(doc, emoji))).toBe(emoji)
+    const inner = doc.visible.indexOf("inner")
+    expect(sourceToVisible(doc, "*outer **".length)).toBe(inner)
+    expect(visibleToSource(doc, inner)).toBe("*outer **".length)
+    expect(sourceToVisible(doc, "*outer **inner".length)).toBe(inner + "inner".length)
   })
 
   it("preserves unknown syntax as an opaque visible region", () => {
@@ -50,12 +54,19 @@ describe("rich Markdown document", () => {
   })
 
   it("keeps incomplete markers literal and handles deterministic empty boundaries", () => {
+    const incomplete = importMarkdown("**unfinished\nplain")
+    expect(incomplete.visible).toBe("**unfinished\nplain")
+    expect(incomplete.ranges.find((r) => r.sourceFrom === 0)?.block).toBe("opaque")
+
+    const emptyHeading = importMarkdown("# \n")
+    expect(emptyHeading.visible).toBe("\n")
+    expect(emptyHeading.ranges.find((r) => !r.visible)?.block).toBe("heading")
+
     const empty = importMarkdown("")
     expect(empty.visible).toBe("")
     expect(visibleToSource(empty, 0)).toBe(0)
     expect(sourceToVisible(empty, 0)).toBe(0)
     const doc = importMarkdown("**unfinished\nplain")
-    expect(doc.visible).toBe("**unfinished\nplain")
     expect(sourceToVisible(doc, 0)).toBe(0)
     expect(visibleToSource(doc, doc.visible.length)).toBe(doc.source.length)
     expect(() => visibleToSource(doc, doc.visible.length + 1)).toThrow(RangeError)

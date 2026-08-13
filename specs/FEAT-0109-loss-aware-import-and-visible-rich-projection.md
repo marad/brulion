@@ -55,4 +55,3 @@ that fragment replacement and leaves all other source bytes unchanged.
 - Persistence, autosave, conflicts, clipboard, extensions, and browser E2E.
 - Parsing or interpreting frontmatter, tables, Mermaid, links, or other special
   blocks; those remain opaque until their dedicated phase.
-
