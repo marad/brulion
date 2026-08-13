@@ -131,7 +131,7 @@ describe("rich Markdown document", () => {
     expect(applyInlineInputRule(importMarkdown("**hello**."), 10, "eof").converted).toBe(false)
     expect(applyInlineInputRule(importMarkdown("http://**hello** "), 17, "space").converted).toBe(false)
     expect(applyInlineInputRule(importMarkdown("# **hello** "), 13, "space").converted).toBe(false)
-    expect(classifyInlineBoundary("**hello** ", 10, "space").kind).toBe("bold")
+    expect(classifyInlineBoundary("**hello** ", 10, "space")?.kind).toBe("bold")
     expect(classifyInlineBoundary("**hello", 7, "eof")).toBeNull()
   })
 
