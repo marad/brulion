@@ -570,7 +570,10 @@ export class ExtensionRpcPeer {
         result,
       })
     } catch (error) {
-      this.sendResponseError(request.id, "handler_error", errorMessage(error))
+      const code = error instanceof RpcError && (error.code === "timeout" || error.code === "disposed")
+        ? error.code
+        : "handler_error"
+      this.sendResponseError(request.id, code, errorMessage(error))
     }
   }
 
