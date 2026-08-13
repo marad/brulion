@@ -61,14 +61,20 @@ const source = String.raw`export default async function activate(api) {
     await result("prompt-empty-result", answer === null ? "Empty prompt cancelled" : "Empty prompt accepted: " + JSON.stringify(answer))
   })
   await api.commands.register({ id: "ask-disposal", label: "Ask disposal" }, async () => {
-    await api.dialogs.alert("This dialog is disposed", { okLabel: "Never" })
+    try {
+      await api.dialogs.alert("This dialog is disposed", { okLabel: "Never" })
+      console.log("dialog-disposal-result:resolved")
+    } catch (error) {
+      console.log("dialog-disposal-result:" + error.code)
+    }
   })
   await api.commands.register({ id: "ask-timeout", label: "Ask timeout" }, async () => {
-    try {
-      await api.dialogs.alert("This dialog times out", { okLabel: "Never" })
-    } catch (error) {
-      await result("timeout-result", "Timeout result: " + error.code)
-    }
+    const first = api.dialogs.alert("This dialog times out", { okLabel: "Never" })
+      .then(() => "first=resolved", (error) => "first=" + error.code)
+    const second = api.dialogs.alert("This queued dialog is disposed", { okLabel: "Never" })
+      .then(() => "second=resolved", (error) => "second=" + error.code)
+    const outcomes = await Promise.all([first, second])
+    await result("timeout-result", "Timeout results: " + outcomes.join(" "))
   })
   await api.commands.register({ id: "after-timeout", label: "Ask after timeout" }, async () => {
     await api.dialogs.alert("This dialog opens after timeout", { okLabel: "Close" })
@@ -146,10 +152,11 @@ async function seedVault(page: Page) {
 }
 
 const paletteRows = (page: Page) => page.locator(".palette-row")
+const exactAction = (page: Page, label: string) => page.getByRole("button", { name: label, exact: true })
 
 async function invoke(page: Page, label: string) {
   await page.keyboard.press("Control+Shift+K")
-  const matching = paletteRows(page).filter({ hasText: label })
+  const matching = exactAction(page, label)
   await expect.poll(async () => {
     await page.locator("#palette-input").fill(label)
     return matching.count()
@@ -228,7 +235,7 @@ test("AC-8 runs formatted alert, confirm, and prompt flows in Chromium", async (
   await invoke(page, "Ask timeout")
   await expect(page.locator("#dialog-backdrop")).toBeVisible()
   await expect(page.locator("#dialog-backdrop")).toBeHidden({ timeout: 7_000 })
-  await expectResultAction(page, "Timeout result: timeout")
+  await expectResultAction(page, "Timeout results: first=timeout second=disposed")
 
   await invoke(page, "Ask after timeout")
   await expect(page.locator("#dialog-confirm")).toHaveText("Close")
@@ -242,16 +249,16 @@ test("AC-8 runs formatted alert, confirm, and prompt flows in Chromium", async (
   await expect.poll(async () => {
     await page.keyboard.press("Control+Shift+K")
     await page.locator("#palette-input").fill("Ask disposal")
-    return paletteRows(page).count()
+    return exactAction(page, "Ask disposal").count()
   }).toBe(0)
 
   await setEnabledExtensions(page, ["dialog-tools"])
   await expect.poll(async () => {
     await page.keyboard.press("Control+Shift+K")
     await page.locator("#palette-input").fill("Ask alert")
-    return paletteRows(page).filter({ hasText: "Ask alert" }).count()
+    return exactAction(page, "Ask alert").count()
   }).toBe(1)
-  await paletteRows(page).filter({ hasText: "Ask alert" }).first().click()
+  await exactAction(page, "Ask alert").first().click()
   await expect(page.locator("#dialog-confirm")).toHaveText("Got it")
   await page.locator("#dialog-confirm").click()
 
