@@ -275,6 +275,7 @@ export function importMarkdown(source: string): RichDocument {
   let offset = 0
   let inFence = false
   let fenceChar = ""
+  let inHtmlComment = false
   let inFrontmatter = source.startsWith("---") && /^(?:---)(?:\r?\n|$)/.test(source)
   const lines = source.split(/(\r?\n)/)
 
@@ -285,8 +286,9 @@ export function importMarkdown(source: string): RichDocument {
     const fence = FENCE.exec(line)
     const lineIsFrontmatter = inFrontmatter
     const lineIsFence = Boolean(fence || inFence)
+    const lineIsHtmlComment = inHtmlComment || HTML_LIKE.test(line)
 
-    if (lineIsFrontmatter || lineIsFence || opaqueLine(line)) {
+    if (lineIsFrontmatter || lineIsFence || lineIsHtmlComment || opaqueLine(line)) {
       push(fragments, line, lineStart, lineStart + line.length, [], "opaque")
       if (lineIsFrontmatter && i > 0 && /^---\s*$/.test(line)) inFrontmatter = false
       if (fence) {
@@ -296,6 +298,11 @@ export function importMarkdown(source: string): RichDocument {
         } else if (fence[1][0] === fenceChar) {
           inFence = false
         }
+      }
+      if (inHtmlComment) {
+        if (line.includes("-->")) inHtmlComment = false
+      } else if (line.includes("<!--") && !line.includes("-->")) {
+        inHtmlComment = true
       }
     } else {
       const info = lineBlock(line, lineStart)

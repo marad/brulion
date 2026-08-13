@@ -76,6 +76,10 @@ describe("rich Markdown document", () => {
     const incompleteMarker = importMarkdown("^^future")
     expect(incompleteMarker.visible).toBe("^^future")
     expect(incompleteMarker.ranges[0]?.block).toBe("opaque")
+
+    const multilineComment = importMarkdown("<!--\n**x**\n-->")
+    expect(multilineComment.visible).toBe("<!--\n**x**\n-->")
+    expect(multilineComment.ranges.some((r) => r.block !== "opaque" && r.visible)).toBe(false)
   })
 
   it("changes only one mapped fragment while preserving its delimiters and unknown source", () => {
