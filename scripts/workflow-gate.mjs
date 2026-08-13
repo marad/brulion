@@ -118,7 +118,7 @@ export function checkDerivedArtifacts(root) {
       });
       continue;
     }
-    if (readFileSync(sourcePath, "utf8") !== readFileSync(generatedPath, "utf8")) {
+    if (!readFileSync(sourcePath).equals(readFileSync(generatedPath))) {
       errors.push({
         code: "derived-artifact-drift",
         path: generated,
@@ -356,6 +356,10 @@ const runPreReview = (request) => {
   console.log(`base: ${request.base}`);
   console.log(`HEAD: ${head || "unknown"}`);
   console.log(`spec: ${request.specId}`);
+  console.log("checks:");
+  console.log("- spec status: passed");
+  console.log("- verification plans: passed");
+  console.log("- derived artifacts: passed");
   console.log("changed paths:");
   for (const path of paths.length > 0 ? paths : ["(none)"]) console.log(`- ${path}`);
   return 0;
