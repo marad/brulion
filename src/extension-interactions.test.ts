@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { mountNotificationCenter, renderMessageContent } from "./extension-interactions"
+// @ts-expect-error Node is available to Vitest but this project does not ship node typings.
+import { readFileSync } from "node:fs"
+import {
+  detachVaultInteractions,
+  mountNotificationCenter,
+  renderMessageContent,
+} from "./extension-interactions"
 
 describe("FEAT-0104 formatted messages", () => {
   it("renders safe text, formatting elements, and semantic line breaks", () => {
@@ -33,13 +39,42 @@ describe("FEAT-0104 formatted messages", () => {
     vi.useRealTimers()
   })
 
-  it("clears only the disposed source", () => {
+  it("clears only the disposed source, including queued notifications", () => {
     const region = document.createElement("div")
     const center = mountNotificationCenter(region)
-    center.show("one", "alpha", "info")
-    center.show("two", "beta", "success")
+    for (let i = 0; i < 3; i++) center.show(`alpha visible ${i}`, "alpha", "info")
+    for (let i = 0; i < 2; i++) center.show(`alpha queued ${i}`, "alpha", "info")
+    center.show("beta", "beta", "success")
+
     center.clearSource("alpha")
-    expect(region.textContent).toContain("twobeta")
+
+    expect(region.textContent).toContain("beta")
+    expect(region.textContent).not.toContain("alpha")
+    expect(center.queuedCount).toBe(0)
+  })
+
+  it("clears the detached vault before a replacement root starts loading, but not on reload", () => {
+    const oldRoot = {} as FileSystemDirectoryHandle
+    const newRoot = {} as FileSystemDirectoryHandle
+    const disposeRunners = vi.fn()
+    const clearNotifications = vi.fn()
+
+    detachVaultInteractions(oldRoot, newRoot, disposeRunners, clearNotifications)
+    expect(disposeRunners).toHaveBeenCalledOnce()
+    expect(clearNotifications).toHaveBeenCalledOnce()
+
+    disposeRunners.mockClear()
+    clearNotifications.mockClear()
+    detachVaultInteractions(newRoot, newRoot, disposeRunners, clearNotifications)
+    expect(disposeRunners).not.toHaveBeenCalled()
+    expect(clearNotifications).not.toHaveBeenCalled()
+  })
+
+  it("keeps notification styles on the defined muted text token", () => {
+    const css = readFileSync("src/styles.css", "utf8")
+    expect(css).toContain(".notification-source { grid-column: 1; color: var(--text-muted);")
+    expect(css).toContain("color: var(--text-muted); font: inherit; cursor: pointer;")
+    expect(css).not.toContain("var(--muted)")
   })
 
   afterEach(() => vi.useRealTimers())
