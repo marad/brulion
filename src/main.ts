@@ -16,8 +16,10 @@ import {
   type IconNode,
 } from "lucide"
 import {
+  getEditorSelection,
   mountEditor,
   setEditorEditable,
+  setEditorSelection,
   setLinkContext,
   scrollEditorToHeading,
 } from "./editor"
@@ -520,18 +522,11 @@ const reloadExtensions = async (): Promise<void> => {
         },
         getSelection: () => {
           assertActive()
-          const selection = view.state.selection.main
-          return {
-            anchor: selection.anchor,
-            head: selection.head,
-            text: view.state.sliceDoc(selection.from, selection.to),
-          }
+          return getEditorSelection(view)
         },
         setSelection: (selection) => {
           assertActive()
-          if (!Number.isSafeInteger(selection.anchor) || !Number.isSafeInteger(selection.head) || selection.anchor < 0 || selection.head < 0 || selection.anchor > view.state.doc.length || selection.head > view.state.doc.length) throw new Error("Selection is out of bounds")
-          view.dispatch({ selection: { anchor: selection.anchor, head: selection.head }, scrollIntoView: true })
-          view.focus()
+          setEditorSelection(view, selection)
         },
         replaceSelection: (text: string) => {
           assertActive()

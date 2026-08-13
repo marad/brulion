@@ -235,6 +235,44 @@ export function mountEditor(
  * an initial note load / programmatic note-switch, where the prior buffer is unrelated.
  * For catching the *open* note up to an external change, prefer {@link reloadEditorText}
  * so the caret and scroll survive. */
+export interface EditorSelection {
+  anchor: number
+  head: number
+  text: string
+}
+
+export interface EditorSelectionRequest {
+  anchor: number
+  head: number
+}
+
+/** Read the raw primary CodeMirror selection without exposing editor objects. */
+export function getEditorSelection(view: EditorView): EditorSelection {
+  const selection = view.state.selection.main
+  return {
+    anchor: selection.anchor,
+    head: selection.head,
+    text: view.state.sliceDoc(selection.from, selection.to),
+  }
+}
+
+/** Move the primary selection without dispatching document changes. */
+export function setEditorSelection(view: EditorView, selection: EditorSelectionRequest): void {
+  if (
+    !Number.isSafeInteger(selection.anchor) ||
+    !Number.isSafeInteger(selection.head) ||
+    selection.anchor < 0 ||
+    selection.head < 0 ||
+    selection.anchor > view.state.doc.length ||
+    selection.head > view.state.doc.length
+  ) throw new Error("Selection is out of bounds")
+  view.dispatch({
+    selection: { anchor: selection.anchor, head: selection.head },
+    scrollIntoView: true,
+  })
+  view.focus()
+}
+
 export function setEditorText(view: EditorView, text: string): void {
   view.dispatch({
     changes: { from: 0, to: view.state.doc.length, insert: text },

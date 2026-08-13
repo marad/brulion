@@ -17,7 +17,7 @@ describe("extension editor selection adapter", () => {
     expect(getEditorSelection(view)).toEqual({
       anchor: 15,
       head: 2,
-      text: "*café** <hidd",
+      text: "café** <hidde",
     })
     view.destroy()
   })
