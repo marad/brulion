@@ -46,7 +46,7 @@ const source = String.raw`export default async function activate(api) {
     const answer = await api.dialogs.prompt("Many lines", {
       confirmLabel: "Use text", cancelLabel: "Discard text", multiline: true, placeholder: "multiple lines",
     })
-    await result("prompt-multi-result", answer === null ? "Multiline cancelled" : "Multiline accepted: first line / second line")
+    await result("prompt-multi-result", answer === null ? "Multiline cancelled" : "Multiline accepted: " + JSON.stringify(answer))
   })
   await api.commands.register({ id: "prompt-cancel", label: "Ask cancelled prompt" }, async () => {
     const answer = await api.dialogs.prompt("Cancel this", {
@@ -54,7 +54,37 @@ const source = String.raw`export default async function activate(api) {
     })
     await result("prompt-cancel-result", answer === null ? "Cancel distinguished" : "Unexpected acceptance")
   })
+  await api.commands.register({ id: "prompt-empty", label: "Ask empty prompt" }, async () => {
+    const answer = await api.dialogs.prompt("Accept empty", {
+      confirmLabel: "Accept empty", cancelLabel: "Cancel empty", initial: "seed",
+    })
+    await result("prompt-empty-result", answer === null ? "Empty prompt cancelled" : "Empty prompt accepted: " + JSON.stringify(answer))
+  })
+  await api.commands.register({ id: "ask-disposal", label: "Ask disposal" }, async () => {
+    await api.dialogs.alert("This dialog is disposed", { okLabel: "Never" })
+  })
+  await api.commands.register({ id: "ask-timeout", label: "Ask timeout" }, async () => {
+    try {
+      await api.dialogs.alert("This dialog times out", { okLabel: "Never" })
+    } catch (error) {
+      await result("timeout-result", "Timeout result: " + error.code)
+    }
+  })
+  await api.commands.register({ id: "after-timeout", label: "Ask after timeout" }, async () => {
+    await api.dialogs.alert("This dialog opens after timeout", { okLabel: "Close" })
+    await result("after-timeout-result", "Post-timeout dialog opened")
+  })
 }`
+
+async function accelerateDialogDeadline(page: Page) {
+  await page.addInitScript(() => {
+    const nativeSetTimeout = window.setTimeout.bind(window)
+    window.setTimeout = ((handler, timeout, ...args) => {
+      const delay = timeout === 119000 ? 10 : timeout === 120000 ? 30 : timeout
+      return nativeSetTimeout(handler, delay, ...args)
+    }) as typeof window.setTimeout
+  })
+}
 
 async function stubPicker(page: Page) {
   await page.addInitScript((folder) => {
@@ -98,6 +128,13 @@ async function readFile(page: Page, path: string): Promise<string> {
   )
 }
 
+async function setEnabledExtensions(page: Page, extensions: string[]) {
+  const settings = JSON.parse(await readFile(page, ".brulion.json")) as Record<string, unknown>
+  settings.extensions = extensions
+  await writeFile(page, ".brulion.json", JSON.stringify(settings))
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+}
+
 async function seedVault(page: Page) {
   await writeFile(page, "alpha.md", NOTE)
   await writeFile(page, ".brulion.json", JSON.stringify({
@@ -130,6 +167,7 @@ async function expectResultAction(page: Page, label: string) {
 test.describe.configure({ timeout: 60_000 })
 
 test("AC-8 runs formatted alert, confirm, and prompt flows in Chromium", async ({ page }) => {
+  await accelerateDialogDeadline(page)
   await stubPicker(page)
   await page.goto("/brulion/")
   await seedVault(page)
@@ -174,12 +212,48 @@ test("AC-8 runs formatted alert, confirm, and prompt flows in Chromium", async (
   await expect(textarea).toHaveAttribute("placeholder", "multiple lines")
   await textarea.fill("first line\nsecond line")
   await page.locator("#dialog-confirm").click()
-  await expectResultAction(page, "Multiline accepted: first line / second line")
+  await expectResultAction(page, 'Multiline accepted: "first line\\nsecond line"')
+
+  await invoke(page, "Ask empty prompt")
+  await expect(page.locator("#dialog-input")).toHaveValue("seed")
+  await page.locator("#dialog-input").fill("")
+  await page.locator("#dialog-confirm").click()
+  await expectResultAction(page, 'Empty prompt accepted: ""')
 
   await invoke(page, "Ask cancelled prompt")
   await expect(input).toHaveValue("unchanged")
   await page.locator("#dialog-cancel").click()
   await expectResultAction(page, "Cancel distinguished")
+
+  await invoke(page, "Ask timeout")
+  await expect(page.locator("#dialog-backdrop")).toBeVisible()
+  await expect(page.locator("#dialog-backdrop")).toBeHidden({ timeout: 2_000 })
+  await expectResultAction(page, "Timeout result: timeout")
+
+  await invoke(page, "Ask after timeout")
+  await expect(page.locator("#dialog-confirm")).toHaveText("Close")
+  await page.locator("#dialog-confirm").click()
+  await expectResultAction(page, "Post-timeout dialog opened")
+
+  await invoke(page, "Ask disposal")
+  await expect(page.locator("#dialog-backdrop")).toBeVisible()
+  await setEnabledExtensions(page, [])
+  await expect(page.locator("#dialog-backdrop")).toBeHidden()
+  await expect.poll(async () => {
+    await page.keyboard.press("Control+Shift+K")
+    await page.locator("#palette-input").fill("Ask disposal")
+    return paletteRows(page).count()
+  }).toBe(0)
+
+  await setEnabledExtensions(page, ["dialog-tools"])
+  await expect.poll(async () => {
+    await page.keyboard.press("Control+Shift+K")
+    await page.locator("#palette-input").fill("Ask alert")
+    return paletteRows(page).count()
+  }).toBe(1)
+  await paletteRows(page).first().click()
+  await expect(page.locator("#dialog-confirm")).toHaveText("Got it")
+  await page.locator("#dialog-confirm").click()
 
   await expect(editor).toHaveText(NOTE)
   expect(await readFile(page, "alpha.md")).toBe(NOTE)
