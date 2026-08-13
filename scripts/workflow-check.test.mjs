@@ -15,6 +15,7 @@ import test from "node:test";
 
 import {
   collectPreflightObservation,
+  discoverMilestonePath,
   evaluatePreflight,
   formatPreflightResult,
   parseLedger,
@@ -68,6 +69,67 @@ test("parses a valid workflow ledger", () => {
     lastCompletedGate: "P0 — FEAT-0095 sealed",
     nextAction: "implement FEAT-0096",
   });
+});
+
+test("discovers the single active milestone instead of guessing from history", () => {
+  const root = mkdtempSync(join(process.cwd(), "workflow-root-"));
+
+  try {
+    mkdirSync(join(root, "milestones"));
+    writeFileSync(join(root, "milestones", "M45.md"), validLedger);
+    writeFileSync(
+      join(root, "milestones", "M46.md"),
+      validLedger.replace("P1 — read-only preflight and phase-ledger checker", "milestone closed"),
+    );
+
+    assert.deepEqual(discoverMilestonePath(root), {
+      ok: true,
+      path: "milestones/M45.md",
+      reason: "active",
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("falls back to the latest numbered closed milestone", () => {
+  const root = mkdtempSync(join(process.cwd(), "workflow-root-"));
+
+  try {
+    mkdirSync(join(root, "milestones"));
+    const closed = validLedger.replace(
+      "P1 — read-only preflight and phase-ledger checker",
+      "milestone closed",
+    );
+    writeFileSync(join(root, "milestones", "M45.md"), closed);
+    writeFileSync(join(root, "milestones", "M46.md"), closed);
+
+    assert.deepEqual(discoverMilestonePath(root), {
+      ok: true,
+      path: "milestones/M46.md",
+      reason: "latest-closed",
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("fails closed when more than one milestone is active", () => {
+  const root = mkdtempSync(join(process.cwd(), "workflow-root-"));
+
+  try {
+    mkdirSync(join(root, "milestones"));
+    writeFileSync(join(root, "milestones", "M45.md"), validLedger);
+    writeFileSync(join(root, "milestones", "M46.md"), validLedger);
+
+    const result = discoverMilestonePath(root);
+    assert.equal(result.ok, false);
+    assert.equal(result.errors[0].code, "milestone-ambiguous");
+    assert.match(result.errors[0].message, /M45\.md/);
+    assert.match(result.errors[0].message, /M46\.md/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("rejects a missing CLI option operand", () => {

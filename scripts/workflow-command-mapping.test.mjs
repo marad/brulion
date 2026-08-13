@@ -73,6 +73,20 @@ test("project-local workflow command mapping", async (t) => {
     assert.match(agents, /historical bare labels/);
   });
 
+  await t.test("documents the evidence-first review handoff", () => {
+    const agents = read("AGENTS.md");
+    const workflow = read("docs/workflow.md");
+    const review = read(skillPaths["code-review"]);
+    const loop = read(skillPaths["review-until-clean"]);
+
+    for (const marker of ["pre-review", "base SHA", "review ledger", "targeted tests"]) {
+      assert.match(agents + workflow + review + loop, new RegExp(marker.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")));
+    }
+    assert.match(workflow, /one canonical reviewer/);
+    assert.match(review, /current HEAD/);
+    assert.match(loop, /blocked.*clean|clean.*blocked/s);
+  });
+
   await t.test("requires per-skill recovery and no hard timeout guidance", () => {
     const goal = read(skillPaths.goal);
     const review = read(skillPaths["code-review"]);

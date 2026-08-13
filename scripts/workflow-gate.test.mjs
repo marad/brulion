@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdtempSync, readFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import test from "node:test";
 
 import {
   buildFullGatePlan,
+  buildPreReviewPlan,
+  checkDerivedArtifacts,
+  checkVerificationPlans,
   classifyStagedPaths,
+  findRecursiveVerification,
   executeFullGate,
   runFastGate,
   validateCommitMessage,
@@ -20,6 +24,67 @@ const commandResult = (command, args, status = 0, stdout = "", stderr = "") => (
   status,
   stdout,
   stderr,
+});
+
+test("only flags same-spec verification commands, not prose mentions", () => {
+  assert.deepEqual(
+    findRecursiveVerification(
+      "FEAT-0107",
+      "The approach mentions `specman verify FEAT-0107`.\n\n## Verification\n- `npm test -- --run`\n",
+    ),
+    [],
+  );
+  assert.deepEqual(
+    findRecursiveVerification(
+      "FEAT-0107",
+      "## Verification\n- `specman verify FEAT-0107`\n",
+    ),
+    ["- `specman verify FEAT-0107`"],
+  );
+});
+
+test("reports recursive plans and preserves matching artifact pairs", () => {
+  const root = mkdtempSync(join(process.cwd(), "workflow-gate-"));
+
+  try {
+    mkdirSync(join(root, ".specman", "plans"), { recursive: true });
+    mkdirSync(join(root, "extension-kit"));
+    mkdirSync(join(root, "public"));
+    writeFileSync(
+      join(root, ".specman", "plans", "FEAT-0107.md"),
+      "## Verification\n- `specman verify FEAT-0107`\n",
+    );
+    for (const name of ["API.md", "api-contract.json", "brulion-extension.d.ts"]) {
+      writeFileSync(join(root, "extension-kit", name), `${name}\n`);
+      writeFileSync(join(root, "public", name), `${name}\n`);
+    }
+
+    const plans = checkVerificationPlans(root);
+    assert.equal(plans.length, 1);
+    assert.equal(plans[0].code, "recursive-verification");
+    assert.deepEqual(checkDerivedArtifacts(root), []);
+
+    writeFileSync(join(root, "public", "api.md"), "drift\n");
+    const artifacts = checkDerivedArtifacts(root);
+    assert.equal(artifacts.length, 1);
+    assert.equal(artifacts[0].code, "derived-artifact-drift");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("pre-review plan is observational and excludes the full browser suite", () => {
+  const commands = buildPreReviewPlan({
+    root,
+    base: "abc123",
+    specId: "FEAT-0107",
+    milestonePath: "milestones/M45.md",
+  });
+  const rendered = commands.map(({ command, args }) => [command, ...args].join(" ")).join("\n");
+
+  assert.match(rendered, /git diff abc123\.\.\.HEAD --check/);
+  assert.match(rendered, /FEAT-0107/);
+  assert.doesNotMatch(rendered, /npm run e2e/);
 });
 
 test("classifies implementation and workflow paths separately from documentation", () => {
@@ -108,6 +173,8 @@ test("fast gate rejects cached whitespace errors and mapping failures", () => {
 
 const expectedFullCommands = (milestonePath) => [
   [process.execPath, ["scripts/workflow-check.mjs", "preflight", "--milestone", milestonePath]],
+  [process.execPath, ["scripts/workflow-gate.mjs", "plan-check"]],
+  [process.execPath, ["scripts/workflow-gate.mjs", "artifact-check"]],
   ["specman", ["validate"]],
   ["npm", ["run", "workflow:test"]],
   ["npm", ["test", "--", "--run"]],
@@ -141,10 +208,10 @@ test("stops the full gate at the first failure and preserves evidence", () => {
   });
 
   assert.equal(result.ok, false);
-  assert.equal(result.completed.length, 3);
+  assert.equal(result.completed.length, 5);
   assert.equal(result.failed.command, "npm");
   assert.equal(result.failed.stderr, "test failure");
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 6);
   assert.equal(result.evidence.at(-1).stdout, "test output");
 });
 
