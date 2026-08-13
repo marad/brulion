@@ -35,7 +35,7 @@ const source = `export default async function activate(api) {
       const selection = await api.editor.getSelection()
     await api.commands.register({
       id: "opened-result",
-      label: "Navigation "+result.status+" "+result.path+" "+(result.anchorStatus || "")+" cursor "+selection.from,
+      label: "Navigation "+result.status+" "+result.path+" "+(result.anchorStatus || "")+" cursor "+selection.head,
     }, async () => {})
   })
 

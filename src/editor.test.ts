@@ -6,6 +6,7 @@ import {
   scrollEditorToHeading,
   setEditorSelection,
   setEditorText,
+  setVimMode,
 } from "./editor"
 
 describe("extension editor selection adapter", () => {
@@ -43,12 +44,31 @@ describe("extension editor selection adapter", () => {
     view.destroy()
   })
 
+  it("preserves raw hidden-marker offsets while Vim mode is enabled", () => {
+    const onChange = vi.fn()
+    const onSave = vi.fn()
+    const view = mountEditor(document.createElement("div"), { onChange, onSave })
+    setEditorText(view, "**hidden**")
+    setVimMode(view, true)
+    const dispatch = vi.spyOn(view, "dispatch")
+
+    setEditorSelection(view, { anchor: 1, head: 8 })
+
+    expect(view.state.doc.toString()).toBe("**hidden**")
+    expect(view.state.selection.main.anchor).toBe(1)
+    expect(view.state.selection.main.head).toBe(8)
+    expect(onChange).not.toHaveBeenCalled()
+    expect(onSave).not.toHaveBeenCalled()
+    expect(dispatch).toHaveBeenCalledOnce()
+    view.destroy()
+  })
+
   it("rejects invalid or out-of-document offsets before dispatch", () => {
     const view = mountEditor(document.createElement("div"))
     setEditorText(view, "short")
     const dispatch = vi.spyOn(view, "dispatch")
 
-    for (const selection of [
+    for (const selection of [ 
       { anchor: -1, head: 1 },
       { anchor: 1.5, head: 1 },
       { anchor: Number.MAX_SAFE_INTEGER + 1, head: 1 },
