@@ -40,7 +40,10 @@ Every technical decision defers to that.
 > live**. **M45** (workflow enforcement and recovery) is **implemented, deployed,
 > and reviewed live**. **M46** (extension interaction API — direction-aware
 > editor selection, formatted in-app notifications, and formatted host dialogs)
-> is now scoped for the next extension API round.
+> remains a separately scoped extension workstream, developed in parallel and not
+> a prerequisite for the editor work. **M47** (rich Markdown editor in CodeMirror)
+> is now defined for that editor workstream: visible rich text, loss-aware Markdown
+> mapping, and Markdown input rules at explicit boundaries.
 > Recently shipped: **M45** (workflow enforcement and recovery), **M44** (daily-use polish and static agent-readable API docs),
 > **M41** (full extension workbench and authoring kit, P0–P5),
 > **M39** (local JavaScript extensions, P0–P2), **M37**
@@ -854,6 +857,32 @@ Out:
   filesystem-handle, package, TypeScript, or network capability.
 
 Phases: [`milestones/M46.md`](milestones/M46.md).
+
+### M47 — Rich Markdown editor in CodeMirror
+**Goal:** make the main editor feel like a rich-text editor without changing the
+file model or leaving CodeMirror. The visible CodeMirror document becomes a rich
+projection backed by a loss-aware Markdown source map; Markdown remains the
+portable on-disk format and users can still type Markdown markers that convert at
+explicit boundaries (for example `**hello** ` → bold `hello ` and `# ` → H1).
+
+In:
+- a rich document/state model and source-map contract over CodeMirror;
+- loss-aware import and serialization that preserves untouched Markdown bytes and
+  never silently drops unknown syntax;
+- Markdown input rules for inline marks, headings, lists, quotes, links, fences,
+  and the supported special blocks, each with deliberate boundary/caret rules;
+- integration with autosave, external refresh, conflicts, selection, commands,
+  clipboard, Vim, and the raw-source extension API;
+- explicit source editing for opaque or unsupported constructs.
+
+Out:
+- replacing CodeMirror with ProseMirror/Tiptap;
+- whole-document Markdown reformatting or a metadata sidecar;
+- silent deletion of unsupported syntax;
+- external HTML clipboard interoperability as a requirement of the first cut;
+- changes to FSA, vault identity, sync, or note ownership.
+
+Phases: [`milestones/M47.md`](milestones/M47.md).
 
 ## Later / backlog (out of MVP, on purpose)
 

@@ -2156,3 +2156,49 @@ RPC timeout; disposing an extension or detaching its vault settles pending
 interactions deterministically. New permissions are least-privilege and fail
 closed, and the Authoring Kit, contract, sandbox bootstrap, unit tests, and
 Chromium tests must remain synchronized.
+
+## M47 keeps CodeMirror and moves Markdown out of the visible document
+
+**What:** the main note editor remains CodeMirror, but its visible document is a
+rich-text projection rather than the raw Markdown source. A CodeMirror state/model
+stores marks and blocks, while a loss-aware source map relates visible positions to
+Markdown ranges and owns serialization back to the file. The adapter preserves
+untouched source spans verbatim and rewrites only the spans changed by an explicit
+rich-text operation. Unknown syntax is retained as an opaque/raw region with an
+explicit source-editing path.
+
+**Why:** changing engines would add migration risk without solving file fidelity;
+a generic Markdown serializer would still normalize or drop user-owned syntax.
+CodeMirror already supplies the history, selection, keymap, Vim, clipboard, and
+integration surface Brulion needs. Separating the visible model from the file
+format fixes the current hidden-marker/caret problem while keeping the moat intact.
+
+**Consequence (UI/project):** ordinary caret movement never crosses invisible
+Markdown delimiters, formatting commands change rich state instead of inserting
+hidden source characters, and storage/conflict code consumes a serialized Markdown
+snapshot at one editor boundary. Workbench and diff editors may remain raw
+CodeMirror editors; M47 changes the primary note editor only.
+
+## M47 accepts typed Markdown through explicit boundary rules
+
+**What:** Markdown remains a supported input language, not merely a file format.
+Incomplete marker sequences stay editable while they are being typed. A primary
+terminating space commits inline marks and line prefixes — for example,
+`**hello** ` becomes visible bold `hello` plus a normal trailing space, and `# `
+becomes H1. Enter, Tab, completed closing constructs, and blur/save flush pending
+input where the construct's rule requires it. Each construct gets an explicit
+recognition, boundary, caret, Enter, and serialization rule; there is no generic
+character-replacement heuristic.
+
+**Why:** users should be able to write familiar Markdown without choosing between
+raw source and a formatting toolbar. The boundary is what makes conversion
+predictable and prevents an opening `*` or `#` from disappearing before the user
+has finished expressing intent. Grouping conversion into one editor transaction
+also makes undo behave like a rich-text editor.
+
+**Consequence (UI/project):** headings, emphasis, code, lists, quotes, links,
+fences, tables, frontmatter, Mermaid, and unsupported syntax must each have a
+recorded behavior matrix before implementation. A loaded file is parsed directly
+into rich/opaque state; only user input follows the pending-marker path. The raw
+Markdown API and M46 source-position contract remain stable through source-map
+translation, while visible selections and carets use the rich projection.
