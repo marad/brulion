@@ -107,7 +107,7 @@ import { createPoller } from "./watch"
 import { registerServiceWorker } from "./pwa"
 import { createInstallPrompt, type DeferredInstallPrompt } from "./install-prompt"
 import { ExtensionRegistry } from "./extension-registry"
-import { mountNotificationCenter } from "./extension-interactions"
+import { detachVaultInteractions, mountNotificationCenter } from "./extension-interactions"
 import { createExtensionNavigationAdapter } from "./extension-navigation-adapter"
 import { mountExtensionManager, type ExtensionManagerHandle } from "./extension-manager"
 import { createWorkbenchUrl } from "./workbench"
@@ -1258,6 +1258,10 @@ window.addEventListener(
 // folder the controller currently holds.
 const poller = createPoller(() => controller.refreshFromDisk(), POLL_MS)
 const openNote = async (dir: FileSystemDirectoryHandle) => {
+  // Detach the outgoing vault before any new-root settings/controller work starts.
+  // Same-root reloads retain their runners and notifications; a failed replacement
+  // still rejects stale callbacks through the captured-root guard below.
+  detachVaultInteractions(settingsDir, dir, () => extensionRegistry.dispose(), () => notificationCenter.clear())
   await sidebarWidthReady // apply the saved sidebar width before first paint (no flash)
   // (Per-vault recency + expanded folders are loaded in attachVault before openNote.)
   // Settings travel with the vault (M16/FEAT-0047): read this folder's

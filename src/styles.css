@@ -27,8 +27,8 @@
 .notification-toast[data-level="warning"] { border-left-color: #b7791f; }
 .notification-toast[data-level="error"] { border-left-color: #b33a3a; }
 .notification-message { grid-column: 1; white-space: pre-wrap; }
-.notification-source { grid-column: 1; color: var(--muted); font-size: 0.75rem; }
-.notification-close { grid-column: 2; grid-row: 1 / span 2; align-self: start; border: 0; background: transparent; color: var(--muted); font: inherit; cursor: pointer; }
+.notification-source { grid-column: 1; color: var(--text-muted); font-size: 0.75rem; }
+.notification-close { grid-column: 2; grid-row: 1 / span 2; align-self: start; border: 0; background: transparent; color: var(--text-muted); font: inherit; cursor: pointer; }
 :root {
   color-scheme: light;
   /* Single source for the reading font — no web-font downloads. Used here and

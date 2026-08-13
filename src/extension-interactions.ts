@@ -37,6 +37,18 @@ export interface NotificationCenterHandle {
   readonly queuedCount: number
 }
 
+/** Dispose the old vault's extension/UI state before a replacement root starts loading. */
+export function detachVaultInteractions(
+  previousRoot: FileSystemDirectoryHandle | null,
+  nextRoot: FileSystemDirectoryHandle,
+  disposeRunners: () => void,
+  clearNotifications: () => void,
+): void {
+  if (previousRoot === nextRoot) return
+  disposeRunners()
+  clearNotifications()
+}
+
 /** Host-owned, bounded notification queue mounted outside the editor surface. */
 export function mountNotificationCenter(region: HTMLElement): NotificationCenterHandle {
   region.setAttribute("aria-live", "polite")
