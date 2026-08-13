@@ -71,7 +71,7 @@ const QUOTE = /^>([ \t]?)(.*)$/
 const BULLET = /^([*-])([ \t]+)(.*)$/
 const ORDERED = /^(\d+\.)([ \t]+)(.*)$/
 const FENCE = /^\s*(`{3,}|~{3,})(.*)$/
-const MARKER_LIKE = /\^\^[^\n]+\^\^/
+const MARKER_LIKE = /\^\^/
 // P1 keeps the whole line raw as soon as it recognizes unsupported syntax,
 // including an incomplete construct. Dedicated parsing arrives in P4.
 const STRIKETHROUGH_LIKE = /~~/
@@ -79,7 +79,7 @@ const MARKDOWN_LINK = /\[[^\]\n]+\]\([^\)\n]+\)/
 // Any bracketed source is kept raw in P1; link parsing belongs to P4.
 const LINK_LIKE = /\[[^\n]*$/
 const WIKILINK = /\[\[[^\]\n]+\]\]/
-const HTML_LIKE = /<\/?[A-Za-z][^>\n]*(?:>|$)/
+const HTML_LIKE = /<!--[\s\S]*?(?:-->|$)|<\/?[A-Za-z][^>\n]*(?:>|$)/
 
 function push(
   fragments: Fragment[],
