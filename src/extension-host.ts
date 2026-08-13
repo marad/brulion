@@ -113,9 +113,9 @@ export interface ExtensionInteractionCapabilities {
   dispose?: (source?: string) => void
   setSelection: (selection: ExtensionSelectionRequest) => void | Promise<void>
   showNotification: (message: MessageContent, options?: NotificationOptions, source?: string) => void | Promise<void>
-  alert: (message: MessageContent, options: AlertOptions) => void | Promise<void>
-  confirm: (message: MessageContent, options: ConfirmOptions) => boolean | Promise<boolean>
-  prompt: (message: MessageContent, options: PromptOptions) => string | null | Promise<string | null>
+  alert: (message: MessageContent, options: AlertOptions, source?: string) => void | Promise<void>
+  confirm: (message: MessageContent, options: ConfirmOptions, source?: string) => boolean | Promise<boolean>
+  prompt: (message: MessageContent, options: PromptOptions, source?: string) => string | null | Promise<string | null>
 }
 
 export interface ExtensionHostOptions {
@@ -134,6 +134,8 @@ export interface ExtensionHostOptions {
   maxCommands?: number
   /** Capabilities granted by the validated manifest; omitted means all host API capabilities. */
   permissions?: readonly ScriptPermission[]
+  /** Test seam for the human-scale dialog deadline. */
+  dialogTimeoutMs?: number
 }
 
 interface CommandRegistration {
@@ -246,6 +248,7 @@ const MAX_MESSAGE_PART_LENGTH = 2048
 const MAX_MESSAGE_LENGTH = 8192
 const MAX_LABEL_LENGTH = 80
 const MAX_PROMPT_LENGTH = 4096
+export const DIALOG_INTERACTION_TIMEOUT_MS = 120_000
 
 function messageContent(value: unknown): MessageContent {
   if (typeof value === "string") {
@@ -427,6 +430,7 @@ export class ExtensionHost {
   private readonly onActionsChanged?: () => void
   private readonly onError?: (error: unknown) => void
   private readonly permissions: ReadonlySet<ScriptPermission>
+  private readonly dialogTimeoutMs: number
   private readonly commands = new Map<string, { registration: CommandRegistration; action: Action }>()
   private readonly actions: Action[] = []
   private readonly revokeHandlers: Array<() => void> = []
@@ -451,6 +455,7 @@ export class ExtensionHost {
     this.onActionsChanged = options.onActionsChanged
     this.onError = options.onError
     this.permissions = new Set(options.permissions ?? SCRIPT_PERMISSIONS)
+    this.dialogTimeoutMs = options.dialogTimeoutMs ?? DIALOG_INTERACTION_TIMEOUT_MS
 
     this.revokeHandlers.push(
       this.peer.register("commands.register", (params) => this.registerCommand(params)),
@@ -597,7 +602,9 @@ export class ExtensionHost {
     this.requirePermission("dialogs")
     const value = strictRecord(params, ["message", "options"], "Alert")
     const options = interactionOptions(value.options, ["okLabel"], "Alert options")
-    await this.requireInteraction().alert(messageContent(value.message), { okLabel: label(options.okLabel, "okLabel") })
+    await this.withDialogDeadline(
+      this.requireInteraction().alert(messageContent(value.message), { okLabel: label(options.okLabel, "okLabel") }, this.scriptId),
+    )
     return null
   }
 
@@ -605,9 +612,9 @@ export class ExtensionHost {
     this.requirePermission("dialogs")
     const value = strictRecord(params, ["message", "options"], "Confirm")
     const options = interactionOptions(value.options, ["confirmLabel", "cancelLabel"], "Confirm options")
-    const result = await this.requireInteraction().confirm(messageContent(value.message), {
+    const result = await this.withDialogDeadline(this.requireInteraction().confirm(messageContent(value.message), {
       confirmLabel: label(options.confirmLabel, "confirmLabel"), cancelLabel: label(options.cancelLabel, "cancelLabel"),
-    })
+    }, this.scriptId))
     if (typeof result !== "boolean") throw new Error("Confirm result is invalid")
     return result
   }
@@ -618,11 +625,11 @@ export class ExtensionHost {
     const options = interactionOptions(value.options, ["confirmLabel", "cancelLabel", "initial", "placeholder", "multiline"], "Prompt options")
     for (const key of ["initial", "placeholder"] as const) if (options[key] !== undefined && (typeof options[key] !== "string" || (options[key] as string).length > MAX_PROMPT_LENGTH)) throw new Error(`${key} must be bounded`)
     if (options.multiline !== undefined && typeof options.multiline !== "boolean") throw new Error("multiline must be a boolean")
-    const result = await this.requireInteraction().prompt(messageContent(value.message), {
+    const result = await this.withDialogDeadline(this.requireInteraction().prompt(messageContent(value.message), {
       confirmLabel: label(options.confirmLabel, "confirmLabel"), cancelLabel: label(options.cancelLabel, "cancelLabel"),
       ...(options.initial === undefined ? {} : { initial: options.initial as string }), ...(options.placeholder === undefined ? {} : { placeholder: options.placeholder as string }),
       ...(options.multiline === undefined ? {} : { multiline: options.multiline as boolean }),
-    })
+    }, this.scriptId))
     if (result !== null && (typeof result !== "string" || result.length > MAX_PROMPT_LENGTH)) throw new Error("Prompt result is invalid")
     return result
   }
@@ -701,6 +708,21 @@ export class ExtensionHost {
     const target = boundedString(value.target, "Link target", MAX_NAVIGATION_TARGET_LENGTH, true)
     const options = resolveLinkOptions(value.options)
     return linkResolutionValue(await this.requireNavigation().resolveLink(target, options)) as unknown as RpcValue
+  }
+
+  private async withDialogDeadline<T>(promise: T | Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        try { this.interaction?.dispose?.(this.scriptId) } catch (error) { this.reportError(error) }
+        const timeout = new Error("Extension dialog timed out") as Error & { code: string }
+        timeout.code = "timeout"
+        reject(timeout)
+      }, this.dialogTimeoutMs)
+      Promise.resolve(promise).then(
+        (value) => { clearTimeout(timer); resolve(value) },
+        (error) => { clearTimeout(timer); reject(error) },
+      )
+    })
   }
 
   private requireInteraction(): ExtensionInteractionCapabilities {

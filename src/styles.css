@@ -1109,7 +1109,8 @@ header button:hover {
   line-height: 1.5;
 }
 
-#dialog-input {
+#dialog-input,
+#dialog-textarea {
   font: inherit;
   padding: 0.5rem 0.7rem;
   border: 1px solid var(--soft-border);
@@ -1118,7 +1119,8 @@ header button:hover {
   color: var(--text);
 }
 
-#dialog-input:focus {
+#dialog-input:focus,
+#dialog-textarea:focus {
   outline: none;
   border-color: var(--accent);
 }

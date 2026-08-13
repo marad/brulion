@@ -174,6 +174,7 @@ const dialogBackdropEl = document.querySelector<HTMLDivElement>("#dialog-backdro
 const dialogEl = document.querySelector<HTMLDivElement>("#dialog")
 const dialogMessageEl = document.querySelector<HTMLElement>("#dialog-message")
 const dialogInputEl = document.querySelector<HTMLInputElement>("#dialog-input")
+const dialogTextareaEl = document.querySelector<HTMLTextAreaElement>("#dialog-textarea")
 const dialogCancelButton = document.querySelector<HTMLButtonElement>("#dialog-cancel")
 const dialogConfirmButton = document.querySelector<HTMLButtonElement>("#dialog-confirm")
 const extensionsBackdropEl = document.querySelector<HTMLElement>("#extensions-backdrop")
@@ -217,6 +218,7 @@ if (
   !dialogEl ||
   !dialogMessageEl ||
   !dialogInputEl ||
+  !dialogTextareaEl ||
   !dialogCancelButton ||
   !dialogConfirmButton ||
   !extensionsBackdropEl ||
@@ -582,11 +584,27 @@ const reloadExtensions = async (): Promise<void> => {
           assertActive()
           notificationCenter.show(message, source ?? "extension", options?.level ?? "info")
         },
-        dispose: (source) => source ? notificationCenter.clearSource(source) : notificationCenter.clear(),
+        dispose: (source) => {
+          if (source) {
+            notificationCenter.clearSource(source)
+            dialog.extension.dispose(source)
+          } else {
+            notificationCenter.clear()
+          }
+        },
         setSelection: () => undefined,
-        alert: async () => undefined,
-        confirm: async () => false,
-        prompt: async () => null,
+        alert: (message: import("./extension-host").MessageContent, options: import("./extension-host").AlertOptions, source?: string) => {
+          assertActive()
+          return dialog.extension.alert(message, options, source)
+        },
+        confirm: (message: import("./extension-host").MessageContent, options: import("./extension-host").ConfirmOptions, source?: string) => {
+          assertActive()
+          return dialog.extension.confirm(message, options, source)
+        },
+        prompt: (message: import("./extension-host").MessageContent, options: import("./extension-host").PromptOptions, source?: string) => {
+          assertActive()
+          return dialog.extension.prompt(message, options, source)
+        },
       },
     },
     currentSettings.extensions ?? [],
@@ -1206,6 +1224,7 @@ const dialog = mountDialog({
   dialog: dialogEl,
   message: dialogMessageEl,
   input: dialogInputEl,
+  textarea: dialogTextareaEl,
   cancelButton: dialogCancelButton,
   confirmButton: dialogConfirmButton,
 })

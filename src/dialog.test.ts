@@ -7,12 +7,13 @@ function elements(): DialogElements {
   const dialog = document.createElement("div")
   const message = document.createElement("p")
   const input = document.createElement("input")
+  const textarea = document.createElement("textarea")
   const cancelButton = document.createElement("button")
   const confirmButton = document.createElement("button")
   backdrop.hidden = true
   input.hidden = true
-  document.body.append(backdrop, dialog, message, input, cancelButton, confirmButton)
-  return { backdrop, dialog, message, input, cancelButton, confirmButton }
+  document.body.append(backdrop, dialog, message, input, textarea, cancelButton, confirmButton)
+  return { backdrop, dialog, message, input, textarea, cancelButton, confirmButton }
 }
 
 function key(target: HTMLElement, k: string) {
@@ -121,6 +122,52 @@ describe("mountDialog prompt (FEAT-0073)", () => {
     els.cancelButton.click()
 
     expect(await result).toBe(null)
+  })
+})
+
+describe("mountDialog formatted extension dialogs (FEAT-0105)", () => {
+  it("renders safe formatted content, labels, multiline input, and preserves empty acceptance", async () => {
+    const els = elements()
+    const dialog = mountDialog(els)
+    const result = dialog.extension.prompt([
+      { type: "strong", text: "Name\n" },
+      { type: "code", text: "<x>" },
+    ], { confirmLabel: "Use", cancelLabel: "No", initial: "", placeholder: "optional", multiline: true }, "source-a")
+    expect(els.message.querySelector("strong")?.textContent).toBe("Name")
+    expect(els.message.querySelector("strong br")).not.toBeNull()
+    expect(els.message.querySelector("code")?.textContent).toBe("<x>")
+    expect(els.message.querySelectorAll("a")).toHaveLength(0)
+    expect(els.textarea.hidden).toBe(false)
+    expect(els.input.hidden).toBe(true)
+    expect(els.textarea.placeholder).toBe("optional")
+    expect(els.confirmButton.textContent).toBe("Use")
+    els.confirmButton.click()
+    await expect(result).resolves.toBe("")
+  })
+
+  it("distinguishes cancel and source-scoped disposal without cancelling another source", async () => {
+    const els = elements()
+    const dialog = mountDialog(els)
+    const cancelled = dialog.extension.confirm("first", { confirmLabel: "yes", cancelLabel: "no" }, "a")
+    const other = dialog.extension.confirm("second", { confirmLabel: "yes", cancelLabel: "no" }, "b")
+    dialog.extension.dispose("a")
+    await expect(cancelled).rejects.toMatchObject({ code: "disposed" })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(els.message.textContent).toBe("second")
+    els.cancelButton.click()
+    await expect(other).resolves.toBe(false)
+  })
+
+  it("restores focus after a source dialog is disposed", async () => {
+    const els = elements()
+    const dialog = mountDialog(els)
+    const trigger = document.createElement("button")
+    document.body.append(trigger)
+    trigger.focus()
+    const pending = dialog.extension.alert("wait", { okLabel: "Done" }, "source")
+    dialog.extension.dispose("source")
+    await expect(pending).rejects.toMatchObject({ code: "disposed" })
+    expect(document.activeElement).toBe(trigger)
   })
 })
 

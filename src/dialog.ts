@@ -1,109 +1,178 @@
-/**
- * The app's own confirm/prompt/alert dialog (M35/FEAT-0073), replacing the
- * native `window.confirm`/`window.prompt`/`window.alert` calls the sidebar
- * tree used through P1-P4 — same shape as `move-picker.ts`'s `mount(els)`
- * over pre-declared (initially hidden) DOM, so it's one more instance of the
- * app's existing modal family, not a new one.
- */
+import type {
+  AlertOptions,
+  ConfirmOptions,
+  MessageContent,
+  PromptOptions,
+} from "./extension-host"
+import { renderMessageContent } from "./extension-interactions"
 
-/** The DOM nodes the dialog drives (all pre-existing, initially hidden). */
+/** The DOM nodes shared by application and extension-owned dialogs. */
 export interface DialogElements {
-  /** The full-screen backdrop; toggled via `[hidden]`, click-to-close. */
   backdrop: HTMLElement
-  /** The dialog box itself (for future use — not directly manipulated here). */
   dialog: HTMLElement
   message: HTMLElement
-  /** Shown only in prompt mode. */
   input: HTMLInputElement
-  /** Hidden in alert mode (a single dismiss button covers that case). */
+  /** Optional for hosts/tests that have not adopted multiline prompting yet. */
+  textarea?: HTMLTextAreaElement
   cancelButton: HTMLButtonElement
   confirmButton: HTMLButtonElement
 }
 
+export interface ExtensionDialogAdapter {
+  alert(message: MessageContent, options: AlertOptions, source?: string): Promise<void>
+  confirm(message: MessageContent, options: ConfirmOptions, source?: string): Promise<boolean>
+  prompt(message: MessageContent, options: PromptOptions, source?: string): Promise<string | null>
+  /** Cancel only this extension's active and queued requests. */
+  dispose(source: string): void
+}
+
 export interface Dialog {
-  /** A yes/no choice; resolves `true` only if `confirmButton` is chosen. */
   confirm(message: string, confirmLabel?: string): Promise<boolean>
-  /** A single-line text prompt; resolves the input's value, or `null` if cancelled. */
   prompt(message: string, initialValue?: string, confirmLabel?: string): Promise<string | null>
-  /** A single-button acknowledgement; resolves once dismissed. */
   alert(message: string): Promise<void>
-  /** Detach event listeners (for teardown/tests). */
+  readonly extension: ExtensionDialogAdapter
   destroy(): void
 }
 
 type Mode = "confirm" | "prompt" | "alert"
+type Result = string | boolean | void | null
 
-/** Mount the dialog over its (hidden) DOM nodes. */
+interface Request {
+  readonly mode: Mode
+  readonly message: MessageContent
+  readonly source?: string
+  readonly initial: string
+  readonly placeholder?: string
+  readonly multiline: boolean
+  readonly confirmLabel: string
+  readonly cancelLabel: string
+  readonly resolve: (value: Result) => void
+  readonly reject: (reason: unknown) => void
+}
+
+export const DISPOSED_DIALOG_ERROR = "disposed"
+
+function disposedError(source: string): Error & { code: string } {
+  const error = new Error(`Extension dialog disposed: ${source}`) as Error & { code: string }
+  error.code = DISPOSED_DIALOG_ERROR
+  return error
+}
+
+/** Mount one queue over the application's existing modal surface. */
 export function mountDialog(els: DialogElements): Dialog {
-  const { backdrop, message, input, cancelButton, confirmButton } = els
-  let open = false
+  const { backdrop, message, input, textarea, cancelButton, confirmButton } = els
+  const queue: Request[] = []
+  let active: Request | null = null
   let restoreFocus: HTMLElement | null = null
-  let resolveCurrent: ((value: string | null) => void) | null = null
-  /** Serializes calls: a `show()` that arrives while one is already open
-   * waits its turn instead of superseding the pending one — otherwise an
-   * unrelated async flow (e.g. a background move failing) could silently
-   * cancel a confirm/prompt the user hasn't answered yet (M35/FEAT-0073
-   * review fix). */
-  let queue: Promise<void> = Promise.resolve()
+  let destroyed = false
 
-  function close(value: string | null): void {
-    if (!open) return
-    open = false
-    backdrop.hidden = true
-    const resolve = resolveCurrent
-    resolveCurrent = null
-    restoreFocus?.focus?.()
+  function focusRestore(): void {
+    const target = restoreFocus
     restoreFocus = null
-    resolve?.(value)
+    if (target && target.isConnected && !target.hidden) target.focus()
   }
 
-  function openNow(mode: Mode, text: string, initialValue: string, confirmLabel: string): Promise<string | null> {
-    open = true
-    message.textContent = text
-    input.hidden = mode !== "prompt"
-    cancelButton.hidden = mode === "alert"
-    confirmButton.textContent = mode === "alert" ? "OK" : confirmLabel
-    restoreFocus = document.activeElement as HTMLElement | null
+  function finish(request: Request, value: Result, error?: unknown): void {
+    if (active !== request) return
+    active = null
+    backdrop.hidden = true
+    if (textarea) textarea.hidden = true
+    focusRestore()
+    if (error === undefined) request.resolve(value)
+    else request.reject(error)
+    pump()
+  }
+
+  function answer(value: Result): void {
+    if (!active) return
+    finish(active, value)
+  }
+
+  function render(request: Request): void {
+    active = request
+    message.replaceChildren()
+    renderMessageContent(message, request.message)
+    input.hidden = request.mode !== "prompt" || request.multiline
+    if (textarea) textarea.hidden = request.mode !== "prompt" || !request.multiline
+    cancelButton.hidden = request.mode === "alert"
+    confirmButton.textContent = request.confirmLabel
+    cancelButton.textContent = request.cancelLabel
+    restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
     backdrop.hidden = false
-    if (mode === "prompt") {
-      input.value = initialValue
-      input.focus()
-      input.setSelectionRange(input.value.length, input.value.length)
-    } else {
-      confirmButton.focus()
-    }
-    return new Promise((resolve) => {
-      resolveCurrent = resolve
+    if (request.mode === "prompt") {
+      const field = request.multiline && textarea ? textarea : input
+      field.value = request.initial
+      field.placeholder = request.placeholder ?? ""
+      field.focus()
+      field.setSelectionRange(field.value.length, field.value.length)
+    } else confirmButton.focus()
+  }
+
+  function pump(): void {
+    if (destroyed || active || queue.length === 0) return
+    render(queue.shift()!)
+  }
+
+  function enqueue(
+    mode: Mode,
+    content: MessageContent,
+    options: {
+      source?: string
+      initial?: string
+      placeholder?: string
+      multiline?: boolean
+      confirmLabel: string
+      cancelLabel: string
+    },
+  ): Promise<Result> {
+    return new Promise<Result>((resolve, reject) => {
+      const request: Request = {
+        mode,
+        message: content,
+        source: options.source,
+        initial: options.initial ?? "",
+        placeholder: options.placeholder,
+        multiline: options.multiline ?? false,
+        confirmLabel: options.confirmLabel,
+        cancelLabel: options.cancelLabel,
+        resolve,
+        reject,
+      }
+      if (destroyed) {
+        reject(disposedError(options.source ?? "dialog"))
+        return
+      }
+      queue.push(request)
+      pump()
     })
   }
 
-  /** Opens right away if nothing is showing; otherwise queues behind
-   * whatever's already open so it appears only once that's been answered. */
-  function show(mode: Mode, text: string, initialValue: string, confirmLabel: string): Promise<string | null> {
-    const result = open
-      ? queue.then(() => openNow(mode, text, initialValue, confirmLabel))
-      : openNow(mode, text, initialValue, confirmLabel)
-    queue = result.then(
-      () => undefined,
-      () => undefined,
-    )
-    return result
-  }
-
   function onConfirmClick(): void {
-    const isPrompt = !input.hidden
-    close(isPrompt ? input.value : "")
+    if (!active) return
+    if (active.mode !== "prompt") {
+      answer(active.mode === "alert" ? undefined : true)
+      return
+    }
+    const field = active.multiline && textarea ? textarea : input
+    answer(field.value)
   }
   function onCancelClick(): void {
-    close(null)
+    if (active) answer(active.mode === "confirm" ? false : null)
   }
   function onKeydown(event: KeyboardEvent): void {
-    if (!open) return
-    if (event.key === "Escape") close(null)
-    else if (event.key === "Enter" && document.activeElement === input) onConfirmClick()
+    if (!active) return
+    if (event.key === "Escape") {
+      event.preventDefault()
+      onCancelClick()
+    } else if (event.key === "Enter" && active.mode === "prompt" && !active.multiline) {
+      if (document.activeElement === input) {
+        event.preventDefault()
+        onConfirmClick()
+      }
+    }
   }
   function onBackdropClick(event: MouseEvent): void {
-    if (event.target === backdrop) close(null)
+    if (event.target === backdrop && active) onCancelClick()
   }
 
   confirmButton.addEventListener("click", onConfirmClick)
@@ -111,16 +180,44 @@ export function mountDialog(els: DialogElements): Dialog {
   document.addEventListener("keydown", onKeydown, true)
   backdrop.addEventListener("click", onBackdropClick)
 
-  return {
-    confirm: (msg, confirmLabel = "OK") => show("confirm", msg, "", confirmLabel).then((v) => v !== null),
-    prompt: (msg, initialValue = "", confirmLabel = "OK") => show("prompt", msg, initialValue, confirmLabel),
-    alert: (msg) => show("alert", msg, "", "OK").then(() => undefined),
+  const extension: ExtensionDialogAdapter = {
+    alert: (content, options, source) => enqueue("alert", content, {
+      source, confirmLabel: options.okLabel, cancelLabel: "Cancel",
+    }).then(() => undefined),
+    confirm: (content, options, source) => enqueue("confirm", content, {
+      source, confirmLabel: options.confirmLabel, cancelLabel: options.cancelLabel,
+    }).then((value) => value === true),
+    prompt: (content, options, source) => enqueue("prompt", content, {
+      source, initial: options.initial, placeholder: options.placeholder,
+      multiline: options.multiline, confirmLabel: options.confirmLabel, cancelLabel: options.cancelLabel,
+    }).then((value) => value === null ? null : value as string),
+    dispose(source) {
+      const error = disposedError(source)
+      for (let index = queue.length - 1; index >= 0; index--) {
+        if (queue[index].source !== source) continue
+        queue[index].reject(error)
+        queue.splice(index, 1)
+      }
+      if (active?.source === source) finish(active, null, error)
+    },
+  }
+
+  const result: Dialog = {
+    confirm: (text, confirmLabel = "OK") => enqueue("confirm", text, { confirmLabel, cancelLabel: "Cancel" }).then((value) => value === true),
+    prompt: (text, initialValue = "", confirmLabel = "OK") => enqueue("prompt", text, { initial: initialValue, confirmLabel, cancelLabel: "Cancel" }).then((value) => value === null ? null : value as string),
+    alert: (text) => enqueue("alert", text, { confirmLabel: "OK", cancelLabel: "Cancel" }).then(() => undefined),
+    extension,
     destroy() {
+      if (destroyed) return
+      destroyed = true
+      const error = disposedError("dialog")
+      for (const request of queue.splice(0)) request.reject(error)
+      if (active) finish(active, null, error)
       confirmButton.removeEventListener("click", onConfirmClick)
       cancelButton.removeEventListener("click", onCancelClick)
       document.removeEventListener("keydown", onKeydown, true)
       backdrop.removeEventListener("click", onBackdropClick)
-      close(null)
     },
   }
+  return result
 }
