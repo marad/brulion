@@ -360,38 +360,36 @@ export function sourceToVisible(document: RichDocument, position: number): numbe
   return range.visibleFrom + Math.min(position - range.contentFrom, range.contentTo - range.contentFrom)
 }
 
-/** Replace one visible mapped fragment. Explicit edits replace content only, so
- * imported delimiters/prefixes stay byte-for-byte intact. P2 expands this
- * primitive to rich operations and cross-fragment selections. */
+/** Replace one visible mapped fragment.
+ *
+ * The replacement text is Markdown source for that fragment. Re-importing the
+ * resulting source immediately is intentional: a caller may insert a marker
+ * sequence such as `**new**`, and the returned visible document must then agree
+ * with the source map rather than exposing the delimiters as ordinary text.
+ * Since the returned source is the new authoritative snapshot, later edits use
+ * its current coordinates and remain composable. Untouched source bytes are
+ * copied directly; P2 expands this primitive to rich operations and
+ * cross-fragment selections.
+ */
 export function replaceVisible(document: RichDocument, from: number, to: number, text: string): RichDocument {
   if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from || to > document.visible.length) {
     throw new RangeError("Visible range out of bounds")
   }
-  // Re-import after a prior replacement so source-map offsets describe the
-  // current serialized source, not a stale pre-edit document whose length may
-  // differ. This keeps independent edits composable without normalizing any
-  // untouched bytes.
-  const current = document.replacements.length ? importMarkdown(serializeMarkdown(document)) : document
-  const start = visibleRangeAt(current, from, "start")
-  const end = from === to ? start : visibleRangeAt(current, to, "end")
+  if (from === to && from === document.visible.length) {
+    return importMarkdown(document.source + text)
+  }
+
+  const start = visibleRangeAt(document, from, "start")
+  const end = from === to ? start : visibleRangeAt(document, to, "end")
   if (!start || !end) {
-    if (from !== to || current.visible.length !== 0) throw new RangeError("Visible range is not mapped")
-    const replacement: SourceReplacement = { sourceFrom: current.source.length, sourceTo: current.source.length, text }
-    return { ...current, visible: text, changed: new Map([[replacement.sourceFrom, text]]), replacements: [replacement] }
+    if (from !== 0 || to !== 0 || document.visible.length !== 0) throw new RangeError("Visible range is not mapped")
+    return importMarkdown(document.source + text)
   }
   if (start.sourceFrom !== end.sourceFrom || start.sourceTo !== end.sourceTo) {
     throw new RangeError("Replacement must stay within one mapped fragment")
   }
   const sourceFrom = start.contentFrom + (from - start.visibleFrom)
   const sourceTo = end.contentFrom + (to - end.visibleFrom)
-  const replacement: SourceReplacement = { sourceFrom, sourceTo, text }
-  const replacements = [...current.replacements.filter((item) => item.sourceTo <= sourceFrom || item.sourceFrom >= sourceTo), replacement]
-  const changed = new Map(current.changed)
-  changed.set(sourceFrom, text)
-  return {
-    ...current,
-    visible: current.visible.slice(0, from) + text + current.visible.slice(to),
-    changed,
-    replacements,
-  }
+  const nextSource = document.source.slice(0, sourceFrom) + text + document.source.slice(sourceTo)
+  return importMarkdown(nextSource)
 }

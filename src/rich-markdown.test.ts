@@ -79,6 +79,14 @@ describe("rich Markdown document", () => {
 
     const inserted = replaceVisible(twice, 0, 0, "start ")
     expect(serializeMarkdown(inserted)).toBe("start before **again** after\n[unknown](target.md)")
+
+    const marker = replaceVisible(importMarkdown("x"), 0, 1, "**y**")
+    expect(serializeMarkdown(marker)).toBe("**y**")
+    expect(marker.visible).toBe("y")
+    expect(marker.ranges.some((r) => r.visible && r.marks.includes("bold"))).toBe(true)
+    const markerEdited = replaceVisible(marker, 0, 1, "z")
+    expect(serializeMarkdown(markerEdited)).toBe("**z**")
+    expect(markerEdited.visible).toBe("z")
   })
 
   it("keeps incomplete markers literal and handles deterministic empty boundaries", () => {
