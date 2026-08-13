@@ -78,6 +78,30 @@ test("reports recursive plans and preserves matching artifact pairs", () => {
   }
 });
 
+test("compares derived artifacts as raw bytes", () => {
+  const root = mkdtempSync(join(process.cwd(), "workflow-gate-bytes-"));
+
+  try {
+    mkdirSync(join(root, "extension-kit"));
+    mkdirSync(join(root, "public"));
+    const pairs = [
+      ["API.md", "api.md"],
+      ["api-contract.json", "api-contract.json"],
+      ["brulion-extension.d.ts", "brulion-extension.d.ts"],
+    ];
+    for (const [source, generated] of pairs) {
+      writeFileSync(join(root, "extension-kit", source), Buffer.from([0xff]));
+      writeFileSync(join(root, "public", generated), Buffer.from([0xff]));
+    }
+    writeFileSync(join(root, "public", "api.md"), Buffer.from([0xfe]));
+
+    const errors = checkDerivedArtifacts(root);
+    assert.deepEqual(errors.map((error) => error.code), ["derived-artifact-drift"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("pre-review plan is observational and excludes the full browser suite", () => {
   const commands = buildPreReviewPlan({
     root,
@@ -104,6 +128,9 @@ test("pre-review CLI reports the owned range without mutating or running E2E", (
   assert.match(result.stdout, /HEAD:/);
   assert.match(result.stdout, /FEAT-0108/);
   assert.match(result.stdout, /changed paths:/);
+  assert.match(result.stdout, /spec status: passed/);
+  assert.match(result.stdout, /verification plans: passed/);
+  assert.match(result.stdout, /derived artifacts: passed/);
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /npm run e2e/);
 });
 
