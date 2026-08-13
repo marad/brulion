@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 
-import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+} from "node:fs";
 import { spawnSync } from "node:child_process";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,6 +20,7 @@ import { fileURLToPath } from "node:url";
  * @typedef {{ ok: boolean, milestonePath: string, ledger: LedgerState | null, checks: Record<string, boolean>, errors: WorkflowError[] }} PreflightResult
  * @typedef {{ exitCode: number, stdout: string, stderr: string }} PreflightReport
  * @typedef {{ ok: true, relativePath: string, absolutePath: string } | { ok: false, error: WorkflowError }} MilestonePathResult
+ * @typedef {{ ok: true, path: string, reason: "active" | "latest-closed" } | { ok: false, errors: WorkflowError[] }} MilestoneDiscovery
  */
 
 const projectSkillPaths = [
@@ -268,6 +275,95 @@ export function evaluatePreflight(observation) {
   };
 }
 
+/** @param {string} root @returns {MilestoneDiscovery} */
+export function discoverMilestonePath(root) {
+  const milestonesRoot = resolve(root, "milestones");
+  let entries;
+  try {
+    entries = readdirSync(milestonesRoot, { withFileTypes: true });
+  } catch (error) {
+    return {
+      ok: false,
+      errors: [
+        {
+          code: "milestones-unreadable",
+          path: "milestones",
+          message: `Milestones directory could not be read: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      ],
+    };
+  }
+
+  const candidates = entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name.match(/^M(\\d+)\\.md$/))
+    .filter(Boolean)
+    .map((match) => ({ name: match[0], number: Number(match[1]) }))
+    .sort((left, right) => left.number - right.number);
+  const active = [];
+  const errors = [];
+
+  for (const candidate of candidates) {
+    const path = `milestones/${candidate.name}`;
+    let markdown;
+    try {
+      markdown = readFileSync(resolve(root, path), "utf8");
+    } catch (error) {
+      errors.push({
+        code: "milestone-unreadable",
+        path,
+        message: `Milestone could not be read: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      continue;
+    }
+    const ledger = parseLedger(markdown);
+    if (ledger.errors.length > 0) {
+      errors.push({
+        code: "milestone-ledger-invalid",
+        path,
+        message: ledger.errors.map((error) => error.message).join(" "),
+      });
+      continue;
+    }
+    if (!/milestone closed/i.test(ledger.state.currentPhase)) {
+      active.push(path);
+    }
+  }
+
+  if (errors.length > 0) return { ok: false, errors };
+  if (active.length > 1) {
+    return {
+      ok: false,
+      errors: [
+        {
+          code: "milestone-ambiguous",
+          message: `Multiple active milestones found: ${active.join(", ")}. Pass --milestone explicitly or close all but one.`,
+        },
+      ],
+    };
+  }
+  if (active.length === 1) {
+    return { ok: true, path: active[0], reason: "active" };
+  }
+  if (candidates.length === 0) {
+    return {
+      ok: false,
+      errors: [
+        {
+          code: "milestone-missing",
+          path: "milestones",
+          message: "No numbered milestone ledgers were found.",
+        },
+      ],
+    };
+  }
+  return {
+    ok: true,
+    path: `milestones/${candidates.at(-1).name}`,
+    reason: "latest-closed",
+  };
+}
+
 const inspectPath = (root, path, isMilestone, collectionErrors) => {
   try {
     lstatSync(resolve(root, path));
@@ -420,8 +516,15 @@ export function run(argv) {
   }
 
   if (!milestonePath) {
-    console.error("Missing required argument: --milestone <path>");
-    return 2;
+    const discovery = discoverMilestonePath(root);
+    if (!discovery.ok) {
+      console.error("Milestone discovery blocked:");
+      for (const error of discovery.errors) {
+        console.error(`- [${error.code}] ${error.path ? `${error.path}: ` : ""}${error.message}`);
+      }
+      return 1;
+    }
+    milestonePath = discovery.path;
   }
 
   const result = formatPreflightResult(
