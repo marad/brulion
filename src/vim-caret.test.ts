@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { EditorState, type SelectionRange } from "@codemirror/state"
 import { markdown } from "@codemirror/lang-markdown"
-import { snapOutOfSpans, leadingHiddenEnd, vimCaretGuard, type Span } from "./vim-caret"
+import { snapOutOfSpans, leadingHiddenEnd, vimCaretGuard, vimCaretGuardEscape, type Span } from "./vim-caret"
 
 // FEAT-0032 AC-1..AC-5: the pure rule that keeps a caret endpoint out of a hidden
 // markup run. A position strictly inside a run snaps to an edge — forward when the
@@ -116,6 +116,13 @@ describe("vimCaretGuard (transaction filter)", () => {
   it("leaves a pointer selection alone so a click can reveal markup (AC-7)", () => {
     const main = stateAt("# Heading", 0)
       .update({ selection: { anchor: 1 }, userEvent: "select.pointer" })
+      .state.selection.main
+    expect(main.head).toBe(1)
+  })
+
+  it("bypasses snapping only for an explicitly escaped host selection", () => {
+    const main = stateAt("# Heading", 0)
+      .update({ selection: { anchor: 1 }, annotations: vimCaretGuardEscape.of(true) })
       .state.selection.main
     expect(main.head).toBe(1)
   })

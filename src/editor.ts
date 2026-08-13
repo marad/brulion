@@ -20,7 +20,7 @@ import { slashCommands } from "./slash-commands"
 import { wikilinkCompletions } from "./link-complete"
 import { contextMenu } from "./context-menu"
 import { selectionToolbar } from "./selection-toolbar"
-import { vimCaretGuard } from "./vim-caret"
+import { vimCaretGuard, vimCaretGuardEscape } from "./vim-caret"
 import { copyMarkdown } from "./copy-markdown"
 import { installVimMarkdownYank } from "./vim-yank"
 
@@ -269,6 +269,7 @@ export function setEditorSelection(view: EditorView, selection: EditorSelectionR
   view.dispatch({
     selection: { anchor: selection.anchor, head: selection.head },
     scrollIntoView: true,
+    annotations: vimCaretGuardEscape.of(true),
   })
   view.focus()
 }

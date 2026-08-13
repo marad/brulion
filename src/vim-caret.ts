@@ -1,4 +1,4 @@
-import { EditorSelection, EditorState, type Extension } from "@codemirror/state"
+import { Annotation, EditorSelection, EditorState, type Extension } from "@codemirror/state"
 import { blockSyntaxRanges, markdownSyntaxRanges } from "./markdown-render"
 
 /** A run of hidden markup the caret must not rest inside (a `# `/`> `/`* ` run). */
@@ -59,6 +59,9 @@ function hiddenSpansOnLine(state: EditorState, pos: number): Span[] {
   ]
 }
 
+/** Marks a host-controlled selection transaction that must bypass Vim caret snapping. */
+export const vimCaretGuardEscape = Annotation.define<boolean>()
+
 /**
  * Stop the caret resting inside — or before — hidden markup (FEAT-0032). The
  * default caret is already kept out of atomic ranges by CodeMirror's own motions,
@@ -77,7 +80,12 @@ function hiddenSpansOnLine(state: EditorState, pos: number): Span[] {
  * click must still place the caret inside a link to reveal its markup — FEAT-0026).
  */
 export const vimCaretGuard: Extension = EditorState.transactionFilter.of((tr) => {
-  if (!tr.selection || tr.docChanged || tr.isUserEvent("select.pointer")) return tr
+  if (
+    !tr.selection ||
+    tr.docChanged ||
+    tr.isUserEvent("select.pointer") ||
+    tr.annotation(vimCaretGuardEscape)
+  ) return tr
 
   const snap = (pos: number, prev: number): number => {
     const lineFrom = tr.state.doc.lineAt(pos).from

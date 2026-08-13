@@ -35,10 +35,11 @@ describe("extension editor selection adapter", () => {
     expect(view.state.doc.toString()).toBe("0123456789")
     expect(view.state.selection.main.anchor).toBe(8)
     expect(view.state.selection.main.head).toBe(3)
-    expect(dispatch).toHaveBeenCalledWith({
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
       selection: { anchor: 8, head: 3 },
       scrollIntoView: true,
-    })
+      annotations: expect.anything(),
+    }))
     expect(focus).toHaveBeenCalledOnce()
     expect(onChange).not.toHaveBeenCalled()
     view.destroy()
@@ -68,7 +69,7 @@ describe("extension editor selection adapter", () => {
     setEditorText(view, "short")
     const dispatch = vi.spyOn(view, "dispatch")
 
-    for (const selection of [ 
+    for (const selection of [
       { anchor: -1, head: 1 },
       { anchor: 1.5, head: 1 },
       { anchor: Number.MAX_SAFE_INTEGER + 1, head: 1 },
