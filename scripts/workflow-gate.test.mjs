@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import {
@@ -85,6 +86,32 @@ test("pre-review plan is observational and excludes the full browser suite", () 
   assert.match(rendered, /git diff abc123\.\.\.HEAD --check/);
   assert.match(rendered, /FEAT-0107/);
   assert.doesNotMatch(rendered, /npm run e2e/);
+});
+
+test("pre-review CLI reports the owned range without mutating or running E2E", () => {
+  const result = spawnSync(
+    process.execPath,
+    ["scripts/workflow-gate.mjs", "pre-review", "--base", "HEAD~1", "--spec", "FEAT-0107"],
+    { cwd: root, encoding: "utf8" },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /base:/);
+  assert.match(result.stdout, /HEAD:/);
+  assert.match(result.stdout, /FEAT-0107/);
+  assert.match(result.stdout, /changed paths:/);
+  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /npm run e2e/);
+});
+
+test("pre-review rejects an unknown base commit", () => {
+  const result = spawnSync(
+    process.execPath,
+    ["scripts/workflow-gate.mjs", "pre-review", "--base", "does-not-exist", "--spec", "FEAT-0107"],
+    { cwd: root, encoding: "utf8" },
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(`${result.stdout}\n${result.stderr}`, /base-unavailable/);
 });
 
 test("classifies implementation and workflow paths separately from documentation", () => {
