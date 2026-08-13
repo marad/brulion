@@ -2178,6 +2178,27 @@ manifests need no migration. The host validates message and option shapes
 before any UI callback, and the sandbox/bootstrap, declarations, contract,
 unit tests, and browser examples must expose the same additive inventory.
 
+**M46 P2 notification policy:** Use one dedicated host-owned live region with a
+maximum of three visible toasts and eight queued entries per notification center.
+A ninth incoming toast is dropped, accepted toasts auto-dismiss after four
+seconds, and manual dismissal promotes the FIFO queue. The notification center
+tracks the extension id internally so disposal clears only that extension's
+entries; the public RPC never supplies attribution. Render messages with text,
+`<strong>`, `<code>`, and `<br>` nodes only, and never focus a toast or its close
+button automatically.
+
+**Why:** A bounded FIFO is enough for command feedback without letting a noisy
+local script grow DOM/timer state or hide the editor. Host-derived attribution
+makes the source visible without trusting extension-supplied labels. A separate
+live region keeps notifications non-modal and avoids coupling them to conflict
+or app-dialog ownership.
+
+**Consequence (UI/project):** `notifications.show()` resolves after enqueueing;
+notification rendering and timers are independent of Markdown bytes, selection,
+and autosave. The main app binds each callback to the captured vault and
+registry disposal removes stale entries. FEAT-0105 reuses the renderer but owns
+the serialized dialog lifecycle.
+
 ## M47 keeps CodeMirror and moves Markdown out of the visible document
 
 **What:** the main note editor remains CodeMirror, but its visible document is a
