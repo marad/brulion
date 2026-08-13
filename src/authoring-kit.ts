@@ -10,13 +10,17 @@ import journalExampleManifest from "../extension-kit/examples/open-journal/manif
 import journalExampleSource from "../extension-kit/examples/open-journal/main.js?raw"
 import resolveExampleManifest from "../extension-kit/examples/resolve-and-open/manifest.json?raw"
 import resolveExampleSource from "../extension-kit/examples/resolve-and-open/main.js?raw"
+import selectionFeedbackManifest from "../extension-kit/examples/selection-feedback/manifest.json?raw"
+import selectionFeedbackSource from "../extension-kit/examples/selection-feedback/main.js?raw"
+import dialogLifecycleManifest from "../extension-kit/examples/dialog-lifecycle/manifest.json?raw"
+import dialogLifecycleSource from "../extension-kit/examples/dialog-lifecycle/main.js?raw"
 import apiReference from "../extension-kit/API.md?raw"
 import agents from "../extension-kit/AGENTS.md?raw"
 import skill from "../extension-kit/llm-skill.md?raw"
 import prompt from "../extension-kit/authoring-prompt.md?raw"
 import readme from "../extension-kit/README.md?raw"
 
-export const AUTHORING_KIT_VERSION = "1.2.0"
+export const AUTHORING_KIT_VERSION = "1.3.0"
 
 export interface AuthoringKitFile {
   path: string
@@ -34,6 +38,10 @@ const FILES: readonly AuthoringKitFile[] = [
   { path: "examples/open-journal/main.js", content: journalExampleSource },
   { path: "examples/resolve-and-open/manifest.json", content: resolveExampleManifest },
   { path: "examples/resolve-and-open/main.js", content: resolveExampleSource },
+  { path: "examples/selection-feedback/manifest.json", content: selectionFeedbackManifest },
+  { path: "examples/selection-feedback/main.js", content: selectionFeedbackSource },
+  { path: "examples/dialog-lifecycle/manifest.json", content: dialogLifecycleManifest },
+  { path: "examples/dialog-lifecycle/main.js", content: dialogLifecycleSource },
   { path: "API.md", content: apiReference },
   { path: "AGENTS.md", content: agents },
   { path: "llm-skill.md", content: skill },

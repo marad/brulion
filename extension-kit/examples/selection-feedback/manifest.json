@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": 1,
+  "id": "selection-feedback",
+  "name": "Selection feedback",
+  "version": "0.1.0",
+  "entry": "main.js",
+  "permissions": ["commands", "editor:read", "editor:selection", "notifications"]
+}

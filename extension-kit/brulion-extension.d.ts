@@ -14,19 +14,20 @@ export interface RegisterResult {
   actionId: string
 }
 
-/** The primary active editor selection, using zero-based document offsets. */
+/** The raw primary selection; anchor/head preserve direction in UTF-16 offsets. */
 export interface EditorSelection {
   anchor: number
   head: number
   text: string
 }
 
-/** Note bytes and the mtime used for a subsequent guarded write. */
+/** Direction-aware selection movement; never changes Markdown bytes. */
 export interface EditorSelectionRequest {
   anchor: number
   head: number
 }
 
+/** Host-rendered safe text fragment; HTML/Markdown is never interpreted. */
 export interface MessagePart {
   type: "text" | "strong" | "code"
   text: string
@@ -34,9 +35,13 @@ export interface MessagePart {
 
 export type MessageContent = string | readonly MessagePart[]
 
+/** Non-modal feedback; it resolves after enqueueing and never steals focus. */
 export interface NotificationOptions { level?: "info" | "success" | "warning" | "error" }
+/** Required plain-text acknowledgement label. */
 export interface AlertOptions { okLabel: string }
+/** Required plain-text labels; the result is true or false. */
 export interface ConfirmOptions { confirmLabel: string; cancelLabel: string }
+/** Prompt cancellation is null; accepted empty input remains an empty string. */
 export interface PromptOptions {
   confirmLabel: string
   cancelLabel: string
@@ -112,9 +117,11 @@ export interface BrulionApi {
     focus(): Promise<void>
   }
   notifications: {
+    /** Host-owned bounded toast; source disposal removes owned entries. */
     show(message: MessageContent, options?: NotificationOptions): Promise<void>
   }
   dialogs: {
+    /** Serialized host modal; rejects with coded timeout/disposed lifecycle errors. */
     alert(message: MessageContent, options: AlertOptions): Promise<void>
     confirm(message: MessageContent, options: ConfirmOptions): Promise<boolean>
     prompt(message: MessageContent, options: PromptOptions): Promise<string | null>

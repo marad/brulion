@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": 1,
+  "id": "dialog-lifecycle",
+  "name": "Dialog lifecycle",
+  "version": "0.1.0",
+  "entry": "main.js",
+  "permissions": ["commands", "dialogs"]
+}

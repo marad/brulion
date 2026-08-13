@@ -16,7 +16,9 @@ An extension is two ordinary files beside the notes:
 
 Use the disabled template, review the files, then enable the extension from
 **Manage extensions**. New scripts are never enabled just because they exist on
-disk.
+disk. The least-privilege interaction examples are
+`examples/selection-feedback/` and `examples/dialog-lifecycle/`; copy their
+files only after reviewing them.
 
 ```js
 export default async function activate(api) {
@@ -197,17 +199,43 @@ existing file, and deletion does not remove an empty parent folder.
 
 Use the Authoring Kit's `brulion-extension.d.ts` for editor hints, the template
 for a safe starting point, and `AGENTS.md` plus `llm-skill.md` when an agent is
-authoring or reviewing an extension.
+authoring or reviewing an extension. The kit's `selection-feedback` and
+`dialog-lifecycle` examples are deliberately disabled until explicit enablement.
 
 ## Interaction
 
-Selection reads use `editor:read` and preserve direction as `{ anchor, head, text }`; `editor:selection` grants only `setSelection({ anchor, head })`. Selection offsets are zero-based UTF-16 positions.
+Selection reads use `editor:read` and preserve direction as `{ anchor, head, text }`; `editor:selection` grants only `setSelection({ anchor, head })`. Selection offsets are zero-based UTF-16 positions. Setting a selection focuses and scrolls the editor but never writes Markdown.
 
 Notifications and dialogs accept `MessageContent`: a string or a non-empty array of at most 32 `{ type: "text" | "strong" | "code", text }` parts. Each part is at most 2,048 UTF-16 code units and the total is at most 8,192. Labels are required plain strings of at most 80 code units; prompt initial and placeholder values are at most 4,096, and `multiline` is explicit. HTML, Markdown, links, callbacks, and arbitrary UI are not accepted.
 
 ```js
-await api.notifications.show([{ type: "strong", text: "Saved" }], { level: "success" })
-const answer = await api.dialogs.prompt("Title", { confirmLabel: "Save", cancelLabel: "Cancel" })
+const selection = await api.editor.getSelection()
+await api.editor.setSelection({ anchor: selection.head, head: selection.anchor })
+await api.notifications.show([
+  { type: "strong", text: "Selected" },
+  { type: "text", text: ": " + selection.text },
+], { level: "success" })
 ```
 
-Prompt cancellation returns `null`, distinct from an accepted empty string. Dialog work is host-owned and is rejected with `disposed` when the extension is disposed or its vault is stale.
+Dialogs use the existing host modal and wait FIFO behind other Brulion or
+extension dialogs. Focus is restored after completion; a notification never
+steals it. Prompt cancellation returns `null`, distinct from an accepted empty
+string. A multiline prompt uses a textarea, while Enter confirms only a
+single-line prompt. Dialog calls reject with coded `timeout` at the 120-second
+human deadline or `disposed` when the extension/vault is torn down; catch both
+before continuing work. The `examples/dialog-lifecycle/` directory contains a
+least-privilege command that demonstrates all three dialog types and catches
+those lifecycle errors. A prompt returns `string | null`:
+
+```js
+const answer = await api.dialogs.prompt("Title", {
+  confirmLabel: "Save",
+  cancelLabel: "Cancel",
+})
+if (answer !== null) console.log("Accepted title", answer)
+```
+
+For file fidelity, selection and feedback examples do not write notes. If an
+extension does write, read first, pass the returned `lastModified` to
+`notes.write()`, and handle `status: "conflict"`; never use a last-writer-wins
+rewrite.

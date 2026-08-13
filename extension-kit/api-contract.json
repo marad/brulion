@@ -1,7 +1,7 @@
 {
   "kind": "brulion.extension-api",
   "apiVersion": 1,
-  "kitVersion": "1.2.0",
+  "kitVersion": "1.3.0",
   "title": "Brulion Extension API",
   "summary": "A small JSON-like capability API for explicitly enabled local JavaScript extensions.",
   "runtime": {
@@ -832,11 +832,13 @@
           ],
           "returns": "void",
           "errors": [
-            "Rejects if the permission or bounded wire contract is invalid."
+            "Rejects if the permission or bounded wire contract is invalid.",
+            "Rejects when the captured vault is stale or the extension is disposed."
           ],
           "behavior": [
             "Never steals focus or accepts action callbacks.",
-            "Messages are bounded and rendered by the host."
+            "Messages are bounded and rendered by the host.",
+            "Resolves after enqueueing; it does not wait for dismissal."
           ],
           "example": "await api.notifications.show(\"Saved\", { level: \"success\" })",
           "since": 1
@@ -869,10 +871,13 @@
           ],
           "returns": "void",
           "errors": [
-            "Rejects if the permission or bounded wire contract is invalid."
+            "Rejects if the permission or bounded wire contract is invalid.",
+            "Rejects with disposed when the extension or captured vault is disposed.",
+            "Rejects with timeout when unanswered at the 120000 ms interactive deadline."
           ],
           "behavior": [
-            "Uses the 120000 ms interactive deadline."
+            "Uses the 120000 ms interactive deadline.",
+            "Waits FIFO behind another Brulion or extension modal and restores focus after completion."
           ],
           "example": "await api.dialogs.alert(\"Ready\", { okLabel: \"OK\" })",
           "since": 1
@@ -899,11 +904,14 @@
           ],
           "returns": "boolean",
           "errors": [
-            "Rejects if the permission or bounded wire contract is invalid."
+            "Rejects if the permission or bounded wire contract is invalid.",
+            "Rejects with disposed when the extension or captured vault is disposed.",
+            "Rejects with timeout when unanswered at the 120000 ms interactive deadline."
           ],
           "behavior": [
             "Returns true for confirmation and false for cancellation.",
-            "Uses the 120000 ms interactive deadline."
+            "Uses the 120000 ms interactive deadline.",
+            "Waits FIFO behind another Brulion or extension modal and restores focus after completion."
           ],
           "example": "const yes = await api.dialogs.confirm(\"Delete?\", { confirmLabel: \"Delete\", cancelLabel: \"Cancel\" })",
           "since": 1
@@ -930,11 +938,14 @@
           ],
           "returns": "string | null",
           "errors": [
-            "Rejects if the permission or bounded wire contract is invalid."
+            "Rejects if the permission or bounded wire contract is invalid.",
+            "Rejects with disposed when the extension or captured vault is disposed.",
+            "Rejects with timeout when unanswered at the 120000 ms interactive deadline."
           ],
           "behavior": [
             "Returns null on cancellation and an empty string when accepted empty.",
-            "Uses the 120000 ms interactive deadline."
+            "Uses the 120000 ms interactive deadline.",
+            "Waits FIFO behind another Brulion or extension modal and restores focus after completion."
           ],
           "example": "const value = await api.dialogs.prompt(\"Name\", { confirmLabel: \"Save\", cancelLabel: \"Cancel\" })",
           "since": 1
