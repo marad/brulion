@@ -2157,6 +2157,27 @@ interactions deterministically. New permissions are least-privilege and fail
 closed, and the Authoring Kit, contract, sandbox bootstrap, unit tests, and
 Chromium tests must remain synchronized.
 
+**Implementation boundary (M46 P0):** Selection control gets its own
+`editor:selection` permission; the existing `editor:read` grant keeps
+`getSelection()` compatible for already-authored extensions, while
+`editor:write` remains content mutation only. Notifications and dialogs use
+separate `notifications` and `dialogs` grants. Shared messages are a bounded
+`string | MessagePart[]` value (`text`/`strong`/`code` parts), and dialog button
+labels are required plain strings rather than host defaults. Dialog RPCs use a
+120-second human deadline while ordinary capability calls retain five seconds.
+
+**Why:** These boundaries make selection movement independently revocable,
+avoid breaking existing manifests, and keep user interaction least-privilege.
+A single bounded message value prevents separate formatting dialects; required
+labels make extension intent visible in the host-owned modal; and a method-level
+human deadline avoids turning every capability into a two-minute failure path.
+
+**Consequence (UI/project):** New manifests must request `editor:selection`
+to move the primary selection and `notifications`/`dialogs` for feedback; old
+manifests need no migration. The host validates message and option shapes
+before any UI callback, and the sandbox/bootstrap, declarations, contract,
+unit tests, and browser examples must expose the same additive inventory.
+
 ## M47 keeps CodeMirror and moves Markdown out of the visible document
 
 **What:** the main note editor remains CodeMirror, but its visible document is a
