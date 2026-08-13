@@ -113,6 +113,10 @@ function matchingDelimiter(text: string, delimiter: string, start: number): numb
     if (escapedAt(text, i) || !text.startsWith(delimiter, i)) continue
     // A single `*`/`_` cannot close in the middle of a strong delimiter pair.
     if (delimiter.length === 1 && (text[i - 1] === delimiter || text[i + 1] === delimiter)) continue
+    // In a closing run such as the final `***` in `**bold *italic***`, the
+    // first two stars close the nested italic span. Let the outer strong span
+    // take the final pair instead of stopping at an overlapping pair.
+    if (delimiter.length === 2 && text[i + 2] === delimiter[0]) continue
     return i
   }
   return -1
