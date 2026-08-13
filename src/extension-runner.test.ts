@@ -15,6 +15,9 @@ describe("FEAT-0083 extension runner bootstrap", () => {
     expect(html).toContain('getActiveNote: () => call("navigation.getActiveNote", null)')
     expect(html).toContain('openNote: (path, options) => call("navigation.openNote", { path, ...(options === undefined ? {} : { options }) })')
     expect(html).toContain('resolveLink: (target, options) => call("navigation.resolveLink", { target, ...(options === undefined ? {} : { options }) })')
+    expect(html).toContain('code: "disposed"')
+    expect(html).toContain('code: "timeout"')
+    expect(html).toContain("DIALOG_TIMEOUT_MS = 120000")
     expect(html).not.toContain("globalThis.brulion.getActiveNote")
   })
 

@@ -140,6 +140,23 @@ describe("FEAT-0081 ExtensionRpcPeer", () => {
     ).rejects.toMatchObject({ code: "invalid_value" })
   })
 
+  it("rejects envelopes with unknown top-level fields", async () => {
+    const [hostPort, extensionPort] = channel()
+    const host = new ExtensionRpcPeer(hostPort, { nonce: "nonce-1", timeoutMs: 50 })
+    const extension = new ExtensionRpcPeer(extensionPort, { nonce: "nonce-1", timeoutMs: 50 })
+    const handler = vi.fn(() => null)
+    host.register("secret", handler)
+    host.start()
+    extension.start()
+    await Promise.all([host.ready(), extension.ready()])
+    hostPort.dispatch({ ...envelope("request"), id: "hostile-3", method: "secret", params: null, extra: true })
+    await settle()
+    expect(hostPort.sent.at(-1)).toMatchObject({ type: "error", error: { code: "protocol" } })
+    expect(handler).not.toHaveBeenCalled()
+    host.dispose()
+    extension.dispose()
+  })
+
   it("times out a hung call and disposal rejects pending work and removes listeners", async () => {
     const [hostPort, extensionPort] = channel()
     const host = new ExtensionRpcPeer(hostPort, { nonce: "nonce-1", timeoutMs: 10 })

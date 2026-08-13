@@ -185,11 +185,31 @@ describe("FEAT-0083 ExtensionHost", () => {
     const { host, extension } = await setup({ interaction, permissions: ["notifications", "dialogs"] })
     await expect(extension.call("notifications.show", { message: [{ type: "strong", text: "ok\\nnow" }], options: { level: "success" } })).resolves.toBe(null)
     await expect(extension.call("notifications.show", { message: [], options: {} })).rejects.toMatchObject({ code: "handler_error" })
+    await expect(extension.call("notifications.show", { message: "x", options: { level: "info", extra: true } })).rejects.toMatchObject({ code: "handler_error" })
+    await expect(extension.call("notifications.show", { message: "x", extra: true })).rejects.toMatchObject({ code: "handler_error" })
     await expect(extension.call("dialogs.prompt", { message: "name", options: { okLabel: "OK", cancelLabel: "Cancel" } })).resolves.toBe(null)
-    await expect(extension.call("dialogs.alert", { message: "x", options: { okLabel: "<b>" } })).resolves.toBe(null)
+    await expect(extension.call("dialogs.alert", { message: "x", options: { okLabel: "<b>" } })).rejects.toMatchObject({ code: "handler_error" })
+    await expect(extension.call("dialogs.alert", { message: "x", options: { okLabel: "OK\\n" } })).rejects.toMatchObject({ code: "handler_error" })
+    await expect(extension.call("dialogs.confirm", { message: "x", options: { confirmLabel: "Yes", cancelLabel: "No" } })).resolves.toBe(true)
     await expect(extension.call("editor.setSelection", { anchor: 1, head: 1 })).rejects.toMatchObject({ code: "handler_error" })
     expect(interaction.setSelection).not.toHaveBeenCalled()
     host.dispose()
+  })
+
+  it("rejects invalid interactive results before they cross the RPC boundary", async () => {
+    const confirm = vi.fn(async () => "yes" as unknown as boolean)
+    const prompt = vi.fn(async () => 42 as unknown as string | null)
+    const { host, extension } = await setup({ interaction: { confirm, prompt }, permissions: ["dialogs"] })
+    await expect(extension.call("dialogs.confirm", { message: "x", options: { confirmLabel: "Yes", cancelLabel: "No" } })).rejects.toMatchObject({ code: "handler_error" })
+    await expect(extension.call("dialogs.prompt", { message: "x", options: { okLabel: "OK", cancelLabel: "Cancel" } })).rejects.toMatchObject({ code: "handler_error" })
+    host.dispose()
+  })
+
+  it("disposes host interaction state before closing its peer", async () => {
+    const dispose = vi.fn()
+    const { host } = await setup({ interaction: { dispose } })
+    host.dispose()
+    expect(dispose).toHaveBeenCalledOnce()
   })
 
   it("normalizes note paths and preserves write mtimes while rejecting traversal", async () => {
