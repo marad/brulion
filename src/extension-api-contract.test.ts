@@ -38,6 +38,7 @@ describe("versioned extension API contract", () => {
     const contract = parseExtensionApiContract(contractSource)
     expect(contract.kind).toBe("brulion.extension-api")
     expect(contract.apiVersion).toBe(1)
+    expect(contract.kitVersion).toBe("1.3.0")
     expect(contract.kitVersion).toBe(AUTHORING_KIT_VERSION)
     expect(contract.manifest.fields.map((field) => field.name)).toEqual([
       "schemaVersion",
@@ -116,6 +117,10 @@ describe("versioned extension API contract", () => {
     expect(apiReference).toContain("editor:selection")
     expect(apiReference).toContain("notifications.show")
     expect(apiReference).toContain("dialogs.prompt")
+    expect(apiReference).toContain("FIFO")
+    expect(apiReference).toContain("disposed")
+    expect(apiReference).toContain("timeout")
+    expect(apiReference).toContain("accepted empty string")
     const selectionMethod = methods.find((method) => method.id === "editor.getSelection")
     expect(selectionMethod?.returns).toBe("EditorSelection")
     expect(contract.types.find((type) => type.name === "EditorSelection")?.declaration).toContain("anchor: number")
@@ -130,6 +135,15 @@ describe("versioned extension API contract", () => {
     expect(apiReference).toContain("confirmLabel")
     expect(apiReference).not.toContain('dialogs.prompt(\"Title\", { okLabel:')
     expect(apiReference).toContain("never implicitly creates or mutates")
+    const notificationMethod = methods.find((method) => method.id === "notifications.show")
+    expect(notificationMethod?.behavior.join(" ")).toContain("focus")
+    const dialogMethods = methods.filter((method) => method.id.startsWith("dialogs."))
+    expect(dialogMethods).toHaveLength(3)
+    for (const method of dialogMethods) {
+      expect(method.errors.join(" ")).toContain("disposed")
+      expect(method.errors.join(" ")).toContain("timeout")
+    }
+    expect(methods.find((method) => method.id === "dialogs.prompt")?.behavior.join(" ")).toContain("empty string")
     expect(declarations).not.toContain('export type ExtensionIconName = "braces"')
   })
 

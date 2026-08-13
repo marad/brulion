@@ -28,6 +28,7 @@ describe("extension API documentation surface", () => {
     expect(staticApiReference).toBe(apiReference)
     expect(staticContractSource).toBe(contractSource)
     expect(staticDeclarations).toBe(declarations)
+    expect(apiReference).toContain("1.3.0")
   })
 
   it("keeps the human guide focused on safe, file-faithful authoring", () => {
@@ -44,5 +45,9 @@ describe("extension API documentation surface", () => {
       expect(method.permission).not.toBe("")
       expect(method.returns).not.toBe("")
     }
+    expect(contractMethods(contract).map((method) => method.id)).toContain("notifications.show")
+    expect(contractMethods(contract).map((method) => method.id)).toContain("dialogs.prompt")
+    expect(apiReference).toContain("examples/selection-feedback")
+    expect(apiReference).toContain("examples/dialog-lifecycle")
   })
 })
