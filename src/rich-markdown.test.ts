@@ -5,6 +5,9 @@ import {
   sourceToVisible,
   visibleToSource,
   replaceVisible,
+  applyInlineInputRule,
+  classifyInlineBoundary,
+  toggleInlineMark,
 } from "./rich-markdown"
 
 describe("rich Markdown document", () => {
@@ -113,6 +116,40 @@ describe("rich Markdown document", () => {
     const markerEdited = replaceVisible(marker, 0, 1, "z")
     expect(serializeMarkdown(markerEdited)).toBe("**z**")
     expect(markerEdited.visible).toBe("z")
+  })
+
+  it("applies explicit inline input boundaries without changing source bytes", () => {
+    const source = "**hello** "
+    const result = applyInlineInputRule(importMarkdown(source), source.length, "space")
+    expect(result.converted).toBe(true)
+    expect(result.document.visible).toBe("hello ")
+    expect(result.caret).toBe("hello ".length)
+    expect(serializeMarkdown(result.document)).toBe(source)
+
+    expect(applyInlineInputRule(importMarkdown("**hello**"), 9, "eof").converted).toBe(true)
+    expect(applyInlineInputRule(importMarkdown("**hello"), 7, "eof").converted).toBe(false)
+    expect(applyInlineInputRule(importMarkdown("**hello**."), 10, "eof").converted).toBe(false)
+    expect(applyInlineInputRule(importMarkdown("http://**hello** "), 17, "space").converted).toBe(false)
+    expect(applyInlineInputRule(importMarkdown("# **hello** "), 13, "space").converted).toBe(false)
+    expect(classifyInlineBoundary("**hello** ", 10, "space").kind).toBe("bold")
+    expect(classifyInlineBoundary("**hello", 7, "eof")).toBeNull()
+  })
+
+  it("toggles rich inline marks canonically and unwraps imported spelling", () => {
+    const plain = importMarkdown("hello")
+    const wrapped = toggleInlineMark(plain, 0, 5, "bold")
+    expect(wrapped?.document.visible).toBe("hello")
+    expect(serializeMarkdown(wrapped!.document)).toBe("**hello**")
+    expect(wrapped!.anchor).toBe(2)
+    expect(wrapped!.head).toBe(7)
+
+    const imported = importMarkdown("__hello__")
+    const unwrapped = toggleInlineMark(imported, 0, 5, "bold")
+    expect(serializeMarkdown(unwrapped!.document)).toBe("hello")
+    expect(unwrapped!.document.visible).toBe("hello")
+
+    expect(toggleInlineMark(importMarkdown("  "), 0, 2, "italic")).toBeNull()
+    expect(toggleInlineMark(importMarkdown("`hello`"), 0, 5, "code")?.document.visible).toBe("hello")
   })
 
   it("keeps incomplete markers literal and handles deterministic empty boundaries", () => {

@@ -8,6 +8,23 @@
  */
 
 export type RichMark = "bold" | "italic" | "code" | "link" | "wikilink"
+export type InlineMark = "bold" | "italic" | "code"
+export type InlineBoundary = "space" | "enter" | "tab" | "eof" | "blur" | "save"
+
+export interface InlineBoundaryMatch {
+  kind: InlineMark
+  delimiter: string
+  sourceFrom: number
+  sourceTo: number
+  contentFrom: number
+  contentTo: number
+}
+
+export interface InlineInputResult {
+  document: RichDocument
+  converted: boolean
+  caret: number
+}
 export type RichBlock =
   | "paragraph"
   | "heading"
@@ -80,6 +97,7 @@ const MARKDOWN_LINK = /\[[^\]\n]+\]\([^\)\n]+\)/
 const LINK_LIKE = /\[[^\n]*$/
 const WIKILINK = /\[\[[^\]\n]+\]\]/
 const HTML_LIKE = /<!--[\s\S]*?(?:-->|$)|<\/?[A-Za-z][^>\n]*(?:>|$)/
+const INLINE_DELIMITER = /^(\*\*|__|\*|_|`)([^\n]*?)\1([ \t]*)$/
 
 function push(
   fragments: Fragment[],
@@ -150,6 +168,80 @@ function marksForDelimiter(delimiter: string): RichMark[] {
   if (delimiter === "**" || delimiter === "__") return ["bold"]
   if (delimiter === "`") return ["code"]
   return ["italic"]
+}
+
+function markForDelimiter(delimiter: string): InlineMark {
+  return delimiter === "`" ? "code" : delimiter.length === 2 ? "bold" : "italic"
+}
+
+function delimiterForMark(mark: InlineMark): string {
+  return mark === "bold" ? "**" : mark === "italic" ? "*" : "`"
+}
+
+/** Classify a complete inline span immediately before an explicit boundary. */
+export function classifyInlineBoundary(
+  source: string,
+  cursor: number,
+  boundary: InlineBoundary,
+): InlineBoundaryMatch | null {
+  if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > source.length) return null
+  const boundaryCursor = boundary === "space" ? cursor - 1 : cursor
+  if (boundaryCursor < 0) return null
+  const before = source.slice(0, boundaryCursor)
+  const match = INLINE_DELIMITER.exec(before)
+  if (!match) return null
+  const delimiter = match[1]
+  const content = match[2]
+  if (!content || /^\s*$/.test(content) || escapedAt(before, match.index)) return null
+  if (delimiter !== "`" && /https?:\/\//i.test(content)) return null
+  if (boundary === "space" && source[cursor - 1] !== " ") return null
+  const sourceFrom = match.index
+  const contentFrom = sourceFrom + delimiter.length
+  return {
+    kind: markForDelimiter(delimiter),
+    delimiter,
+    sourceFrom,
+    sourceTo: boundaryCursor,
+    contentFrom,
+    contentTo: contentFrom + content.length,
+  }
+}
+
+/** Apply a completed marker boundary while retaining Markdown as source. */
+export function applyInlineInputRule(
+  document: RichDocument,
+  cursor: number,
+  boundary: InlineBoundary,
+): InlineInputResult {
+  const match = classifyInlineBoundary(document.source, cursor, boundary)
+  if (!match) return { document, converted: false, caret: cursor }
+  const projected = importMarkdown(document.source)
+  const visibleCaret = sourceToVisible(projected, cursor)
+  return { document: projected, converted: true, caret: visibleCaret }
+}
+
+/** Toggle a visible range using canonical markers or unwrap its matching mark. */
+export function toggleInlineMark(
+  document: RichDocument,
+  from: number,
+  to: number,
+  mark: InlineMark,
+): { document: RichDocument; anchor: number; head: number } | null {
+  if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from || to > document.visible.length) return null
+  if (from === to || /^\s*$/.test(document.visible.slice(from, to))) return null
+  const target = document.ranges.find((range) => range.visible && from >= range.visibleFrom && to <= range.visibleTo)
+  const marker = delimiterForMark(mark)
+  if (target?.marks.includes(mark)) {
+    const sourceFrom = target.contentFrom - marker.length
+    const sourceTo = target.contentTo + marker.length
+    const inner = document.source.slice(target.contentFrom, target.contentTo)
+    const next = importMarkdown(document.source.slice(0, sourceFrom) + inner + document.source.slice(sourceTo))
+    return { document: next, anchor: from, head: to }
+  }
+  const sourceFrom = visibleToSource(document, from)
+  const sourceTo = visibleToSource(document, to)
+  const next = importMarkdown(document.source.slice(0, sourceFrom) + marker + document.source.slice(sourceFrom, sourceTo) + marker + document.source.slice(sourceTo))
+  return { document: next, anchor: from + marker.length, head: to + marker.length }
 }
 
 /** Parse emphasis/code only. Unsupported constructs are handled by opaqueLine. */
