@@ -187,6 +187,21 @@ describe("mountDialog alert (FEAT-0073)", () => {
 })
 
 describe("mountDialog host-modal coordination (FEAT-0105)", () => {
+  it("allows a host-owned alert triggered by a picker callback to show while the picker remains open", async () => {
+    const els = elements()
+    const dialog = mountDialog({
+      ...els,
+      isBlocked: (source) => source !== undefined,
+    })
+
+    const pending = dialog.alert("Some items could not be moved")
+    expect(els.backdrop.hidden).toBe(false)
+    expect(els.message.textContent).toBe("Some items could not be moved")
+
+    els.confirmButton.click()
+    await expect(pending).resolves.toBeUndefined()
+  })
+
   it("waits behind a host modal and resumes without stacking", async () => {
     const els = elements()
     const blocker = document.createElement("div")

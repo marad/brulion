@@ -16,8 +16,8 @@ export interface DialogElements {
   textarea?: HTMLTextAreaElement
   cancelButton: HTMLButtonElement
   confirmButton: HTMLButtonElement
-  /** True while another host-owned modal surface owns the single modal slot. */
-  isBlocked?: () => boolean
+  /** True while another host-owned modal surface owns the single modal slot for extension requests. */
+  isBlocked?: (source?: string) => boolean
 }
 
 export interface ExtensionDialogAdapter {
@@ -76,6 +76,13 @@ export function mountDialog(els: DialogElements): Dialog {
     if (target && target.isConnected && !target.hidden) target.focus()
   }
 
+  // The shared slot coordinates extension dialogs with host surfaces. Host-owned
+  // alerts/prompts are themselves part of that surface, so they must be allowed
+  // to open while another host overlay (for example Move to…) is visible.
+  function isExtensionBlocked(request: Request | null): boolean {
+    return request?.source !== undefined && isBlocked(request.source)
+  }
+
   function finish(request: Request, value: Result, error?: unknown): void {
     if (active !== request) return
     active = null
@@ -84,7 +91,7 @@ export function mountDialog(els: DialogElements): Dialog {
     if (textarea) textarea.hidden = true
     // Do not steal focus from a host modal that opened while this request was
     // suspended. The observer restores this target once the host surface closes.
-    if (!isBlocked()) focusRestore()
+    if (!isExtensionBlocked(request)) focusRestore()
     if (error === undefined) request.resolve(value)
     else request.reject(error)
     pump()
@@ -97,7 +104,7 @@ export function mountDialog(els: DialogElements): Dialog {
 
   function focusActive(): void {
     const request = active
-    if (!request || destroyed || isBlocked()) return
+    if (!request || destroyed || isExtensionBlocked(request)) return
     suspended = false
     backdrop.hidden = false
     if (request.mode === "prompt") {
@@ -122,14 +129,14 @@ export function mountDialog(els: DialogElements): Dialog {
       field.value = request.initial
       field.placeholder = request.placeholder ?? ""
     }
-    if (isBlocked()) {
+    if (isExtensionBlocked(request)) {
       suspended = true
       backdrop.hidden = true
     } else focusActive()
   }
 
   function pump(): void {
-    if (destroyed || active || queue.length === 0 || isBlocked()) return
+    if (destroyed || active || queue.length === 0 || isExtensionBlocked(queue[0])) return
     render(queue.shift()!)
   }
 
@@ -207,12 +214,12 @@ export function mountDialog(els: DialogElements): Dialog {
   const hostModalObserver = els.isBlocked && typeof MutationObserver !== "undefined"
     ? new MutationObserver(() => {
       if (destroyed) return
-      if (active && isBlocked()) {
+      if (active && isExtensionBlocked(active)) {
         suspended = true
         backdrop.hidden = true
       } else if (active && suspended) {
         focusActive()
-      } else if (!active && !isBlocked() && restoreFocus) {
+      } else if (!active && restoreFocus) {
         focusRestore()
       }
       pump()
