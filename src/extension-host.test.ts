@@ -243,13 +243,13 @@ describe("FEAT-0083 ExtensionHost", () => {
       rpcTimeoutMs: 20,
     })
 
-    const pending = extension.call("dialogs.alert", {
+    const pending = expect(extension.call("dialogs.alert", {
       message: "stuck",
       options: { okLabel: "OK" },
-    })
-    await vi.advanceTimersByTimeAsync(19)
+    })).rejects.toMatchObject({ code: "timeout" })
+    await vi.advanceTimersByTimeAsync(1)
     expect(dispose).toHaveBeenCalledWith("daily-tools")
-    await expect(pending).rejects.toMatchObject({ code: "timeout" })
+    await pending
 
     release?.()
     host.dispose()

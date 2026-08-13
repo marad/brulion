@@ -1227,6 +1227,15 @@ const dialog = mountDialog({
   textarea: dialogTextareaEl,
   cancelButton: dialogCancelButton,
   confirmButton: dialogConfirmButton,
+  // All these overlays predate the shared dialog queue. Keep the single modal
+  // slot authoritative without making their independent modules depend on it.
+  isBlocked: () =>
+    !conflictBackdropEl.hidden ||
+    !settingsBackdropEl.hidden ||
+    !switcherBackdropEl.hidden ||
+    !paletteBackdropEl.hidden ||
+    !moveBackdropEl.hidden ||
+    !extensionsBackdropEl.hidden,
 })
 
 function destinationChoices(): string[] {

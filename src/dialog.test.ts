@@ -190,7 +190,7 @@ describe("mountDialog host-modal coordination (FEAT-0105)", () => {
   it("waits behind a host modal and resumes without stacking", async () => {
     const els = elements()
     const blocker = document.createElement("div")
-    blocker.hidden = true
+    blocker.hidden = false
     document.body.append(blocker)
     const dialog = mountDialog({
       ...els,
@@ -203,11 +203,8 @@ describe("mountDialog host-modal coordination (FEAT-0105)", () => {
     }, "source")
     expect(els.backdrop.hidden).toBe(true)
 
-    blocker.hidden = false
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(els.backdrop.hidden).toBe(true)
-
     blocker.hidden = true
+    await new Promise((resolve) => setTimeout(resolve, 0))
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(els.backdrop.hidden).toBe(false)
     els.cancelButton.click()

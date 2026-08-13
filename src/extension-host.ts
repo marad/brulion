@@ -249,6 +249,14 @@ const MAX_MESSAGE_LENGTH = 8192
 const MAX_LABEL_LENGTH = 80
 const MAX_PROMPT_LENGTH = 4096
 export const DIALOG_INTERACTION_TIMEOUT_MS = 120_000
+// The child starts its method timer just before the host receives the RPC
+// request. Leave a short cleanup reserve for that ordering so host cleanup wins
+// the deadline race and disposes the old source before the child can issue another
+// same-source request.
+const DIALOG_HOST_TIMEOUT_LEAD_MS = 1_000
+function hostDialogTimeoutMs(timeoutMs: number): number {
+  return Math.max(1, timeoutMs - DIALOG_HOST_TIMEOUT_LEAD_MS)
+}
 
 function messageContent(value: unknown): MessageContent {
   if (typeof value === "string") {
@@ -717,7 +725,7 @@ export class ExtensionHost {
         const timeout = new Error("Extension dialog timed out") as Error & { code: string }
         timeout.code = "timeout"
         reject(timeout)
-      }, this.dialogTimeoutMs)
+      }, hostDialogTimeoutMs(this.dialogTimeoutMs))
       Promise.resolve(promise).then(
         (value) => { clearTimeout(timer); resolve(value) },
         (error) => { clearTimeout(timer); reject(error) },

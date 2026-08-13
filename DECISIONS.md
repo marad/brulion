@@ -2219,6 +2219,24 @@ multiline prompt controls. `ExtensionHost`/runner disposal must close extension
 requests before RPC shutdown; timeout cleanup must leave the modal reusable.
 No dialog value can alter Markdown bytes or cross the DOM/FSA boundary.
 
+**M46 P3 modal-slot hardening:** The shared dialog queue treats every existing
+full-screen interaction surface (conflict, settings, switcher, palette, move,
+and extension management) as a blocker. A queued dialog waits for those
+surfaces; if one appears asynchronously while an extension dialog is active,
+the extension surface is suspended and resumes after the host surface closes.
+
+**Why:** Those older UI modules own their own `hidden` toggles and cannot be
+made to import the extension dialog queue without a broad rewrite. A host-side
+blocker predicate plus a `hidden`-attribute observer preserves one visible modal
+and keeps the established app surfaces authoritative, including conflicts that
+can arise from the background poller.
+
+**Consequence (UI/project):** `mountDialog` accepts the host modal predicate and
+observes its DOM signal; it restores focus only when no host modal owns it. The
+human-scale host deadline leads the child timer by a small cleanup reserve, so
+source disposal happens before a child timeout can leave an old host request
+alive. No modal coordination or timeout change touches Markdown bytes.
+
 ## M47 keeps CodeMirror and moves Markdown out of the visible document
 
 **What:** the main note editor remains CodeMirror, but its visible document is a

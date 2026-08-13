@@ -16,6 +16,8 @@ export interface DialogElements {
   textarea?: HTMLTextAreaElement
   cancelButton: HTMLButtonElement
   confirmButton: HTMLButtonElement
+  /** True while another host-owned modal surface owns the single modal slot. */
+  isBlocked?: () => boolean
 }
 
 export interface ExtensionDialogAdapter {
@@ -61,9 +63,11 @@ function disposedError(source: string): Error & { code: string } {
 /** Mount one queue over the application's existing modal surface. */
 export function mountDialog(els: DialogElements): Dialog {
   const { backdrop, message, input, textarea, cancelButton, confirmButton } = els
+  const isBlocked = els.isBlocked ?? (() => false)
   const queue: Request[] = []
   let active: Request | null = null
   let restoreFocus: HTMLElement | null = null
+  let suspended = false
   let destroyed = false
 
   function focusRestore(): void {
@@ -75,9 +79,13 @@ export function mountDialog(els: DialogElements): Dialog {
   function finish(request: Request, value: Result, error?: unknown): void {
     if (active !== request) return
     active = null
+    suspended = false
     backdrop.hidden = true
     if (textarea) textarea.hidden = true
-    focusRestore()
+    // Do not steal focus from a host modal that opened while this request was
+    // suspended. The host surface owns focus until it closes.
+    if (isBlocked()) restoreFocus = null
+    else focusRestore()
     if (error === undefined) request.resolve(value)
     else request.reject(error)
     pump()
@@ -86,6 +94,18 @@ export function mountDialog(els: DialogElements): Dialog {
   function answer(value: Result): void {
     if (!active) return
     finish(active, value)
+  }
+
+  function focusActive(): void {
+    const request = active
+    if (!request || destroyed || isBlocked()) return
+    suspended = false
+    backdrop.hidden = false
+    if (request.mode === "prompt") {
+      const field = request.multiline && textarea ? textarea : input
+      field.focus()
+      field.setSelectionRange(field.value.length, field.value.length)
+    } else confirmButton.focus()
   }
 
   function render(request: Request): void {
@@ -98,18 +118,19 @@ export function mountDialog(els: DialogElements): Dialog {
     confirmButton.textContent = request.confirmLabel
     cancelButton.textContent = request.cancelLabel
     restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    backdrop.hidden = false
     if (request.mode === "prompt") {
       const field = request.multiline && textarea ? textarea : input
       field.value = request.initial
       field.placeholder = request.placeholder ?? ""
-      field.focus()
-      field.setSelectionRange(field.value.length, field.value.length)
-    } else confirmButton.focus()
+    }
+    if (isBlocked()) {
+      suspended = true
+      backdrop.hidden = true
+    } else focusActive()
   }
 
   function pump(): void {
-    if (destroyed || active || queue.length === 0) return
+    if (destroyed || active || queue.length === 0 || isBlocked()) return
     render(queue.shift()!)
   }
 
@@ -180,6 +201,30 @@ export function mountDialog(els: DialogElements): Dialog {
   document.addEventListener("keydown", onKeydown, true)
   backdrop.addEventListener("click", onBackdropClick)
 
+  // Existing modal surfaces predate this queue and toggle their own `hidden`
+  // attributes. Observe that host-owned signal so a queued request wakes when
+  // the surface closes, and suspend an active extension request if a host modal
+  // appears asynchronously (for example, an external-change conflict).
+  const hostModalObserver = els.isBlocked && typeof MutationObserver !== "undefined"
+    ? new MutationObserver(() => {
+      if (destroyed) return
+      if (active && isBlocked()) {
+        suspended = true
+        backdrop.hidden = true
+      } else if (active && suspended) {
+        focusActive()
+      }
+      pump()
+    })
+    : null
+  if (hostModalObserver && document.documentElement) {
+    hostModalObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["hidden"],
+      subtree: true,
+    })
+  }
+
   const extension: ExtensionDialogAdapter = {
     alert: (content, options, source) => enqueue("alert", content, {
       source, confirmLabel: options.okLabel, cancelLabel: "Cancel",
@@ -217,6 +262,7 @@ export function mountDialog(els: DialogElements): Dialog {
       cancelButton.removeEventListener("click", onCancelClick)
       document.removeEventListener("keydown", onKeydown, true)
       backdrop.removeEventListener("click", onBackdropClick)
+      hostModalObserver?.disconnect()
     },
   }
   return result
