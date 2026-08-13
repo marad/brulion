@@ -1,32 +1,21 @@
+import { readFileSync } from "node:fs"
 import { test, expect, type Page } from "@playwright/test"
 
-// FEAT-0106/AC-5: the fixture mirrors the published selection-feedback example,
-// then reaches it through the real OPFS discovery, sandbox iframe, RPC, palette,
-// workbench, and API-reference paths.
+// FEAT-0106/AC-5: load the checked-in Authoring Kit files themselves, then
+// reach them through real OPFS discovery, the sandbox iframe, RPC, palette,
+// workbench, and API-reference paths. Keeping these sources file-backed makes
+// this browser test fail if the published example and its fixture diverge.
 const FOLDER = "e2e-extension-authoring-kit-folder"
 const NOTE = "authoring kit bytes stay unchanged"
 const EXTENSION_ID = "selection-feedback"
-
-const manifest = JSON.stringify({
-  schemaVersion: 1,
-  apiVersion: 1,
-  id: EXTENSION_ID,
-  name: "Selection feedback",
-  version: "0.1.0",
-  entry: "main.js",
-  permissions: ["commands", "editor:read", "editor:selection", "notifications"],
-})
-
-const source = String.raw`export default async function activate(api) {
-  await api.commands.register({ id: "selection-feedback", label: "Show selection feedback" }, async () => {
-    const selection = await api.editor.getSelection()
-    await api.editor.setSelection({ anchor: selection.head, head: selection.anchor })
-    await api.notifications.show([
-      { type: "strong", text: "Selected" },
-      { type: "text", text: ": " + selection.text },
-    ], { level: "success" })
-  })
-}`
+const manifest = readFileSync(
+  new URL("../extension-kit/examples/selection-feedback/manifest.json", import.meta.url),
+  "utf8",
+)
+const source = readFileSync(
+  new URL("../extension-kit/examples/selection-feedback/main.js", import.meta.url),
+  "utf8",
+)
 
 async function stubPicker(page: Page) {
   await page.addInitScript((folder) => {
