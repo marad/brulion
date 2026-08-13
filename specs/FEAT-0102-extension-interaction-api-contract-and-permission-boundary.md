@@ -1,0 +1,114 @@
+---
+id: FEAT-0102
+title: Extension interaction API contract and permission boundary
+status: draft
+depends_on: [FEAT-0083, FEAT-0084, FEAT-0088, FEAT-0091]
+---
+
+## Intent
+
+An explicitly enabled local extension needs a small, stable language for
+interacting with the active editor and the user, but those interactions must
+remain host-owned and least-privilege. Define the additive API v1 contract
+before implementing its editor or modal bodies: directional primary-selection
+values, safe formatted messages, notification and dialog methods, permissions,
+wire limits, and the bounded lifecycle rules that keep an extension from
+receiving DOM, CodeMirror, filesystem, or browser-notification capabilities.
+
+## Behavior
+
+The public v1 inventory adds `editor.setSelection`,
+`notifications.show`, and `dialogs.alert`, `dialogs.confirm`, and
+`dialogs.prompt` to the existing command, editor, notes, and navigation
+methods. `editor.getSelection` changes its result from a normalized `from`/`to`
+pair to `EditorSelection { anchor, head, text }`; both offsets are zero-based
+UTF-16 positions in the raw active markdown document and preserve direction.
+`editor.setSelection({ anchor, head })` is selection control, not content write.
+
+Selection reads continue to use `editor:read` for compatibility. The new
+`editor:selection` permission grants only `editor.setSelection`; it never grants
+content replacement. `notifications` grants only `notifications.show`, and
+`dialogs` grants only the three host-dialog methods. All new permissions fail
+closed and are optional for existing manifests.
+
+Messages use one JSON-like contract in both namespaces. `MessageContent` is
+plain text or a non-empty array of `MessagePart` values. Each part has a
+`type` of `text`, `strong`, or `code` and a string `text`; a newline in any
+fragment is semantic content, not markup. A message is limited to 32 parts,
+2,048 UTF-16 code units per part, and 8,192 code units in total. The host owns
+the rendering and extension attribution; HTML, Markdown parsing, links, CSS,
+nested parts, and callbacks are not part of the contract.
+
+`notifications.show(message, options?)` is non-blocking and accepts the
+`info`, `success`, `warning`, or `error` level (default `info`). Its options
+contain no action callback. `dialogs.alert(message, options)`,
+`dialogs.confirm(message, options)`, and `dialogs.prompt(message, options)`
+use the same message type and require plain-text labels for every visible
+button: `okLabel` for alert, and `confirmLabel` plus `cancelLabel` for confirm
+and prompt. Labels are at most 80 UTF-16 code units. Prompt options may include
+an initial value and placeholder (each at most 4,096 code units) and an explicit
+`multiline` boolean. Prompt cancellation returns `null`; accepting an empty
+value returns the empty string.
+
+Human interaction uses a 120,000 ms RPC deadline for dialog calls; ordinary
+capability calls retain the 5,000 ms deadline. Disposing a runner or detaching
+its vault rejects active and queued dialog work with the bounded `disposed`
+capability error, restores host focus, and leaves no modal or pending RPC
+request behind. A stale-vault interaction fails before invoking an application
+callback. The host and sandbox exchange only bounded JSON-like values, and the
+sandbox exposes no DOM, CodeMirror object, File System Access handle, system
+notification, or arbitrary extension UI surface.
+
+## Acceptance criteria
+
+- AC-1: Given the checked-in v1 contract, declarations, API reference, host
+  allowlist, and sandbox bootstrap, when their interaction surface is
+  enumerated, then `editor.setSelection`, `notifications.show`, and all three
+  `dialogs.*` methods appear exactly once with matching names, signatures,
+  result types, and permissions, and no undocumented interaction RPC exists.
+- AC-2: Given an existing manifest that omits every new M46 permission, when it
+  is parsed and activated, then it remains valid and all previously granted
+  command, editor, notes, and navigation methods retain their old behavior;
+  given `editor:read` without `editor:selection`, `notifications` without
+  `dialogs`, or `dialogs` without `notifications`, then each ungranted M46
+  method rejects before its injected host callback runs.
+- AC-3: Given a valid selection result or `setSelection` request, when it crosses
+  the host boundary, then it uses only `{ anchor, head, text }` or
+  `{ anchor, head }`, preserves reverse direction and collapsed cursors, and
+  rejects non-integer, negative, out-of-document, or extra-field values without
+  calling the editor callback.
+- AC-4: Given a message value, when it is validated, then plain strings and
+  `text`/`strong`/`code` parts with semantic newlines are accepted within the
+  part and total bounds, while empty parts arrays, unknown kinds, nested or
+  extra fields, non-strings, overlong fragments, and overlong totals reject
+  before rendering.
+- AC-5: Given notification or dialog options, when they cross the host
+  boundary, then only the documented severity, bounded labels, prompt values,
+  and boolean multiline flag are accepted; every visible button has a supplied
+  plain-text label, unknown fields and HTML-shaped values reject, and prompt
+  cancellation remains distinguishable from an accepted empty string.
+- AC-6: Given an interactive dialog call, when a human answers before the
+  deadline, then the result travels over the existing nonce-bound RPC as a
+  JSON-like value; when the deadline expires, the call rejects with `timeout`,
+  and the ordinary 5-second deadline is not used for the dialog request.
+- AC-7: Given an active or queued dialog belonging to an extension, when the
+  runner is disposed or its vault becomes stale, then the host closes its
+  extension-owned modal state, restores prior focus, rejects/settles all
+  associated work with `disposed`, and does not leave a pending RPC or invoke
+  an application callback after disposal.
+- AC-8: Given the sandbox bootstrap and a hostile message fragment or dialog
+  label, when the public API is rendered or inspected, then the host uses
+  text/line-break nodes and host-owned elements only; extension HTML, links,
+  DOM references, CodeMirror values, filesystem handles, and system notification
+  APIs never cross the boundary.
+
+## Out of scope
+
+- Implementing the CodeMirror selection adapter, notification toast UI, or
+  formatted dialog DOM; those are FEAT-0103 through FEAT-0105.
+- System/OS notifications, browser notification permissions, choose/picker
+  flows, clipboard, automatic events, timers/background execution, custom
+  extension UI, DOM/FSA handles, packages, TypeScript, or network access.
+- Changing the extension API version or requiring new permissions from existing
+  extensions.
+
