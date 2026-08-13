@@ -160,6 +160,37 @@ describe("FEAT-0081 ExtensionRpcPeer", () => {
     extension.dispose()
   })
 
+  it("preserves only explicit timeout/disposed handler codes across response envelopes", async () => {
+    const [hostPort, extensionPort] = channel()
+    const host = new ExtensionRpcPeer(hostPort, { nonce: "nonce-1", timeoutMs: 50 })
+    const extension = new ExtensionRpcPeer(extensionPort, { nonce: "nonce-1", timeoutMs: 50 })
+    host.register("coded-timeout", () => {
+      const error = new Error("dialog timed out") as Error & { code: string }
+      error.code = "timeout"
+      throw error
+    })
+    host.register("coded-disposed", () => {
+      const error = new Error("dialog disposed") as Error & { code: string }
+      error.code = "disposed"
+      throw error
+    })
+    host.register("arbitrary-code", () => {
+      const error = new Error("ordinary handler failure") as Error & { code: string }
+      error.code = "not-a-transport-code"
+      throw error
+    })
+    host.start()
+    extension.start()
+    await Promise.all([host.ready(), extension.ready()])
+
+    await expect(extension.call("coded-timeout", null)).rejects.toMatchObject({ code: "timeout", message: "dialog timed out" })
+    await expect(extension.call("coded-disposed", null)).rejects.toMatchObject({ code: "disposed", message: "dialog disposed" })
+    await expect(extension.call("arbitrary-code", null)).rejects.toMatchObject({ code: "handler_error", message: "ordinary handler failure" })
+
+    host.dispose()
+    extension.dispose()
+  })
+
   it("times out a hung call and disposal rejects pending work and removes listeners", async () => {
     const [hostPort, extensionPort] = channel()
     const host = new ExtensionRpcPeer(hostPort, { nonce: "nonce-1", timeoutMs: 10 })

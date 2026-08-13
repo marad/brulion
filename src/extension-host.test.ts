@@ -52,6 +52,7 @@ async function setup(options: {
   interaction?: Partial<import("./extension-host").ExtensionInteractionCapabilities>
   maxCommands?: number
   permissions?: readonly ScriptPermission[]
+  dialogTimeoutMs?: number
 } = {}): Promise<{
   host: ExtensionHost
   extension: ExtensionRpcPeer
@@ -95,6 +96,7 @@ async function setup(options: {
     maxCommands: options.maxCommands,
     permissions: options.permissions,
     interaction,
+    dialogTimeoutMs: options.dialogTimeoutMs,
   })
   host.start()
   extension.start()
@@ -206,6 +208,44 @@ describe("FEAT-0083 ExtensionHost", () => {
     const { host, extension } = await setup({ interaction: { confirm, prompt }, permissions: ["dialogs"] })
     await expect(extension.call("dialogs.confirm", { message: "x", options: { confirmLabel: "Yes", cancelLabel: "No" } })).rejects.toMatchObject({ code: "handler_error" })
     await expect(extension.call("dialogs.prompt", { message: "x", options: { confirmLabel: "OK", cancelLabel: "Cancel" } })).rejects.toMatchObject({ code: "handler_error" })
+    host.dispose()
+  })
+
+  it("preserves coded dialog timeout and disposal errors across response envelopes", async () => {
+    const timeout = new Error("dialog timed out") as Error & { code: string }
+    timeout.code = "timeout"
+    const disposed = new Error("dialog disposed") as Error & { code: string }
+    disposed.code = "disposed"
+    const alert = vi.fn()
+      .mockRejectedValueOnce(timeout)
+      .mockRejectedValueOnce(disposed)
+    const { host, extension } = await setup({ interaction: { alert }, permissions: ["dialogs"] })
+
+    await expect(extension.call("dialogs.alert", { message: "wait", options: { okLabel: "OK" } }))
+      .rejects.toMatchObject({ code: "timeout", message: "dialog timed out" })
+    await expect(extension.call("dialogs.alert", { message: "wait", options: { okLabel: "OK" } }))
+      .rejects.toMatchObject({ code: "disposed", message: "dialog disposed" })
+
+    host.dispose()
+  })
+
+  it("times out a dialog, disposes its source, and allows a later dialog", async () => {
+    let release: (() => void) | undefined
+    const alert = vi.fn()
+      .mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve }))
+      .mockResolvedValueOnce(undefined)
+    const dispose = vi.fn()
+    const { host, extension } = await setup({
+      interaction: { alert, dispose }, permissions: ["dialogs"], dialogTimeoutMs: 5,
+    })
+
+    await expect(extension.call("dialogs.alert", { message: "stuck", options: { okLabel: "OK" } }))
+      .rejects.toMatchObject({ code: "timeout" })
+    expect(dispose).toHaveBeenCalledWith("daily-tools")
+    release?.()
+    await expect(extension.call("dialogs.alert", { message: "next", options: { okLabel: "OK" } }))
+      .resolves.toBe(null)
+    expect(alert).toHaveBeenCalledTimes(2)
     host.dispose()
   })
 
