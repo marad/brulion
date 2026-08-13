@@ -66,6 +66,10 @@ the missing mapping, and fix it before continuing.
 - Run `git status --short --branch` and `specman status --verbose`.
 - Create or update a durable phase ledger in `milestones/MX.md` (current phase,
   last completed gate, and exact next action). A chat summary is not enough.
+- For an active phase, reserve a `## Review ledger` section for the exact
+  review base SHA, reviewed HEAD, round/status, findings/dispositions, and
+  command/test evidence. Definition-only or queued milestones are not active
+  until `/skill:goal` records a working phase.
 
 **Decisions are made autonomously, reviewed at the end.** Don't stop to ask the
 user about a milestone's open decisions up front. Make the call yourself — pick
@@ -95,9 +99,15 @@ report instead).
    files, no new module). Do **not** hand-write a module straight into
    existence. **Tests come before bodies** — write the failing test first, then
    the implementation.
-4. **Review**: run **`/skill:review-until-clean`**, which loops
+4. **Review**: first run the read-only handoff
+   `npm run workflow:gate -- pre-review --base <exact-base-sha> --spec FEAT-NNNN`.
+   Then run **`/skill:review-until-clean`**, which loops
    **`/skill:code-review`** every phase — not an ad-hoc reviewer — until no
-   noteworthy findings remain. Honor that skill's two rules: **restructure after
+   noteworthy findings remain. Give the reviewer the exact base and current
+   HEAD; keep one canonical reviewer per round and record each result in the
+   phase's `Review ledger`. A failed, stopped, or blocked worker is never clean.
+   Use targeted tests while fixing a round and the full suite only for the
+   final shipping gate. Honor that skill's two rules: **restructure after
    2 rounds of the same class of finding** (stop patching effects, fix the cause),
    and make every test added for a fix **discriminating** (it must fail against
    the pre-fix behavior).
@@ -112,7 +122,9 @@ report instead).
 7. **Ship only after the whole milestone is closed**: require a clean source
    worktree, all active specs `in-sync`, `specman validate`, and these commands:
    `npm test -- --run`, `npm run build`, and `npm run e2e`; then push to `main`.
-   GitHub Actions redeploys to Pages.
+   The full workflow gate also checks verification-plan recursion and checked-in
+   derived-artifact drift, and resolves the active milestone from its ledger
+   instead of a historical hard-coded path. GitHub Actions redeploys to Pages.
 
 **Subagent isolation and liveness are also gates.** Keep one writer per
 worktree. Mutation-capable workers use `worktree:true`; review/scout agents are

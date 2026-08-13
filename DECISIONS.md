@@ -2237,7 +2237,7 @@ human-scale host deadline leads the child timer by a small cleanup reserve, so
 source disposal happens before a child timeout can leave an old host request
 alive. No modal coordination or timeout change touches Markdown bytes.
 
-## Workflow evidence is checked before review, while the full gate remains authoritative (M45 P3 → FEAT-0107)
+## Workflow evidence is checked before review, while the full gate remains authoritative (M45 P3 → FEAT-0108)
 
 **What:** Keep the existing full quality gate — `specman validate`, workflow
 checks, Vitest, build, and Chromium — as the shipping authority, but add a
@@ -2262,7 +2262,7 @@ open ledgers. Reviewers receive a precise base/HEAD handoff, while targeted
 tests remain the normal feedback loop during a round and the full suite still
 runs once before shipping.
 
-## Review evidence is a durable ledger, not chat context (M45 P3 → FEAT-0107)
+## Review evidence is a durable ledger, not chat context (M45 P3 → FEAT-0108)
 
 **What:** Each adversarial review loop records the base SHA, reviewed HEAD,
 round, status, material findings/dispositions, and commands/tests/evidence in
