@@ -59,6 +59,10 @@ describe("rich Markdown document", () => {
     const unsupported = importMarkdown("before ~~strike~~ after")
     expect(unsupported.visible).toBe("before ~~strike~~ after")
     expect(unsupported.ranges[0]?.block).toBe("opaque")
+
+    const incompleteLink = importMarkdown("[unknown] and [x](target")
+    expect(incompleteLink.visible).toBe("[unknown] and [x](target")
+    expect(incompleteLink.ranges[0]?.block).toBe("opaque")
   })
 
   it("changes only one mapped fragment while preserving its delimiters and unknown source", () => {
