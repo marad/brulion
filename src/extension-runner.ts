@@ -48,11 +48,14 @@ export function createExtensionBootstrapHtml(): string {
     if (!value || typeof value !== "object") return false
     const objects = seen || new Set()
     if (objects.has(value)) return false
+    if (Array.isArray(value)) {
+      objects.add(value)
+      try { return value.every((item) => rpcValue(item, objects)) } finally { objects.delete(value) }
+    }
     const prototype = Object.getPrototypeOf(value)
     if (prototype !== Object.prototype && prototype !== null) return false
     objects.add(value)
     try {
-      if (Array.isArray(value)) return value.every((item) => rpcValue(item, objects))
       return Object.keys(value).every((key) => rpcValue(value[key], objects))
     } finally {
       objects.delete(value)

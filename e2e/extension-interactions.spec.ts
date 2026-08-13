@@ -16,7 +16,7 @@ const manifest = JSON.stringify({
   permissions: ["commands", "notifications"],
 })
 
-const source = `export default async function activate(api) {
+const source = String.raw`export default async function activate(api) {
   await api.commands.register({ id: "notify", label: "Show formatted notification" }, async () => {
     await api.notifications.show([
       { type: "text", text: "plain\nline" },
