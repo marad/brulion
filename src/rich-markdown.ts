@@ -365,12 +365,17 @@ export function replaceVisible(document: RichDocument, from: number, to: number,
   if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from || to > document.visible.length) {
     throw new RangeError("Visible range out of bounds")
   }
-  const start = visibleRangeAt(document, from, "start")
-  const end = visibleRangeAt(document, to, "end")
+  // Re-import after a prior replacement so source-map offsets describe the
+  // current serialized source, not a stale pre-edit document whose length may
+  // differ. This keeps independent edits composable without normalizing any
+  // untouched bytes.
+  const current = document.replacements.length ? importMarkdown(serializeMarkdown(document)) : document
+  const start = visibleRangeAt(current, from, "start")
+  const end = from === to ? start : visibleRangeAt(current, to, "end")
   if (!start || !end) {
-    if (from !== to || document.visible.length !== 0) throw new RangeError("Visible range is not mapped")
-    const replacement: SourceReplacement = { sourceFrom: document.source.length, sourceTo: document.source.length, text }
-    return { ...document, visible: text, changed: new Map([[replacement.sourceFrom, text]]), replacements: [replacement] }
+    if (from !== to || current.visible.length !== 0) throw new RangeError("Visible range is not mapped")
+    const replacement: SourceReplacement = { sourceFrom: current.source.length, sourceTo: current.source.length, text }
+    return { ...current, visible: text, changed: new Map([[replacement.sourceFrom, text]]), replacements: [replacement] }
   }
   if (start.sourceFrom !== end.sourceFrom || start.sourceTo !== end.sourceTo) {
     throw new RangeError("Replacement must stay within one mapped fragment")
@@ -378,12 +383,12 @@ export function replaceVisible(document: RichDocument, from: number, to: number,
   const sourceFrom = start.contentFrom + (from - start.visibleFrom)
   const sourceTo = end.contentFrom + (to - end.visibleFrom)
   const replacement: SourceReplacement = { sourceFrom, sourceTo, text }
-  const replacements = [...document.replacements.filter((item) => item.sourceTo <= sourceFrom || item.sourceFrom >= sourceTo), replacement]
-  const changed = new Map(document.changed)
+  const replacements = [...current.replacements.filter((item) => item.sourceTo <= sourceFrom || item.sourceFrom >= sourceTo), replacement]
+  const changed = new Map(current.changed)
   changed.set(sourceFrom, text)
   return {
-    ...document,
-    visible: document.visible.slice(0, from) + text + document.visible.slice(to),
+    ...current,
+    visible: current.visible.slice(0, from) + text + current.visible.slice(to),
     changed,
     replacements,
   }
