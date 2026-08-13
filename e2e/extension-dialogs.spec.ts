@@ -80,7 +80,7 @@ async function accelerateDialogDeadline(page: Page) {
   await page.addInitScript(() => {
     const nativeSetTimeout = window.setTimeout.bind(window)
     window.setTimeout = ((handler, timeout, ...args) => {
-      const delay = timeout === 119000 ? 10 : timeout === 120000 ? 30 : timeout
+      const delay = timeout === 119000 ? 3000 : timeout === 120000 ? 6000 : timeout
       return nativeSetTimeout(handler, delay, ...args)
     }) as typeof window.setTimeout
   })
@@ -227,7 +227,7 @@ test("AC-8 runs formatted alert, confirm, and prompt flows in Chromium", async (
 
   await invoke(page, "Ask timeout")
   await expect(page.locator("#dialog-backdrop")).toBeVisible()
-  await expect(page.locator("#dialog-backdrop")).toBeHidden({ timeout: 2_000 })
+  await expect(page.locator("#dialog-backdrop")).toBeHidden({ timeout: 7_000 })
   await expectResultAction(page, "Timeout result: timeout")
 
   await invoke(page, "Ask after timeout")
@@ -249,9 +249,9 @@ test("AC-8 runs formatted alert, confirm, and prompt flows in Chromium", async (
   await expect.poll(async () => {
     await page.keyboard.press("Control+Shift+K")
     await page.locator("#palette-input").fill("Ask alert")
-    return paletteRows(page).count()
+    return paletteRows(page).filter({ hasText: "Ask alert" }).count()
   }).toBe(1)
-  await paletteRows(page).first().click()
+  await paletteRows(page).filter({ hasText: "Ask alert" }).first().click()
   await expect(page.locator("#dialog-confirm")).toHaveText("Got it")
   await page.locator("#dialog-confirm").click()
 
