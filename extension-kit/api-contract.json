@@ -28,7 +28,13 @@
       "commandIdMaxLength": 64,
       "commandLabelMaxLength": 120,
       "commandDescriptionMaxLength": 240,
-      "notePathMaxLength": 512
+      "notePathMaxLength": 512,
+      "dialogTimeoutMs": 120000,
+      "messageMaxParts": 32,
+      "messagePartMaxCodeUnits": 2048,
+      "messageMaxCodeUnits": 8192,
+      "labelMaxCodeUnits": 80,
+      "promptValueMaxCodeUnits": 4096
     },
     "unsupported": [
       "TypeScript execution or transpilation",
@@ -178,6 +184,32 @@
       ],
       "description": "Open an existing note through Brulion's active notes view.",
       "risk": "Can change the active view and flush its pending edit through the normal guarded save path; it cannot create a missing note."
+    },
+    {
+      "id": "editor:selection",
+      "grants": [
+        "editor.setSelection"
+      ],
+      "description": "Move the active primary selection without changing markdown bytes.",
+      "risk": "Can move editor focus and selection; it cannot write content."
+    },
+    {
+      "id": "notifications",
+      "grants": [
+        "notifications.show"
+      ],
+      "description": "Show host-owned in-app notifications.",
+      "risk": "Can display bounded messages without stealing focus."
+    },
+    {
+      "id": "dialogs",
+      "grants": [
+        "dialogs.alert",
+        "dialogs.confirm",
+        "dialogs.prompt"
+      ],
+      "description": "Ask through host-owned bounded dialogs.",
+      "risk": "Can request user interaction; dialogs are bounded and lifecycle-controlled."
     }
   ],
   "types": [
@@ -204,7 +236,12 @@
     {
       "name": "EditorSelection",
       "description": "The primary active editor selection, using zero-based document offsets.",
-      "declaration": "export interface EditorSelection {\n  from: number\n  to: number\n  text: string\n}"
+      "declaration": "export interface EditorSelection {\n  anchor: number\n  head: number\n  text: string\n}"
+    },
+    {
+      "name": "EditorSelectionRequest",
+      "description": "Direction-aware primary selection control request.",
+      "declaration": "export interface EditorSelectionRequest {\n  anchor: number\n  head: number\n}"
     },
     {
       "name": "NoteContent",
@@ -260,6 +297,36 @@
       "name": "LinkResolution",
       "declaration": "export type LinkResolution =\n  | { status: \"resolved\"; path: string; anchor: string | null }\n  | { status: \"missing\"; path: string; anchor: string | null }\n  | { status: \"external\"; target: string }\n  | { status: \"invalid\"; target: string }",
       "description": "Discriminated, read-only link resolution result."
+    },
+    {
+      "name": "MessagePart",
+      "description": "Safe formatted message fragment.",
+      "declaration": "export interface MessagePart {\n  type: \"text\" | \"strong\" | \"code\"\n  text: string\n}"
+    },
+    {
+      "name": "MessageContent",
+      "description": "Plain text or safe formatted fragments.",
+      "declaration": "export type MessageContent = string | readonly MessagePart[]"
+    },
+    {
+      "name": "NotificationOptions",
+      "description": "Optional notification severity.",
+      "declaration": "export interface NotificationOptions { level?: \"info\" | \"success\" | \"warning\" | \"error\" }"
+    },
+    {
+      "name": "AlertOptions",
+      "description": "Required plain-text acknowledgement label.",
+      "declaration": "export interface AlertOptions { okLabel: string }"
+    },
+    {
+      "name": "ConfirmOptions",
+      "description": "Required plain-text decision labels.",
+      "declaration": "export interface ConfirmOptions { confirmLabel: string; cancelLabel: string }"
+    },
+    {
+      "name": "PromptOptions",
+      "description": "Required labels and bounded prompt controls.",
+      "declaration": "export interface PromptOptions {\n  okLabel: string\n  cancelLabel: string\n  initial?: string\n  placeholder?: string\n  multiline?: boolean\n}"
     }
   ],
   "namespaces": [
@@ -372,6 +439,32 @@
             "When there is no selected range, from equals to."
           ],
           "example": "const selection = await api.editor.getSelection()\nconsole.log(selection.text)",
+          "since": 1
+        },
+        {
+          "id": "editor.setSelection",
+          "name": "setSelection",
+          "signature": "editor.setSelection(selection)",
+          "permission": "editor:selection",
+          "description": "Moves the primary selection without changing markdown bytes.",
+          "parameters": [
+            {
+              "name": "selection",
+              "type": "EditorSelectionRequest",
+              "required": true,
+              "description": "Direction-aware zero-based UTF-16 anchor and head offsets."
+            }
+          ],
+          "returns": "void",
+          "errors": [
+            "Rejects if editor:selection is missing or offsets are invalid/out of document."
+          ],
+          "behavior": [
+            "Preserves direction and collapsed cursors.",
+            "Focuses and scrolls the editor into view.",
+            "Never replaces content."
+          ],
+          "example": "await api.editor.setSelection({ anchor: 10, head: 4 })",
           "since": 1
         },
         {
@@ -709,6 +802,141 @@
             "Does not verify heading existence, open a browser, navigate, create a note, or write bytes."
           ],
           "example": "const result = await api.navigation.resolveLink(\"../tasks/today.md#done\", { kind: \"markdown\", from: \"Journal/week.md\" })",
+          "since": 1
+        }
+      ]
+    },
+    {
+      "name": "notifications",
+      "summary": "Show host-owned non-blocking notifications.",
+      "methods": [
+        {
+          "id": "notifications.show",
+          "name": "show",
+          "signature": "notifications.show(message, options?)",
+          "permission": "notifications",
+          "description": "Shows a safe host-owned notification.",
+          "parameters": [
+            {
+              "name": "message",
+              "type": "MessageContent",
+              "required": true,
+              "description": "Bounded plain or formatted message."
+            },
+            {
+              "name": "options",
+              "type": "NotificationOptions",
+              "required": false,
+              "description": "Optional severity; defaults to info."
+            }
+          ],
+          "returns": "void",
+          "errors": [
+            "Rejects if the permission or bounded wire contract is invalid."
+          ],
+          "behavior": [
+            "Never steals focus or accepts action callbacks.",
+            "Messages are bounded and rendered by the host."
+          ],
+          "example": "await api.notifications.show(\"Saved\", { level: \"success\" })",
+          "since": 1
+        }
+      ]
+    },
+    {
+      "name": "dialogs",
+      "summary": "Ask through host-owned bounded dialogs.",
+      "methods": [
+        {
+          "id": "dialogs.alert",
+          "name": "alert",
+          "signature": "dialogs.alert(message, options)",
+          "permission": "dialogs",
+          "description": "Shows an acknowledgement dialog.",
+          "parameters": [
+            {
+              "name": "message",
+              "type": "MessageContent",
+              "required": true,
+              "description": "Bounded plain or formatted message."
+            },
+            {
+              "name": "options",
+              "type": "AlertOptions",
+              "required": true,
+              "description": "Plain okLabel, maximum 80 UTF-16 code units."
+            }
+          ],
+          "returns": "void",
+          "errors": [
+            "Rejects if the permission or bounded wire contract is invalid."
+          ],
+          "behavior": [
+            "Uses the 120000 ms interactive deadline."
+          ],
+          "example": "await api.dialogs.alert(\"Ready\", { okLabel: \"OK\" })",
+          "since": 1
+        },
+        {
+          "id": "dialogs.confirm",
+          "name": "confirm",
+          "signature": "dialogs.confirm(message, options)",
+          "permission": "dialogs",
+          "description": "Shows a decision dialog.",
+          "parameters": [
+            {
+              "name": "message",
+              "type": "MessageContent",
+              "required": true,
+              "description": "Bounded plain or formatted message."
+            },
+            {
+              "name": "options",
+              "type": "ConfirmOptions",
+              "required": true,
+              "description": "Plain confirmLabel and cancelLabel."
+            }
+          ],
+          "returns": "boolean",
+          "errors": [
+            "Rejects if the permission or bounded wire contract is invalid."
+          ],
+          "behavior": [
+            "Returns true for confirmation and false for cancellation.",
+            "Uses the 120000 ms interactive deadline."
+          ],
+          "example": "const yes = await api.dialogs.confirm(\"Delete?\", { confirmLabel: \"Delete\", cancelLabel: \"Cancel\" })",
+          "since": 1
+        },
+        {
+          "id": "dialogs.prompt",
+          "name": "prompt",
+          "signature": "dialogs.prompt(message, options)",
+          "permission": "dialogs",
+          "description": "Shows a bounded text prompt.",
+          "parameters": [
+            {
+              "name": "message",
+              "type": "MessageContent",
+              "required": true,
+              "description": "Bounded plain or formatted message."
+            },
+            {
+              "name": "options",
+              "type": "PromptOptions",
+              "required": true,
+              "description": "Labels plus bounded initial/placeholder and explicit multiline."
+            }
+          ],
+          "returns": "string | null",
+          "errors": [
+            "Rejects if the permission or bounded wire contract is invalid."
+          ],
+          "behavior": [
+            "Returns null on cancellation and an empty string when accepted empty.",
+            "Uses the 120000 ms interactive deadline."
+          ],
+          "example": "const value = await api.dialogs.prompt(\"Name\", { okLabel: \"Save\", cancelLabel: \"Cancel\" })",
           "since": 1
         }
       ]

@@ -70,6 +70,9 @@ closed before the application callback is called.
 - `commands` — register and unregister commands.
 - `editor:read` — read the active editor, read its selection, and focus it.
 - `editor:write` — replace the active selection.
+- `editor:selection` — move the primary selection without changing markdown.
+- `notifications` — show bounded host-owned in-app notifications.
+- `dialogs` — show bounded host-owned alert, confirm, and prompt dialogs.
 - `notes:read` — list and read markdown notes.
 - `notes:write` — create, guarded-write, delete, and move markdown notes.
 - `navigation:read` — read the active note and resolve raw link destinations.
@@ -93,8 +96,7 @@ from the notes editor and from other extensions.
 
 The first API version does not support TypeScript execution, npm packages,
 bare-module imports, remote imports, timers, background triggers, custom UI, or
-arbitrary SVG. The source limit is 512 KiB and capability calls have a five-
-second timeout.
+arbitrary SVG. The source limit is 512 KiB. Ordinary capability calls have a five-second timeout; interactive dialogs use a 120-second deadline.
 
 ## How to use this reference
 
@@ -196,3 +198,16 @@ existing file, and deletion does not remove an empty parent folder.
 Use the Authoring Kit's `brulion-extension.d.ts` for editor hints, the template
 for a safe starting point, and `AGENTS.md` plus `llm-skill.md` when an agent is
 authoring or reviewing an extension.
+
+## Interaction
+
+Selection reads use `editor:read` and preserve direction as `{ anchor, head, text }`; `editor:selection` grants only `setSelection({ anchor, head })`. Selection offsets are zero-based UTF-16 positions.
+
+Notifications and dialogs accept `MessageContent`: a string or a non-empty array of at most 32 `{ type: "text" | "strong" | "code", text }` parts. Each part is at most 2,048 UTF-16 code units and the total is at most 8,192. Labels are required plain strings of at most 80 code units; prompt initial and placeholder values are at most 4,096, and `multiline` is explicit. HTML, Markdown, links, callbacks, and arbitrary UI are not accepted.
+
+```js
+await api.notifications.show([{ type: "strong", text: "Saved" }], { level: "success" })
+const answer = await api.dialogs.prompt("Title", { okLabel: "Save", cancelLabel: "Cancel" })
+```
+
+Prompt cancellation returns `null`, distinct from an accepted empty string. Dialog work is host-owned and is rejected with `disposed` when the extension is disposed or its vault is stale.

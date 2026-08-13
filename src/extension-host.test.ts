@@ -49,6 +49,7 @@ function channel(): [FakePort, FakePort] {
 async function setup(options: {
   editor?: Partial<ExtensionEditorCapabilities>
   notes?: Partial<ExtensionNoteCapabilities>
+  interaction?: Partial<import("./extension-host").ExtensionInteractionCapabilities>
   maxCommands?: number
   permissions?: readonly ScriptPermission[]
 } = {}): Promise<{
@@ -61,10 +62,19 @@ async function setup(options: {
   const extension = new ExtensionRpcPeer(extensionPort, { nonce: "nonce-1", timeoutMs: 50 })
   const editor: ExtensionEditorCapabilities = {
     getText: vi.fn(async () => "editor text"),
-    getSelection: vi.fn(async () => ({ from: 2, to: 5, text: "dit" })),
+    getSelection: vi.fn(async () => ({ anchor: 2, head: 5, text: "dit" })),
+    setSelection: vi.fn(async () => undefined),
     replaceSelection: vi.fn(async () => undefined),
     focus: vi.fn(async () => undefined),
     ...options.editor,
+  }
+  const interaction = {
+    setSelection: vi.fn(async () => undefined),
+    showNotification: vi.fn(async () => undefined),
+    alert: vi.fn(async () => undefined),
+    confirm: vi.fn(async () => true),
+    prompt: vi.fn(async () => "answer"),
+    ...options.interaction,
   }
   const notes: ExtensionNoteCapabilities = {
     list: vi.fn(async () => ["a.md", "folder/b.md"]),
@@ -84,6 +94,7 @@ async function setup(options: {
     notes,
     maxCommands: options.maxCommands,
     permissions: options.permissions,
+    interaction,
   })
   host.start()
   extension.start()
@@ -137,7 +148,7 @@ describe("FEAT-0083 ExtensionHost", () => {
 
   it("exposes only narrow editor values and forwards replacement/focus", async () => {
     const getText = vi.fn(async () => "current")
-    const getSelection = vi.fn(async () => ({ from: 1, to: 4, text: "urr" }))
+    const getSelection = vi.fn(async () => ({ anchor: 4, head: 1, text: "urr" }))
     const replaceSelection = vi.fn(async (_text: string) => undefined)
     const focus = vi.fn(async () => undefined)
     const { host, extension } = await setup({
@@ -146,8 +157,8 @@ describe("FEAT-0083 ExtensionHost", () => {
 
     await expect(extension.call("editor.getText", null)).resolves.toBe("current")
     await expect(extension.call("editor.getSelection", null)).resolves.toEqual({
-      from: 1,
-      to: 4,
+      anchor: 4,
+      head: 1,
       text: "urr",
     })
     await expect(
@@ -156,6 +167,28 @@ describe("FEAT-0083 ExtensionHost", () => {
     await expect(extension.call("editor.focus", null)).resolves.toBe(null)
     expect(replaceSelection).toHaveBeenCalledWith("updated")
     expect(focus).toHaveBeenCalledOnce()
+    host.dispose()
+  })
+
+  it("supports direction-aware selection control without content replacement", async () => {
+    const setSelection = vi.fn(async () => undefined)
+    const { host, extension } = await setup({ editor: { setSelection } , permissions: ["editor:selection"] })
+    await expect(extension.call("editor.setSelection", { anchor: 8, head: 2 })).resolves.toBe(null)
+    expect(setSelection).toHaveBeenCalledWith({ anchor: 8, head: 2 })
+    await expect(extension.call("editor.setSelection", { anchor: -1, head: 2 })).rejects.toMatchObject({ code: "handler_error" })
+    await expect(extension.call("editor.setSelection", { anchor: 1, head: 2, extra: true })).rejects.toMatchObject({ code: "handler_error" })
+    host.dispose()
+  })
+
+  it("validates formatted interaction values and permission boundaries", async () => {
+    const interaction = { showNotification: vi.fn(async () => undefined), alert: vi.fn(async () => undefined), confirm: vi.fn(async () => true), prompt: vi.fn(async () => null), setSelection: vi.fn(async () => undefined) }
+    const { host, extension } = await setup({ interaction, permissions: ["notifications", "dialogs"] })
+    await expect(extension.call("notifications.show", { message: [{ type: "strong", text: "ok\\nnow" }], options: { level: "success" } })).resolves.toBe(null)
+    await expect(extension.call("notifications.show", { message: [], options: {} })).rejects.toMatchObject({ code: "handler_error" })
+    await expect(extension.call("dialogs.prompt", { message: "name", options: { okLabel: "OK", cancelLabel: "Cancel" } })).resolves.toBe(null)
+    await expect(extension.call("dialogs.alert", { message: "x", options: { okLabel: "<b>" } })).resolves.toBe(null)
+    await expect(extension.call("editor.setSelection", { anchor: 1, head: 1 })).rejects.toMatchObject({ code: "handler_error" })
+    expect(interaction.setSelection).not.toHaveBeenCalled()
     host.dispose()
   })
 

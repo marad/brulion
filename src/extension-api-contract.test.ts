@@ -15,6 +15,7 @@ const expectedMethodIds = [
   "commands.unregister",
   "editor.getText",
   "editor.getSelection",
+  "editor.setSelection",
   "editor.replaceSelection",
   "editor.focus",
   "notes.list",
@@ -26,6 +27,10 @@ const expectedMethodIds = [
   "navigation.getActiveNote",
   "navigation.openNote",
   "navigation.resolveLink",
+  "notifications.show",
+  "dialogs.alert",
+  "dialogs.confirm",
+  "dialogs.prompt",
 ]
 
 describe("versioned extension API contract", () => {
@@ -51,6 +56,9 @@ describe("versioned extension API contract", () => {
       "notes:write",
       "navigation:read",
       "navigation:write",
+      "editor:selection",
+      "notifications",
+      "dialogs",
     ])
     expect([...SCRIPT_PERMISSIONS]).toEqual(contract.permissions.map((permission) => permission.id))
     const methods = contractMethods(contract)
@@ -105,6 +113,9 @@ describe("versioned extension API contract", () => {
     expect(apiReference).toContain("api.navigation.resolveLink")
     expect(apiReference).toContain("navigation:read")
     expect(apiReference).toContain("navigation:write")
+    expect(apiReference).toContain("editor:selection")
+    expect(apiReference).toContain("notifications.show")
+    expect(apiReference).toContain("dialogs.prompt")
     expect(apiReference).toContain("never implicitly creates or mutates")
     expect(declarations).not.toContain('export type ExtensionIconName = "braces"')
   })

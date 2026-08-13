@@ -16,12 +16,35 @@ export interface RegisterResult {
 
 /** The primary active editor selection, using zero-based document offsets. */
 export interface EditorSelection {
-  from: number
-  to: number
+  anchor: number
+  head: number
   text: string
 }
 
 /** Note bytes and the mtime used for a subsequent guarded write. */
+export interface EditorSelectionRequest {
+  anchor: number
+  head: number
+}
+
+export interface MessagePart {
+  type: "text" | "strong" | "code"
+  text: string
+}
+
+export type MessageContent = string | readonly MessagePart[]
+
+export interface NotificationOptions { level?: "info" | "success" | "warning" | "error" }
+export interface AlertOptions { okLabel: string }
+export interface ConfirmOptions { confirmLabel: string; cancelLabel: string }
+export interface PromptOptions {
+  okLabel: string
+  cancelLabel: string
+  initial?: string
+  placeholder?: string
+  multiline?: boolean
+}
+
 export interface NoteContent {
   content: string
   lastModified: number | null
@@ -84,8 +107,17 @@ export interface BrulionApi {
   editor: {
     getText(): Promise<string>
     getSelection(): Promise<EditorSelection>
+    setSelection(selection: EditorSelectionRequest): Promise<void>
     replaceSelection(text: string): Promise<void>
     focus(): Promise<void>
+  }
+  notifications: {
+    show(message: MessageContent, options?: NotificationOptions): Promise<void>
+  }
+  dialogs: {
+    alert(message: MessageContent, options: AlertOptions): Promise<void>
+    confirm(message: MessageContent, options: ConfirmOptions): Promise<boolean>
+    prompt(message: MessageContent, options: PromptOptions): Promise<string | null>
   }
   notes: {
     /** Folder-relative POSIX paths of all .md notes, sorted case-insensitively. */

@@ -79,7 +79,8 @@ async function setup(options: {
   const extension = new ExtensionRpcPeer(extensionPort, { nonce: "nonce-navigation", timeoutMs: 50 })
   const editor: ExtensionEditorCapabilities = {
     getText: vi.fn(async () => ""),
-    getSelection: vi.fn(async () => ({ from: 0, to: 0, text: "" })),
+    getSelection: vi.fn(async () => ({ anchor: 0, head: 0, text: "" })),
+    setSelection: vi.fn(async () => undefined),
     replaceSelection: vi.fn(async () => undefined),
     focus: vi.fn(async () => undefined),
   }
