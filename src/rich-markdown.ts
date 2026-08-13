@@ -128,7 +128,14 @@ function delimiterAt(text: string, position: number): string {
   if (triple === "***" || triple === "___") return triple
   const pair = text.slice(position, position + 2)
   if (pair === "**" || pair === "__") return pair
-  if (text[position] === "`" || text[position] === "*" || text[position] === "_") return text[position]
+  if (text[position] === "_") {
+    const previous = text[position - 1]
+    const next = text[position + 1]
+    // CommonMark-style intraword underscores are literal text.
+    if (previous && next && /\w/.test(previous) && /\w/.test(next)) return ""
+  }
+  if (text[position] === "`" || text[position] === "*") return text[position]
+  if (text[position] === "_") return text[position]
   return ""
 }
 

@@ -43,6 +43,10 @@ describe("rich Markdown document", () => {
     expect(strongAroundEmphasis.visible).toBe("bold italic")
     expect(strongAroundEmphasis.ranges.some((r) => r.visible && r.marks.includes("bold") && !r.marks.includes("italic"))).toBe(true)
     expect(strongAroundEmphasis.ranges.some((r) => r.visible && r.marks.includes("bold") && r.marks.includes("italic"))).toBe(true)
+
+    const intraword = importMarkdown("**foo_bar_baz**")
+    expect(intraword.visible).toBe("foo_bar_baz")
+    expect(intraword.ranges.find((r) => r.visible)?.marks).toEqual(["bold"])
   })
 
   it("preserves unknown syntax as an opaque visible region", () => {
