@@ -71,4 +71,3 @@ forbid hard timeouts for substantive workers.
   evidence as clean;
 - making CI infer a milestone from external GitHub settings;
 - regenerating checked-in artifacts during a read-only check.
-
