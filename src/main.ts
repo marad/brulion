@@ -107,6 +107,7 @@ import { createPoller } from "./watch"
 import { registerServiceWorker } from "./pwa"
 import { createInstallPrompt, type DeferredInstallPrompt } from "./install-prompt"
 import { ExtensionRegistry } from "./extension-registry"
+import { mountNotificationCenter } from "./extension-interactions"
 import { createExtensionNavigationAdapter } from "./extension-navigation-adapter"
 import { mountExtensionManager, type ExtensionManagerHandle } from "./extension-manager"
 import { createWorkbenchUrl } from "./workbench"
@@ -176,6 +177,7 @@ const dialogInputEl = document.querySelector<HTMLInputElement>("#dialog-input")
 const dialogCancelButton = document.querySelector<HTMLButtonElement>("#dialog-cancel")
 const dialogConfirmButton = document.querySelector<HTMLButtonElement>("#dialog-confirm")
 const extensionsBackdropEl = document.querySelector<HTMLElement>("#extensions-backdrop")
+const notificationsEl = document.querySelector<HTMLElement>("#notifications")
 if (
   !editorEl ||
   !workspaceEl ||
@@ -217,7 +219,8 @@ if (
   !dialogInputEl ||
   !dialogCancelButton ||
   !dialogConfirmButton ||
-  !extensionsBackdropEl
+  !extensionsBackdropEl ||
+  !notificationsEl
 ) {
   throw new Error("missing mount points in index.html")
 }
@@ -227,6 +230,8 @@ if (
 // icons inherit the header text color via the default `currentColor` stroke.
 const headerIcon = (node: IconNode) =>
   createElement(node, { class: "header-icon", "aria-hidden": "true" })
+const notificationCenter = mountNotificationCenter(notificationsEl)
+
 toggleSidebarEl.replaceChildren(headerIcon(PanelLeft))
 openSettingsEl.replaceChildren(headerIcon(SettingsIcon))
 
@@ -572,6 +577,17 @@ const reloadExtensions = async (): Promise<void> => {
         scrollToHeading: (anchor) => scrollEditorToHeading(view, anchor),
         expectedFolder: root,
       }),
+      interaction: {
+        showNotification: (message, options, source) => {
+          assertActive()
+          notificationCenter.show(message, source ?? "extension", options?.level ?? "info")
+        },
+        dispose: (source) => source ? notificationCenter.clearSource(source) : notificationCenter.clear(),
+        setSelection: () => undefined,
+        alert: async () => undefined,
+        confirm: async () => false,
+        prompt: async () => null,
+      },
     },
     currentSettings.extensions ?? [],
   )

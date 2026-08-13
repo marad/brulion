@@ -37,6 +37,7 @@ export class ExtensionRegistry {
       editor: ExtensionEditorCapabilities
       notes: ExtensionNoteCapabilities
       navigation?: ExtensionNavigationCapabilities
+      interaction?: import("./extension-host").ExtensionInteractionCapabilities
     },
     enabledIds: readonly string[] = [],
   ): Promise<ScriptDiscovery[]> {
@@ -68,6 +69,7 @@ export class ExtensionRegistry {
           editor: capabilities.editor,
           notes: capabilities.notes,
           navigation: capabilities.navigation,
+          interaction: capabilities.interaction,
           onActionsChanged: () => this.notifyActionsChanged(),
           onError: (error) => this.reportError(error, item.id),
         })

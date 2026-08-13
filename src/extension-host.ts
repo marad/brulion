@@ -110,9 +110,9 @@ export interface PromptOptions {
 
 export interface ExtensionInteractionCapabilities {
   /** Close extension-owned active/queued interaction UI during disposal. */
-  dispose?: () => void
+  dispose?: (source?: string) => void
   setSelection: (selection: ExtensionSelectionRequest) => void | Promise<void>
-  showNotification: (message: MessageContent, options?: NotificationOptions) => void | Promise<void>
+  showNotification: (message: MessageContent, options?: NotificationOptions, source?: string) => void | Promise<void>
   alert: (message: MessageContent, options: AlertOptions) => void | Promise<void>
   confirm: (message: MessageContent, options: ConfirmOptions) => boolean | Promise<boolean>
   prompt: (message: MessageContent, options: PromptOptions) => string | null | Promise<string | null>
@@ -497,7 +497,7 @@ export class ExtensionHost {
     for (const revoke of this.revokeHandlers) revoke()
     this.notifyActionsChanged()
     try {
-      this.interaction?.dispose?.()
+      this.interaction?.dispose?.(this.scriptId)
     } catch (error) {
       this.reportError(error)
     }
@@ -589,7 +589,7 @@ export class ExtensionHost {
     const options = value.options === undefined ? {} : interactionOptions(value.options, ["level"], "Notification options")
     const level = options.level === undefined ? "info" : options.level
     if (level !== "info" && level !== "success" && level !== "warning" && level !== "error") throw new Error("Notification level is invalid")
-    await this.requireInteraction().showNotification(messageContent(value.message), { level })
+    await this.requireInteraction().showNotification(messageContent(value.message), { level }, this.scriptId)
     return null
   }
 
