@@ -109,6 +109,8 @@ export interface PromptOptions {
 }
 
 export interface ExtensionInteractionCapabilities {
+  /** Close extension-owned active/queued interaction UI during disposal. */
+  dispose?: () => void
   setSelection: (selection: ExtensionSelectionRequest) => void | Promise<void>
   showNotification: (message: MessageContent, options?: NotificationOptions) => void | Promise<void>
   alert: (message: MessageContent, options: AlertOptions) => void | Promise<void>
@@ -146,6 +148,13 @@ function record(value: RpcValue, label: string): Record<string, unknown> {
     throw new Error(`${label} must be an object`)
   }
   return value as Record<string, unknown>
+}
+
+function strictRecord(value: RpcValue, keys: readonly string[], label: string): Record<string, unknown> {
+  const result = record(value, label)
+  const allowed = new Set(keys)
+  if (Object.keys(result).some((key) => !allowed.has(key))) throw new Error(`${label} contains an unknown field`)
+  return result
 }
 
 function boundedString(value: unknown, label: string, maxLength: number, allowEmpty = false): string {
@@ -208,7 +217,7 @@ function expectedMtime(value: unknown): number | null {
 }
 
 function selectionValue(value: ExtensionSelection): ExtensionSelection {
-  const result = record(value as unknown as RpcValue, "Editor selection")
+  const result = strictRecord(value as unknown as RpcValue, ["anchor", "head", "text"], "Editor selection")
   if (
     Object.keys(result).length !== 3 ||
     !Number.isSafeInteger(result.anchor) ||
@@ -221,7 +230,7 @@ function selectionValue(value: ExtensionSelection): ExtensionSelection {
 }
 
 function selectionRequest(value: RpcValue): ExtensionSelectionRequest {
-  const result = record(value, "Editor selection request")
+  const result = strictRecord(value, ["anchor", "head"], "Editor selection request")
   if (
     Object.keys(result).length !== 2 ||
     !Number.isSafeInteger(result.anchor) ||
@@ -261,7 +270,9 @@ function messageContent(value: unknown): MessageContent {
 }
 
 function label(value: unknown, name: string): string {
-  return boundedString(value, name, MAX_LABEL_LENGTH)
+  const result = boundedString(value, name, MAX_LABEL_LENGTH)
+  if (hasControlCharacter(result) || /[<>]/.test(result)) throw new Error(`${name} must be plain text`)
+  return result
 }
 
 function interactionOptions(value: unknown, keys: readonly string[], name: string): Record<string, unknown> {
@@ -485,6 +496,11 @@ export class ExtensionHost {
     this.actions.length = 0
     for (const revoke of this.revokeHandlers) revoke()
     this.notifyActionsChanged()
+    try {
+      this.interaction?.dispose?.()
+    } catch (error) {
+      this.reportError(error)
+    }
     this.peer.dispose()
   }
 
@@ -535,15 +551,17 @@ export class ExtensionHost {
     return id
   }
 
-  private async getText(_params: RpcValue): Promise<RpcValue> {
+  private async getText(params: RpcValue): Promise<RpcValue> {
     this.requirePermission("editor:read")
+    if (params !== null) throw new Error("editor.getText expects null")
     const text = await this.editor.getText()
     if (typeof text !== "string") throw new Error("Editor text result is invalid")
     return text
   }
 
-  private async getSelection(_params: RpcValue): Promise<RpcValue> {
+  private async getSelection(params: RpcValue): Promise<RpcValue> {
     this.requirePermission("editor:read")
+    if (params !== null) throw new Error("editor.getSelection expects null")
     return selectionValue(await this.editor.getSelection()) as unknown as RpcValue
   }
 
@@ -563,7 +581,7 @@ export class ExtensionHost {
 
   private async showNotification(params: RpcValue): Promise<RpcValue> {
     this.requirePermission("notifications")
-    const value = record(params, "Notification")
+    const value = strictRecord(params, ["message", "options"], "Notification")
     const options = value.options === undefined ? {} : interactionOptions(value.options, ["level"], "Notification options")
     const level = options.level === undefined ? "info" : options.level
     if (level !== "info" && level !== "success" && level !== "warning" && level !== "error") throw new Error("Notification level is invalid")
@@ -573,7 +591,7 @@ export class ExtensionHost {
 
   private async alert(params: RpcValue): Promise<RpcValue> {
     this.requirePermission("dialogs")
-    const value = record(params, "Alert")
+    const value = strictRecord(params, ["message", "options"], "Alert")
     const options = interactionOptions(value.options, ["okLabel"], "Alert options")
     await this.requireInteraction().alert(messageContent(value.message), { okLabel: label(options.okLabel, "okLabel") })
     return null
@@ -581,34 +599,40 @@ export class ExtensionHost {
 
   private async confirm(params: RpcValue): Promise<RpcValue> {
     this.requirePermission("dialogs")
-    const value = record(params, "Confirm")
+    const value = strictRecord(params, ["message", "options"], "Confirm")
     const options = interactionOptions(value.options, ["confirmLabel", "cancelLabel"], "Confirm options")
-    return await this.requireInteraction().confirm(messageContent(value.message), {
+    const result = await this.requireInteraction().confirm(messageContent(value.message), {
       confirmLabel: label(options.confirmLabel, "confirmLabel"), cancelLabel: label(options.cancelLabel, "cancelLabel"),
     })
+    if (typeof result !== "boolean") throw new Error("Confirm result is invalid")
+    return result
   }
 
   private async prompt(params: RpcValue): Promise<RpcValue> {
     this.requirePermission("dialogs")
-    const value = record(params, "Prompt")
+    const value = strictRecord(params, ["message", "options"], "Prompt")
     const options = interactionOptions(value.options, ["okLabel", "cancelLabel", "initial", "placeholder", "multiline"], "Prompt options")
     for (const key of ["initial", "placeholder"] as const) if (options[key] !== undefined && (typeof options[key] !== "string" || (options[key] as string).length > MAX_PROMPT_LENGTH)) throw new Error(`${key} must be bounded`)
     if (options.multiline !== undefined && typeof options.multiline !== "boolean") throw new Error("multiline must be a boolean")
-    return await this.requireInteraction().prompt(messageContent(value.message), {
+    const result = await this.requireInteraction().prompt(messageContent(value.message), {
       okLabel: label(options.okLabel, "okLabel"), cancelLabel: label(options.cancelLabel, "cancelLabel"),
       ...(options.initial === undefined ? {} : { initial: options.initial as string }), ...(options.placeholder === undefined ? {} : { placeholder: options.placeholder as string }),
       ...(options.multiline === undefined ? {} : { multiline: options.multiline as boolean }),
     })
+    if (result !== null && (typeof result !== "string" || result.length > MAX_PROMPT_LENGTH)) throw new Error("Prompt result is invalid")
+    return result
   }
 
-  private async focus(_params: RpcValue): Promise<RpcValue> {
+  private async focus(params: RpcValue): Promise<RpcValue> {
     this.requirePermission("editor:read")
+    if (params !== null) throw new Error("editor.focus expects null")
     await this.editor.focus()
     return null
   }
 
-  private async listNotes(_params: RpcValue): Promise<RpcValue> {
+  private async listNotes(params: RpcValue): Promise<RpcValue> {
     this.requirePermission("notes:read")
+    if (params !== null) throw new Error("notes.list expects null")
     const paths: string[] = []
     for (const path of await this.notes.list()) {
       const normalized = notePathOrNull(path)

@@ -522,8 +522,8 @@ const reloadExtensions = async (): Promise<void> => {
           assertActive()
           const selection = view.state.selection.main
           return {
-            anchor: selection.from,
-            head: selection.to,
+            anchor: selection.anchor,
+            head: selection.head,
             text: view.state.sliceDoc(selection.from, selection.to),
           }
         },

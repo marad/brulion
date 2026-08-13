@@ -110,7 +110,14 @@ interface ErrorEnvelope {
   readonly error: { readonly code: RpcErrorCode; readonly message: string }
 }
 
-type RpcEnvelope = HelloEnvelope | ReadyEnvelope | RequestEnvelope | ResponseEnvelope | ErrorEnvelope
+interface ShutdownEnvelope {
+  readonly channel: typeof CHANNEL
+  readonly version: typeof VERSION
+  readonly type: "shutdown"
+  readonly nonce: string
+}
+
+type RpcEnvelope = HelloEnvelope | ReadyEnvelope | RequestEnvelope | ResponseEnvelope | ErrorEnvelope | ShutdownEnvelope
 
 interface PendingCall {
   readonly resolve: (value: RpcValue) => void
@@ -214,8 +221,13 @@ function rawNonce(value: unknown): string | undefined {
 
 function parseError(value: unknown): { readonly code: RpcErrorCode; readonly message: string } | null {
   const record = asPlainRecord(value)
-  if (!record || !isRpcErrorCode(record.code) || !boundedMessage(record.message)) return null
+  if (!record || !exactKeys(record, ["code", "message"]) || !isRpcErrorCode(record.code) || !boundedMessage(record.message)) return null
   return { code: record.code, message: record.message }
+}
+
+function exactKeys(record: PlainRecord, keys: readonly string[]): boolean {
+  const actual = Object.keys(record).sort()
+  return actual.length === keys.length && actual.every((key, index) => key === [...keys].sort()[index])
 }
 
 function parseEnvelope(value: unknown): RpcEnvelope | null {
@@ -232,10 +244,16 @@ function parseEnvelope(value: unknown): RpcEnvelope | null {
 
   switch (record.type) {
     case "hello":
+      if (!exactKeys(record, ["channel", "version", "type", "nonce"])) return null
       return { channel: CHANNEL, version: VERSION, type: "hello", nonce: record.nonce }
     case "ready":
+      if (!exactKeys(record, ["channel", "version", "type", "nonce"])) return null
       return { channel: CHANNEL, version: VERSION, type: "ready", nonce: record.nonce }
+    case "shutdown":
+      if (!exactKeys(record, ["channel", "version", "type", "nonce"])) return null
+      return { channel: CHANNEL, version: VERSION, type: "shutdown", nonce: record.nonce }
     case "request":
+      if (!exactKeys(record, ["channel", "version", "type", "nonce", "id", "method", "params"])) return null
       if (!validId(record.id) || !validMethod(record.method) || !("params" in record)) return null
       if (!isRpcValue(record.params)) return null
       return {
@@ -248,7 +266,7 @@ function parseEnvelope(value: unknown): RpcEnvelope | null {
         params: record.params,
       }
     case "response": {
-      if (!validId(record.id) || typeof record.ok !== "boolean") return null
+      if (!validId(record.id) || typeof record.ok !== "boolean" || (record.ok && !exactKeys(record, ["channel", "version", "type", "nonce", "id", "ok", "result"])) || (!record.ok && !exactKeys(record, ["channel", "version", "type", "nonce", "id", "ok", "error"]))) return null
       if (record.ok) {
         if (!("result" in record) || !isRpcValue(record.result)) return null
         return {
@@ -276,6 +294,7 @@ function parseEnvelope(value: unknown): RpcEnvelope | null {
     case "error": {
       const error = parseError(record.error)
       const hasId = "id" in record
+      if (!exactKeys(record, hasId ? ["channel", "version", "type", "nonce", "id", "error"] : ["channel", "version", "type", "nonce", "error"])) return null
       if (!error || (hasId && !validId(record.id))) return null
       const id = hasId ? (record.id as string) : undefined
       return {
@@ -400,9 +419,14 @@ export class ExtensionRpcPeer {
     })
   }
 
-  /** Close the port, reject pending calls, and ignore all later messages. */
+  /** Close the port, reject pending calls, and notify the authenticated peer. */
   dispose(): void {
     if (this.state === "disposed") return
+    try {
+      this.endpoint.postMessage({ channel: CHANNEL, version: VERSION, type: "shutdown", nonce: this.nonce })
+    } catch {
+      // The endpoint may already be closed; local disposal still proceeds.
+    }
     this.state = "disposed"
     this.endpoint.removeEventListener("message", this.onMessage)
     for (const pending of this.pending.values()) {
@@ -481,7 +505,23 @@ export class ExtensionRpcPeer {
       case "error":
         this.handleError(envelope)
         break
+      case "shutdown":
+        this.disposeFromRemote()
+        break
     }
+  }
+
+  private disposeFromRemote(): void {
+    if (this.state === "disposed") return
+    this.state = "disposed"
+    this.endpoint.removeEventListener("message", this.onMessage)
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer)
+      pending.reject(new RpcError("disposed", "RPC peer is disposed"))
+    }
+    this.pending.clear()
+    this.rejectReady(new RpcError("disposed", "RPC peer is disposed"))
+    this.endpoint.close?.()
   }
 
   private handleHello(): void {

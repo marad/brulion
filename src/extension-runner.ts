@@ -27,6 +27,8 @@ export function createExtensionBootstrapHtml(): string {
   const BOOTSTRAP = "brulion-extension-bootstrap"
   const MAX_ERROR_LENGTH = 256
   const MAX_TIMEOUT_MS = 5000
+  const DISPOSED_ERROR = "RPC peer is disposed"
+  const TIMEOUT_ERROR = "RPC call timed out"
   const DIALOG_TIMEOUT_MS = 120000
   let port = null
   let nonce = null
@@ -71,6 +73,12 @@ export function createExtensionBootstrapHtml(): string {
     }
   }
 
+  function rpcError(code, message) {
+    const error = new Error(message)
+    error.code = code
+    return error
+  }
+
   function errorText(error) {
     const text = error && typeof error.message === "string" ? error.message : "Capability failed"
     return text.slice(0, MAX_ERROR_LENGTH)
@@ -81,21 +89,21 @@ export function createExtensionBootstrapHtml(): string {
   }
 
   function call(method, params) {
-    if (state === "disposed") return Promise.reject(new Error("RPC peer is disposed"))
-    if (state !== "ready") return Promise.reject(new Error("RPC peer is not ready"))
+    if (state === "disposed") return Promise.reject(rpcError("disposed", DISPOSED_ERROR))
+    if (state !== "ready") return Promise.reject(rpcError("not_ready", "RPC peer is not ready"))
     if (!rpcValue(params)) return Promise.reject(new Error("RPC params are not JSON-like"))
     const id = "child-" + (++nextId)
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         if (!pending.has(id)) return
         pending.delete(id)
-        reject(new Error("RPC call timed out: " + method))
+        reject(rpcError("timeout", TIMEOUT_ERROR + ": " + method))
       }, method.indexOf("dialogs.") === 0 ? DIALOG_TIMEOUT_MS : MAX_TIMEOUT_MS)
       pending.set(id, { resolve, reject, timer })
       if (!send("request", { id, method, params })) {
         clearTimeout(timer)
         pending.delete(id)
-        reject(new Error("RPC peer is disposed"))
+        reject(rpcError("disposed", DISPOSED_ERROR))
       }
     })
   }
@@ -106,7 +114,7 @@ export function createExtensionBootstrapHtml(): string {
     pending.delete(data.id)
     clearTimeout(item.timer)
     if (data.ok) item.resolve(data.result)
-    else item.reject(new Error(data.error && data.error.message ? data.error.message : "RPC failed"))
+    else item.reject(rpcError(data.error && data.error.code ? data.error.code : "protocol", data.error && data.error.message ? data.error.message : "RPC failed"))
   }
 
   async function handleRequest(data) {
@@ -147,7 +155,22 @@ export function createExtensionBootstrapHtml(): string {
       handleResponse(data)
       return
     }
+    if (data.type === "shutdown") {
+      disposeFromRemote()
+      return
+    }
     if (data.type === "request") void handleRequest(data)
+  }
+
+  function disposeFromRemote() {
+    if (state === "disposed") return
+    state = "disposed"
+    for (const item of pending.values()) {
+      clearTimeout(item.timer)
+      item.reject(rpcError("disposed", DISPOSED_ERROR))
+    }
+    pending.clear()
+    try { port && port.close() } catch (_) {}
   }
 
   function register(method, handler) {

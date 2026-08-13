@@ -189,7 +189,7 @@ describe("FEAT-0083 ExtensionHost", () => {
     await expect(extension.call("notifications.show", { message: "x", extra: true })).rejects.toMatchObject({ code: "handler_error" })
     await expect(extension.call("dialogs.prompt", { message: "name", options: { okLabel: "OK", cancelLabel: "Cancel" } })).resolves.toBe(null)
     await expect(extension.call("dialogs.alert", { message: "x", options: { okLabel: "<b>" } })).rejects.toMatchObject({ code: "handler_error" })
-    await expect(extension.call("dialogs.alert", { message: "x", options: { okLabel: "OK\\n" } })).rejects.toMatchObject({ code: "handler_error" })
+    await expect(extension.call("dialogs.alert", { message: "x", options: { okLabel: "OK\n" } })).rejects.toMatchObject({ code: "handler_error" })
     await expect(extension.call("dialogs.confirm", { message: "x", options: { confirmLabel: "Yes", cancelLabel: "No" } })).resolves.toBe(true)
     await expect(extension.call("editor.setSelection", { anchor: 1, head: 1 })).rejects.toMatchObject({ code: "handler_error" })
     expect(interaction.setSelection).not.toHaveBeenCalled()
@@ -268,7 +268,7 @@ describe("FEAT-0083 ExtensionHost", () => {
     expect(first.host.getActions()).toEqual([])
     expect(second.host.getActions().map((action) => action.id)).toEqual(["daily-tools:two"])
     await expect(first.extension.call("editor.getText", null)).rejects.toMatchObject({
-      code: "timeout",
+      code: "disposed",
     })
     second.host.dispose()
   })

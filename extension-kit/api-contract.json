@@ -435,8 +435,8 @@
             "Rejects if editor:read is missing or the editor/vault is no longer active."
           ],
           "behavior": [
-            "from and to are zero-based document offsets.",
-            "When there is no selected range, from equals to."
+            "anchor and head are zero-based UTF-16 document offsets.",
+            "When there is no selected range, anchor equals head; direction is preserved."
           ],
           "example": "const selection = await api.editor.getSelection()\nconsole.log(selection.text)",
           "since": 1
