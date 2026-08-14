@@ -157,6 +157,17 @@ describe("rich Markdown document", () => {
     expect(applyInlineInputRule(importMarkdown("**hello**http://x"), 9, "enter").converted).toBe(false)
     expect(applyInlineInputRule(importMarkdown("**ok** http://foo**bad** "), 25, "space").converted).toBe(false)
     expect(applyInlineInputRule(importMarkdown("# **hello** "), 13, "space").caret).toBe("hello ".length)
+
+    const pending = importMarkdown("**hello**")
+    for (const boundary of ["tab", "blur", "save"] as const) {
+      const flushed = applyInlineInputRule(pending, pending.source.length, boundary)
+      expect(flushed.converted).toBe(true)
+      expect(flushed.document.visible).toBe("hello")
+      expect(serializeMarkdown(flushed.document)).toBe(pending.source)
+    }
+    const repeated = applyInlineInputRule(pending, pending.source.length, "save")
+    expect(applyInlineInputRule(repeated.document, repeated.document.source.length, "save").document.visible).toBe("hello")
+    expect(serializeMarkdown(pending)).toBe("**hello**")
   })
 
   it("toggles rich inline marks canonically and unwraps imported spelling", () => {
@@ -186,6 +197,12 @@ describe("rich Markdown document", () => {
     const reverse = toggleInlineMark(importMarkdown("hello"), 5, 0, "bold")
     expect(reverse?.anchor).toBe(5)
     expect(reverse?.head).toBe(0)
+
+    const insideWord = toggleInlineMark(importMarkdown("hello"), 1, 4, "bold")
+    expect(serializeMarkdown(insideWord!.document)).toBe("h**ell**o")
+    expect(insideWord!.document.visible).toBe("hello")
+    expect(insideWord!.document.ranges.some((r) => r.visible && r.marks.includes("bold"))).toBe(true)
+    expect(toggleInlineMark(importMarkdown("http://example.com"), 7, 14, "bold")).toBeNull()
 
     const outerUnwrapped = toggleInlineMark(importMarkdown("*outer **inner** end*"), 0, 15, "italic")
     expect(serializeMarkdown(outerUnwrapped!.document)).toBe("outer **inner** end")

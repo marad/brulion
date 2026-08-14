@@ -203,14 +203,14 @@ function hasBlockPrefixBefore(source: string, position: number): boolean {
   return /^(?:#{1,6}[ \t]+|>[ \t]?|[*-][ \t]+|\d+\.[ \t]+)$/.test(before)
 }
 
-function hasInlineBoundaryContext(text: string, start: number, end: number, delimiter: string): boolean {
+function hasInlineBoundaryContext(text: string, start: number, end: number, delimiter: string, allowAdjacent = false): boolean {
   const previous = text[start - 1]
   const next = text[end + delimiter.length]
   const prefix = text.slice(0, start)
   const content = text.slice(start + delimiter.length, end)
   const punctuationOnly = Boolean(content) && /^[^\p{L}\p{N}\s]+$/u.test(content)
-  const openingBoundary = punctuationOnly || !previous || /\s/.test(previous) || (isWordCharacter(previous) && prefix.includes(delimiter))
-  const closingBoundary = punctuationOnly || !next || /\s/.test(next) || isWordCharacter(next)
+  const openingBoundary = allowAdjacent || punctuationOnly || !previous || /\s/.test(previous) || (isWordCharacter(previous) && prefix.includes(delimiter))
+  const closingBoundary = allowAdjacent || punctuationOnly || !next || /\s/.test(next) || isWordCharacter(next)
   const urlBefore = /(?:https?:\/\/|www\.)[^\s]*$/i.test(prefix)
   const urlFollows = /^(?:https?:\/\/|www\.)/i.test(text.slice(end + delimiter.length))
   return openingBoundary && closingBoundary && !urlBefore && !urlFollows
@@ -314,6 +314,19 @@ function selectedVisibleRanges(document: RichDocument, from: number, to: number)
   return document.ranges.filter((range) => range.visible && range.visibleFrom < to && range.visibleTo > from)
 }
 
+function isUrlSelection(document: RichDocument, sourceFrom: number, sourceTo: number): boolean {
+  const lineStart = lineStartAt(document.source, sourceFrom)
+  const lineEnd = document.source.indexOf("\n", sourceFrom)
+  const line = document.source.slice(lineStart, lineEnd < 0 ? document.source.length : lineEnd)
+  const urlPattern = /(?:https?:\/\/|www\.)\S*/gi
+  for (const match of line.matchAll(urlPattern)) {
+    const start = lineStart + (match.index ?? 0)
+    const end = start + match[0].length
+    if (sourceFrom < end && sourceTo > start) return true
+  }
+  return false
+}
+
 function enclosingWrapper(document: RichDocument, from: number, to: number, mark: InlineMark): { from: number; to: number; open: string; close: string } | null {
   const sourceFrom = visibleToSource(document, from)
   const sourceTo = visibleSourceEnd(document, to)
@@ -362,6 +375,9 @@ export function toggleInlineMark(
     // manufacturing an opaque source island here.
     return null
   }
+  const selectionSourceFrom = visibleToSource(document, start)
+  const selectionSourceTo = visibleSourceEnd(document, end)
+  if (isUrlSelection(document, selectionSourceFrom, selectionSourceTo)) return null
   const enclosing = enclosingWrapper(document, start, end, mark)
   if (enclosing) {
     const next = importMarkdown(unwrapWrapperSource(document, enclosing))
@@ -384,15 +400,15 @@ export function toggleInlineMark(
     const preservedBefore = before ? wrapper.open + before + wrapper.close : ""
     const preservedAfter = after ? wrapper.open + after + wrapper.close : ""
     const replacement = preservedBefore + selected + preservedAfter
-    const next = importMarkdown(document.source.slice(0, wrapper.from) + replacement + document.source.slice(wrapper.to))
+    const next = importMarkdownInternal(document.source.slice(0, wrapper.from) + replacement + document.source.slice(wrapper.to), true)
     return { document: next, anchor: reversed ? end : start, head: reversed ? start : end }
   }
-  const sourceFrom = visibleToSource(document, start)
-  const sourceTo = visibleSourceEnd(document, end)
+  const sourceFrom = selectionSourceFrom
+  const sourceTo = selectionSourceTo
   const hasHiddenInterior = document.ranges.some((range) => !range.visible && range.sourceFrom >= sourceFrom && range.sourceTo <= sourceTo)
   if (hasHiddenInterior || document.source.slice(sourceFrom, sourceTo).includes("\n")) return null
   const marker = delimiterForMark(mark)
-  const next = importMarkdown(document.source.slice(0, sourceFrom) + marker + document.source.slice(sourceFrom, sourceTo) + marker + document.source.slice(sourceTo))
+  const next = importMarkdownInternal(document.source.slice(0, sourceFrom) + marker + document.source.slice(sourceFrom, sourceTo) + marker + document.source.slice(sourceTo), true)
   const nextStart = start
   const nextEnd = end
   return reversed ? { document: next, anchor: nextEnd, head: nextStart } : { document: next, anchor: nextStart, head: nextEnd }
@@ -404,6 +420,7 @@ function inlineFragments(
   sourceFrom: number,
   block: RichBlock,
   inherited: RichMark[] = [],
+  allowAdjacent = false,
 ): InlineParse {
   const fragments: Fragment[] = []
   let plainStart = 0
@@ -422,7 +439,7 @@ function inlineFragments(
       continue
     }
     const end = matchingDelimiter(text, delimiter, i + delimiter.length)
-    if (end < 0 || end <= i + delimiter.length || /^\s*$/.test(text.slice(i + delimiter.length, end)) || !hasInlineBoundaryContext(text, i, end, delimiter)) {
+    if (end < 0 || end <= i + delimiter.length || /^\s*$/.test(text.slice(i + delimiter.length, end)) || !hasInlineBoundaryContext(text, i, end, delimiter, allowAdjacent)) {
       unmatched = true
       i += delimiter.length
       continue
@@ -449,7 +466,7 @@ function inlineFragments(
           marks: inheritedMarks,
           block,
         }], unmatched: false }
-      : inlineFragments(text.slice(innerStart, innerEnd), sourceFrom + innerStart, block, inheritedMarks)
+      : inlineFragments(text.slice(innerStart, innerEnd), sourceFrom + innerStart, block, inheritedMarks, allowAdjacent)
 
     if (nested.unmatched) unmatched = true
     pushHidden(fragments, sourceFrom + i, sourceFrom + innerStart, inheritedMarks, block)
@@ -487,12 +504,12 @@ function lineBlock(line: string, offset: number): { body: string; bodyOffset: nu
   return { body: line, bodyOffset: offset, block: "paragraph", prefixTo: offset }
 }
 
-function opaqueLine(line: string): boolean {
+function opaqueLine(line: string, allowAdjacent = false): boolean {
   // P1 deliberately does not interpret links, tables, fences, HTML, frontmatter,
   // or application-specific marker syntax. Keep the complete line visible.
   if (MARKDOWN_LINK.test(line) || LINK_LIKE.test(line) || WIKILINK.test(line) || MARKER_LIKE.test(line) || STRIKETHROUGH_LIKE.test(line) || HTML_LIKE.test(line)) return true
   if (/^\s*\|/.test(line)) return true
-  return inlineFragments(line, 0, "paragraph").unmatched
+  return inlineFragments(line, 0, "paragraph", [], allowAdjacent).unmatched
 }
 
 function rangesFromFragments(fragments: readonly Fragment[]): { visible: string; ranges: SourceMapRange[] } {
@@ -518,7 +535,7 @@ function rangesFromFragments(fragments: readonly Fragment[]): { visible: string;
 }
 
 /** Import Markdown into a visible projection. All positions are JavaScript UTF-16 offsets. */
-export function importMarkdown(source: string): RichDocument {
+function importMarkdownInternal(source: string, allowAdjacent: boolean): RichDocument {
   const fragments: Fragment[] = []
   let offset = 0
   let inFence = false
@@ -536,7 +553,7 @@ export function importMarkdown(source: string): RichDocument {
     const lineIsFence = Boolean(fence || inFence)
     const lineIsHtmlComment = inHtmlComment || HTML_LIKE.test(line)
 
-    if (lineIsFrontmatter || lineIsFence || lineIsHtmlComment || opaqueLine(line)) {
+    if (lineIsFrontmatter || lineIsFence || lineIsHtmlComment || opaqueLine(line, allowAdjacent)) {
       push(fragments, line, lineStart, lineStart + line.length, [], "opaque")
       if (lineIsFrontmatter && i > 0 && /^---\s*$/.test(line)) inFrontmatter = false
       if (fence) {
@@ -554,7 +571,7 @@ export function importMarkdown(source: string): RichDocument {
       }
     } else {
       const info = lineBlock(line, lineStart)
-      const parsed = inlineFragments(info.body, info.bodyOffset, info.block)
+      const parsed = inlineFragments(info.body, info.bodyOffset, info.block, [], allowAdjacent)
       if (parsed.unmatched) {
         // Keep the entire malformed line as one raw island. Do not emit the
         // otherwise-recognized block prefix first: overlapping source ranges
@@ -575,6 +592,10 @@ export function importMarkdown(source: string): RichDocument {
 
   const projection = rangesFromFragments(fragments)
   return { source, visible: projection.visible, ranges: projection.ranges, changed: new Map(), replacements: [] }
+}
+
+export function importMarkdown(source: string): RichDocument {
+  return importMarkdownInternal(source, false)
 }
 
 /** Serialize a document. Untouched source spans are returned byte-for-byte. */
