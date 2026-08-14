@@ -211,8 +211,9 @@ function hasInlineBoundaryContext(text: string, start: number, end: number, deli
   const punctuationOnly = Boolean(content) && /^[^\p{L}\p{N}\s]+$/u.test(content)
   const openingBoundary = punctuationOnly || !previous || /\s/.test(previous) || (isWordCharacter(previous) && prefix.includes(delimiter))
   const closingBoundary = punctuationOnly || !next || /\s/.test(next) || isWordCharacter(next)
+  const urlBefore = /(?:https?:\/\/|www\.)[^\s]*$/i.test(prefix)
   const urlFollows = /^(?:https?:\/\/|www\.)/i.test(text.slice(end + delimiter.length))
-  return openingBoundary && closingBoundary && !urlFollows
+  return openingBoundary && closingBoundary && !urlBefore && !urlFollows
 }
 
 function visibleCaretForSource(document: RichDocument, cursor: number): number {

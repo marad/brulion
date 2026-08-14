@@ -142,6 +142,7 @@ describe("rich Markdown document", () => {
     expect(importMarkdown("say **hello**.").visible).toBe("say **hello**.")
     expect(importMarkdown("say **hello**.").ranges[0]?.block).toBe("opaque")
     expect(importMarkdown("http://foo**hello** ").visible).toBe("http://foo**hello** ")
+    expect(importMarkdown("**ok** http://foo**bad** ").visible).toBe("**ok** http://foo**bad** ")
     expect(importMarkdown("a__b__c").visible).toBe("a__b__c")
     expect(applyInlineInputRule(importMarkdown("# **hello** "), 13, "space").converted).toBe(false)
     expect(classifyInlineBoundary("**hello** ", 10, "space")?.kind).toBe("bold")
@@ -154,6 +155,7 @@ describe("rich Markdown document", () => {
     expect(classifyInlineBoundary("**hello", 7, "eof")).toBeNull()
     expect(classifyInlineBoundary("**hello**x", 9, "eof")).toBeNull()
     expect(applyInlineInputRule(importMarkdown("**hello**http://x"), 9, "enter").converted).toBe(false)
+    expect(applyInlineInputRule(importMarkdown("**ok** http://foo**bad** "), 25, "space").converted).toBe(false)
     expect(applyInlineInputRule(importMarkdown("# **hello** "), 13, "space").caret).toBe("hello ".length)
   })
 
