@@ -161,7 +161,7 @@ function isOpaqueBlock(block: RichDocument["ranges"][number]["block"]): boolean 
 }
 
 function isPendingRange(document: RichDocument, range: RichDocument["ranges"][number]): boolean {
-  const lineStart = document.source.lastIndexOf("\\n", Math.max(0, range.sourceFrom - 1)) + 1
+  const lineStart = document.source.lastIndexOf("\n", Math.max(0, range.sourceFrom - 1)) + 1
   return document.pendingLineStarts.includes(lineStart)
 }
 

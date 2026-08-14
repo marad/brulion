@@ -85,6 +85,16 @@ describe("rich editor boundary (FEAT-0113)", () => {
     view.destroy()
   })
 
+  it("keeps incomplete markers editable on later lines", () => {
+    const view = mountRich()
+    view.dispatch({ changes: { from: 0, insert: "first\n**hello" } })
+    view.dispatch({ changes: { from: view.state.doc.length, insert: "!" } })
+
+    expect(view.state.doc.toString()).toBe("first\n**hello!")
+    expect(serializedRichMarkdown(view.state)).toBe("first\n**hello!")
+    view.destroy()
+  })
+
   it("preserves unknown syntax, special blocks, Unicode, and CRLF while editing one mapped span", () => {
     const view = mountRich()
     const source = "before **café** after\r\n~~unknown~~\r\n```mermaid\r\n**raw**\r\n```\r\n"
