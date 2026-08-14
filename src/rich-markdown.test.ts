@@ -13,6 +13,8 @@ import {
   applyBlockEnter,
   applyBlockBackspace,
   indentBlocks,
+  setHeadingLevel,
+  clearRichFormatting,
 } from "./rich-markdown"
 
 describe("rich Markdown document", () => {
@@ -83,6 +85,23 @@ describe("rich Markdown document", () => {
     expect(indentedMarkedList?.document.visible).toBe("hello")
     expect(serializeMarkdown(indentedMarkedList!.document)).toBe("  - h**ell**o")
   })
+  it("applies visible heading and clear-format commands without rewriting unrelated lines", () => {
+    const source = "plain\r\n> **quote**\r\n1. keep"
+    const document = importMarkdown(source)
+    const heading = setHeadingLevel(document, 0, document.visible.length, 2)
+    expect(heading?.changed).toBe(true)
+    expect(serializeMarkdown(heading!.document)).toBe("## plain\r\n## **quote**\r\n## 1. keep")
+    expect(heading!.document.visible).toBe("plain\r\nquote\r\n1. keep")
+
+    const cleared = clearRichFormatting(importMarkdown("## **title**\r\n> *quote*"), 0, "title\r\nquote".length)
+    expect(cleared?.changed).toBe(true)
+    expect(serializeMarkdown(cleared!.document)).toBe("title\r\nquote")
+    expect(cleared!.document.visible).toBe("title\r\nquote")
+
+    const opaque = clearRichFormatting(importMarkdown("```js\n**raw**\n```"), 0, 5)
+    expect(opaque).toBeNull()
+  })
+
   it("projects supported syntax without exposing delimiters and maps UTF-16 positions", () => {
     const doc = importMarkdown("# Hé **world**\n> *quote*")
     expect(doc.visible).toBe("Hé world\nquote")
