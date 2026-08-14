@@ -21,6 +21,8 @@ describe("rich Markdown document", () => {
     expect(classifyBlockBoundary("> ", 2, "space")?.kind).toBe("quote")
     expect(classifyBlockBoundary("- ", 2, "space")?.kind).toBe("unordered-list")
     expect(classifyBlockBoundary("#", 1, "space")).toBeNull()
+    expect(importMarkdown(">quote").visible).toBe(">quote")
+    expect(importMarkdown(">").visible).toBe(">")
     expect(applyBlockInputRule(importMarkdown("# "), 2, "space").document.visible).toBe("")
 
     const continued = applyBlockEnter(importMarkdown("> quote"), 5)
@@ -34,8 +36,9 @@ describe("rich Markdown document", () => {
     expect(crlfContinuation.document.source.startsWith("- **x**\r\n- ")).toBe(true)
     expect(crlfContinuation.document.source.includes("\n\r\n")).toBe(false)
     const exited = applyBlockEnter(importMarkdown("- "), 0)
-    expect(exited.document.source).toBe("- \n")
+    expect(exited.document.source).toBe("\n")
     expect(exited.document.visible).toBe("\n")
+    expect(applyBlockEnter(importMarkdown("- \nnext"), 0).document.source).toBe("\nnext")
 
     const removed = applyBlockBackspace(importMarkdown("# "), 0)
     expect(removed.document.source).toBe("")
