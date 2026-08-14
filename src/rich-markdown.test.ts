@@ -47,6 +47,8 @@ describe("rich Markdown document", () => {
     expect(crlfContinuation.document.source.includes("\n\r\n")).toBe(false)
     const crlfAtEof = applyBlockEnter(importMarkdown("- one\r\n- two"), 5)
     expect(crlfAtEof.document.source).toBe("- one\r\n- \r\n- two")
+    const nestedContinuation = applyBlockEnter(importMarkdown("  - one"), 3)
+    expect(nestedContinuation.document.source).toBe("  - one\n  - ")
     const orderedContinuation = applyBlockEnter(importMarkdown("1. one"), 3)
     expect(orderedContinuation.document.source).toBe("1. one\n")
     expect(orderedContinuation.document.visible).toBe("one\n")
