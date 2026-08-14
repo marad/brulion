@@ -104,13 +104,13 @@ export function handleRichVimPaste(view: EditorView, event: KeyboardEvent): bool
   let to = previous.to
   let pasteText = text
   const defaultLineEnding = document?.source.includes("\r\n") ? "\r\n" : "\n"
-  const linewiseBody = register.linewise
+  const rawLinewiseBody = register.linewise
     ? (() => {
       const normalized = text.replace(/\r\n?/g, "\n")
-      const body = normalized.endsWith("\n") ? normalized.slice(0, -1) : normalized
-      return body.replace(/\n/g, defaultLineEnding)
+      return normalized.endsWith("\n") ? normalized.slice(0, -1) : normalized
     })()
     : text
+  const linewiseBody = rawLinewiseBody.replace(/\n/g, defaultLineEnding)
   const linewiseText = register.linewise ? `${linewiseBody}${defaultLineEnding}` : text
   if (register.linewise && vim.visualMode && !vim.visualLine) {
     // Characterwise visual + linewise register is safe only for an unmarked
@@ -127,7 +127,10 @@ export function handleRichVimPaste(view: EditorView, event: KeyboardEvent): bool
         if (touched.length === 1 && touched[0]!.marks.length === 0 && touched[0]!.block === "paragraph") {
           const sourceFrom = visibleToSource(document, modelRange.from)
           const sourceTo = visibleToSource(document, modelRange.to)
-          const sourceText = `${defaultLineEnding}${linewiseBody}${defaultLineEnding}`
+          const targetLine = sourceLineAt(document, view.state.doc.lineAt(previous.from).number)
+          const ending = targetLine?.ending || defaultLineEnding
+          const body = rawLinewiseBody.replace(/\n/g, ending)
+          const sourceText = `${ending}${body}${ending}`
           applied = applyRichSourceBoundaryChange(view, sourceFrom, sourceTo, sourceText, sourceFrom + firstNonWhitespaceOffset(sourceText))
         }
       } catch {
@@ -149,29 +152,31 @@ export function handleRichVimPaste(view: EditorView, event: KeyboardEvent): bool
       const first = sourceLineAt(document, view.state.doc.lineAt(firstPosition).number)
       const last = sourceLineAt(document, view.state.doc.lineAt(Math.max(firstPosition, lastPosition)).number)
       if (first && last) {
+        const ending = last.ending || first.ending || defaultLineEnding
+        const body = rawLinewiseBody.replace(/\n/g, ending)
         sourceFrom = first.from
         sourceTo = last.to
-        sourceText = linewiseBody + document.source.slice(last.contentTo, last.to)
-        sourceCaret = sourceFrom + firstNonWhitespaceOffset(linewiseBody)
+        sourceText = body + document.source.slice(last.contentTo, last.to)
+        sourceCaret = sourceFrom + firstNonWhitespaceOffset(body)
       }
     } else {
       const line = view.state.doc.lineAt(previous.head)
       const sourceLine = sourceLineAt(document, line.number)
       if (sourceLine) {
+        const ending = sourceLine.ending || defaultLineEnding
+        const body = rawLinewiseBody.replace(/\n/g, ending)
         if (event.key === "p") {
-          const ending = sourceLine.ending || defaultLineEnding
           sourceFrom = sourceLine.to
           sourceTo = sourceLine.to
           sourceText = sourceLine.to < document.source.length
-            ? `${linewiseBody}${ending}`
-            : `${ending}${linewiseBody}${ending}`
-          sourceCaret = sourceFrom + (sourceLine.to < document.source.length ? 0 : ending.length) + firstNonWhitespaceOffset(linewiseBody)
+            ? `${body}${ending}`
+            : `${ending}${body}${ending}`
+          sourceCaret = sourceFrom + (sourceLine.to < document.source.length ? 0 : ending.length) + firstNonWhitespaceOffset(body)
         } else {
-          const ending = sourceLine.ending || defaultLineEnding
           sourceFrom = sourceLine.from
           sourceTo = sourceLine.from
-          sourceText = `${linewiseBody}${ending}`
-          sourceCaret = sourceFrom + firstNonWhitespaceOffset(linewiseBody)
+          sourceText = `${body}${ending}`
+          sourceCaret = sourceFrom + firstNonWhitespaceOffset(body)
         }
       }
     }

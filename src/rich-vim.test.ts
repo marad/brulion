@@ -113,6 +113,15 @@ describe("rich Vim adapter (FEAT-0114)", () => {
     expect(serializedRichMarkdown(crlf.state)).toBe("# new\r\nsecond\r\nnext")
     crlf.destroy()
 
+    const mixed = mountEditor(document.createElement("div"), { rich: true })
+    setEditorText(mixed, "first\nsecond\r\nthird")
+    setVimMode(mixed, true)
+    mixed.focus()
+    Vim.getRegisterController().unnamedRegister.setText("one\r\ntwo\r\n", true)
+    press(mixed, "P")
+    expect(serializedRichMarkdown(mixed.state)).toBe("one\ntwo\nfirst\nsecond\r\nthird")
+    mixed.destroy()
+
     const plain = mountEditor(document.createElement("div"), { rich: true })
     setEditorText(plain, "old\r\nnext")
     setVimMode(plain, true)
