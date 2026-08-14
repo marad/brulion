@@ -29,9 +29,11 @@ exits to a plain paragraph. Backspace at an empty block boundary removes the
 block prefix or exits the block without exposing hidden source delimiters.
 Indentation changes only the selected block's explicit prefix and never
 reformats unrelated lines. Ordered-list prefixes are mapped as imported source
-and remain untouched unless the user explicitly edits that source. Every
-operation returns visible caret/source mappings and serializes untouched source
-bytes exactly.
+and remain untouched unless the user explicitly edits that source. The model
+exposes mapping-safe block operations, while existing CodeMirror shortcut and
+slash-command adapters that still consume raw EditorState remain a P6
+integration concern. Every operation returns visible caret/source mappings and
+serializes untouched source bytes exactly.
 
 ## Acceptance criteria
 
@@ -67,10 +69,16 @@ bytes exactly.
   UTF-16 positions, inline rich marks, opaque bytes, and visible caret
   placement remain correct; no operation inserts raw Markdown delimiters into
   the visible projection.
+- AC-8: Given the existing raw CodeMirror heading shortcut/slash adapters, when
+  this phase is sealed, then they remain explicitly deferred to P6 and no P3
+  claim or implementation silently routes them through visible raw-marker
+  editing; the rich model's heading metadata and mapping contracts remain the
+  only P3 requirement.
 
 ## Out of scope
 
 - links, fences, tables, frontmatter, Mermaid, clipboard, Vim, persistence
   wiring, and browser migration; those belong to later M47 phases;
 - automatic ordered-list renumbering or Markdown-wide formatting;
+- integrating the existing raw CodeMirror heading shortcut/slash adapters (P6);
 - replacing CodeMirror or introducing Tiptap/ProseMirror.
