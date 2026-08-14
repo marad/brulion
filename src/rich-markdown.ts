@@ -293,16 +293,35 @@ export function classifyInlineBoundary(
   return null
 }
 
+function lineContentEnd(source: string, lineStart: number): number {
+  const newline = source.indexOf("\n", lineStart)
+  const end = newline < 0 ? source.length : newline
+  return end > lineStart && source[end - 1] === "\r" ? end - 1 : end
+}
+
+function pendingBoundaryMatches(document: RichDocument, cursor: number): InlineBoundaryMatch[] {
+  const matches: InlineBoundaryMatch[] = []
+  for (const lineStart of [...document.pendingLineStarts].sort((a, b) => b - a)) {
+    const end = lineContentEnd(document.source, lineStart)
+    if (end > cursor) continue
+    const match = classifyInlineBoundary(document.source, end, "blur")
+    if (match && lineStartAt(document.source, match.sourceFrom) === lineStart) matches.push(match)
+  }
+  return matches
+}
+
 /** Apply a completed marker boundary while retaining Markdown as source. */
 export function applyInlineInputRule(
   document: RichDocument,
   cursor: number,
   boundary: InlineBoundary,
 ): InlineInputResult {
-  const match = classifyInlineBoundary(document.source, cursor, boundary)
-  if (!match) return { document, converted: false, caret: visibleCaretForSource(document, cursor) }
-  const flushedLine = lineStartAt(document.source, match.sourceFrom)
-  const remainingPending = new Set(document.pendingLineStarts.filter((lineStart) => lineStart !== flushedLine))
+  const directMatch = classifyInlineBoundary(document.source, cursor, boundary)
+  const fallbackMatches = directMatch ? [] : pendingBoundaryMatches(document, cursor)
+  if (!directMatch && !fallbackMatches.length) return { document, converted: false, caret: visibleCaretForSource(document, cursor) }
+  const matches = directMatch ? [directMatch] : fallbackMatches
+  const flushedLines = new Set(matches.map((match) => lineStartAt(document.source, match.sourceFrom)))
+  const remainingPending = new Set(document.pendingLineStarts.filter((lineStart) => !flushedLines.has(lineStart)))
   const punctuationLines = new Set(document.explicitPunctuationLineStarts ?? [])
   const adjacentLines = new Set(document.explicitAdjacentLineStarts ?? [])
   const projected = importMarkdownInternal(document.source, adjacentLines, remainingPending, punctuationLines)
