@@ -207,8 +207,10 @@ function hasInlineBoundaryContext(text: string, start: number, end: number, deli
   const previous = text[start - 1]
   const next = text[end + delimiter.length]
   const prefix = text.slice(0, start)
-  const openingBoundary = !previous || /\s/.test(previous) || (isWordCharacter(previous) && prefix.includes(delimiter))
-  const closingBoundary = !next || /\s/.test(next) || isWordCharacter(next)
+  const content = text.slice(start + delimiter.length, end)
+  const punctuationOnly = Boolean(content) && /^[^\p{L}\p{N}\s]+$/u.test(content)
+  const openingBoundary = punctuationOnly || !previous || /\s/.test(previous) || (isWordCharacter(previous) && prefix.includes(delimiter))
+  const closingBoundary = punctuationOnly || !next || /\s/.test(next) || isWordCharacter(next)
   const urlFollows = /^(?:https?:\/\/|www\.)/i.test(text.slice(end + delimiter.length))
   return openingBoundary && closingBoundary && !urlFollows
 }

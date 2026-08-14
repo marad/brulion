@@ -193,6 +193,10 @@ describe("rich Markdown document", () => {
     expect(serializeMarkdown(tripleItalic!.document)).toBe("**hello**")
     expect(tripleItalic!.document.visible).toBe("hello")
 
+    const punctuation = toggleInlineMark(importMarkdown("a,. next"), 1, 2, "bold")
+    expect(serializeMarkdown(punctuation!.document)).toBe("a**,**. next")
+    expect(punctuation!.document.visible).toBe("a,. next")
+
     expect(toggleInlineMark(importMarkdown("~~raw~~"), 0, 5, "bold")).toBeNull()
     expect(toggleInlineMark(importMarkdown("**a** b"), 0, 3, "italic")).toBeNull()
   })
