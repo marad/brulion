@@ -184,6 +184,27 @@ describe("open", () => {
     expect(view.state.doc.toString()).toBe("real start") // not the wrongly-guessed content
   })
 
+  it("does not let a late speculative preview overwrite the activated fallback note", async () => {
+    const view = mountView()
+    loadActiveNote.mockResolvedValue("gone.md")
+    sweepResult.mockReturnValue(["real.md"])
+    let resolveGuess: (note: { content: string; lastModified: number }) => void = () => {}
+    readNote.mockImplementation(async (_dir, name) => {
+      if (name === "gone.md") return new Promise((resolve) => { resolveGuess = resolve })
+      return { content: "real note", lastModified: 2 }
+    })
+    const controller = createNoteController(view)
+
+    const opening = controller.open(DIR)
+    await vi.waitFor(() => expect(readNote).toHaveBeenCalledWith(DIR, "gone.md"))
+    await opening
+    expect(view.state.doc.toString()).toBe("real note")
+
+    resolveGuess({ content: "stale guess", lastModified: 1 })
+    await vi.waitFor(() => expect(view.state.doc.toString()).toBe("real note"))
+    view.destroy()
+  })
+
   it("shows the guessed note's content and fires onPreviewReady before the listing completes", async () => {
     const view = mountView()
     loadActiveNote.mockResolvedValue("start.md")
@@ -2560,6 +2581,32 @@ describe("serialized rich source controller boundary (FEAT-0113)", () => {
 
     expect(editorDocument.readMarkdown()).toBe("**hello**")
     expect(view.state.doc.toString()).toBe("hello")
+    view.destroy()
+  })
+
+  it("restores transient rich state when a speculative folder preview is rejected", async () => {
+    const { view, editorDocument } = mountRichControllerView()
+    sweepResult.mockReturnValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "**hello**", lastModified: 1 })
+    const controller = createNoteController(view, { editorDocument, debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    editorDocument.loadMarkdown("")
+    view.dispatch({ changes: { from: 0, insert: "**hello**" } })
+    expect(editorDocument.readMarkdown()).toBe("**hello**")
+    expect(view.state.doc.toString()).toBe("**hello**")
+
+    const DEAD = {} as FileSystemDirectoryHandle
+    let rejectListing: (error: Error) => void = () => {}
+    continueSweep.mockReturnValue(new Promise((_resolve, reject) => { rejectListing = reject }))
+    const opening = controller.open(DEAD)
+    await vi.waitFor(() => expect(view.state.doc.toString()).toBe("hello"))
+    rejectListing(new Error("NotFoundError"))
+    await expect(opening).rejects.toThrow("NotFoundError")
+
+    expect(editorDocument.readMarkdown()).toBe("**hello**")
+    expect(view.state.doc.toString()).toBe("**hello**")
     view.destroy()
   })
 

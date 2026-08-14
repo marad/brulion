@@ -26,6 +26,12 @@ export interface RichReloadMapping {
   viewport: RichViewportAnchor
 }
 
+export interface RichEditorSnapshot {
+  document: RichDocument
+  selection: RichVisibleSelection
+  viewport: RichViewportAnchor
+}
+
 export interface RichVisibleChange {
   /** Positions in the pre-transaction visible projection. */
   from: number
@@ -60,6 +66,10 @@ export function applyRichVisibleChanges(
 
 /** Import source and commit source/model/visible text as one programmatic load. */
 export function setRichEditorSource(view: EditorView, source: string): void
+
+/** Capture and restore exact transient rich state for failed speculative loads. */
+export function captureRichEditorState(view: EditorView): RichEditorSnapshot
+export function restoreRichEditorState(view: EditorView, snapshot: RichEditorSnapshot): void
 
 /** Re-import external source and map selection and viewport without autosave. */
 export function reloadRichEditorSource(view: EditorView, source: string): void
@@ -108,6 +118,12 @@ silently synthesized by this mapping.
 ## `editor-document.ts`
 
 ```ts
+export interface EditorDocumentSnapshot {
+  markdown: string
+  visible: string
+  rich: RichEditorSnapshot | null
+}
+
 export interface EditorDocumentBoundary {
   /** Current raw Markdown; visible text is never returned from the primary path. */
   readMarkdown(): string
@@ -119,6 +135,9 @@ export interface EditorDocumentBoundary {
   loadMarkdown(source: string): void
   /** Reparse a raw Markdown snapshot while preserving mapped view position. */
   reloadMarkdown(source: string): void
+  /** Optional exact snapshot hooks for controller rollback of speculative loads. */
+  capture?(): EditorDocumentSnapshot
+  restore?(snapshot: EditorDocumentSnapshot): void
 }
 
 /** Bind source operations to a rich or raw EditorView. */

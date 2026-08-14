@@ -2483,3 +2483,21 @@ UTF-16 source. External refresh reparses Markdown and maps the visible caret and
 viewport; a dirty buffer still raises the existing conflict instead of being
 replaced. P6 still owns rich clipboard/command/Vim adapters, and P7 owns removal
 of obsolete renderers and full browser migration validation.
+
+## M47 P5 uses exact editor snapshots for speculative-load rollback
+
+**What:** The editor boundary can capture and restore the exact rich model,
+visible selection, and viewport around an asynchronous speculative preview.
+The controller also disables a preview callback once listing selects a different
+note, so a late guess cannot repaint the activated note.
+
+**Why:** Serialized Markdown is authoritative for persistence, but it is not a
+complete representation of transient pending-marker and explicit-formatting
+projection state. Comparing only serialized source during a failed folder open
+could therefore leave a visible/model mismatch, while an unresolved speculative
+read could overwrite a valid fallback note.
+
+**Consequence (UI/project):** Failed folder opens restore the prior rich editing
+state without rewriting or re-importing its transient projection. Preview remains
+available where safe, but stale guesses are ignored after note selection; no
+user-owned Markdown bytes or save metadata are changed by a failed preview.

@@ -428,6 +428,7 @@ export function createNoteController(
     // guard is checked at this same commit boundary for stale extension calls.
     guard?.()
     const previousMarkdown = editorDocument.readMarkdown()
+    const previousSnapshot = editorDocument.capture?.()
     // Rich loading must also re-import when the serialized source is unchanged:
     // a pending/explicit transient projection can differ from the canonical
     // import of that same source. The boundary is a no-op for an already exact
@@ -443,7 +444,8 @@ export function createNoteController(
         guard?.()
       } catch (error) {
         try {
-          editorDocument.loadMarkdown(previousMarkdown)
+          if (previousSnapshot && editorDocument.restore) editorDocument.restore(previousSnapshot)
+          else editorDocument.loadMarkdown(previousMarkdown)
         } catch {
           // Preserve the original failure; a boundary that cannot restore is
           // still prevented from committing controller metadata below.
@@ -739,9 +741,11 @@ export function createNoteController(
         // guards against the read resolving *after* the listing has already
         // failed (rare, but otherwise this would paint over the revert below).
         const previousDocText = editorDocument.readMarkdown()
+        const previousSnapshot = editorDocument.capture?.()
         let openFailed = false
+        let previewAllowed = true
         void speculativeRead.then((note) => {
-          if (note && !openFailed) {
+          if (note && !openFailed && previewAllowed) {
             trackSync("load editor Markdown (preview)", () => editorDocument.loadMarkdown(note.content))
             opts.onPreviewReady?.(guess)
           }
@@ -759,7 +763,10 @@ export function createNoteController(
           complete = await track("open: sweep", () => sweepPromise)
         } catch (err) {
           openFailed = true
-          if (editorDocument.readMarkdown() !== previousDocText) {
+          previewAllowed = false
+          if (previousSnapshot && editorDocument.restore) {
+            trackSync("load editor state (revert)", () => editorDocument.restore!(previousSnapshot))
+          } else if (editorDocument.readMarkdown() !== previousDocText) {
             trackSync("load editor Markdown (revert)", () => editorDocument.loadMarkdown(previousDocText))
           }
           throw err
@@ -797,6 +804,10 @@ export function createNoteController(
           sweepStartNotes = notes
         }
         const active = pickActiveNote(notes, persisted)
+        // A late preview must never repaint a different note after the listing
+        // selects a fallback. Stop that callback before deciding whether its
+        // read is safe to await/adopt.
+        previewAllowed = active === guess
         // Only worth adopting the speculative read if the guess it was based on
         // is the note we're actually activating — otherwise (a fresh vault, or
         // the persisted note vanished since last session) `activate` falls back

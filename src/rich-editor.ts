@@ -40,6 +40,14 @@ export interface RichReloadMapping {
   viewport: RichViewportAnchor
 }
 
+/** Exact rich editor state used when a speculative controller preview must be
+ * rolled back without re-importing away transient pending input. */
+export interface RichEditorSnapshot {
+  document: RichDocument
+  selection: RichVisibleSelection
+  viewport: RichViewportAnchor
+}
+
 export interface RichVisibleChange {
   /** Positions in the pre-transaction visible projection. */
   from: number
@@ -444,6 +452,45 @@ export function mapRichReload(
 function topViewportPosition(view: EditorView): number {
   const rect = view.scrollDOM.getBoundingClientRect()
   return view.posAtCoords({ x: rect.left + 1, y: rect.top + 1 }) ?? view.viewport.from
+}
+
+/** Capture the model and visible-coordinate anchors without serializing away
+ * transient pending/explicit projection state. */
+export function captureRichEditorState(view: EditorView): RichEditorSnapshot {
+  const document = fieldDocument(view.state)
+  if (!document) throw new Error("Editor is not using the rich document boundary")
+  const selection = view.state.selection.main
+  return {
+    document,
+    selection: {
+      anchor: modelPositionFromEditor(document, selection.anchor),
+      head: modelPositionFromEditor(document, selection.head),
+    },
+    viewport: { visiblePosition: modelPositionFromEditor(document, topViewportPosition(view)) },
+  }
+}
+
+/** Restore an exact rich snapshot as a programmatic, non-history transaction. */
+export function restoreRichEditorState(view: EditorView, snapshot: RichEditorSnapshot): void {
+  const current = fieldDocument(view.state)
+  if (!current) throw new Error("Editor is not using the rich document boundary")
+  const changes = diffRange(view.state.doc.toString(), editorVisibleText(snapshot.document))
+  const selection = {
+    anchor: editorPositionFromModel(snapshot.document, snapshot.selection.anchor),
+    head: editorPositionFromModel(snapshot.document, snapshot.selection.head),
+  }
+  const visiblePosition = editorPositionFromModel(snapshot.document, snapshot.viewport.visiblePosition)
+  view.dispatch({
+    changes: changes ?? [],
+    selection,
+    effects: [
+      setRichDocumentEffect.of(snapshot.document),
+      EditorView.scrollIntoView(visiblePosition, { y: "start" }),
+    ],
+    annotations: [annotationsForProgrammaticLoad(), Transaction.addToHistory.of(false)],
+    filter: false,
+    scrollIntoView: true,
+  })
 }
 
 function annotationsForProgrammaticLoad(): Annotation<boolean> {
