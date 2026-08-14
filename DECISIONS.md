@@ -2359,3 +2359,28 @@ P3 block operations; ordinary Enter may still insert a surrounding source
 newline without renumbering the list. FEAT-0111 AC-6 and the M47 ledger record
 this boundary; a future ordered-list editor must add its own source-preserving
 spec and tests.
+
+## Review loops batch findings and separate focused checks from shipping gates (M47 workflow)
+
+**What:** The first canonical review pass receives a compact review packet and
+must report all material findings it can establish. The writer fixes accepted
+material findings from a round in one batch, records a disposition for every
+finding, and leaves no unresolved material finding behind. Follow-up reviews
+narrow their scope to changed files and prior finding classes; a retained
+read-only reviewer may be resumed for those checks, while the final clean pass
+always uses a fresh context. Full Vitest, build, and E2E commands remain parent-owned
+final shipping gates rather than per-round reviewer work.
+
+**Why:** Fresh full-diff review after every single fix repeatedly reloaded the
+same context and made expensive checks compete with adversarial inspection. That
+increased wall-clock time without improving the file-fidelity gate. Batching
+preserves the independent review requirement while making the loop converge on
+complete finding sets instead of one finding per round. A fresh final pass keeps
+resume-based follow-ups from hiding an anchored miss.
+
+**Consequence (project):** Every active phase must provide a concise review
+packet containing its exact range, contracts, non-goals, and edge-case matrix.
+The review ledger records the current HEAD for each round against one immutable
+base SHA. Reviewers remain read-only and canonical, blocked runs are never clean,
+and the final phase/milestone gates are unchanged. This affects process only;
+it does not change the Markdown format, editor behavior, or user-owned files.

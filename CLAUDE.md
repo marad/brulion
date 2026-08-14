@@ -101,16 +101,26 @@ report instead).
    the implementation.
 4. **Review**: first run the read-only handoff
    `npm run workflow:gate -- pre-review --base <exact-base-sha> --spec FEAT-NNNN`.
-   Then run **`/skill:review-until-clean`**, which loops
-   **`/skill:code-review`** every phase — not an ad-hoc reviewer — until no
-   noteworthy findings remain. Give the reviewer the exact base and current
-   HEAD; keep one canonical reviewer per round and record each result in the
-   phase's `Review ledger`. A failed, stopped, or blocked worker is never clean.
-   Use targeted tests while fixing a round and the full suite only for the
-   final shipping gate. Honor that skill's two rules: **restructure after
-   2 rounds of the same class of finding** (stop patching effects, fix the cause),
-   and make every test added for a fix **discriminating** (it must fail against
-   the pre-fix behavior).
+   Before the first review, complete a compact review packet in the phase
+   handoff: exact base/HEAD, changed paths, ACs and non-negotiable invariants,
+   explicit non-goals, and the edge-case test matrix. Then run
+   **`/skill:review-until-clean`**, which loops **`/skill:code-review`** every
+   phase — not an ad-hoc reviewer — until no material findings remain. The
+   first canonical pass must be exhaustive and report all material findings it
+   can establish, not stop after the first one; the writer then fixes all
+   accepted material findings from that round in one batch. Every finding gets a
+   recorded disposition, and unresolved material findings block a clean result.
+   Give the reviewer the exact base and current HEAD; keep one canonical reviewer
+   per round and record each result in the phase's `Review ledger`. A failed,
+   stopped, or blocked worker is never clean. Follow-up rounds should inspect the changed files and prior
+   finding classes narrowly; a retained read-only reviewer may be resumed for
+   those targeted checks, but the final clean round must use a fresh-context
+   reviewer. Reviewers run only focused checks needed to establish findings —
+   never the full Vitest/build/E2E shipping sequence on every round. The parent
+   owns the final shipping gate. Honor that skill's two rules: **restructure
+   after 2 rounds of the same class of finding** (stop patching effects, fix the
+   cause), and make every test added for a fix **discriminating** (it must fail
+   against the pre-fix behavior).
 5. **Verify & seal**: run the phase's targeted tests, then `specman verify`, then
    `specman seal` (or the explicitly justified initial-seal form for a new
    snapshot). Confirm the feature is `in-sync` with `specman status --verbose`.
