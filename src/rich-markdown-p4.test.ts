@@ -38,6 +38,15 @@ describe("rich Markdown P4 projection boundary", () => {
     expect(escaped.visible).toBe("\\[literal] ok")
     expect(escaped.links.map((link) => link.target)).toEqual(["y"])
     expect(escaped.ranges.some((range) => range.block === "opaque" && range.sourceFrom === 0 && range.sourceTo === 11)).toBe(true)
+    const escapedWiki = importMarkdown("[[literal\\|alias]] [ok](y)")
+    expect(escapedWiki.visible).toBe("[[literal\\|alias]] ok")
+    expect(escapedWiki.links.map((link) => link.target)).toEqual(["y"])
+    for (const source of ["~~[x](y)~~", "^^[x](y)^^", "<bad [x](y)"]) {
+      const opaque = importMarkdown(source)
+      expect(opaque.visible).toBe(source)
+      expect(opaque.links).toEqual([])
+      expect(editRawSource(opaque, 0, source.length, "repaired")).not.toBeNull()
+    }
   })
 
   it("keeps special source islands raw and never parses their bodies", () => {

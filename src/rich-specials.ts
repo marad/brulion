@@ -593,6 +593,16 @@ function escapedBracketSpan(source: string, start: number, lineEnd: number): Sou
   return { sourceFrom: start, sourceTo: lineEnd }
 }
 
+function malformedWikiSpan(source: string, start: number, lineEnd: number): SourceSpan {
+  for (let index = start + 2; index + 1 < lineEnd; index += 1) {
+    if (source[index] !== "]" || source[index + 1] !== "]" || escapedAt(source, index)) continue
+    const body = source.slice(start + 2, index)
+    if (body.includes("\\|")) return { sourceFrom: start, sourceTo: index + 2 }
+    break
+  }
+  return { sourceFrom: source.lastIndexOf("\n", start) + 1, sourceTo: lineEnd }
+}
+
 /** Scan complete links outside the supplied special-block spans. */
 export function scanRichLinks(
   source: string,
@@ -617,7 +627,7 @@ export function scanRichLinks(
       if (source.startsWith("[[", index)) {
         const malformed = escapedAt(source, index)
           ? escapedWikiSpan(source, index, line.to)
-          : { sourceFrom: line.from, sourceTo: line.to }
+          : malformedWikiSpan(source, index, line.to)
         malformedLinkSpans.push(malformed)
         index = malformed.sourceTo - 1
         continue

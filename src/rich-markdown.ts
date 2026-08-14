@@ -966,6 +966,25 @@ function opaqueLine(
   return inlineFragments(info.body, info.bodyOffset, info.block, [], allowAdjacent, allowPunctuation, links).unmatched
 }
 
+function canProjectLinksAlongsideRaw(
+  line: string,
+  sourceFrom: number,
+  allowAdjacent: boolean | ReadonlySet<number>,
+  allowPunctuation: boolean,
+  links: readonly RichLinkNode[],
+): boolean {
+  const residual = residualLinkSyntax(line, sourceFrom, links)
+  const hasEscapedLinkIsland = /\\\[/.test(residual)
+    || /\[\[[^\]\n]*\\\|[^\]\n]*\]\]/.test(residual)
+  if (!hasEscapedLinkIsland
+    || MARKER_LIKE.test(residual)
+    || STRIKETHROUGH_LIKE.test(residual)
+    || HTML_LIKE.test(residual)
+    || /^\s*\|/.test(line)) return false
+  const info = lineBlock(residual, sourceFrom)
+  return !inlineFragments(info.body, info.bodyOffset, info.block, [], allowAdjacent, allowPunctuation).unmatched
+}
+
 function rangesFromFragments(fragments: readonly Fragment[]): { visible: string; ranges: SourceMapRange[] } {
   const visible = fragments.map((fragment) => fragment.text).join("")
   const ranges: SourceMapRange[] = []
@@ -1026,7 +1045,12 @@ function importMarkdownInternal(
     const lineIsPending = rawLineStarts.has(lineStart)
     const lineAllowsPunctuation = allowPunctuation === true || (allowPunctuation !== false && allowPunctuation.has(lineStart))
     const lineIsOpaque = lineIsPending || lineIsFrontmatter || lineIsFence || lineIsHtmlComment || opaqueLine(line, lineStart, allowAdjacent, lineAllowsPunctuation, lineLinks)
-    const canProjectLinksInOpaqueLine = lineLinks.length > 0 && !lineIsPending && !lineIsFrontmatter && !lineIsFence && !lineIsHtmlComment
+    const canProjectLinksInOpaqueLine = lineLinks.length > 0
+      && !lineIsPending
+      && !lineIsFrontmatter
+      && !lineIsFence
+      && !lineIsHtmlComment
+      && canProjectLinksAlongsideRaw(line, lineStart, allowAdjacent, lineAllowsPunctuation, lineLinks)
 
     if (lineSpecial) {
       push(fragments, line, lineStart, lineEnd, [], lineSpecial.kind, lineStart, lineEnd, undefined, lineSpecial)
