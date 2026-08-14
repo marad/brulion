@@ -374,6 +374,7 @@ function htmlSourceSpans(source: string): SourceSpan[] {
     const tags = [...text.matchAll(tagPattern)]
     if (!tags.length) {
       if (blockFrom >= 0) continue
+      if (/<\/?[A-Za-z][^>\r\n]*$/.test(text)) blockFrom = line.from
       continue
     }
     if (blockFrom < 0) blockFrom = line.from

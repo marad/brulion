@@ -997,6 +997,40 @@ function delimitedOpaqueSpans(
   return spans
 }
 
+function unclosedDelimiterSpans(
+  text: string,
+  sourceFrom: number,
+  marker: string,
+  ignoredSpans: readonly { sourceFrom: number; sourceTo: number }[] = [],
+): Array<{ sourceFrom: number; sourceTo: number }> {
+  const spans: Array<{ sourceFrom: number; sourceTo: number }> = []
+  for (let index = 0; index <= text.length - marker.length; index += 1) {
+    const sourcePosition = sourceFrom + index
+    const ignored = ignoredSpans.find((span) => sourcePosition >= span.sourceFrom && sourcePosition < span.sourceTo)
+    if (ignored) {
+      index = Math.max(index, ignored.sourceTo - sourceFrom - 1)
+      continue
+    }
+    if (!text.startsWith(marker, index) || escapedAt(text, index)) continue
+    if (marker.length === 1 && (text.startsWith(marker + marker, index) || text[index - 1] === marker)) continue
+    if (marker === "_" && isWordCharacter(text[index - 1]) && isWordCharacter(text[index + 1])) continue
+    let close = -1
+    for (let candidate = index + marker.length; candidate <= text.length - marker.length; candidate += 1) {
+      const candidateSource = sourceFrom + candidate
+      if (ignoredSpans.some((span) => candidateSource >= span.sourceFrom && candidateSource < span.sourceTo)) continue
+      if (!text.startsWith(marker, candidate) || escapedAt(text, candidate)) continue
+      close = candidate
+      break
+    }
+    if (close < 0) {
+      spans.push({ sourceFrom: sourceFrom + index, sourceTo: sourceFrom + text.length })
+      break
+    }
+    index = close + marker.length - 1
+  }
+  return spans
+}
+
 function linksOutsideInlineCode(
   line: string,
   sourceFrom: number,
@@ -1007,6 +1041,10 @@ function linksOutsideInlineCode(
     ...delimitedOpaqueSpans(line, sourceFrom, "`", rawLinkSpans),
     ...delimitedOpaqueSpans(line, sourceFrom, "~~", rawLinkSpans),
     ...delimitedOpaqueSpans(line, sourceFrom, "^^", rawLinkSpans),
+    ...unclosedDelimiterSpans(line, sourceFrom, "**", rawLinkSpans),
+    ...unclosedDelimiterSpans(line, sourceFrom, "__", rawLinkSpans),
+    ...unclosedDelimiterSpans(line, sourceFrom, "*", rawLinkSpans),
+    ...unclosedDelimiterSpans(line, sourceFrom, "_", rawLinkSpans),
   ]
   return links.filter((link) => !opaqueSpans.some((span) => link.sourceFrom >= span.sourceFrom && link.sourceTo <= span.sourceTo))
 }
