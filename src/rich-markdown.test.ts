@@ -60,6 +60,10 @@ describe("rich Markdown document", () => {
     expect(intraword.visible).toBe("foo_bar_baz")
     expect(intraword.ranges.find((r) => r.visible)?.marks).toEqual(["bold"])
 
+    const tripleUnderscore = importMarkdown("___x___ a___b___ ")
+    expect(tripleUnderscore.visible).toBe("x a___b___ ")
+    expect(tripleUnderscore.ranges.some((r) => r.visible && r.marks.includes("italic") && r.contentFrom > 8)).toBe(false)
+
     const unicodeIntraword = importMarkdown("café_bar_baz")
     expect(unicodeIntraword.visible).toBe("café_bar_baz")
     expect(unicodeIntraword.ranges.every((r) => !r.marks.includes("italic"))).toBe(true)
@@ -211,6 +215,9 @@ describe("rich Markdown document", () => {
     const tripleItalic = toggleInlineMark(importMarkdown("***hello***"), 0, 5, "italic")
     expect(serializeMarkdown(tripleItalic!.document)).toBe("**hello**")
     expect(tripleItalic!.document.visible).toBe("hello")
+    const underscoreItalic = toggleInlineMark(importMarkdown("___hello___"), 0, 5, "italic")
+    expect(serializeMarkdown(underscoreItalic!.document)).toBe("__hello__")
+    expect(underscoreItalic!.document.visible).toBe("hello")
 
     const punctuation = toggleInlineMark(importMarkdown("a,. next"), 1, 2, "bold")
     expect(serializeMarkdown(punctuation!.document)).toBe("a**,**. next")

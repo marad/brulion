@@ -156,10 +156,33 @@ function matchingDelimiter(text: string, delimiter: string, start: number): numb
   return -1
 }
 
+function hasValidTripleUnderscoreOpen(text: string, position: number): boolean {
+  for (let candidate = position - 3; candidate >= 0; candidate -= 1) {
+    if (!text.startsWith("___", candidate) || escapedAt(text, candidate)) continue
+    if (isWordCharacter(text[candidate - 1]) && isWordCharacter(text[candidate + 3])) return false
+    return true
+  }
+  return false
+}
+
+function invalidTripleUnderscoreAt(text: string, position: number): boolean {
+  for (let start = position - 2; start <= position; start += 1) {
+    if (start < 0 || text.slice(start, start + 3) !== "___") continue
+    if (isWordCharacter(text[start - 1]) && isWordCharacter(text[start + 3])) return true
+    if (isWordCharacter(text[start - 1]) && !hasValidTripleUnderscoreOpen(text, start)) return true
+  }
+  return false
+}
+
 function delimiterAt(text: string, position: number): string {
-  if (escapedAt(text, position)) return ""
+  if (escapedAt(text, position) || invalidTripleUnderscoreAt(text, position)) return ""
   const triple = text.slice(position, position + 3)
-  if (triple === "***" || triple === "___") return triple
+  if (triple === "***") return triple
+  if (triple === "___") {
+    if (isWordCharacter(text[position - 1]) && isWordCharacter(text[position + 3])) return ""
+    if (isWordCharacter(text[position - 1]) && !hasValidTripleUnderscoreOpen(text, position)) return ""
+    return triple
+  }
   const pair = text.slice(position, position + 2)
   const previous = text[position - 1]
   const afterPair = text[position + 2]
@@ -276,8 +299,10 @@ export function applyInlineInputRule(
 
 function tripleWrapper(document: RichDocument, range: Pick<SourceMapRange, "contentFrom" | "contentTo">, mark: InlineMark): { from: number; to: number; open: string; close: string } | null {
   if (mark === "code") return null
-  if (document.source.slice(range.contentFrom - 3, range.contentFrom) !== "***" || document.source.slice(range.contentTo, range.contentTo + 3) !== "***") return null
-  const replacement = mark === "bold" ? "*" : "**"
+  const rawOpen = document.source.slice(range.contentFrom - 3, range.contentFrom)
+  const rawClose = document.source.slice(range.contentTo, range.contentTo + 3)
+  if ((rawOpen !== "***" && rawOpen !== "___") || rawClose !== rawOpen) return null
+  const replacement = mark === "bold" ? rawOpen[0] : rawOpen.slice(0, 2)
   return { from: range.contentFrom - 3, to: range.contentTo + 3, open: replacement, close: replacement }
 }
 
@@ -296,7 +321,9 @@ function directWrapper(document: RichDocument, range: SourceMapRange, mark: Inli
 }
 
 function unwrapWrapperSource(document: RichDocument, wrapper: { from: number; to: number; open: string; close: string }): string {
-  const triple = document.source.slice(wrapper.from, wrapper.from + 3) === "***" && document.source.slice(wrapper.to - 3, wrapper.to) === "***"
+  const rawOpen = document.source.slice(wrapper.from, wrapper.from + 3)
+  const rawClose = document.source.slice(wrapper.to - 3, wrapper.to)
+  const triple = (rawOpen === "***" || rawOpen === "___") && rawClose === rawOpen
   if (triple) {
     return document.source.slice(0, wrapper.from) + wrapper.open + document.source.slice(wrapper.from + 3, wrapper.to - 3) + wrapper.close + document.source.slice(wrapper.to)
   }
@@ -388,7 +415,9 @@ export function toggleInlineMark(
   if (target?.marks.includes(mark)) {
     const wrapper = directWrapper(document, target, mark)
     if (!wrapper) return null
-    const triple = document.source.slice(wrapper.from, wrapper.from + 3) === "***" && document.source.slice(wrapper.to - 3, wrapper.to) === "***"
+    const rawOpen = document.source.slice(wrapper.from, wrapper.from + 3)
+    const rawClose = document.source.slice(wrapper.to - 3, wrapper.to)
+    const triple = (rawOpen === "***" || rawOpen === "___") && rawClose === rawOpen
     const openLength = triple ? 3 : wrapper.open.length
     const closeLength = triple ? 3 : wrapper.close.length
     const inner = document.source.slice(wrapper.from + openLength, wrapper.to - closeLength)
