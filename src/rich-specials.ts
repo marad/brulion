@@ -592,9 +592,9 @@ export function scanRichLinks(
         links.push(markdown)
         occupied.push(markdown)
         index = markdown.sourceTo - 1
-      } else if (source[index] === "[" && !escapedAt(source, index)) {
-        // A nested/ambiguous bracket sequence makes the complete line raw;
-        // do not salvage an inner link or URL from malformed outer Markdown.
+      } else if (source[index] === "[") {
+        // A nested/ambiguous or escaped bracket sequence makes the complete
+        // line raw; do not salvage an inner link or URL from it.
         malformedLinkLines.push({ sourceFrom: line.from, sourceTo: line.to })
         index = line.to
       }
