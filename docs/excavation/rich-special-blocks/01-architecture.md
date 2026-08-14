@@ -71,8 +71,10 @@ flowchart LR
 - Whether P5's CodeMirror adapter shows a special island as raw text, a widget,
   or a source-mode affordance is a view decision; this pure model keeps raw bytes
   visible and map-safe.
-- Whether future Markdown destination syntax should support titles, angle-bracket
-  destinations, or reference links; ambiguous forms remain opaque now.
+- Whether future Markdown destination syntax should support titles or reference
+  links; the current one-line subset supports angle-bracket destinations without
+  reserializing their surrounding bytes, while other ambiguous forms remain
+  opaque.
 
 ## Self-Review
 

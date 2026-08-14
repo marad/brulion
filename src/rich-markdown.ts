@@ -961,7 +961,9 @@ function importMarkdownInternal(
   let inFence = false
   let fenceChar = ""
   let inHtmlComment = false
-  let inFrontmatter = source.startsWith("---") && /^(?:---)(?:\r?\n|$)/.test(source)
+  const firstNewline = source.indexOf("\n")
+  const firstLine = source.slice(0, firstNewline < 0 ? source.length : firstNewline).replace(/\r$/, "")
+  let inFrontmatter = /^---[ \t]*$/.test(firstLine)
   const lines = source.split(/(\r?\n)/)
 
   for (let i = 0; i < lines.length; i += 2) {
@@ -980,7 +982,7 @@ function importMarkdownInternal(
 
     if (lineSpecial) {
       push(fragments, line, lineStart, lineEnd, [], lineSpecial.kind, lineStart, lineEnd, undefined, lineSpecial)
-      if (lineSpecial.kind === "frontmatter" && /^(?:---|\.\.\.)[ \t]*$/.test(line)) inFrontmatter = false
+      if (lineSpecial.kind === "frontmatter" && i > 0 && /^(?:---|\.\.\.)[ \t]*$/.test(line)) inFrontmatter = false
     } else if (lineIsPending || lineIsFrontmatter || lineIsFence || lineIsHtmlComment || opaqueLine(line, lineStart, allowAdjacent, lineAllowsPunctuation, lineLinks)) {
       push(fragments, line, lineStart, lineEnd, [], "opaque")
       if (lineIsFrontmatter && i > 0 && /^(?:---|\.\.\.)\s*$/.test(line)) inFrontmatter = false

@@ -483,8 +483,12 @@ function urlNodeAt(source: string, start: number, end: number): RichLinkNode | n
     }
     break
   }
-  if (sourceTo <= start || escapedAt(source, start) || /[*_`]/.test(source.slice(start, sourceTo))) return null
-  if (start > 0 && /[\p{L}\p{N}_]/u.test(source[start - 1] ?? "")) return null
+  const url = source.slice(start, sourceTo)
+  const previous = source[start - 1]
+  const previousIsIntrawordUnderscore = previous === "_" && start > 1 && /[\p{L}\p{N}]/u.test(source[start - 2] ?? "")
+  if (sourceTo <= start || escapedAt(source, start) || /[*`]/.test(url) || /__/.test(url)) return null
+  if (start > 0 && /[\p{L}\p{N}]/u.test(previous ?? "")) return null
+  if (previousIsIntrawordUnderscore) return null
   return {
     kind: "autolink",
     sourceFrom: start,

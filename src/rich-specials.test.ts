@@ -92,6 +92,8 @@ describe("rich Markdown special scanner", () => {
     expect(links[2]).toMatchObject({ kind: "autolink", target: "https://example.test/x", label: "https://example.test/x" })
     expect(scanRichLinks("https://example.test/a(b).", []).map((link) => link.target)).toEqual(["https://example.test/a(b)"])
     expect(scanRichLinks("**https://example.test/path**", []).map((link) => link.target)).toEqual(["https://example.test/path"])
+    expect(scanRichLinks("https://example.test/a_b", []).map((link) => link.target)).toEqual(["https://example.test/a_b"])
+    expect(scanRichLinks("_https://example.test/path_", []).map((link) => link.target)).toEqual(["https://example.test/path"])
     expect(links.every((link) => link.raw === source.slice(link.sourceFrom, link.sourceTo))).toBe(true)
   })
 
