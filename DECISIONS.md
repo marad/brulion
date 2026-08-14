@@ -2354,6 +2354,8 @@ updated to make the conservative behavior explicit instead of relying on an
 implicit exception.
 
 **Consequence (UI/project):** P3 quote and unordered-list operations continue and
-exit predictably, while ordered-list lines remain unchanged under P3 block
-operations. FEAT-0111 AC-6 and the M47 ledger record this boundary; a future
-ordered-list editor must add its own source-preserving spec and tests.
+exit predictably, while ordered-list markers and prefixes remain unchanged under
+P3 block operations; ordinary Enter may still insert a surrounding source
+newline without renumbering the list. FEAT-0111 AC-6 and the M47 ledger record
+this boundary; a future ordered-list editor must add its own source-preserving
+spec and tests.
