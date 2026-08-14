@@ -2384,3 +2384,26 @@ The review ledger records the current HEAD for each round against one immutable
 base SHA. Reviewers remain read-only and canonical, blocked runs are never clean,
 and the final phase/milestone gates are unchanged. This affects process only;
 it does not change the Markdown format, editor behavior, or user-owned files.
+
+## M47 P4 keeps special blocks opaque and source-editable
+
+**What:** Standard Markdown links, wikilinks, and bare web URLs become typed rich
+link nodes in the loss-aware model, with visible labels and exact source spans
+for explicit target/label editing. Fenced code, tables, frontmatter, and Mermaid
+become typed opaque special-block nodes. The model records their exact source
+ranges and advisory metadata (fence info, table cells/alignment, Mermaid kind)
+but does not replace the raw source with a lossy code/table/diagram serialization.
+
+**Why:** A rendered widget is presentation, not a portable document model. Hiding
+or reconstructing special-block bytes before the source-editing and controller
+boundaries exist would create hidden caret stops and repeat the very fidelity
+risk M47 is meant to remove. Keeping the raw island visible in the pure model is
+conservative: later CodeMirror adapters can render it through the typed node,
+while an explicit source edit remains the only way to change its bytes.
+
+**Consequence (UI/project):** P4 owns recognition, exact UTF-16 source ranges,
+link-label projection, and source-edit operations. Special blocks are never
+parsed for inline marks or links, and their untouched delimiters, spacing, pipes,
+line endings, and Mermaid source survive byte-for-byte. The existing renderers
+remain view adapters until later M47 integration; no frontmatter field is
+interpreted and no SVG/table widget output can enter the file.
