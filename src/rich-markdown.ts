@@ -162,6 +162,9 @@ function delimiterAt(text: string, position: number): string {
   const triple = text.slice(position, position + 3)
   if (triple === "***" || triple === "___") return triple
   const pair = text.slice(position, position + 2)
+  const previous = text[position - 1]
+  const afterPair = text[position + 2]
+  if (pair === "__" && isWordCharacter(previous) && isWordCharacter(afterPair)) return ""
   if (pair === "**" || pair === "__") return pair
   if (text[position] === "_") {
     const previous = text[position - 1]
@@ -204,7 +207,8 @@ function hasBlockPrefixBefore(source: string, position: number): boolean {
 function hasInlineBoundaryContext(text: string, start: number, end: number, delimiter: string): boolean {
   const previous = text[start - 1]
   const next = text[end + delimiter.length]
-  const openingBoundary = !previous || /\s/.test(previous) || isWordCharacter(previous)
+  const prefix = text.slice(0, start)
+  const openingBoundary = !previous || /\s/.test(previous) || (isWordCharacter(previous) && prefix.includes(delimiter))
   const closingBoundary = !next || /\s/.test(next) || isWordCharacter(next)
   return openingBoundary && closingBoundary
 }
@@ -289,6 +293,23 @@ function selectedVisibleRanges(document: RichDocument, from: number, to: number)
   return document.ranges.filter((range) => range.visible && range.visibleFrom < to && range.visibleTo > from)
 }
 
+function enclosingWrapper(document: RichDocument, from: number, to: number, mark: InlineMark): { from: number; to: number; open: string; close: string } | null {
+  const sourceFrom = visibleToSource(document, from)
+  const sourceTo = visibleSourceEnd(document, to)
+  const delimiters = mark === "bold" ? ["**", "__"] : mark === "italic" ? ["*", "_"] : ["`"]
+  for (const delimiter of delimiters) {
+    const wrapperFrom = sourceFrom - delimiter.length
+    const wrapperTo = sourceTo + delimiter.length
+    const closeIsPartOfLongerSingleRun = delimiter.length === 1 && document.source[sourceTo + 1] === delimiter
+    if (!closeIsPartOfLongerSingleRun && wrapperFrom >= 0 && document.source.slice(wrapperFrom, sourceFrom) === delimiter && document.source.slice(sourceTo, wrapperTo) === delimiter) {
+      const visibleFrom = sourceToVisible(document, sourceFrom)
+      const visibleTo = sourceToVisible(document, sourceTo)
+      if (visibleFrom === from && visibleTo === to) return { from: wrapperFrom, to: wrapperTo, open: delimiter, close: delimiter }
+    }
+  }
+  return null
+}
+
 /** Toggle a visible selection using canonical markers or unwrap its direct
  * imported wrapper. Unsafe cross-fragment/opaque edits are rejected rather than
  * rewriting source the model cannot map losslessly. */
@@ -317,6 +338,12 @@ export function toggleInlineMark(
     // no-op; P3/input-state handling can introduce pending empty spans without
     // manufacturing an opaque source island here.
     return null
+  }
+  const enclosing = enclosingWrapper(document, start, end, mark)
+  if (enclosing) {
+    const inner = document.source.slice(enclosing.from + enclosing.open.length, enclosing.to - enclosing.close.length)
+    const next = importMarkdown(document.source.slice(0, enclosing.from) + inner + document.source.slice(enclosing.to))
+    return { document: next, anchor: reversed ? end : start, head: reversed ? start : end }
   }
   if (!ranges.length || ranges.some((range) => range.block === "opaque")) return null
   const target = ranges.length === 1 ? ranges[0] : null

@@ -140,6 +140,8 @@ describe("rich Markdown document", () => {
     expect(importMarkdown("http://**hello** ").visible).toBe("http://**hello** ")
     expect(importMarkdown("say **hello**.").visible).toBe("say **hello**.")
     expect(importMarkdown("say **hello**.").ranges[0]?.block).toBe("opaque")
+    expect(importMarkdown("http://foo**hello** ").visible).toBe("http://foo**hello** ")
+    expect(importMarkdown("a__b__c").visible).toBe("a__b__c")
     expect(applyInlineInputRule(importMarkdown("# **hello** "), 13, "space").converted).toBe(false)
     expect(classifyInlineBoundary("**hello** ", 10, "space")?.kind).toBe("bold")
     expect(classifyInlineBoundary("say **hello** ", 14, "space")?.sourceFrom).toBe(4)
@@ -178,6 +180,10 @@ describe("rich Markdown document", () => {
     const reverse = toggleInlineMark(importMarkdown("hello"), 5, 0, "bold")
     expect(reverse?.anchor).toBe(5)
     expect(reverse?.head).toBe(0)
+
+    const outerUnwrapped = toggleInlineMark(importMarkdown("*outer **inner** end*"), 0, 15, "italic")
+    expect(serializeMarkdown(outerUnwrapped!.document)).toBe("outer **inner** end")
+    expect(outerUnwrapped!.document.visible).toBe("outer inner end")
 
     expect(toggleInlineMark(importMarkdown("~~raw~~"), 0, 5, "bold")).toBeNull()
     expect(toggleInlineMark(importMarkdown("**a** b"), 0, 3, "italic")).toBeNull()
