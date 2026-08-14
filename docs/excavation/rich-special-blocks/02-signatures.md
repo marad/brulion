@@ -84,6 +84,9 @@ export function scanRichLinks(
   protectedSpans: readonly ProtectedSourceSpan[],
 ): readonly RichLinkNode[]
 
+/** Return local escaped/malformed link-like islands that stay raw. */
+export function scanRichOpaqueLinkSpans(source: string): readonly SourceSpan[]
+
 /** Find multiline HTML/unknown-markup spans that protect nested content. */
 export function scanRichHtmlSpans(source: string): readonly SourceSpan[]
 ```

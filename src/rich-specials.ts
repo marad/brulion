@@ -593,14 +593,38 @@ function escapedBracketSpan(source: string, start: number, lineEnd: number): Sou
   return { sourceFrom: start, sourceTo: lineEnd }
 }
 
-function malformedWikiSpan(source: string, start: number, lineEnd: number): SourceSpan {
+function escapedPipeWikiSpan(source: string, start: number, lineEnd: number): SourceSpan | null {
   for (let index = start + 2; index + 1 < lineEnd; index += 1) {
     if (source[index] !== "]" || source[index + 1] !== "]" || escapedAt(source, index)) continue
-    const body = source.slice(start + 2, index)
-    if (body.includes("\\|")) return { sourceFrom: start, sourceTo: index + 2 }
-    break
+    return source.slice(start + 2, index).includes("\\|")
+      ? { sourceFrom: start, sourceTo: index + 2 }
+      : null
   }
-  return { sourceFrom: source.lastIndexOf("\n", start) + 1, sourceTo: lineEnd }
+  return null
+}
+
+function malformedWikiSpan(source: string, start: number, lineEnd: number): SourceSpan {
+  return escapedPipeWikiSpan(source, start, lineEnd)
+    ?? { sourceFrom: source.lastIndexOf("\n", start) + 1, sourceTo: lineEnd }
+}
+
+/** Return local escaped/malformed link-like spans that must remain raw. */
+export function scanRichOpaqueLinkSpans(source: string): readonly SourceSpan[] {
+  const spans: SourceSpan[] = []
+  for (const line of sourceLines(source)) {
+    for (let index = line.from; index < line.to; index += 1) {
+      if (source.startsWith("[[", index)) {
+        if (escapedAt(source, index)) spans.push(escapedWikiSpan(source, index, line.to))
+        else {
+          const local = escapedPipeWikiSpan(source, index, line.to)
+          if (local) spans.push(local)
+        }
+        continue
+      }
+      if (source[index] === "[" && escapedAt(source, index)) spans.push(escapedBracketSpan(source, index, line.to))
+    }
+  }
+  return spans.sort((left, right) => left.sourceFrom - right.sourceFrom || left.sourceTo - right.sourceTo)
 }
 
 /** Scan complete links outside the supplied special-block spans. */
@@ -611,7 +635,7 @@ export function scanRichLinks(
   const blocked = [...protectedSpans, ...commentSpans(source), ...htmlSourceSpans(source)]
   const links: RichLinkNode[] = []
   const occupied: SourceSpan[] = []
-  const malformedLinkSpans: SourceSpan[] = []
+  const malformedLinkSpans: SourceSpan[] = [...scanRichOpaqueLinkSpans(source)]
   const lines = sourceLines(source)
 
   for (const line of lines) {
@@ -628,7 +652,7 @@ export function scanRichLinks(
         const malformed = escapedAt(source, index)
           ? escapedWikiSpan(source, index, line.to)
           : malformedWikiSpan(source, index, line.to)
-        malformedLinkSpans.push(malformed)
+        if (!escapedAt(source, index)) malformedLinkSpans.push(malformed)
         index = malformed.sourceTo - 1
         continue
       }
@@ -643,7 +667,7 @@ export function scanRichLinks(
         const malformed = escapedAt(source, index)
           ? escapedBracketSpan(source, index, line.to)
           : { sourceFrom: line.from, sourceTo: line.to }
-        malformedLinkSpans.push(malformed)
+        if (!escapedAt(source, index)) malformedLinkSpans.push(malformed)
         index = malformed.sourceTo - 1
       }
     }

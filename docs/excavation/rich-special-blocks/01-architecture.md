@@ -12,8 +12,8 @@
 ## Logical modules
 
 1. **Protected-source scanner** — scans Markdown source into complete link nodes,
-   protected special/HTML blocks, and exact table row/cell spans. It never
-   mutates or serializes source.
+   local escaped/malformed link-like raw islands, protected special/HTML blocks,
+   and exact table row/cell spans. It never mutates or serializes source.
 2. **Rich projection** — combines scanner output with the existing heading,
    block, and inline-mark projection. It emits visible fragments, hidden link
    syntax ranges, typed node metadata, and deterministic source/visible maps.

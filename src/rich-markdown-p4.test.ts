@@ -47,6 +47,15 @@ describe("rich Markdown P4 projection boundary", () => {
       expect(opaque.links).toEqual([])
       expect(editRawSource(opaque, 0, source.length, "repaired")).not.toBeNull()
     }
+    const codeWithRawIsland = importMarkdown("`\\[literal] [x](y)`")
+    expect(codeWithRawIsland.visible).toBe("`\\[literal] [x](y)`")
+    expect(codeWithRawIsland.links).toEqual([])
+    expect(editRawSource(codeWithRawIsland, 0, codeWithRawIsland.source.length, "repaired")).not.toBeNull()
+    for (const source of ["\\[^^future] [ok](y)", "\\[~~raw~~] [ok](y)", "\\[[literal\\|^^]] [ok](y)"]) {
+      const localRaw = importMarkdown(source)
+      expect(localRaw.links.map((link) => link.target)).toEqual(["y"])
+      expect(localRaw.visible).toBe(source.replace("[ok](y)", "ok"))
+    }
   })
 
   it("keeps special source islands raw and never parses their bodies", () => {
