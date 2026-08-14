@@ -253,6 +253,7 @@ export function scanRichSpecials(source: string): RichSpecialScan {
   const protectedSpans: ProtectedSourceSpan[] = []
 
   if (lines[0] && /^---[ \t]*$/.test(source.slice(lines[0].from, lines[0].to))) {
+    let closed = false
     for (let index = 1; index < lines.length; index += 1) {
       const line = lines[index]!
       const text = source.slice(line.from, line.to)
@@ -267,8 +268,10 @@ export function scanRichSpecials(source: string): RichSpecialScan {
       }
       specials.push(node)
       protectedSpans.push({ sourceFrom: node.sourceFrom, sourceTo: node.sourceTo, kind: node.kind })
+      closed = true
       break
     }
+    if (!closed) protectedSpans.push({ sourceFrom: 0, sourceTo: source.length, kind: "frontmatter" })
   }
 
   for (let index = 0; index < lines.length; index += 1) {
@@ -284,7 +287,11 @@ export function scanRichSpecials(source: string): RichSpecialScan {
         break
       }
     }
-    if (closeIndex < 0) continue
+    if (closeIndex < 0) {
+      protectedSpans.push({ sourceFrom: line.from, sourceTo: source.length, kind: "fence" })
+      index = lines.length
+      continue
+    }
     const node = makeFenceNode(source, lines, index, closeIndex, opening)
     specials.push(node)
     protectedSpans.push({ sourceFrom: node.sourceFrom, sourceTo: node.sourceTo, kind: node.kind })
@@ -417,6 +424,9 @@ function wikilinkAt(source: string, start: number, lineEnd: number): RichLinkNod
     }
   }
   if (close < 0 || close <= start + 2) return null
+  for (let index = start + 2; index + 1 < close; index += 1) {
+    if (source[index] === "[" && source[index + 1] === "[" && !escapedAt(source, index)) return null
+  }
   const bodyFrom = start + 2
   const bodyTo = close
   const pipe = source.indexOf("|", bodyFrom)
@@ -453,6 +463,14 @@ function urlNodeAt(source: string, start: number, end: number): RichLinkNode | n
       continue
     }
     if (last === ")" && (source.slice(start, sourceTo).match(/\)/g)?.length ?? 0) > (source.slice(start, sourceTo).match(/\(/g)?.length ?? 0)) {
+      sourceTo -= 1
+      continue
+    }
+    if (sourceTo - start >= 2 && /[*_]/.test(source[sourceTo - 2] ?? "") && source[sourceTo - 2] === last) {
+      sourceTo -= 2
+      continue
+    }
+    if (last === "*" || last === "_" || last === "`") {
       sourceTo -= 1
       continue
     }
@@ -493,6 +511,10 @@ export function scanRichLinks(
         links.push(wiki)
         occupied.push(wiki)
         index = wiki.sourceTo - 1
+        continue
+      }
+      if (source.startsWith("[[", index)) {
+        index = line.to
         continue
       }
       const markdown = markdownLinkAt(source, index, line.to)

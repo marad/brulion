@@ -25,6 +25,12 @@ describe("rich Markdown special scanner", () => {
     expect(scanRichSpecials("```js\n**raw**").specials).toEqual([])
     expect(scanRichSpecials("```js\nbody\n~~\n").specials).toEqual([])
     expect(scanRichSpecials("~~~js\nbody\n```\n").specials).toEqual([])
+    const tableShaped = scanRichSpecials("```\n| a | b |\n| --- | --- |\n~~~\n")
+    expect(tableShaped.specials).toEqual([])
+    expect(tableShaped.protected).toEqual([{ sourceFrom: 0, sourceTo: tableShaped.protected[0]!.sourceTo, kind: "fence" }])
+    const frontmatterShaped = scanRichSpecials("---\n| a | b |\n| --- | --- |\n")
+    expect(frontmatterShaped.specials).toEqual([])
+    expect(frontmatterShaped.protected[0]?.kind).toBe("frontmatter")
   })
 
   it("classifies Mermaid without changing the fence metadata", () => {
@@ -85,6 +91,7 @@ describe("rich Markdown special scanner", () => {
     expect(links[1]).toMatchObject({ kind: "wikilink", target: "target", label: "Alias", alias: "Alias" })
     expect(links[2]).toMatchObject({ kind: "autolink", target: "https://example.test/x", label: "https://example.test/x" })
     expect(scanRichLinks("https://example.test/a(b).", []).map((link) => link.target)).toEqual(["https://example.test/a(b)"])
+    expect(scanRichLinks("**https://example.test/path**", []).map((link) => link.target)).toEqual(["https://example.test/path"])
     expect(links.every((link) => link.raw === source.slice(link.sourceFrom, link.sourceTo))).toBe(true)
   })
 
@@ -94,6 +101,7 @@ describe("rich Markdown special scanner", () => {
     expect(scanRichLinks("[x](a (b).md)", [])).toHaveLength(1)
     expect(scanRichLinks("[x](<a b.md>)", [])).toHaveLength(1)
     expect(scanRichLinks("\\[x](escaped.md) \\[[wiki]]", [])).toEqual([])
+    expect(scanRichLinks("[[outer [[inner]]", [])).toEqual([])
   })
 
   it("never scans links inside any special block", () => {

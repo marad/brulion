@@ -916,7 +916,7 @@ function opaqueLine(
   // An incomplete or unsupported link-like sequence remains one raw island. A
   // complete node is removed from this check so its label can be parsed below.
   const residual = residualLinkSyntax(line, sourceFrom, links)
-  if (MARKDOWN_LINK.test(residual) || LINK_LIKE.test(residual) || WIKILINK.test(residual) || MARKER_LIKE.test(line) || STRIKETHROUGH_LIKE.test(line) || HTML_LIKE.test(line)) return true
+  if (MARKDOWN_LINK.test(residual) || LINK_LIKE.test(residual) || WIKILINK.test(residual) || MARKER_LIKE.test(residual) || STRIKETHROUGH_LIKE.test(residual) || HTML_LIKE.test(residual)) return true
   if (/^\s*\|/.test(line)) return true
   const info = lineBlock(line, sourceFrom)
   return inlineFragments(info.body, info.bodyOffset, info.block, [], allowAdjacent, allowPunctuation, links).unmatched
@@ -974,7 +974,7 @@ function importMarkdownInternal(
     const lineLinks = allLinks.filter((link) => link.sourceFrom >= lineStart && link.sourceTo <= lineEnd)
     const lineIsFrontmatter = inFrontmatter
     const lineIsFence = Boolean(fence || inFence)
-    const lineIsHtmlComment = inHtmlComment || HTML_LIKE.test(line)
+    const lineIsHtmlComment = inHtmlComment || HTML_LIKE.test(residualLinkSyntax(line, lineStart, lineLinks))
     const lineIsPending = rawLineStarts.has(lineStart)
     const lineAllowsPunctuation = allowPunctuation === true || (allowPunctuation !== false && allowPunctuation.has(lineStart))
 

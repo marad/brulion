@@ -20,6 +20,12 @@ describe("rich Markdown P4 projection boundary", () => {
     expect(document.links[1]).toMatchObject({ kind: "wikilink", target: "note", label: "Alias" })
     expect(document.ranges.some((range) => range.link?.kind === "markdown" && range.marks.includes("bold"))).toBe(true)
     expect(serializeMarkdown(document)).toBe(source)
+    const angle = importMarkdown("[x](<a b.md>)")
+    expect(angle.visible).toBe("x")
+    expect(angle.links[0]?.target).toBe("a b.md")
+    const markedUrl = importMarkdown("**https://example.test/path**")
+    expect(markedUrl.links[0]?.kind).toBe("autolink")
+    expect(markedUrl.ranges.some((range) => range.marks.includes("link") && range.marks.includes("bold"))).toBe(true)
   })
 
   it("keeps special source islands raw and never parses their bodies", () => {
