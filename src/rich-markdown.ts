@@ -1,3 +1,9 @@
+import {
+  type RichLinkNode,
+  type RichSpecialNode,
+  type RichTableCell,
+} from "./rich-specials"
+
 /** Loss-aware Markdown projection for the primary CodeMirror editor (M47 P1).
  *
  * The source string remains authoritative. Import records every visible fragment
@@ -51,6 +57,10 @@ export interface SourceMapRange {
   block: RichBlock
   /** False for delimiters/prefixes that have no visible representation. */
   visible: boolean
+  /** P4 link metadata for visible label fragments or hidden link syntax. */
+  link?: RichLinkNode
+  /** P4 special-node metadata for an opaque source island. */
+  special?: RichSpecialNode
 }
 
 export interface SourceReplacement {
@@ -66,6 +76,10 @@ export interface RichDocument {
   /** Compatibility/debug view of explicit changes, keyed by source start. */
   readonly changed: ReadonlyMap<number, string>
   readonly replacements: readonly SourceReplacement[]
+  /** Complete P4 link nodes recognized in the source snapshot. */
+  readonly links: readonly RichLinkNode[]
+  /** Complete P4 special blocks recognized in the source snapshot. */
+  readonly specials: readonly RichSpecialNode[]
   /** Source line starts kept raw while a user is still typing an inline marker. */
   readonly pendingLineStarts: readonly number[]
   /** Exact delimiter starts whose explicit selection formatting permits word adjacency. */
@@ -938,6 +952,8 @@ function importMarkdownInternal(
     pendingLineStarts: [...rawLineStarts].sort((a, b) => a - b),
     explicitAdjacentMarkerStarts: typeof allowAdjacent === "boolean" ? [] : [...allowAdjacent].sort((a, b) => a - b),
     explicitPunctuationLineStarts: [...punctuationLineStarts].sort((a, b) => a - b),
+    links: [],
+    specials: [],
   }
 }
 
@@ -1022,6 +1038,61 @@ export function sourceToVisible(document: RichDocument, position: number): numbe
  * terminating space/Enter/EOF/blur/save. Unchanged lines keep their rich
  * projection and all source bytes remain authoritative.
  */
+export type SourceEditReason =
+  | "link-label" | "link-target" | "table-cell"
+  | "fence" | "table" | "frontmatter" | "mermaid" | "raw"
+
+export interface SourceEditRange {
+  sourceFrom: number
+  sourceTo: number
+  kind: SourceEditReason
+  node: RichLinkNode | RichTableCell | RichSpecialNode
+}
+
+/** Look up the exact source-edit island containing a raw UTF-16 position. */
+export function sourceEditRangeAt(document: RichDocument, sourcePosition: number): SourceEditRange | null {
+  void document
+  void sourcePosition
+  throw new Error("sourceEditRangeAt is not implemented")
+}
+
+/** Replace only a recognized link label or target after freshness checks. */
+export function editRichLink(
+  document: RichDocument,
+  link: RichLinkNode,
+  edit: { label?: string; target?: string },
+): RichDocument | null {
+  void document
+  void link
+  void edit
+  throw new Error("editRichLink is not implemented")
+}
+
+/** Replace only a table cell's content, excluding pipe and spacing delimiters. */
+export function editTableCell(document: RichDocument, cell: RichTableCell, text: string): RichDocument | null {
+  void document
+  void cell
+  void text
+  throw new Error("editTableCell is not implemented")
+}
+
+/** Replace one complete fence/table/frontmatter/Mermaid source island. */
+export function editSpecialSource(document: RichDocument, special: RichSpecialNode, text: string): RichDocument | null {
+  void document
+  void special
+  void text
+  throw new Error("editSpecialSource is not implemented")
+}
+
+/** Explicit escape hatch for malformed or otherwise opaque source. */
+export function editRawSource(document: RichDocument, sourceFrom: number, sourceTo: number, text: string): RichDocument | null {
+  void document
+  void sourceFrom
+  void sourceTo
+  void text
+  throw new Error("editRawSource is not implemented")
+}
+
 export function replaceVisible(document: RichDocument, from: number, to: number, text: string): RichDocument {
   if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from || to > document.visible.length) {
     throw new RangeError("Visible range out of bounds")
