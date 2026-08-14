@@ -33,7 +33,9 @@ and remain untouched unless the user explicitly edits that source. The model
 exposes mapping-safe block operations, while existing CodeMirror shortcut and
 slash-command adapters that still consume raw EditorState remain a P6
 integration concern. Every operation returns visible caret/source mappings and
-serializes untouched source bytes exactly.
+serializes untouched source bytes exactly. Ordered-list syntax is deliberately
+source-preserving/plain in P3: Enter, Backspace, indentation, and block
+continuation do not auto-renumber or rewrite it.
 
 ## Acceptance criteria
 
@@ -61,9 +63,9 @@ serializes untouched source bytes exactly.
   remains representable, and serialization preserves all untouched bytes,
   including line endings and unrelated marker spelling.
 - AC-6: Given an imported ordered-list line or unknown block-like syntax,
-  when block input/edit operations are applied elsewhere, then it remains an
-  opaque/source-preserving region and is not silently renumbered, normalized,
-  or converted into another block type.
+  when any P3 block input/edit operation is applied to it or elsewhere, then it
+  remains an opaque/source-preserving region and is not silently renumbered,
+  normalized, continued, or converted into another block type.
 - AC-7: Given any block operation on Unicode content, CRLF input, nested inline
   marks, or an opaque neighboring line, when it is serialized and mapped, then
   UTF-16 positions, inline rich marks, opaque bytes, and visible caret

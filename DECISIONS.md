@@ -2340,3 +2340,20 @@ numbers written before M45 closed.
 to FEAT-0109–FEAT-0115. Each phase will create and sync its own spec before code
 or test edits. No application behavior or user-owned Markdown changes follow from
 this numbering correction.
+
+## M47 P3 keeps imported ordered lists source-preserving
+
+**What:** P3 recognizes ordered-list prefixes for source mapping but deliberately
+keeps them plain/source-preserving. Enter, Backspace, indentation, and block
+continuation do not auto-continue, renumber, or normalize ordered-list markers;
+ordered-list command integration remains a later explicit decision.
+
+**Why:** Auto-renumbering an imported list changes user-owned Markdown beyond the
+requested block edit and conflicts with the file-fidelity moat. The P0 matrix is
+updated to make the conservative behavior explicit instead of relying on an
+implicit exception.
+
+**Consequence (UI/project):** P3 quote and unordered-list operations continue and
+exit predictably, while ordered-list lines remain unchanged under P3 block
+operations. FEAT-0111 AC-6 and the M47 ledger record this boundary; a future
+ordered-list editor must add its own source-preserving spec and tests.
