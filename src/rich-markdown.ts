@@ -115,6 +115,7 @@ interface Fragment {
 interface InlineParse {
   fragments: Fragment[]
   unmatched: boolean
+  unmatchedFrom?: number
 }
 
 const HEADING = /^(#{1,6})([ \t]+)(.*)$/
@@ -782,6 +783,7 @@ function inlineFragments(
   const linksByStart = new Map(links.map((link) => [link.sourceFrom, link]))
   let plainStart = 0
   let unmatched = false
+  let unmatchedFrom: number | undefined
   const flushPlain = (to: number): void => {
     if (to > plainStart) {
       push(fragments, text.slice(plainStart, to), sourceFrom + plainStart, sourceFrom + to, inherited, block)
@@ -811,7 +813,10 @@ function inlineFragments(
             allowPunctuation,
             links.filter((candidate) => candidate.sourceFrom >= link.labelFrom && candidate.sourceTo <= link.labelTo),
           )
-          if (nested.unmatched) unmatched = true
+          if (nested.unmatched) {
+            unmatched = true
+            unmatchedFrom ??= nested.unmatchedFrom
+          }
           for (const fragment of nested.fragments) fragment.link = link
           fragments.push(...nested.fragments)
           pushHidden(fragments, link.labelTo, link.sourceTo, linkMarks, block, link)
@@ -831,12 +836,14 @@ function inlineFragments(
     const closeAllowsAdjacent = end >= 0 && adjacentAllowedAt(allowAdjacent, sourceFrom + end)
     if (end < 0 || end <= i + delimiter.length || /^\s*$/.test(text.slice(i + delimiter.length, end)) || !hasInlineBoundaryContext(text, i, end, delimiter, delimiterAllowsAdjacent || closeAllowsAdjacent, allowPunctuation)) {
       unmatched = true
+      unmatchedFrom ??= sourceFrom + i
       i += delimiter.length
       continue
     }
     // A single delimiter must not consume the first half of a strong pair.
     if (delimiter.length === 1 && text.startsWith(delimiter + delimiter, i)) {
       unmatched = true
+      unmatchedFrom ??= sourceFrom + i
       i += 2
       continue
     }
@@ -858,7 +865,10 @@ function inlineFragments(
         }], unmatched: false }
       : inlineFragments(text.slice(innerStart, innerEnd), sourceFrom + innerStart, block, inheritedMarks, allowAdjacent, allowPunctuation, links)
 
-    if (nested.unmatched) unmatched = true
+    if (nested.unmatched) {
+      unmatched = true
+      unmatchedFrom ??= nested.unmatchedFrom
+    }
     pushHidden(fragments, sourceFrom + i, sourceFrom + innerStart, inheritedMarks, block)
     fragments.push(...nested.fragments)
     pushHidden(fragments, sourceFrom + innerEnd, sourceFrom + end + delimiter.length, inheritedMarks, block)
@@ -867,7 +877,7 @@ function inlineFragments(
     plainStart = i
   }
   flushPlain(text.length)
-  return { fragments, unmatched }
+  return { fragments, unmatched, unmatchedFrom }
 }
 
 function inlineFragmentsWithRawIslands(
@@ -1083,12 +1093,30 @@ function mismatchedEmphasisSpans(
   return spans
 }
 
+function maskRawLinkSpans(
+  text: string,
+  sourceFrom: number,
+  spans: readonly { sourceFrom: number; sourceTo: number }[],
+): string {
+  const masked = text.split("")
+  for (const span of spans) {
+    const from = Math.max(0, span.sourceFrom - sourceFrom)
+    const to = Math.min(masked.length, span.sourceTo - sourceFrom)
+    for (let index = from; index < to; index += 1) masked[index] = " "
+  }
+  return masked.join("")
+}
+
 function linksOutsideInlineCode(
   line: string,
   sourceFrom: number,
   links: readonly RichLinkNode[],
   rawLinkSpans: readonly { sourceFrom: number; sourceTo: number }[],
 ): RichLinkNode[] {
+  const localRawSpans = rawLinkSpans.filter((span) => span.sourceFrom >= sourceFrom && span.sourceTo <= sourceFrom + line.length)
+  const residual = maskRawLinkSpans(residualLinkSyntax(line, sourceFrom, links), sourceFrom, localRawSpans)
+  const residualInfo = lineBlock(residual, sourceFrom)
+  const residualParse = inlineFragments(residualInfo.body, residualInfo.bodyOffset, residualInfo.block)
   const opaqueSpans = [
     ...delimitedOpaqueSpans(line, sourceFrom, "`", rawLinkSpans),
     ...delimitedOpaqueSpans(line, sourceFrom, "~~", rawLinkSpans),
@@ -1098,6 +1126,7 @@ function linksOutsideInlineCode(
     ...unclosedDelimiterSpans(line, sourceFrom, "*", rawLinkSpans),
     ...unclosedDelimiterSpans(line, sourceFrom, "_", rawLinkSpans),
     ...mismatchedEmphasisSpans(line, sourceFrom, rawLinkSpans),
+    ...(residualParse.unmatchedFrom === undefined ? [] : [{ sourceFrom: residualParse.unmatchedFrom, sourceTo: sourceFrom + line.length }]),
   ]
   return links.filter((link) => !opaqueSpans.some((span) => link.sourceFrom >= span.sourceFrom && link.sourceTo <= span.sourceTo))
 }

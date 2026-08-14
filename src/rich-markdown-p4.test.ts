@@ -50,6 +50,9 @@ describe("rich Markdown P4 projection boundary", () => {
       "***one** [x](y) \\[raw]",
       "___one__ [x](y) \\[raw]",
       "**one*** [x](y) \\[raw]",
+      "**a *b* c*** [x](y) \\[raw]",
+      "__a _b_ c___ [x](y) \\[raw]",
+      "**a *b **c** d* e** [x](y) \\[raw]",
     ]) {
       const opaque = importMarkdown(source)
       expect(opaque.visible).toBe(source)
