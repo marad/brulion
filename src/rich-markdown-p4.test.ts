@@ -41,7 +41,16 @@ describe("rich Markdown P4 projection boundary", () => {
     const escapedWiki = importMarkdown("[[literal\\|alias]] [ok](y)")
     expect(escapedWiki.visible).toBe("[[literal\\|alias]] ok")
     expect(escapedWiki.links.map((link) => link.target)).toEqual(["y"])
-    for (const source of ["~~[x](y)~~", "^^[x](y)^^", "<bad [x](y)", "*unfinished [x](y) \\[raw]", "<bad [x](y) \\[raw]"]) {
+    for (const source of [
+      "~~[x](y)~~",
+      "^^[x](y)^^",
+      "<bad [x](y)",
+      "*unfinished [x](y) \\[raw]",
+      "<bad [x](y) \\[raw]",
+      "***one** [x](y) \\[raw]",
+      "___one__ [x](y) \\[raw]",
+      "**one*** [x](y) \\[raw]",
+    ]) {
       const opaque = importMarkdown(source)
       expect(opaque.visible).toBe(source)
       expect(opaque.links).toEqual([])

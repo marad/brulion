@@ -1031,6 +1031,62 @@ function unclosedDelimiterSpans(
   return spans
 }
 
+function emphasisRunLength(text: string, position: number): number {
+  const marker = text[position]
+  if (!marker) return 0
+  let from = position
+  let to = position
+  while (from > 0 && text[from - 1] === marker) from -= 1
+  while (to + 1 < text.length && text[to + 1] === marker) to += 1
+  return to - from + 1
+}
+
+function mismatchedEmphasisSpans(
+  text: string,
+  sourceFrom: number,
+  ignoredSpans: readonly { sourceFrom: number; sourceTo: number }[] = [],
+): Array<{ sourceFrom: number; sourceTo: number }> {
+  const spans: Array<{ sourceFrom: number; sourceTo: number }> = []
+  for (let index = 0; index < text.length; index += 1) {
+    const sourcePosition = sourceFrom + index
+    const ignored = ignoredSpans.find((span) => sourcePosition >= span.sourceFrom && sourcePosition < span.sourceTo)
+    if (ignored) {
+      index = Math.max(index, ignored.sourceTo - sourceFrom - 1)
+      continue
+    }
+    const delimiter = delimiterAt(text, index)
+    if (!delimiter || delimiter === "`") continue
+    if (index > 0 && text[index - 1] === text[index]) continue
+    const openingLength = emphasisRunLength(text, index)
+    let close = matchingDelimiter(text, delimiter, index + delimiter.length)
+    while (close >= 0 && ignoredSpans.some((span) => sourceFrom + close >= span.sourceFrom && sourceFrom + close < span.sourceTo)) {
+      close = matchingDelimiter(text, delimiter, close + 1)
+    }
+    if (close < 0) {
+      for (let candidate = index + delimiter.length; candidate < text.length; candidate += 1) {
+        if (text[candidate] !== text[index] || escapedAt(text, candidate) || (candidate > 0 && text[candidate - 1] === text[index])) continue
+        const candidateSource = sourceFrom + candidate
+        if (ignoredSpans.some((span) => candidateSource >= span.sourceFrom && candidateSource < span.sourceTo)) continue
+        if (emphasisRunLength(text, candidate) !== openingLength) {
+          spans.push({ sourceFrom: sourceFrom + index, sourceTo: sourceFrom + text.length })
+        }
+        break
+      }
+      if (spans.length) break
+      continue
+    }
+    const closingLength = emphasisRunLength(text, close)
+    const closingStart = close - closingLength + 1
+    const nested = openingLength === 2 && closingLength === 3 && text.slice(index + delimiter.length, closingStart).includes(text[index]!)
+    if (closingLength !== openingLength && !nested) {
+      spans.push({ sourceFrom: sourceFrom + index, sourceTo: sourceFrom + text.length })
+      break
+    }
+    index = close + delimiter.length - 1
+  }
+  return spans
+}
+
 function linksOutsideInlineCode(
   line: string,
   sourceFrom: number,
@@ -1045,6 +1101,7 @@ function linksOutsideInlineCode(
     ...unclosedDelimiterSpans(line, sourceFrom, "__", rawLinkSpans),
     ...unclosedDelimiterSpans(line, sourceFrom, "*", rawLinkSpans),
     ...unclosedDelimiterSpans(line, sourceFrom, "_", rawLinkSpans),
+    ...mismatchedEmphasisSpans(line, sourceFrom, rawLinkSpans),
   ]
   return links.filter((link) => !opaqueSpans.some((span) => link.sourceFrom >= span.sourceFrom && link.sourceTo <= span.sourceTo))
 }
