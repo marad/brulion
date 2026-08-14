@@ -97,7 +97,6 @@ const MARKDOWN_LINK = /\[[^\]\n]+\]\([^\)\n]+\)/
 const LINK_LIKE = /\[[^\n]*$/
 const WIKILINK = /\[\[[^\]\n]+\]\]/
 const HTML_LIKE = /<!--[\s\S]*?(?:-->|$)|<\/?[A-Za-z][^>\n]*(?:>|$)/
-const INLINE_DELIMITER = /(^|[\s])(\*\*|__|\*|_|`)([^\n]*?)\2([ \t]*)$/
 
 function push(
   fragments: Fragment[],
@@ -227,30 +226,35 @@ export function classifyInlineBoundary(
   if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > source.length) return null
   const boundaryCursor = boundary === "space" ? cursor - 1 : cursor
   if (boundaryCursor < 0) return null
-  const before = source.slice(0, boundaryCursor)
-  const match = INLINE_DELIMITER.exec(before)
-  if (!match) return null
-  const delimiter = match[2]
-  const content = match[3]
-  const sourceFrom = match.index + match[1].length
-  const contentFrom = sourceFrom + delimiter.length
-  const contentTo = contentFrom + content.length
-  const closeFrom = contentTo
-  const sourceTo = closeFrom + delimiter.length
-  if (!content || /^\s*$/.test(content) || escapedAt(source, sourceFrom) || escapedAt(source, closeFrom)) return null
   if (boundary === "space" && source[cursor - 1] !== " ") return null
-  if (hasBlockPrefixBefore(source, sourceFrom)) return null
-  const lineStart = lineStartAt(source, sourceFrom)
-  const line = source.slice(lineStart, sourceTo)
-  if (opaqueLine(line) || !hasInlineBoundaryContext(source, sourceFrom, closeFrom, delimiter)) return null
-  return {
-    kind: markForDelimiter(delimiter),
-    delimiter,
-    sourceFrom,
-    sourceTo,
-    contentFrom,
-    contentTo,
+  let spanEnd = boundaryCursor
+  while (spanEnd > 0 && /[ \t]/.test(source[spanEnd - 1])) spanEnd -= 1
+  const lineStart = lineStartAt(source, spanEnd)
+  const delimiters = ["**", "__", "*", "_", "`"]
+  for (let sourceFrom = spanEnd - 1; sourceFrom >= lineStart; sourceFrom -= 1) {
+    for (const delimiter of delimiters) {
+      if (source.slice(sourceFrom, sourceFrom + delimiter.length) !== delimiter) continue
+      if (delimiterAt(source, sourceFrom) !== delimiter) continue
+      const closeFrom = spanEnd - delimiter.length
+      if (closeFrom <= sourceFrom + delimiter.length || source.slice(closeFrom, spanEnd) !== delimiter) continue
+      const contentFrom = sourceFrom + delimiter.length
+      const content = source.slice(contentFrom, closeFrom)
+      if (!content || /^\s*$/.test(content) || escapedAt(source, sourceFrom) || escapedAt(source, closeFrom)) continue
+      if (delimiter !== "`" && /https?:\/\//i.test(content)) continue
+      if (hasBlockPrefixBefore(source, sourceFrom)) continue
+      const line = source.slice(lineStart, spanEnd)
+      if (opaqueLine(line) || !hasInlineBoundaryContext(source, sourceFrom, closeFrom, delimiter)) continue
+      return {
+        kind: markForDelimiter(delimiter),
+        delimiter,
+        sourceFrom,
+        sourceTo: spanEnd,
+        contentFrom,
+        contentTo: closeFrom,
+      }
+    }
   }
+  return null
 }
 
 /** Apply a completed marker boundary while retaining Markdown as source. */
@@ -265,6 +269,13 @@ export function applyInlineInputRule(
   return { document: projected, converted: true, caret: sourceToVisible(projected, cursor) }
 }
 
+function tripleWrapper(document: RichDocument, range: Pick<SourceMapRange, "contentFrom" | "contentTo">, mark: InlineMark): { from: number; to: number; open: string; close: string } | null {
+  if (mark === "code") return null
+  if (document.source.slice(range.contentFrom - 3, range.contentFrom) !== "***" || document.source.slice(range.contentTo, range.contentTo + 3) !== "***") return null
+  const replacement = mark === "bold" ? "*" : "**"
+  return { from: range.contentFrom - 3, to: range.contentTo + 3, open: replacement, close: replacement }
+}
+
 function directWrapper(document: RichDocument, range: SourceMapRange, mark: InlineMark): { from: number; to: number; open: string; close: string } | null {
   const delimiters = mark === "bold" ? ["**", "__"] : mark === "italic" ? ["*", "_"] : ["`"]
   for (const delimiter of delimiters) {
@@ -275,11 +286,15 @@ function directWrapper(document: RichDocument, range: SourceMapRange, mark: Inli
       return { from, to, open: delimiter, close: delimiter }
     }
   }
-  if (mark !== "code" && document.source.slice(range.contentFrom - 3, range.contentFrom) === "***" && document.source.slice(range.contentTo, range.contentTo + 3) === "***") {
-    const replacement = mark === "bold" ? "*" : "**"
-    return { from: range.contentFrom - 3, to: range.contentTo + 3, open: replacement, close: replacement }
+  return tripleWrapper(document, range, mark)
+}
+
+function unwrapWrapperSource(document: RichDocument, wrapper: { from: number; to: number; open: string; close: string }): string {
+  const triple = document.source.slice(wrapper.from, wrapper.from + 3) === "***" && document.source.slice(wrapper.to - 3, wrapper.to) === "***"
+  if (triple) {
+    return document.source.slice(0, wrapper.from) + wrapper.open + document.source.slice(wrapper.from + 3, wrapper.to - 3) + wrapper.close + document.source.slice(wrapper.to)
   }
-  return null
+  return document.source.slice(0, wrapper.from) + document.source.slice(wrapper.from + wrapper.open.length, wrapper.to - wrapper.close.length) + document.source.slice(wrapper.to)
 }
 
 function visibleSourceEnd(document: RichDocument, position: number): number {
@@ -296,6 +311,8 @@ function selectedVisibleRanges(document: RichDocument, from: number, to: number)
 function enclosingWrapper(document: RichDocument, from: number, to: number, mark: InlineMark): { from: number; to: number; open: string; close: string } | null {
   const sourceFrom = visibleToSource(document, from)
   const sourceTo = visibleSourceEnd(document, to)
+  const triple = tripleWrapper(document, { contentFrom: sourceFrom, contentTo: sourceTo }, mark)
+  if (triple && sourceToVisible(document, sourceFrom) === from && sourceToVisible(document, sourceTo) === to) return triple
   const delimiters = mark === "bold" ? ["**", "__"] : mark === "italic" ? ["*", "_"] : ["`"]
   for (const delimiter of delimiters) {
     const wrapperFrom = sourceFrom - delimiter.length
@@ -331,7 +348,7 @@ export function toggleInlineMark(
     if (caretRange?.marks.includes(mark)) {
       const wrapper = caretRange && directWrapper(document, caretRange, mark)
       if (!wrapper) return null
-      const next = importMarkdown(document.source.slice(0, wrapper.from) + document.source.slice(wrapper.from + wrapper.open.length, wrapper.to - wrapper.close.length) + document.source.slice(wrapper.to))
+      const next = importMarkdown(unwrapWrapperSource(document, wrapper))
       return { document: next, anchor: start, head: start }
     }
     // A standalone caret has no representable visible content yet. Keep it a
@@ -341,8 +358,7 @@ export function toggleInlineMark(
   }
   const enclosing = enclosingWrapper(document, start, end, mark)
   if (enclosing) {
-    const inner = document.source.slice(enclosing.from + enclosing.open.length, enclosing.to - enclosing.close.length)
-    const next = importMarkdown(document.source.slice(0, enclosing.from) + inner + document.source.slice(enclosing.to))
+    const next = importMarkdown(unwrapWrapperSource(document, enclosing))
     return { document: next, anchor: reversed ? end : start, head: reversed ? start : end }
   }
   if (!ranges.length || ranges.some((range) => range.block === "opaque")) return null
@@ -350,7 +366,10 @@ export function toggleInlineMark(
   if (target?.marks.includes(mark)) {
     const wrapper = directWrapper(document, target, mark)
     if (!wrapper) return null
-    const inner = document.source.slice(wrapper.from + wrapper.open.length, wrapper.to - wrapper.close.length)
+    const triple = document.source.slice(wrapper.from, wrapper.from + 3) === "***" && document.source.slice(wrapper.to - 3, wrapper.to) === "***"
+    const openLength = triple ? 3 : wrapper.open.length
+    const closeLength = triple ? 3 : wrapper.close.length
+    const inner = document.source.slice(wrapper.from + openLength, wrapper.to - closeLength)
     const localFrom = start - target.visibleFrom
     const localTo = end - target.visibleFrom
     const before = inner.slice(0, localFrom)

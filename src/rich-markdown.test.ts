@@ -145,6 +145,7 @@ describe("rich Markdown document", () => {
     expect(applyInlineInputRule(importMarkdown("# **hello** "), 13, "space").converted).toBe(false)
     expect(classifyInlineBoundary("**hello** ", 10, "space")?.kind).toBe("bold")
     expect(classifyInlineBoundary("say **hello** ", 14, "space")?.sourceFrom).toBe(4)
+    expect(classifyInlineBoundary("**a** **b** ", 12, "space")?.sourceFrom).toBe(6)
     const eof = classifyInlineBoundary("**hello** ", 10, "eof")
     expect(eof?.sourceTo).toBe(9)
     expect(eof?.contentTo).toBe(7)
@@ -184,6 +185,10 @@ describe("rich Markdown document", () => {
     const outerUnwrapped = toggleInlineMark(importMarkdown("*outer **inner** end*"), 0, 15, "italic")
     expect(serializeMarkdown(outerUnwrapped!.document)).toBe("outer **inner** end")
     expect(outerUnwrapped!.document.visible).toBe("outer inner end")
+
+    const tripleItalic = toggleInlineMark(importMarkdown("***hello***"), 0, 5, "italic")
+    expect(serializeMarkdown(tripleItalic!.document)).toBe("**hello**")
+    expect(tripleItalic!.document.visible).toBe("hello")
 
     expect(toggleInlineMark(importMarkdown("~~raw~~"), 0, 5, "bold")).toBeNull()
     expect(toggleInlineMark(importMarkdown("**a** b"), 0, 3, "italic")).toBeNull()
