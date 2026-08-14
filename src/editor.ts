@@ -1,5 +1,5 @@
 import { EditorView, keymap, highlightSpecialChars, drawSelection } from "@codemirror/view"
-import { ChangeSet, Compartment, EditorState } from "@codemirror/state"
+import { ChangeSet, Compartment, EditorState, Prec } from "@codemirror/state"
 import { history, historyKeymap, defaultKeymap } from "@codemirror/commands"
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete"
 import { deleteMarkupBackward } from "@codemirror/lang-markdown"
@@ -24,7 +24,7 @@ import { selectionToolbar } from "./selection-toolbar"
 import { vimCaretGuard, vimCaretGuardEscape } from "./vim-caret"
 import { copyMarkdown } from "./copy-markdown"
 import { richRendering } from "./rich-render"
-import { installVimMarkdownYank } from "./vim-yank"
+import { handleRichVimPaste, installVimMarkdownYank } from "./vim-yank"
 import {
   hasRichEditor,
   isRichDocumentTransaction,
@@ -138,6 +138,13 @@ export function mountEditor(
   const view = new EditorView({
     doc: "",
     extensions: [
+      ...(opts.rich
+        ? [Prec.highest(EditorView.domEventHandlers({
+            keydown(event, view) {
+              return handleRichVimPaste(view, event)
+            },
+          }))]
+        : []),
       // Vim layer (FEAT-0021), off by default. First in the array → highest
       // precedence, so the Vim plugin's keydown handler runs before our keymaps:
       // in normal mode Vim owns the keys (the point of opting in); in insert mode
@@ -397,12 +404,17 @@ export function scrollEditorToHeading(view: EditorView, anchor: string): boolean
     for (let index = 0; index < lines.length; index += 2) {
       const line = lines[index] ?? ""
       const lineText = line.replace(/\r$/, "")
+      const lineEnd = offset + line.length
+      const opaque = rich.ranges.some((range) =>
+        ["opaque", "fence", "table", "frontmatter", "mermaid"].includes(range.block) &&
+        range.sourceFrom < lineEnd && range.sourceTo > offset,
+      )
       const fenceMatch = /^\s*(```+|~~~+)/.exec(lineText)
       if (fenceMatch) {
         const char = fenceMatch[1][0]
         if (fence === null) fence = char
         else if (char === fence) fence = null
-      } else if (fence === null) {
+      } else if (fence === null && !opaque) {
         const match = /^(?:#{1,6})\s+(.+?)\s*$/.exec(lineText)
         if (match && headingSlug(match[1]) === wanted) {
           const selection = richSourceSelectionToEditor(rich, { anchor: offset, head: offset })

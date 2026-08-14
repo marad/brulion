@@ -4,6 +4,7 @@ import { undo } from "@codemirror/commands"
 import { EditorView } from "@codemirror/view"
 import {
   applyRichFormat,
+  applyRichPaste,
   applyRichSlash,
   serializeRichSelection,
   type RichEditorSelectionRange,
@@ -91,6 +92,8 @@ describe("rich adapter coordinate and transaction contracts (FEAT-0114)", () => 
     const nested = importMarkdown("*outer **inner** end*")
     const inner = nested.visible.indexOf("inner")
     expect(serializeRichSelection(nested, [{ from: inner, to: inner + "inner".length }])).toBe("***inner***")
+    const importedNested = importMarkdown("_outer **inner** end_")
+    expect(serializeRichSelection(importedNested, [{ from: 0, to: importedNested.visible.length }])).toBe("_outer **inner** end_")
 
     const linked = importMarkdown("See [**bold** label](target.md)")
     const bold = linked.visible.indexOf("bold")
@@ -163,6 +166,21 @@ describe("rich adapter coordinate and transaction contracts (FEAT-0114)", () => 
     view.destroy()
   })
 
+  it("rejects paste over cross-fragment or opaque visible selections without mutation", () => {
+    const view = richView()
+    setEditorText(view, "**bold** plain")
+    view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } })
+    expect(applyRichPaste(view, "x")).toBe(false)
+    expect(serializedRichMarkdown(view.state)).toBe("**bold** plain")
+
+    setEditorText(view, "```js\nraw\n```")
+    const raw = view.state.doc.toString().indexOf("raw")
+    view.dispatch({ selection: { anchor: raw, head: raw + 3 } })
+    expect(applyRichPaste(view, "x")).toBe(false)
+    expect(serializedRichMarkdown(view.state)).toBe("```js\nraw\n```")
+    view.destroy()
+  })
+
   it("pastes only text/plain Markdown at one undo boundary", () => {
     const view = richView()
     setEditorText(view, "prefix ")
@@ -198,6 +216,24 @@ describe("rich adapter coordinate and transaction contracts (FEAT-0114)", () => 
     expect(staleDispatch).not.toHaveBeenCalled()
     expect(serializedRichMarkdown(stale.state)).toBe("changed")
     stale.destroy()
+  })
+
+  it("ignores a stale rich wikilink completion after the token changes", () => {
+    const view = richView()
+    setLinkContext(view, { activeNote: "start.md", notePaths: new Set(["note.md"]) })
+    setEditorText(view, "[[no")
+    const context = new CompletionContext(view.state, view.state.doc.length, false)
+    const result = wikilinkSource(context)!
+    const option = result.options[0]!
+    setEditorText(view, "changed")
+    expect(() => (option.apply as (view: EditorView, completion: typeof option, from: number, to: number) => void)(
+      view,
+      option,
+      result.from,
+      4,
+    )).not.toThrow()
+    expect(serializedRichMarkdown(view.state)).toBe("changed")
+    view.destroy()
   })
 
   it("accepts a visible wikilink completion without duplicating an existing close", () => {

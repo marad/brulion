@@ -1,4 +1,7 @@
-import { Vim } from "@replit/codemirror-vim"
+import { EditorView } from "@codemirror/view"
+import { Vim, getCM, type CodeMirrorV } from "@replit/codemirror-vim"
+import { applyRichPaste } from "./rich-adapters"
+import { hasRichEditor } from "./rich-editor"
 import { serializeCopy } from "./copy-markdown"
 
 /**
@@ -41,6 +44,55 @@ export function installVimMarkdownYank(): void {
     )
     return endPos
   })
+}
+
+interface RichVimState {
+  insertMode?: boolean
+  visualMode?: boolean
+  inputState?: { registerName?: string | null }
+}
+
+/** Handle character/linewise Vim paste on the rich projection before the Vim
+ * adapter dispatches a raw `replaceRange`. Raw editors return false and keep
+ * the package's stock behavior. */
+export function handleRichVimPaste(view: EditorView, event: KeyboardEvent): boolean {
+  if (!hasRichEditor(view.state) || (event.key !== "p" && event.key !== "P")) return false
+  const cm = getCM(view)
+  if (!cm) return false
+  const vim = (cm.state as unknown as { vim?: RichVimState }).vim
+  if (!vim || vim.insertMode) return false
+  const register = Vim.getRegisterController().getRegister(vim.inputState?.registerName ?? undefined)
+  const text = register.toString()
+  if (!text) return true
+
+  const previous = view.state.selection.main
+  let from = previous.from
+  let to = previous.to
+  if (!vim.visualMode) {
+    const line = view.state.doc.lineAt(previous.head)
+    if (register.linewise) {
+      const position = event.key === "p" && line.to < view.state.doc.length ? line.to + 1 : event.key === "P" ? line.from : view.state.doc.length
+      from = position
+      to = position
+    } else {
+      const position = event.key === "p" ? Math.min(line.to, previous.head + 1) : previous.head
+      from = position
+      to = position
+    }
+  }
+
+  try {
+    view.dispatch({ selection: { anchor: from, head: to } })
+    if (!applyRichPaste(view, text)) {
+      view.dispatch({ selection: { anchor: previous.anchor, head: previous.head } })
+      return true
+    }
+    if (vim.visualMode) Vim.exitVisualMode(cm as CodeMirrorV)
+    return true
+  } catch {
+    view.dispatch({ selection: { anchor: previous.anchor, head: previous.head } })
+    return true
+  }
 }
 
 interface VimPos {

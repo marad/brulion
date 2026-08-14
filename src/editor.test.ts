@@ -219,6 +219,16 @@ describe("scrollEditorToHeading (FEAT-0061)", () => {
     view.destroy()
   })
 
+  it("skips heading-like lines inside rich frontmatter", () => {
+    const view = mountEditor(document.createElement("div"), { rich: true })
+    setEditorText(view, "---\r\n# fake\r\n---\r\n## Real\r\n\r\nbody")
+
+    expect(scrollEditorToHeading(view, "fake")).toBe(false)
+    expect(scrollEditorToHeading(view, "real")).toBe(true)
+    expect(view.state.doc.sliceString(view.state.selection.main.head, view.state.doc.lineAt(view.state.selection.main.head).to)).toBe("Real")
+    view.destroy()
+  })
+
   it("returns false and does not move the caret when no heading matches", () => {
     const view = mountEditor(document.createElement("div"))
     setEditorText(view, doc)

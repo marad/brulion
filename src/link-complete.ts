@@ -28,15 +28,25 @@ import { shortestLinkText } from "./wikilink"
  * shortest-unambiguous link text) and ensures the link is closed with `]]`, leaving
  * the caret after it. An existing `]]` right after the caret is reused, not
  * duplicated, so accepting inside `[[…]]` yields a single well-formed link. */
-function applyWikilink(insert: string) {
+function applyWikilink(insert: string, query: string) {
   return (view: EditorView, _completion: Completion, from: number, to: number): void => {
-    const hasClose = view.state.doc.sliceString(to, to + 2) === "]]"
-    view.dispatch({
-      changes: { from, to, insert: hasClose ? insert : `${insert}]]` },
-      // After the closing `]]` either way: the reused `]]` sits right after `to`,
-      // which now follows the inserted text — same offset as the appended one.
-      selection: { anchor: from + insert.length + 2 },
-    })
+    try {
+      if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 2 || to < from || to > view.state.doc.length) return
+      if (view.state.sliceDoc(from - 2, from) !== "[[" || view.state.sliceDoc(from, to) !== query) return
+      if (!insert || /[\[\]\r\n]/.test(insert)) return
+      const hasClose = view.state.doc.sliceString(to, to + 2) === "]]"
+      const closeLength = hasClose ? 2 : 0
+      if (to + closeLength > view.state.doc.length) return
+      view.dispatch({
+        changes: { from, to, insert: hasClose ? insert : `${insert}]]` },
+        // After the closing `]]` either way: the reused `]]` sits right after `to`,
+        // which now follows the inserted text — same offset as the appended one.
+        selection: { anchor: from + insert.length + 2 },
+      })
+    } catch {
+      // Completion results can outlive the document/token that produced them.
+      // A stale result is a no-op, never an unhandled DOM callback error.
+    }
   }
 }
 
@@ -68,7 +78,7 @@ export function wikilinkSource(context: CompletionContext): CompletionResult | n
   const options: Completion[] = matches.map((path) => ({
     label: displayName(path),
     type: "text",
-    apply: applyWikilink(shortestLinkText(path, notePaths)),
+    apply: applyWikilink(shortestLinkText(path, notePaths), query),
   }))
   return { from, options, filter: false }
 }

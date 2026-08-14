@@ -12,6 +12,7 @@ import {
 } from "./rich-markdown"
 import {
   dispatchRichDocumentChange,
+  isRichVisibleChangeSafe,
   richDocumentFromState,
   richEditorRangeToModel,
   type RichVisibleSelection,
@@ -168,6 +169,7 @@ export function applyRichPaste(view: EditorView, text: string): boolean {
   } catch {
     return false
   }
+  if (!isRichVisibleChangeSafe(document, { from: selection.from, to: selection.to, insert: text })) return false
   let candidate: RichDocument
   try {
     candidate = replaceVisibleForEditor(document, modelRange.from, modelRange.to, text)
@@ -250,6 +252,40 @@ function wrapInline(document: RichDocument, raw: string, sourceFrom: number, sou
   return result
 }
 
+function inlineDelimiterSource(text: string): boolean {
+  return ["***", "___", "**", "__", "*", "_", "`"].includes(text)
+}
+
+/** Preserve an imported enclosing mark run when every visible fragment in the
+ * run is selected. Serializing each nested fragment independently would turn
+ * `_outer **inner** end_` into mismatched repeated wrappers. */
+function serializeFullInlineRun(document: RichDocument, entries: readonly CopyEntry[]): string | null {
+  if (entries.length < 2 || entries.some((entry) => entry.from !== entry.range.visibleFrom || entry.to !== entry.range.visibleTo)) return null
+  const first = entries[0]!
+  const last = entries.at(-1)!
+  const common = INLINE_MARKS.filter((mark) => entries.every((entry) => entry.range.marks.includes(mark)))
+  if (!common.length) return null
+  let sourceFrom = first.sourceFrom
+  let sourceTo = last.sourceTo
+  for (const mark of common) {
+    const open = document.ranges.find((candidate) =>
+      !candidate.visible && candidate.sourceTo === first.range.contentFrom &&
+      candidate.marks.includes(mark) && inlineDelimiterSource(document.source.slice(candidate.sourceFrom, candidate.sourceTo)),
+    )
+    const close = document.ranges.find((candidate) =>
+      !candidate.visible && candidate.sourceFrom === last.range.contentTo &&
+      candidate.marks.includes(mark) && inlineDelimiterSource(document.source.slice(candidate.sourceFrom, candidate.sourceTo)),
+    )
+    if (open && close) {
+      sourceFrom = Math.min(sourceFrom, open.sourceFrom)
+      sourceTo = Math.max(sourceTo, close.sourceTo)
+    }
+  }
+  return sourceFrom === first.sourceFrom && sourceTo === last.sourceTo
+    ? null
+    : document.source.slice(sourceFrom, sourceTo)
+}
+
 function blockPrefix(document: RichDocument, visibleFrom: number): string {
   const sourcePosition = visibleToSource(document, visibleFrom)
   const lineStart = lineStartAt(document.source, sourcePosition)
@@ -304,8 +340,23 @@ function serializeRange(document: RichDocument, from: number, to: number): strin
       chunk = serializeLinkGroup(document, group, from, to)
       index = next
     } else {
-      chunk = serializeEntry(document, entry)
-      index += 1
+      const run: CopyEntry[] = [entry]
+      let next = index + 1
+      while (next < entries.length) {
+        const candidate = entries[next]!
+        const previous = run.at(-1)!
+        if (candidate.range.link || /^[\r\n]+$/.test(document.visible.slice(candidate.from, candidate.to)) || candidate.from !== previous.to) break
+        run.push(candidate)
+        next += 1
+      }
+      const grouped = serializeFullInlineRun(document, run)
+      if (grouped !== null) {
+        chunk = grouped
+        index = next
+      } else {
+        chunk = serializeEntry(document, entry)
+        index += 1
+      }
     }
     result += prefix + chunk
     lineHasContent = true

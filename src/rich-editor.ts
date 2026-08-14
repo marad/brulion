@@ -238,6 +238,23 @@ function assertVisibleEditorChangeSafe(document: RichDocument, change: RichVisib
   }
 }
 
+/** Validate one editor-visible replacement before an adapter performs a rich
+ * source edit. This is intentionally public for paste/Vim adapters that have
+ * no CodeMirror transaction for the guard to filter first. */
+export function isRichVisibleChangeSafe(
+  document: RichDocument,
+  change: RichVisibleChange,
+): boolean {
+  try {
+    if (!Number.isSafeInteger(change.from) || !Number.isSafeInteger(change.to) || change.from < 0 || change.to < change.from) return false
+    if (change.to > editorVisibleText(document).length || typeof change.insert !== "string") return false
+    assertVisibleEditorChangeSafe(document, change)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** Apply a set of visible CodeMirror changes against the model, not against
  * Markdown source. Changes use the pre-transaction visible coordinates. */
 export function applyRichVisibleChanges(

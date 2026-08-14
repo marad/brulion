@@ -6,6 +6,7 @@ import {
   setEditorText,
   setVimMode,
 } from "./editor"
+import { serializedRichMarkdown } from "./rich-editor"
 
 function press(view: ReturnType<typeof mountEditor>, key: string): void {
   view.contentDOM.dispatchEvent(new KeyboardEvent("keydown", {
@@ -22,6 +23,22 @@ describe("rich Vim adapter (FEAT-0114)", () => {
     setVimMode(view, true)
 
     expect(view.state.facet(EditorState.transactionFilter)).toHaveLength(before)
+    view.destroy()
+  })
+
+  it("pastes a Vim register through the rich visible boundary", () => {
+    const view = mountEditor(document.createElement("div"), { rich: true })
+    setEditorText(view, "")
+    setVimMode(view, true)
+    Vim.getRegisterController().unnamedRegister.setText("**hello**")
+    view.focus()
+
+    press(view, "p")
+
+    expect(view.state.doc.toString()).toBe("hello")
+    // The register's Markdown meaning survives while delimiters stay out of the
+    // visible Vim motion surface.
+    expect(serializedRichMarkdown(view.state)).toBe("**hello**")
     view.destroy()
   })
 
