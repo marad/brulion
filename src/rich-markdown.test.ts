@@ -213,6 +213,8 @@ describe("rich Markdown document", () => {
 
     expect(toggleInlineMark(importMarkdown("  "), 0, 2, "italic")).toBeNull()
     expect(toggleInlineMark(importMarkdown("`hello`"), 0, 5, "code")?.document.visible).toBe("hello")
+    expect(toggleInlineMark(importMarkdown("`hello`"), 0, 5, "bold")).toBeNull()
+    expect(toggleInlineMark(importMarkdown("***hello***"), 1, 4, "bold")).toBeNull()
 
     expect(toggleInlineMark(importMarkdown("hello"), 2, 2, "italic")).toBeNull()
     const caretUnwrap = toggleInlineMark(importMarkdown("**hello**"), 2, 2, "bold")

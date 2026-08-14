@@ -417,8 +417,10 @@ export function toggleInlineMark(
     return { document: next, anchor: reversed ? end : start, head: reversed ? start : end }
   }
   if (!ranges.length || ranges.some((range) => range.block === "opaque")) return null
+  if (mark !== "code" && ranges.some((range) => range.marks.includes("code"))) return null
   const target = ranges.length === 1 ? ranges[0] : null
   if (target?.marks.includes(mark)) {
+    if (target.marks.length > 1 && (start !== target.visibleFrom || end !== target.visibleTo)) return null
     const wrapper = directWrapper(document, target, mark)
     if (!wrapper) return null
     const rawOpen = document.source.slice(wrapper.from, wrapper.from + 3)
