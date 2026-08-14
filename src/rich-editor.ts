@@ -1,11 +1,12 @@
 import { EditorView } from "@codemirror/view"
 import { invertedEffects } from "@codemirror/commands"
 import {
+  Annotation,
   EditorState,
   StateEffect,
   StateField,
   Transaction,
-  type Annotation,
+  type AnnotationType,
   type Extension,
   type TransactionSpec,
 } from "@codemirror/state"
@@ -53,6 +54,9 @@ export interface RichVisibleChangeResult {
 }
 
 const setRichDocumentEffect = StateEffect.define<RichDocument>()
+/** Marks a transaction whose serialized source changed even when its visible
+ * projection did not (for example, a completed empty `# ` heading). */
+export const RichSourceChange: AnnotationType<boolean> = Annotation.define<boolean>()
 
 const richDocumentField = StateField.define<RichDocument>({
   create: () => importMarkdown(""),
@@ -79,6 +83,11 @@ export function richDocumentFromState(state: EditorState): RichDocument | null {
 export function serializedRichMarkdown(state: EditorState): string | null {
   const document = fieldDocument(state)
   return document ? serializeMarkdown(document) : null
+}
+
+/** Whether a transaction changed the primary model's serialized source. */
+export function isRichDocumentTransaction(transaction: Transaction): boolean {
+  return transaction.effects.some((effect) => effect.is(setRichDocumentEffect))
 }
 
 /** CodeMirror stores LF line separators. The pure model keeps source line
@@ -147,6 +156,36 @@ function visibleChangeFromTransaction(transaction: Transaction): RichVisibleChan
   return changes
 }
 
+function isOpaqueBlock(block: RichDocument["ranges"][number]["block"]): boolean {
+  return block === "opaque" || block === "fence" || block === "table" || block === "frontmatter" || block === "mermaid"
+}
+
+function isPendingRange(document: RichDocument, range: RichDocument["ranges"][number]): boolean {
+  const lineStart = document.source.lastIndexOf("\\n", Math.max(0, range.sourceFrom - 1)) + 1
+  return document.pendingLineStarts.includes(lineStart)
+}
+
+function assertVisibleEditorChangeSafe(document: RichDocument, change: RichVisibleChange): void {
+  const modelFrom = modelPositionFromEditor(document, change.from)
+  const modelTo = modelPositionFromEditor(document, change.to)
+  const touched = document.ranges.filter((range) =>
+    range.visible && range.visibleFrom < modelTo && range.visibleTo > modelFrom,
+  )
+  const opaque = touched.filter((range) => isOpaqueBlock(range.block) && !isPendingRange(document, range))
+  if (opaque.length) throw new RangeError("Opaque source requires an explicit source edit")
+  if (change.from !== change.to && touched.length > 1) {
+    throw new RangeError("Visible replacement must stay within one mapped fragment")
+  }
+  if (change.from === change.to) {
+    const at = document.ranges.filter((range) =>
+      range.visible && range.visibleFrom <= modelFrom && modelFrom <= range.visibleTo,
+    )
+    if (at.some((range) => isOpaqueBlock(range.block) && !isPendingRange(document, range))) {
+      throw new RangeError("Opaque source requires an explicit source edit")
+    }
+  }
+}
+
 /** Apply a set of visible CodeMirror changes against the model, not against
  * Markdown source. Changes use the pre-transaction visible coordinates. */
 export function applyRichVisibleChanges(
@@ -154,27 +193,36 @@ export function applyRichVisibleChanges(
   changes: readonly RichVisibleChange[],
   interimSelection: RichVisibleSelection,
 ): RichVisibleChangeResult {
-  const ordered = [...changes]
+  const editorOrdered = [...changes].sort((left, right) => right.from - left.from || right.to - left.to)
+  for (const change of editorOrdered) assertVisibleEditorChangeSafe(document, change)
+  const editorLength = editorVisibleText(document).length
+  let interim = editorVisibleText(document)
+  let previousEditorFrom = Number.POSITIVE_INFINITY
+  for (const change of editorOrdered) {
+    if (
+      !Number.isSafeInteger(change.from) ||
+      !Number.isSafeInteger(change.to) ||
+      change.from < 0 ||
+      change.to < change.from ||
+      change.to > editorLength ||
+      change.to > previousEditorFrom
+    ) throw new RangeError("Visible changes overlap or are out of bounds")
+    previousEditorFrom = change.from
+    interim = interim.slice(0, change.from) + change.insert + interim.slice(change.to)
+  }
+
+  const modelOrdered = editorOrdered
     .map((change) => ({
       ...change,
       from: modelPositionFromEditor(document, change.from),
       to: modelPositionFromEditor(document, change.to),
     }))
     .sort((left, right) => right.from - left.from || right.to - left.to)
-  let interim = editorVisibleText(document)
   let next = document
-  let previousFrom = Number.POSITIVE_INFINITY
-  for (const change of ordered) {
-    if (
-      !Number.isSafeInteger(change.from) ||
-      !Number.isSafeInteger(change.to) ||
-      change.from < 0 ||
-      change.to < change.from ||
-      change.to > document.visible.length ||
-      change.to > previousFrom
-    ) throw new RangeError("Visible changes overlap or are out of bounds")
-    previousFrom = change.from
-    interim = interim.slice(0, change.from) + change.insert + interim.slice(change.to)
+  let previousModelFrom = Number.POSITIVE_INFINITY
+  for (const change of modelOrdered) {
+    if (change.to > previousModelFrom) throw new RangeError("Visible changes overlap or are out of bounds")
+    previousModelFrom = change.from
     next = replaceVisibleForEditor(next, change.from, change.to, change.insert)
   }
 
@@ -198,11 +246,18 @@ export function applyRichVisibleChanges(
 }
 
 function richTransactionFilter(transaction: Transaction): Transaction | TransactionSpec {
-  if (
-    !transaction.docChanged ||
-    transaction.annotation(ProgrammaticLoad) ||
-    transaction.effects.some((effect) => effect.is(setRichDocumentEffect))
-  ) return transaction
+  const hasModelEffect = transaction.effects.some((effect) => effect.is(setRichDocumentEffect))
+  if (hasModelEffect) {
+    if (!transaction.docChanged && !transaction.annotation(ProgrammaticLoad)) {
+      return {
+        effects: transaction.effects,
+        annotations: [RichSourceChange.of(true)],
+        filter: false,
+      }
+    }
+    return transaction
+  }
+  if (!transaction.docChanged || transaction.annotation(ProgrammaticLoad)) return transaction
   const document = fieldDocument(transaction.startState)
   if (!document) return transaction
 
@@ -225,7 +280,7 @@ function richTransactionFilter(transaction: Transaction): Transaction | Transact
       changes: projectionChange ?? [],
       selection: result.selection,
       effects: [...transaction.effects, setRichDocumentEffect.of(result.document)],
-      annotations,
+      annotations: [...annotations, RichSourceChange.of(true)],
       scrollIntoView: transaction.scrollIntoView,
       // The returned transaction already contains the source-model effect and
       // final visible change. Re-running this filter would apply the projected

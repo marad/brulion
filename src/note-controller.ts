@@ -427,6 +427,28 @@ export function createNoteController(
     // note whose content was never actually loaded into the editor. A vault
     // guard is checked at this same commit boundary for stale extension calls.
     guard?.()
+    const previousMarkdown = editorDocument.readMarkdown()
+    const needsProjection = previousMarkdown !== note.content
+    if (needsProjection) {
+      // The editor boundary is part of the same commit: if import/projection
+      // fails, do not advance activeName, conflict, cache, mtime, or the saved
+      // source snapshot. Restore the old projection if a boundary implementation
+      // throws after dispatching but before returning.
+      try {
+        trackSync("load editor Markdown", () => editorDocument.loadMarkdown(note.content))
+        guard?.()
+      } catch (error) {
+        try {
+          if (editorDocument.readMarkdown() !== previousMarkdown) editorDocument.loadMarkdown(previousMarkdown)
+        } catch {
+          // Preserve the original failure; a boundary that cannot restore is
+          // still prevented from committing controller metadata below.
+        }
+        throw error
+      }
+    } else {
+      guard?.()
+    }
     activeName = name
     if (conflict) {
       conflict = false
@@ -434,14 +456,6 @@ export function createNoteController(
     }
     if (!cached) contentCache.set(name, note)
     lastModified = note.lastModified
-    // Skip the redraw if the buffer already shows this exact content — e.g.
-    // open()'s speculative preview already rendered it correctly, and this is
-    // just the confirming call once the listing succeeds. Avoids a redundant
-    // full-document replace (a stray undo-history entry, a wasted decoration
-    // rebuild) for what amounts to a no-op.
-    if (editorDocument.readMarkdown() !== note.content) {
-      trackSync("load editor Markdown", () => editorDocument.loadMarkdown(note.content))
-    }
     savedMarkdown = note.content
     dirty = false // discard any stray edit typed on the old content during the read
   }
@@ -1300,10 +1314,12 @@ export function createNoteController(
               // conflict rather than a silent clobber.
               const note = await readNote(snapshot.folder, activeName)
               if (safeToReplaceBuffer()) {
-                lastModified = note.lastModified
                 // Minimal-diff reload (FEAT-0067): replace only the differing span so the
-                // caret and scroll survive — not a wholesale set that jumps the view.
+                // caret and scroll survive — not a wholesale set that jumps the view. Keep
+                // lifecycle metadata behind the same boundary so a failed reparse leaves
+                // the previous source, mtime, clean snapshot, and dirty state intact.
                 editorDocument.reloadMarkdown(note.content)
+                lastModified = note.lastModified
                 savedMarkdown = note.content
                 dirty = false
                 contentCache.set(activeName, note)

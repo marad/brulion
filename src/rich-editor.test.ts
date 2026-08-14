@@ -57,6 +57,21 @@ describe("rich editor boundary (FEAT-0113)", () => {
     view.destroy()
   })
 
+  it("reports and undoes a source-only empty heading conversion", () => {
+    const onChange = vi.fn()
+    const view = mountRich(onChange)
+
+    view.dispatch({ changes: { from: 0, insert: "# " } })
+
+    expect(view.state.doc.toString()).toBe("")
+    expect(serializedRichMarkdown(view.state)).toBe("# ")
+    expect(onChange).toHaveBeenCalledOnce()
+    expect(undo(view)).toBe(true)
+    expect(serializedRichMarkdown(view.state)).toBe("")
+    expect(onChange).toHaveBeenCalledTimes(2)
+    view.destroy()
+  })
+
   it("leaves incomplete markers visible and editable instead of dropping their source", () => {
     const view = mountRich()
 
@@ -82,6 +97,11 @@ describe("rich editor boundary (FEAT-0113)", () => {
       "before **naïve** after\r\n~~unknown~~\r\n```mermaid\r\n**raw**\r\n```\r\n",
     )
     expect(view.state.doc.toString()).toContain("~~unknown~~\n```mermaid\n**raw**")
+    const specialBefore = serializedRichMarkdown(view.state)
+    const rawPosition = view.state.doc.toString().indexOf("**raw**")
+    view.dispatch({ changes: { from: rawPosition, to: rawPosition + 2, insert: "xx" } })
+    expect(serializedRichMarkdown(view.state)).toBe(specialBefore)
+    expect(view.state.doc.toString()).toContain("**raw**")
     expect(serializedRichMarkdown(view.state)?.match(/\r\n/g)?.length).toBe(5)
     view.destroy()
   })
@@ -120,9 +140,10 @@ describe("rich editor boundary (FEAT-0113)", () => {
     setRichEditorSource(view, source)
     const from = view.state.doc.toString().indexOf("two")
 
-    view.dispatch({ changes: { from, to: from + 3, insert: "dos" } })
+    view.dispatch({ changes: { from, to: from + 3, insert: "dos" }, selection: { anchor: from + 3 } })
 
     expect(view.state.doc.toString()).toBe("first one\nsecond dos")
+    expect(view.state.selection.main.head).toBe(view.state.doc.length)
     expect(serializedRichMarkdown(view.state)).toBe("first **one**\r\nsecond **dos**")
     view.destroy()
   })

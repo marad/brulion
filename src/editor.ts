@@ -25,10 +25,12 @@ import { copyMarkdown } from "./copy-markdown"
 import { installVimMarkdownYank } from "./vim-yank"
 import {
   hasRichEditor,
+  isRichDocumentTransaction,
   richDocumentFromState,
   richEditorExtension,
   richEditorSelectionToSource,
   richSourceSelectionToEditor,
+  RichSourceChange,
   reloadRichEditorSource,
   setRichEditorSource,
 } from "./rich-editor"
@@ -221,7 +223,10 @@ export function mountEditor(
         },
       ]),
       EditorView.updateListener.of((update) => {
-        if (!update.docChanged) return
+        const sourceChanged = update.transactions.some((tr) =>
+          tr.annotation(RichSourceChange) || isRichDocumentTransaction(tr),
+        )
+        if (!update.docChanged && !sourceChanged) return
         if (update.transactions.some((tr) => tr.annotation(ProgrammaticLoad))) return
         opts.onChange?.()
       }),

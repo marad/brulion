@@ -2560,6 +2560,57 @@ describe("serialized rich source controller boundary (FEAT-0113)", () => {
     expect(saveNote).not.toHaveBeenCalled()
   })
 
+  it("keeps the previous controller note when a destination projection fails", async () => {
+    const view = mountEditor(document.createElement("div"), { rich: true })
+    const editorDocument = createEditorDocument(view)
+    sweepResult.mockReturnValue(["a.md", "b.md"])
+    loadActiveNote.mockResolvedValue("a.md")
+    readNote.mockImplementation(async (_dir, name) =>
+      name === "a.md" ? { content: "A body", lastModified: 1 } : { content: "B body", lastModified: 2 },
+    )
+    const controller = createNoteController(view, { editorDocument, debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    const load = vi.spyOn(editorDocument, "loadMarkdown").mockImplementation(() => {
+      throw new Error("projection failed")
+    })
+    await expect(controller.switchTo("b.md")).rejects.toThrow("projection failed")
+    load.mockRestore()
+
+    expect(editorDocument.readMarkdown()).toBe("A body")
+    view.dispatch({ changes: { from: view.state.doc.length, insert: " edited" } })
+    controller.handleChange()
+    controller.flush()
+    await vi.waitFor(() => expect(saveNote).toHaveBeenCalledWith(DIR, "a.md", "A body edited", 1))
+    view.destroy()
+  })
+
+  it("does not adopt mtime or clean state when an external projection fails", async () => {
+    const view = mountEditor(document.createElement("div"), { rich: true })
+    const editorDocument = createEditorDocument(view)
+    sweepResult.mockReturnValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "**body**", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, { editorDocument, debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    statNote.mockResolvedValue(2)
+    readNote.mockResolvedValue({ content: "**new body**", lastModified: 2 })
+    const reload = vi.spyOn(editorDocument, "reloadMarkdown").mockImplementation(() => {
+      throw new Error("reparse failed")
+    })
+    await expect(controller.refreshFromDisk()).rejects.toThrow("reparse failed")
+    reload.mockRestore()
+
+    expect(editorDocument.readMarkdown()).toBe("**body**")
+    view.dispatch({ changes: { from: view.state.doc.length, insert: "!" } })
+    controller.handleChange()
+    controller.flush()
+    await vi.waitFor(() => expect(saveNote).toHaveBeenCalledWith(DIR, "start.md", "**body!**", 1))
+    view.destroy()
+  })
+
   it("uses serialized mine/theirs for conflict and keeps or takes source through the boundary", async () => {
     const { view, editorDocument } = mountRichControllerView()
     const onConflict = vi.fn()
