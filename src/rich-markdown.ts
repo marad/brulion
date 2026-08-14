@@ -467,6 +467,9 @@ function inlineSpanEdge(document: RichDocument, cursor: number, side: "start" | 
 }
 
 function safeBlockSplitCursor(document: RichDocument, cursor: number, sourceCursor: number): number | null {
+  const left = document.ranges.find((range) => range.visible && range.visibleTo === cursor)
+  const right = document.ranges.find((range) => range.visible && range.visibleFrom === cursor)
+  if (left?.marks.some((mark) => right?.marks.includes(mark))) return null
   const inside = document.ranges.some((range) => range.visible && range.marks.length > 0 && range.visibleFrom < cursor && cursor < range.visibleTo)
   if (inside) return null
   return inlineSpanEdge(document, cursor, "start") ?? inlineSpanEdge(document, cursor, "end") ?? sourceCursor
@@ -484,7 +487,7 @@ export function applyBlockEnter(document: RichDocument, cursor: number): BlockEd
   const isEmpty = info.body.trim().length === 0
   const lineTail = document.source.slice(context.lineEnd)
   const lineEndingLength = lineTail.startsWith("\r\n") ? 2 : lineTail.startsWith("\n") ? 1 : 0
-  const newline = lineEndingLength === 2 ? "\r\n" : "\n"
+  const newline = lineEndingLength === 2 ? "\r\n" : lineEndingLength === 1 ? "\n" : document.source.includes("\r\n") ? "\r\n" : "\n"
   const exitsEmptyBlock = isContinuation && isEmpty
   if (exitsEmptyBlock) {
     const replacementText = lineEndingLength ? "" : newline
