@@ -32,8 +32,10 @@ describe("rich Markdown document", () => {
     const markedContinuation = applyBlockEnter(importMarkdown("- **x**"), 1)
     expect(markedContinuation.document.source).toBe("- **x**\n- ")
     expect(markedContinuation.document.visible).toBe("x\n")
+    const interiorContinuation = applyBlockEnter(importMarkdown("> abc"), 2)
+    expect(interiorContinuation.document.source).toBe("> ab\n> c")
     const crlfContinuation = applyBlockEnter(importMarkdown("- **x**\r\n"), 1)
-    expect(crlfContinuation.document.source.startsWith("- **x**\r\n- ")).toBe(true)
+    expect(crlfContinuation.document.source).toBe("- **x**\r\n- ")
     expect(crlfContinuation.document.source.includes("\n\r\n")).toBe(false)
     const exited = applyBlockEnter(importMarkdown("- "), 0)
     expect(exited.document.source).toBe("\n")
@@ -55,6 +57,10 @@ describe("rich Markdown document", () => {
     expect(outdented?.document.source).toBe(list.source)
     expect(serializeMarkdown(outdented!.document)).toBe(list.source)
     expect(indentBlocks(importMarkdown("> [x](a)"), 0, 3, "indent")).toBeNull()
+    const adjacentRich = toggleInlineMark(importMarkdown("hello\n- x"), 1, 4, "bold")!.document
+    const preservedRich = indentBlocks(adjacentRich, 6, 7, "indent")
+    expect(preservedRich?.document.visible).toBe("hello\nx")
+    expect(serializeMarkdown(preservedRich!.document)).toBe("h**ell**o\n  - x")
   })
   it("projects supported syntax without exposing delimiters and maps UTF-16 positions", () => {
     const doc = importMarkdown("# Hé **world**\n> *quote*")
