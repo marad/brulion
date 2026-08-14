@@ -1404,6 +1404,29 @@ function projectVisibleEdit(document: RichDocument, nextSource: string, sourceFr
   return importMarkdownInternal(nextSource, adjacent, pending, punctuation)
 }
 
+/** Re-project an explicit source-boundary edit while retaining transient state
+ * on untouched lines. Unlike ordinary visible typing, an insertion at a line
+ * boundary is before the existing line, so pending/adjacent starts at that
+ * exact source position move with the untouched line. */
+export function reprojectRichSourceEdit(
+  document: RichDocument,
+  nextSource: string,
+  sourceFrom: number,
+  sourceTo: number,
+  text: string,
+): RichDocument {
+  const delta = text.length - (sourceTo - sourceFrom)
+  const insertion = sourceFrom === sourceTo
+  const mapStart = (start: number): number => {
+    if (insertion) return start >= sourceFrom ? start + delta : start
+    return start >= sourceTo ? start + delta : start
+  }
+  const pending = new Set(document.pendingLineStarts.map(mapStart))
+  const adjacent = new Set((document.explicitAdjacentMarkerStarts ?? []).map(mapStart))
+  const punctuation = new Set((document.explicitPunctuationLineStarts ?? []).map(mapStart))
+  return importMarkdownInternal(nextSource, adjacent, pending, punctuation)
+}
+
 /** Re-project complete Markdown pasted into a visible editor range. Paste is an
  * explicit boundary, so only source lines touched by the inserted span lose
  * their transient pending state; untouched lines retain their raw spelling. */

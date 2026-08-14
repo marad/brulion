@@ -2,8 +2,8 @@ import type { EditorView } from "@codemirror/view"
 import {
   applyInlineInputRule,
   clearRichFormatting,
-  importMarkdown,
   flushRichPaste,
+  reprojectRichSourceEdit,
   replaceVisibleForEditor,
   setHeadingLevel,
   sourceToVisible,
@@ -201,14 +201,19 @@ export function applyRichSourceBoundaryChange(
   sourceFrom: number,
   sourceTo: number,
   text: string,
+  caretSource?: number,
 ): boolean {
   if (view.state.readOnly) return false
   const document = modelFor(view)
   if (!document || !Number.isSafeInteger(sourceFrom) || !Number.isSafeInteger(sourceTo) || sourceFrom < 0 || sourceTo < sourceFrom || sourceTo > document.source.length) return false
   const opaque = document.ranges.filter((range) => ["opaque", "fence", "table", "frontmatter", "mermaid"].includes(range.block))
   if (opaque.some((range) => sourceFrom < range.sourceTo && sourceTo > range.sourceFrom || sourceFrom === sourceTo && sourceFrom > range.sourceFrom && sourceFrom < range.sourceTo)) return false
-  const next = importMarkdown(document.source.slice(0, sourceFrom) + text + document.source.slice(sourceTo))
-  const caret = sourceToVisible(next, sourceFrom + text.length)
+  const nextSource = document.source.slice(0, sourceFrom) + text + document.source.slice(sourceTo)
+  const projected = reprojectRichSourceEdit(document, nextSource, sourceFrom, sourceTo, text)
+  const next = flushRichPaste(projected, sourceFrom, sourceFrom + text.length)
+  const sourceCaret = caretSource ?? sourceFrom + text.length
+  if (sourceCaret < sourceFrom || sourceCaret > sourceFrom + text.length) return false
+  const caret = sourceToVisible(next, sourceCaret)
   dispatchRichDocumentChange(view, next, { anchor: caret, head: caret }, "input.vim-paste")
   return true
 }

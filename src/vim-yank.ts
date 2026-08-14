@@ -94,10 +94,15 @@ export function handleRichVimPaste(view: EditorView, event: KeyboardEvent): bool
   let from = previous.from
   let to = previous.to
   let pasteText = text
-  const linewiseText = register.linewise && text.endsWith("\n") ? text : register.linewise ? `${text}\n` : text
+  const defaultLineEnding = document?.source.includes("\r\n") ? "\r\n" : "\n"
+  const linewiseBody = register.linewise
+    ? text.endsWith("\r\n") ? text.slice(0, -2) : /[\r\n]$/.test(text) ? text.slice(0, -1) : text
+    : text
+  const linewiseText = register.linewise ? `${linewiseBody}${defaultLineEnding}` : text
   if (register.linewise && document && (!vim.visualMode || vim.visualLine)) {
     let sourceFrom: number | null = null
     let sourceTo: number | null = null
+    let sourceCaret: number | null = null
     let sourceText = linewiseText
     if (vim.visualMode) {
       const firstPosition = Math.min(previous.from, previous.to)
@@ -107,33 +112,39 @@ export function handleRichVimPaste(view: EditorView, event: KeyboardEvent): bool
       if (first && last) {
         sourceFrom = first.from
         sourceTo = last.to
-        sourceText = linewiseText.slice(0, -1) + document.source.slice(last.contentTo, last.to)
+        sourceText = linewiseBody + document.source.slice(last.contentTo, last.to)
+        sourceCaret = sourceFrom + firstNonWhitespaceOffset(linewiseBody)
       }
     } else {
       const line = view.state.doc.lineAt(previous.head)
       const sourceLine = sourceLineAt(document, line.number)
       if (sourceLine) {
         if (event.key === "p") {
+          const ending = sourceLine.ending || defaultLineEnding
           sourceFrom = sourceLine.to
           sourceTo = sourceLine.to
-          sourceText = sourceLine.to < document.source.length ? linewiseText : `\n${linewiseText}`
+          sourceText = sourceLine.to < document.source.length
+            ? `${linewiseBody}${ending}`
+            : `${ending}${linewiseBody}${ending}`
+          sourceCaret = sourceFrom + (sourceLine.to < document.source.length ? 0 : ending.length) + firstNonWhitespaceOffset(linewiseBody)
         } else {
+          const ending = sourceLine.ending || defaultLineEnding
           sourceFrom = sourceLine.from
           sourceTo = sourceLine.from
-          sourceText = linewiseText
+          sourceText = `${linewiseBody}${ending}`
+          sourceCaret = sourceFrom + firstNonWhitespaceOffset(linewiseBody)
         }
       }
     }
-    const applied = sourceFrom !== null && sourceTo !== null
-      && applyRichSourceBoundaryChange(view, sourceFrom, sourceTo, sourceText)
+    const applied = sourceFrom !== null && sourceTo !== null && sourceCaret !== null
+      && applyRichSourceBoundaryChange(view, sourceFrom, sourceTo, sourceText, sourceCaret)
     if (applied && vim.visualMode) Vim.exitVisualMode(cm as CodeMirrorV)
     finishInput()
     return true
   }
   if (vim.visualMode) {
     if (register.linewise) {
-      const body = linewiseText.slice(0, -1)
-      pasteText = vim.visualLine ? body : `\n${body}\n`
+      pasteText = vim.visualLine ? linewiseBody : `\n${linewiseBody}\n`
     }
   } else {
     const line = view.state.doc.lineAt(previous.head)
@@ -142,8 +153,8 @@ export function handleRichVimPaste(view: EditorView, event: KeyboardEvent): bool
         from = line.to
         to = line.to
         pasteText = line.to < view.state.doc.length
-          ? `\n${linewiseText.slice(0, -1)}`
-          : `\n${linewiseText}`
+          ? `\n${linewiseBody}`
+          : `\n${linewiseBody}${defaultLineEnding}`
       } else {
         from = line.from
         to = line.from
@@ -177,6 +188,7 @@ interface SourceLineRange {
   from: number
   contentTo: number
   to: number
+  ending: string
 }
 
 function sourceLineAt(document: NonNullable<ReturnType<typeof richDocumentFromState>>, lineNumber: number): SourceLineRange | null {
@@ -190,7 +202,12 @@ function sourceLineAt(document: NonNullable<ReturnType<typeof richDocumentFromSt
   const newline = document.source.indexOf("\n", from)
   const to = newline < 0 ? document.source.length : newline + 1
   const contentTo = newline < 0 ? document.source.length : newline > from && document.source[newline - 1] === "\r" ? newline - 1 : newline
-  return { from, contentTo, to }
+  const ending = newline < 0 ? "" : document.source.slice(contentTo, to)
+  return { from, contentTo, to, ending }
+}
+
+function firstNonWhitespaceOffset(text: string): number {
+  return /\S/.exec(text)?.index ?? 0
 }
 
 interface VimPos {

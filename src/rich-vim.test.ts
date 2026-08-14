@@ -53,6 +53,7 @@ describe("rich Vim adapter (FEAT-0114)", () => {
 
     press(view, "p")
     expect(view.state.doc.toString()).toBe("existing\nline\n")
+    expect(view.state.selection.main.head).toBe("existing\n".length)
 
     setEditorText(view, "old")
     view.dispatch({ selection: { anchor: 0 } })
@@ -86,7 +87,31 @@ describe("rich Vim adapter (FEAT-0114)", () => {
     press(visual, "p")
     expect(serializedRichMarkdown(visual.state)).toBe("# new")
     expect(visual.state.doc.toString()).toBe("new")
+    expect(visual.state.selection.main.head).toBe(0)
     visual.destroy()
+  })
+
+  it("preserves untouched pending lines and CRLF during source-boundary paste", () => {
+    const pending = mountEditor(document.createElement("div"), { rich: true })
+    setEditorText(pending, "first\n")
+    pending.dispatch({ changes: { from: pending.state.doc.length, insert: "**pending**" }, userEvent: "input" })
+    setVimMode(pending, true)
+    Vim.getRegisterController().unnamedRegister.setText("new", true)
+    pending.focus()
+    press(pending, "P")
+    expect(serializedRichMarkdown(pending.state)).toBe("new\nfirst\n**pending**")
+    expect(pending.state.doc.toString()).toContain("**pending**")
+    pending.destroy()
+
+    const crlf = mountEditor(document.createElement("div"), { rich: true })
+    setEditorText(crlf, "# old\r\nnext")
+    setVimMode(crlf, true)
+    crlf.focus()
+    press(crlf, "V")
+    Vim.getRegisterController().unnamedRegister.setText("# new\r\n", true)
+    press(crlf, "p")
+    expect(serializedRichMarkdown(crlf.state)).toBe("# new\r\nnext")
+    crlf.destroy()
   })
 
   it("preserves Vim counts and does not steal Ctrl-P", () => {
