@@ -784,7 +784,8 @@ function opaqueLine(line: string, sourceFrom = 0, allowAdjacent: boolean | Reado
   // or application-specific marker syntax. Keep the complete line visible.
   if (MARKDOWN_LINK.test(line) || LINK_LIKE.test(line) || WIKILINK.test(line) || MARKER_LIKE.test(line) || STRIKETHROUGH_LIKE.test(line) || HTML_LIKE.test(line)) return true
   if (/^\s*\|/.test(line)) return true
-  return inlineFragments(line, sourceFrom, "paragraph", [], allowAdjacent, allowPunctuation).unmatched
+  const info = lineBlock(line, sourceFrom)
+  return inlineFragments(info.body, info.bodyOffset, info.block, [], allowAdjacent, allowPunctuation).unmatched
 }
 
 function rangesFromFragments(fragments: readonly Fragment[]): { visible: string; ranges: SourceMapRange[] } {
