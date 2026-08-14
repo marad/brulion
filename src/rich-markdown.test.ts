@@ -150,6 +150,8 @@ describe("rich Markdown document", () => {
     expect(importMarkdown("http://foo**hello** ").visible).toBe("http://foo**hello** ")
     expect(importMarkdown("**ok** http://foo**bad** ").visible).toBe("**ok** http://foo**bad** ")
     expect(importMarkdown("a__b__c").visible).toBe("a__b__c")
+    expect(importMarkdown("a**,...** ").visible).toBe("a**,...** ")
+    expect(applyInlineInputRule(importMarkdown("a**,...** "), 9, "space").converted).toBe(false)
     expect(applyInlineInputRule(importMarkdown("# **hello** "), 13, "space").converted).toBe(false)
     const fenced = "```md\n**x**\n```"
     expect(applyInlineInputRule(importMarkdown(fenced), fenced.indexOf("**x**") + 5, "enter").converted).toBe(false)

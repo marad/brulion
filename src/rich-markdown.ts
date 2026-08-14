@@ -228,14 +228,14 @@ function hasBlockPrefixBefore(source: string, position: number): boolean {
   return /^(?:#{1,6}[ \t]+|>[ \t]?|[*-][ \t]+|\d+\.[ \t]+)$/.test(before)
 }
 
-function hasInlineBoundaryContext(text: string, start: number, end: number, delimiter: string, allowAdjacent = false): boolean {
+function hasInlineBoundaryContext(text: string, start: number, end: number, delimiter: string, allowAdjacent = false, allowPunctuation = false): boolean {
   const previous = text[start - 1]
   const next = text[end + delimiter.length]
   const prefix = text.slice(0, start)
   const content = text.slice(start + delimiter.length, end)
   const punctuationOnly = Boolean(content) && /^[^\p{L}\p{N}\s]+$/u.test(content)
-  const openingBoundary = allowAdjacent || punctuationOnly || !previous || /\s/.test(previous) || (isWordCharacter(previous) && prefix.includes(delimiter))
-  const closingBoundary = allowAdjacent || punctuationOnly || !next || /\s/.test(next) || isWordCharacter(next)
+  const openingBoundary = (allowAdjacent && (!previous || isWordCharacter(previous))) || (allowPunctuation && punctuationOnly) || !previous || /\s/.test(previous) || (isWordCharacter(previous) && prefix.includes(delimiter))
+  const closingBoundary = (allowAdjacent && (!next || isWordCharacter(next))) || (allowPunctuation && punctuationOnly) || !next || /\s/.test(next) || isWordCharacter(next)
   const urlBefore = /(?:https?:\/\/|www\.)[^\s]*$/i.test(prefix)
   const urlFollows = /^(?:https?:\/\/|www\.)/i.test(text.slice(end + delimiter.length))
   return openingBoundary && closingBoundary && !urlBefore && !urlFollows
@@ -438,7 +438,7 @@ export function toggleInlineMark(
     const preservedAfter = after ? wrapper.open + after + wrapper.close : ""
     const replacement = preservedBefore + selected + preservedAfter
     const nextSource = document.source.slice(0, wrapper.from) + replacement + document.source.slice(wrapper.to)
-    const next = importMarkdownInternal(nextSource, new Set([lineStartAt(nextSource, wrapper.from)]))
+    const next = importMarkdownInternal(nextSource, new Set([lineStartAt(nextSource, wrapper.from)]), new Set(), true)
     return { document: next, anchor: reversed ? end : start, head: reversed ? start : end }
   }
   const sourceFrom = selectionSourceFrom
@@ -447,7 +447,7 @@ export function toggleInlineMark(
   if (hasHiddenInterior || document.source.slice(sourceFrom, sourceTo).includes("\n")) return null
   const marker = delimiterForMark(mark)
   const nextSource = document.source.slice(0, sourceFrom) + marker + document.source.slice(sourceFrom, sourceTo) + marker + document.source.slice(sourceTo)
-  const next = importMarkdownInternal(nextSource, new Set([lineStartAt(nextSource, sourceFrom)]))
+  const next = importMarkdownInternal(nextSource, new Set([lineStartAt(nextSource, sourceFrom)]), new Set(), true)
   const nextStart = start
   const nextEnd = end
   return reversed ? { document: next, anchor: nextEnd, head: nextStart } : { document: next, anchor: nextStart, head: nextEnd }
@@ -460,6 +460,7 @@ function inlineFragments(
   block: RichBlock,
   inherited: RichMark[] = [],
   allowAdjacent = false,
+  allowPunctuation = false,
 ): InlineParse {
   const fragments: Fragment[] = []
   let plainStart = 0
@@ -478,7 +479,7 @@ function inlineFragments(
       continue
     }
     const end = matchingDelimiter(text, delimiter, i + delimiter.length)
-    if (end < 0 || end <= i + delimiter.length || /^\s*$/.test(text.slice(i + delimiter.length, end)) || !hasInlineBoundaryContext(text, i, end, delimiter, allowAdjacent)) {
+    if (end < 0 || end <= i + delimiter.length || /^\s*$/.test(text.slice(i + delimiter.length, end)) || !hasInlineBoundaryContext(text, i, end, delimiter, allowAdjacent, allowPunctuation)) {
       unmatched = true
       i += delimiter.length
       continue
@@ -505,7 +506,7 @@ function inlineFragments(
           marks: inheritedMarks,
           block,
         }], unmatched: false }
-      : inlineFragments(text.slice(innerStart, innerEnd), sourceFrom + innerStart, block, inheritedMarks, allowAdjacent)
+      : inlineFragments(text.slice(innerStart, innerEnd), sourceFrom + innerStart, block, inheritedMarks, allowAdjacent, allowPunctuation)
 
     if (nested.unmatched) unmatched = true
     pushHidden(fragments, sourceFrom + i, sourceFrom + innerStart, inheritedMarks, block)
@@ -543,12 +544,12 @@ function lineBlock(line: string, offset: number): { body: string; bodyOffset: nu
   return { body: line, bodyOffset: offset, block: "paragraph", prefixTo: offset }
 }
 
-function opaqueLine(line: string, allowAdjacent = false): boolean {
+function opaqueLine(line: string, allowAdjacent = false, allowPunctuation = false): boolean {
   // P1 deliberately does not interpret links, tables, fences, HTML, frontmatter,
   // or application-specific marker syntax. Keep the complete line visible.
   if (MARKDOWN_LINK.test(line) || LINK_LIKE.test(line) || WIKILINK.test(line) || MARKER_LIKE.test(line) || STRIKETHROUGH_LIKE.test(line) || HTML_LIKE.test(line)) return true
   if (/^\s*\|/.test(line)) return true
-  return inlineFragments(line, 0, "paragraph", [], allowAdjacent).unmatched
+  return inlineFragments(line, 0, "paragraph", [], allowAdjacent, allowPunctuation).unmatched
 }
 
 function rangesFromFragments(fragments: readonly Fragment[]): { visible: string; ranges: SourceMapRange[] } {
@@ -574,7 +575,12 @@ function rangesFromFragments(fragments: readonly Fragment[]): { visible: string;
 }
 
 /** Import Markdown into a visible projection. All positions are JavaScript UTF-16 offsets. */
-function importMarkdownInternal(source: string, allowAdjacent: boolean | ReadonlySet<number>, rawLineStarts: ReadonlySet<number> = new Set()): RichDocument {
+function importMarkdownInternal(
+  source: string,
+  allowAdjacent: boolean | ReadonlySet<number>,
+  rawLineStarts: ReadonlySet<number> = new Set(),
+  allowPunctuation: boolean | ReadonlySet<number> = false,
+): RichDocument {
   const fragments: Fragment[] = []
   let offset = 0
   let inFence = false
@@ -593,8 +599,9 @@ function importMarkdownInternal(source: string, allowAdjacent: boolean | Readonl
     const lineIsHtmlComment = inHtmlComment || HTML_LIKE.test(line)
     const lineIsPending = rawLineStarts.has(lineStart)
     const lineAllowsAdjacent = allowAdjacent === true || (allowAdjacent !== false && allowAdjacent.has(lineStart))
+    const lineAllowsPunctuation = allowPunctuation === true || (allowPunctuation !== false && allowPunctuation.has(lineStart))
 
-    if (lineIsPending || lineIsFrontmatter || lineIsFence || lineIsHtmlComment || opaqueLine(line, lineAllowsAdjacent)) {
+    if (lineIsPending || lineIsFrontmatter || lineIsFence || lineIsHtmlComment || opaqueLine(line, lineAllowsAdjacent, lineAllowsPunctuation)) {
       push(fragments, line, lineStart, lineStart + line.length, [], "opaque")
       if (lineIsFrontmatter && i > 0 && /^---\s*$/.test(line)) inFrontmatter = false
       if (fence) {
@@ -612,7 +619,7 @@ function importMarkdownInternal(source: string, allowAdjacent: boolean | Readonl
       }
     } else {
       const info = lineBlock(line, lineStart)
-      const parsed = inlineFragments(info.body, info.bodyOffset, info.block, [], lineAllowsAdjacent)
+      const parsed = inlineFragments(info.body, info.bodyOffset, info.block, [], lineAllowsAdjacent, lineAllowsPunctuation)
       if (parsed.unmatched) {
         // Keep the entire malformed line as one raw island. Do not emit the
         // otherwise-recognized block prefix first: overlapping source ranges
