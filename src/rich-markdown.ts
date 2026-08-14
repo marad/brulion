@@ -130,11 +130,24 @@ function escapedAt(text: string, position: number): boolean {
   return slashes % 2 === 1
 }
 
+function isWordCharacter(value: string | undefined): boolean {
+  return Boolean(value && /[\p{L}\p{N}]/u.test(value))
+}
+
 function matchingDelimiter(text: string, delimiter: string, start: number): number {
   for (let i = start; i <= text.length - delimiter.length; i += 1) {
     if (escapedAt(text, i) || !text.startsWith(delimiter, i)) continue
-    // A single `*`/`_` cannot close in the middle of a strong delimiter pair.
-    if (delimiter.length === 1 && (text[i - 1] === delimiter || text[i + 1] === delimiter)) continue
+    // A single `*`/`_` cannot close on the first stars of a strong pair;
+    // in a closing run such as `***`, the final star belongs to the outer
+    // single-delimiter span.
+    if (delimiter.length === 1) {
+      let runStart = i
+      let runEnd = i
+      while (runStart > start && text[runStart - 1] === delimiter) runStart -= 1
+      while (runEnd + 1 < text.length && text[runEnd + 1] === delimiter) runEnd += 1
+      const runLength = runEnd - runStart + 1
+      if (runLength > 1 && (runLength < 3 || i !== runEnd)) continue
+    }
     // In a closing run such as the final `***` in `**bold *italic***`, the
     // first two stars close the nested italic span. Let the outer strong span
     // take the final pair instead of stopping at an overlapping pair.
@@ -191,7 +204,9 @@ function hasBlockPrefixBefore(source: string, position: number): boolean {
 function hasInlineBoundaryContext(text: string, start: number, end: number, delimiter: string): boolean {
   const previous = text[start - 1]
   const next = text[end + delimiter.length]
-  return (!previous || /\s/.test(previous)) && (!next || /\s/.test(next))
+  const openingBoundary = !previous || /\s/.test(previous) || isWordCharacter(previous)
+  const closingBoundary = !next || /\s/.test(next) || isWordCharacter(next)
+  return openingBoundary && closingBoundary
 }
 
 function visibleCaretForSource(document: RichDocument, cursor: number): number {
@@ -214,20 +229,23 @@ export function classifyInlineBoundary(
   const delimiter = match[2]
   const content = match[3]
   const sourceFrom = match.index + match[1].length
-  const closeFrom = boundaryCursor - delimiter.length
+  const contentFrom = sourceFrom + delimiter.length
+  const contentTo = contentFrom + content.length
+  const closeFrom = contentTo
+  const sourceTo = closeFrom + delimiter.length
   if (!content || /^\s*$/.test(content) || escapedAt(source, sourceFrom) || escapedAt(source, closeFrom)) return null
   if (boundary === "space" && source[cursor - 1] !== " ") return null
   if (hasBlockPrefixBefore(source, sourceFrom)) return null
   const lineStart = lineStartAt(source, sourceFrom)
-  const line = source.slice(lineStart, boundaryCursor)
+  const line = source.slice(lineStart, sourceTo)
   if (opaqueLine(line) || !hasInlineBoundaryContext(source, sourceFrom, closeFrom, delimiter)) return null
   return {
     kind: markForDelimiter(delimiter),
     delimiter,
     sourceFrom,
-    sourceTo: boundaryCursor,
-    contentFrom: sourceFrom + delimiter.length,
-    contentTo: closeFrom,
+    sourceTo,
+    contentFrom,
+    contentTo,
   }
 }
 
@@ -305,7 +323,15 @@ export function toggleInlineMark(
     const wrapper = directWrapper(document, target, mark)
     if (!wrapper) return null
     const inner = document.source.slice(wrapper.from + wrapper.open.length, wrapper.to - wrapper.close.length)
-    const next = importMarkdown(document.source.slice(0, wrapper.from) + inner + document.source.slice(wrapper.to))
+    const localFrom = start - target.visibleFrom
+    const localTo = end - target.visibleFrom
+    const before = inner.slice(0, localFrom)
+    const selected = inner.slice(localFrom, localTo)
+    const after = inner.slice(localTo)
+    const preservedBefore = before ? wrapper.open + before + wrapper.close : ""
+    const preservedAfter = after ? wrapper.open + after + wrapper.close : ""
+    const replacement = preservedBefore + selected + preservedAfter
+    const next = importMarkdown(document.source.slice(0, wrapper.from) + replacement + document.source.slice(wrapper.to))
     return { document: next, anchor: reversed ? end : start, head: reversed ? start : end }
   }
   const sourceFrom = visibleToSource(document, start)

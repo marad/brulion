@@ -43,6 +43,10 @@ describe("rich Markdown document", () => {
     expect(triple.visible).toBe("both")
     expect(triple.ranges.find((r) => r.visible)?.marks).toEqual(["bold", "italic"])
 
+    const reverseNested = importMarkdown("*outer **inner***")
+    expect(reverseNested.visible).toBe("outer inner")
+    expect(reverseNested.ranges.some((r) => r.visible && r.marks.includes("italic") && r.marks.includes("bold"))).toBe(true)
+
     const strongAroundEmphasis = importMarkdown("**bold *italic***")
     expect(strongAroundEmphasis.visible).toBe("bold italic")
     expect(strongAroundEmphasis.ranges.some((r) => r.visible && r.marks.includes("bold") && !r.marks.includes("italic"))).toBe(true)
@@ -136,6 +140,9 @@ describe("rich Markdown document", () => {
     expect(applyInlineInputRule(importMarkdown("# **hello** "), 13, "space").converted).toBe(false)
     expect(classifyInlineBoundary("**hello** ", 10, "space")?.kind).toBe("bold")
     expect(classifyInlineBoundary("say **hello** ", 14, "space")?.sourceFrom).toBe(4)
+    const eof = classifyInlineBoundary("**hello** ", 10, "eof")
+    expect(eof?.sourceTo).toBe(9)
+    expect(eof?.contentTo).toBe(7)
     expect(classifyInlineBoundary("**hello\\** ", 11, "space")).toBeNull()
     expect(classifyInlineBoundary("**hello", 7, "eof")).toBeNull()
     expect(applyInlineInputRule(importMarkdown("# **hello** "), 13, "space").caret).toBe("hello ".length)
@@ -153,6 +160,10 @@ describe("rich Markdown document", () => {
     const unwrapped = toggleInlineMark(imported, 0, 5, "bold")
     expect(serializeMarkdown(unwrapped!.document)).toBe("hello")
     expect(unwrapped!.document.visible).toBe("hello")
+
+    const partial = toggleInlineMark(importMarkdown("**hello**"), 1, 4, "bold")
+    expect(serializeMarkdown(partial!.document)).toBe("**h**ell**o**")
+    expect(partial!.document.visible).toBe("hello")
 
     expect(toggleInlineMark(importMarkdown("  "), 0, 2, "italic")).toBeNull()
     expect(toggleInlineMark(importMarkdown("`hello`"), 0, 5, "code")?.document.visible).toBe("hello")
