@@ -68,6 +68,8 @@ export interface RichDocument {
   readonly replacements: readonly SourceReplacement[]
   /** Source line starts kept raw while a user is still typing an inline marker. */
   readonly pendingLineStarts: readonly number[]
+  /** Lines whose explicit selection formatting permits word-adjacent markers. */
+  readonly explicitAdjacentLineStarts?: readonly number[]
   /** Lines whose punctuation-only formatting was explicitly requested. */
   readonly explicitPunctuationLineStarts?: readonly number[]
 }
@@ -302,7 +304,8 @@ export function applyInlineInputRule(
   const flushedLine = lineStartAt(document.source, match.sourceFrom)
   const remainingPending = new Set(document.pendingLineStarts.filter((lineStart) => lineStart !== flushedLine))
   const punctuationLines = new Set(document.explicitPunctuationLineStarts ?? [])
-  const projected = importMarkdownInternal(document.source, false, remainingPending, punctuationLines)
+  const adjacentLines = new Set(document.explicitAdjacentLineStarts ?? [])
+  const projected = importMarkdownInternal(document.source, adjacentLines, remainingPending, punctuationLines)
   return { document: projected, converted: true, caret: sourceToVisible(projected, cursor) }
 }
 
@@ -654,6 +657,7 @@ function importMarkdownInternal(
     changed: new Map(),
     replacements: [],
     pendingLineStarts: [...rawLineStarts].sort((a, b) => a - b),
+    explicitAdjacentLineStarts: typeof allowAdjacent === "boolean" ? [] : [...allowAdjacent].sort((a, b) => a - b),
     explicitPunctuationLineStarts: [...punctuationLineStarts].sort((a, b) => a - b),
   }
 }
@@ -671,6 +675,9 @@ function projectVisibleEdit(document: RichDocument, nextSource: string, sourceFr
   const changedLine = nextSource.slice(changedLineStart, nextLineEnd < 0 ? nextSource.length : nextLineEnd)
   const oldLineStart = lineStartAt(document.source, sourceFrom)
   const wasPending = document.pendingLineStarts.includes(oldLineStart)
+  const adjacent = new Set<number>()
+  for (const lineStart of document.explicitAdjacentLineStarts ?? []) adjacent.add(lineStart > sourceTo ? lineStart + delta : lineStart)
+  const wasExplicitAdjacent = (document.explicitAdjacentLineStarts ?? []).includes(oldLineStart)
   const punctuation = new Set<number>()
   for (const lineStart of document.explicitPunctuationLineStarts ?? []) punctuation.add(lineStart > sourceTo ? lineStart + delta : lineStart)
   const wasExplicitPunctuation = (document.explicitPunctuationLineStarts ?? []).includes(oldLineStart)
@@ -679,11 +686,11 @@ function projectVisibleEdit(document: RichDocument, nextSource: string, sourceFr
   const committedSpace = text.endsWith(" ") && classifyInlineBoundary(nextSource, boundaryCursor, "space") !== null
   if (markerInput && !committedSpace) pending.add(changedLineStart)
   else pending.delete(changedLineStart)
+  if (wasExplicitAdjacent && /[*_`]/.test(changedLine)) adjacent.add(changedLineStart)
+  else adjacent.delete(changedLineStart)
   if (wasExplicitPunctuation && /[*_`]/.test(changedLine)) punctuation.add(changedLineStart)
   else punctuation.delete(changedLineStart)
-  const adjacentLines = new Set<number>(pending)
-  if (!pending.has(changedLineStart)) adjacentLines.add(changedLineStart)
-  return importMarkdownInternal(nextSource, adjacentLines, pending, punctuation)
+  return importMarkdownInternal(nextSource, adjacent, pending, punctuation)
 }
 
 /** Serialize a document. Untouched source spans are returned byte-for-byte. */

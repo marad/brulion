@@ -152,6 +152,9 @@ describe("rich Markdown document", () => {
     expect(importMarkdown("a__b__c").visible).toBe("a__b__c")
     expect(importMarkdown("a**,...** ").visible).toBe("a**,...** ")
     expect(applyInlineInputRule(importMarkdown("a**,...** "), 9, "space").converted).toBe(false)
+    const ordinaryEdit = replaceVisible(importMarkdown("**ok** a_b_c"), 3, 4, "A")
+    expect(ordinaryEdit.visible).toBe("ok A_b_c")
+    expect(serializeMarkdown(ordinaryEdit)).toBe("**ok** A_b_c")
     expect(applyInlineInputRule(importMarkdown("# **hello** "), 13, "space").converted).toBe(false)
     const fenced = "```md\n**x**\n```"
     expect(applyInlineInputRule(importMarkdown(fenced), fenced.indexOf("**x**") + 5, "enter").converted).toBe(false)
