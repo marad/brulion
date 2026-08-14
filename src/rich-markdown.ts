@@ -497,7 +497,10 @@ export function applyBlockEnter(document: RichDocument, cursor: number): BlockEd
     const caret = sourceToVisible(next, context.lineStart + replacementText.length)
     return { document: next, anchor: caret, head: caret, changed: true }
   }
-  const continuationPrefix = info.block === "quote" ? "> " : "- "
+  const quote = info.block === "quote" ? QUOTE.exec(context.line) : null
+  const bullet = info.block === "unordered-list" ? BULLET.exec(context.line) : null
+  const indentation = quote?.[1] ?? bullet?.[1] ?? ""
+  const continuationPrefix = `${indentation}${info.block === "quote" ? "> " : "- "}`
   const continuation = isContinuation ? `${newline}${continuationPrefix}` : newline
   const edits: SourceReplacement[] = [{
     sourceFrom: sourceCursor,
