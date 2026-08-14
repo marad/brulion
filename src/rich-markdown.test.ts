@@ -16,6 +16,7 @@ import {
   setHeadingLevel,
   clearRichFormatting,
   flushRichPaste,
+  reprojectRichSourceEdit,
 } from "./rich-markdown"
 
 describe("rich Markdown document", () => {
@@ -298,6 +299,13 @@ describe("rich Markdown document", () => {
     const boundaryFlush = flushRichPaste(followingPending, 0, 2)
     expect(boundaryFlush.pendingLineStarts).toEqual([2])
     expect(boundaryFlush.visible).toBe(followingPending.visible)
+
+    const replacedTransient = replaceVisible(importMarkdown(""), 0, 0, "**a**\n**b**")
+    expect(replacedTransient.pendingLineStarts.length).toBeGreaterThan(0)
+    const droppedTransient = reprojectRichSourceEdit(replacedTransient, "plain", 0, replacedTransient.source.length, "plain")
+    expect(droppedTransient.pendingLineStarts).toEqual([])
+    expect(droppedTransient.explicitAdjacentMarkerStarts).toEqual([])
+    expect(droppedTransient.explicitPunctuationLineStarts).toEqual([])
 
     const pending = importMarkdown("**hello**")
     for (const boundary of ["tab", "blur", "save"] as const) {

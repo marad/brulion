@@ -1417,13 +1417,18 @@ export function reprojectRichSourceEdit(
 ): RichDocument {
   const delta = text.length - (sourceTo - sourceFrom)
   const insertion = sourceFrom === sourceTo
-  const mapStart = (start: number): number => {
+  const mapStart = (start: number): number | null => {
     if (insertion) return start >= sourceFrom ? start + delta : start
-    return start >= sourceTo ? start + delta : start
+    if (start < sourceFrom) return start
+    if (start >= sourceTo) return start + delta
+    return null
   }
-  const pending = new Set(document.pendingLineStarts.map(mapStart))
-  const adjacent = new Set((document.explicitAdjacentMarkerStarts ?? []).map(mapStart))
-  const punctuation = new Set((document.explicitPunctuationLineStarts ?? []).map(mapStart))
+  const mapStarts = (starts: readonly number[]): Set<number> => new Set(starts
+    .map(mapStart)
+    .filter((start): start is number => start !== null))
+  const pending = mapStarts(document.pendingLineStarts)
+  const adjacent = mapStarts(document.explicitAdjacentMarkerStarts ?? [])
+  const punctuation = mapStarts(document.explicitPunctuationLineStarts ?? [])
   return importMarkdownInternal(nextSource, adjacent, pending, punctuation)
 }
 
