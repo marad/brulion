@@ -141,6 +141,16 @@ describe("rich adapter coordinate and transaction contracts (FEAT-0114)", () => 
     view.destroy()
   })
 
+  it("removes wrappers when a cut spans a complete marked fragment and following text", () => {
+    const view = richView()
+    setEditorText(view, "**bold** tail")
+    view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } })
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: "" }, userEvent: "delete.cut" })
+
+    expect(serializedRichMarkdown(view.state)).toBe("")
+    view.destroy()
+  })
+
   it("falls through instead of cutting an opaque block", () => {
     const view = richView()
     setEditorText(view, "```js\nraw\n```")

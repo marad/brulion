@@ -221,7 +221,7 @@ function assertVisibleEditorChangeSafe(document: RichDocument, change: RichVisib
     !isIncompleteWikilinkRange(document, range),
   )
   if (opaque.length) throw new RangeError("Opaque source requires an explicit source edit")
-  if (change.from !== change.to && touched.length > 1) {
+  if (change.from !== change.to && touched.length > 1 && change.insert.length > 0) {
     throw new RangeError("Visible replacement must stay within one mapped fragment")
   }
   if (change.from === change.to) {

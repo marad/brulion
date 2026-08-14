@@ -1633,6 +1633,22 @@ function emptyWrapperEdits(
   if (fullLink) return [{ sourceFrom: fullLink.sourceFrom, sourceTo: fullLink.sourceTo, text: "" }]
 
   const edits: SourceReplacement[] = []
+  for (const range of document.ranges) {
+    if (!range.visible || range.visibleFrom < visibleFrom || range.visibleTo > visibleTo) continue
+    if (!range.marks.some((mark) => mark === "bold" || mark === "italic" || mark === "code")) continue
+    const open = document.ranges.find((candidate) =>
+      !candidate.visible && candidate.sourceTo === range.contentFrom &&
+      isInlineDelimiterSource(document.source.slice(candidate.sourceFrom, candidate.sourceTo)),
+    )
+    const close = document.ranges.find((candidate) =>
+      !candidate.visible && candidate.sourceFrom === range.contentTo &&
+      isInlineDelimiterSource(document.source.slice(candidate.sourceFrom, candidate.sourceTo)),
+    )
+    if (open && close) {
+      edits.push({ sourceFrom: open.sourceFrom, sourceTo: open.sourceTo, text: "" })
+      edits.push({ sourceFrom: close.sourceFrom, sourceTo: close.sourceTo, text: "" })
+    }
+  }
   for (const delimiter of ["***", "___", "**", "__", "*", "_", "`"]) {
     if (document.source.slice(sourceFrom - delimiter.length, sourceFrom) !== delimiter) continue
     if (document.source.slice(sourceTo, sourceTo + delimiter.length) !== delimiter) continue
@@ -1662,9 +1678,15 @@ export function replaceVisibleForEditor(document: RichDocument, from: number, to
   if (sourceFrom > sourceTo) throw new RangeError("Visible range is not mapped")
   const cleanup = text === "" ? emptyWrapperEdits(document, from, to, sourceFrom, sourceTo) : []
   if (cleanup.length > 0) {
-    const replacement = cleanup.length === 1 && cleanup[0]!.sourceFrom <= sourceFrom && cleanup[0]!.sourceTo >= sourceTo
-      ? cleanup
-      : [{ sourceFrom, sourceTo, text }, ...cleanup]
+    const intervals = [{ sourceFrom, sourceTo }, ...cleanup]
+      .sort((left, right) => left.sourceFrom - right.sourceFrom || left.sourceTo - right.sourceTo)
+    const merged: Array<{ sourceFrom: number; sourceTo: number }> = []
+    for (const interval of intervals) {
+      const previous = merged.at(-1)
+      if (previous && interval.sourceFrom <= previous.sourceTo) previous.sourceTo = Math.max(previous.sourceTo, interval.sourceTo)
+      else merged.push({ ...interval })
+    }
+    const replacement = merged.map((interval) => ({ ...interval, text }))
     const nextSource = applySourceReplacements(document.source, replacement)
     return reprojectBlockSource(document, nextSource, replacement)
   }

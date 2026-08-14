@@ -62,41 +62,49 @@ function modelSelection(view: EditorView, document: RichDocument): RichVisibleSe
 /** Apply one visible rich formatting action, or return false without dispatch. */
 export function applyRichFormat(view: EditorView, action: RichFormatAction): boolean {
   const document = modelFor(view)
-  if (!document) return false
-  let result: { document: RichDocument; anchor: number; head: number } | null = null
-  const selection = modelSelection(view, document)
-  const mark = inlineAction(action)
-  if (mark) {
-    result = toggleInlineMark(document, selection.anchor, selection.head, mark)
-  } else {
-    const level = action === "Heading 1" ? 1 : action === "Heading 2" ? 2 : action === "Heading 3" ? 3 : null
-    const block = level === null
-      ? clearRichFormatting(document, selection.anchor, selection.head)
-      : setHeadingLevel(document, selection.anchor, selection.head, level)
-    if (!block || !block.changed) return false
-    result = block
+  if (!document || !["Bold", "Italic", "Code", "Heading 1", "Heading 2", "Heading 3", "Clear formatting"].includes(action)) return false
+  try {
+    let result: { document: RichDocument; anchor: number; head: number } | null = null
+    const selection = modelSelection(view, document)
+    const mark = inlineAction(action)
+    if (mark) {
+      result = toggleInlineMark(document, selection.anchor, selection.head, mark)
+    } else {
+      const level = action === "Heading 1" ? 1 : action === "Heading 2" ? 2 : action === "Heading 3" ? 3 : null
+      const block = level === null
+        ? clearRichFormatting(document, selection.anchor, selection.head)
+        : setHeadingLevel(document, selection.anchor, selection.head, level)
+      if (!block || !block.changed) return false
+      result = block
+    }
+    if (!result) return false
+    dispatchRichDocumentChange(view, result.document, { anchor: result.anchor, head: result.head }, "input.format")
+    return true
+  } catch {
+    return false
   }
-  if (!result) return false
-  dispatchRichDocumentChange(view, result.document, { anchor: result.anchor, head: result.head }, "input.format")
-  return true
 }
 
 /** Move the current visible line through the agreed heading cycle. */
 export function applyRichHeadingStep(view: EditorView, direction: RichHeadingDirection): boolean {
   const document = modelFor(view)
   if (!document) return false
-  const current = modelSelection(view, document)
-  const sourcePosition = visibleToSource(document, current.head)
-  const lineStart = lineStartAt(document.source, sourcePosition)
-  const newline = document.source.indexOf("\n", lineStart)
-  const line = document.source.slice(lineStart, newline < 0 ? document.source.length : newline)
-  const level = /^(?:[ \t]*)(#{1,6})[ \t]+/.exec(line)?.[1].length ?? 0
-  const next = direction === "promote" ? (level === 0 ? 3 : Math.max(1, level - 1)) : (level === 0 ? 0 : level >= 3 ? 0 : level + 1)
-  if (next === level) return false
-  const operation = setHeadingLevel(document, current.head, current.head, next)
-  if (!operation || !operation.changed) return false
-  dispatchRichDocumentChange(view, operation.document, { anchor: operation.anchor, head: operation.head }, "input.format")
-  return true
+  try {
+    const current = modelSelection(view, document)
+    const sourcePosition = visibleToSource(document, current.head)
+    const lineStart = lineStartAt(document.source, sourcePosition)
+    const newline = document.source.indexOf("\n", lineStart)
+    const line = document.source.slice(lineStart, newline < 0 ? document.source.length : newline)
+    const level = /^(?:[ \t]*)(#{1,6})[ \t]+/.exec(line)?.[1].length ?? 0
+    const next = direction === "promote" ? (level === 0 ? 3 : Math.max(1, level - 1)) : (level === 0 ? 0 : level >= 3 ? 0 : level + 1)
+    if (next === level) return false
+    const operation = setHeadingLevel(document, current.head, current.head, next)
+    if (!operation || !operation.changed) return false
+    dispatchRichDocumentChange(view, operation.document, { anchor: operation.anchor, head: operation.head }, "input.format")
+    return true
+  } catch {
+    return false
+  }
 }
 
 function lineRange(document: RichDocument, lineNumber: number): { from: number; to: number } | null {
@@ -128,9 +136,9 @@ export function applyRichSlash(
   const deleteTo = tokenTo < view.state.doc.length && view.state.sliceDoc(tokenTo, tokenTo + 1) === " "
     ? tokenTo + 1
     : tokenTo
-  const modelToken = richEditorRangeToModel(document, { from: tokenFrom, to: deleteTo })
   let candidate: RichDocument
   try {
+    const modelToken = richEditorRangeToModel(document, { from: tokenFrom, to: deleteTo })
     candidate = replaceVisibleForEditor(document, modelToken.from, modelToken.to, "")
   } catch {
     return false
@@ -313,7 +321,13 @@ export function serializeRichSelection(
   const lineBreak = document.source.includes("\r\n") ? "\r\n" : "\n"
   return ranges
     .filter((range) => Number.isSafeInteger(range.from) && Number.isSafeInteger(range.to) && range.from >= 0 && range.to >= 0 && range.from <= document.visible.length && range.to <= document.visible.length && range.from !== range.to)
-    .map((range) => serializeRange(document, Math.min(range.from, range.to), Math.max(range.from, range.to)))
+    .map((range) => {
+      try {
+        return serializeRange(document, Math.min(range.from, range.to), Math.max(range.from, range.to))
+      } catch {
+        return ""
+      }
+    })
     .filter((text) => text.length > 0)
     .join(lineBreak)
 }
