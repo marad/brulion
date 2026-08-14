@@ -260,6 +260,7 @@ export function classifyInlineBoundary(
   let spanEnd = boundaryCursor
   while (spanEnd > 0 && /[ \t]/.test(source[spanEnd - 1])) spanEnd -= 1
   const lineStart = lineStartAt(source, spanEnd)
+  const projection = importMarkdown(source)
   const delimiters = ["**", "__", "*", "_", "`"]
   for (let sourceFrom = spanEnd - 1; sourceFrom >= lineStart; sourceFrom -= 1) {
     for (const delimiter of delimiters) {
@@ -273,7 +274,8 @@ export function classifyInlineBoundary(
       if (delimiter !== "`" && /https?:\/\//i.test(content)) continue
       if (hasBlockPrefixBefore(source, sourceFrom)) continue
       const line = source.slice(lineStart, spanEnd)
-      if (opaqueLine(line) || !hasInlineBoundaryContext(source, sourceFrom, closeFrom, delimiter)) continue
+      const inOpaqueSource = projection.ranges.some((range) => range.block === "opaque" && sourceFrom < range.sourceTo && spanEnd > range.sourceFrom)
+      if (inOpaqueSource || opaqueLine(line) || !hasInlineBoundaryContext(source, sourceFrom, closeFrom, delimiter)) continue
       return {
         kind: markForDelimiter(delimiter),
         delimiter,
@@ -295,7 +297,9 @@ export function applyInlineInputRule(
 ): InlineInputResult {
   const match = classifyInlineBoundary(document.source, cursor, boundary)
   if (!match) return { document, converted: false, caret: visibleCaretForSource(document, cursor) }
-  const projected = importMarkdownInternal(document.source, false)
+  const flushedLine = lineStartAt(document.source, match.sourceFrom)
+  const remainingPending = new Set(document.pendingLineStarts.filter((lineStart) => lineStart !== flushedLine))
+  const projected = importMarkdownInternal(document.source, false, remainingPending)
   return { document: projected, converted: true, caret: sourceToVisible(projected, cursor) }
 }
 
@@ -636,7 +640,7 @@ export function importMarkdown(source: string): RichDocument {
 function projectVisibleEdit(document: RichDocument, nextSource: string, sourceFrom: number, sourceTo: number, text: string): RichDocument {
   const delta = text.length - (sourceTo - sourceFrom)
   const pending = new Set<number>()
-  for (const lineStart of document.pendingLineStarts) pending.add(lineStart >= sourceTo ? lineStart + delta : lineStart)
+  for (const lineStart of document.pendingLineStarts) pending.add(lineStart > sourceTo ? lineStart + delta : lineStart)
   const changedLineStart = lineStartAt(nextSource, Math.min(sourceFrom + text.length, nextSource.length))
   const markerInput = /[*_`]/.test(text) || document.pendingLineStarts.includes(lineStartAt(document.source, sourceFrom))
   const boundaryCursor = sourceFrom + text.length

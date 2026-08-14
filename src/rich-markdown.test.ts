@@ -151,6 +151,12 @@ describe("rich Markdown document", () => {
     expect(importMarkdown("**ok** http://foo**bad** ").visible).toBe("**ok** http://foo**bad** ")
     expect(importMarkdown("a__b__c").visible).toBe("a__b__c")
     expect(applyInlineInputRule(importMarkdown("# **hello** "), 13, "space").converted).toBe(false)
+    const fenced = "```md\n**x**\n```"
+    expect(applyInlineInputRule(importMarkdown(fenced), fenced.indexOf("**x**") + 5, "enter").converted).toBe(false)
+    const frontmatter = "---\n**x**\n---"
+    expect(applyInlineInputRule(importMarkdown(frontmatter), frontmatter.indexOf("**x**") + 5, "enter").converted).toBe(false)
+    const commentSource = "<!--\n**x**\n-->"
+    expect(applyInlineInputRule(importMarkdown(commentSource), commentSource.indexOf("**x**") + 5, "enter").converted).toBe(false)
     expect(classifyInlineBoundary("**hello** ", 10, "space")?.kind).toBe("bold")
     expect(classifyInlineBoundary("say **hello** ", 14, "space")?.sourceFrom).toBe(4)
     expect(classifyInlineBoundary("**a** **b** ", 12, "space")?.sourceFrom).toBe(6)
@@ -168,6 +174,13 @@ describe("rich Markdown document", () => {
     expect(typed.visible).toBe("**hello**")
     expect(typed.pendingLineStarts).toEqual([0])
     expect(applyInlineInputRule(typed, typed.source.length, "eof").document.visible).toBe("hello")
+    const shifted = replaceVisible(typed, 0, 0, "x")
+    expect(shifted.pendingLineStarts).toEqual([0])
+    const twoPending = replaceVisible(typed, typed.visible.length, typed.visible.length, "\n**b**")
+    expect(twoPending.pendingLineStarts).toEqual([0, 10])
+    const firstFlushed = applyInlineInputRule(twoPending, 9, "enter")
+    expect(firstFlushed.document.visible).toBe("hello\n**b**")
+    expect(firstFlushed.document.pendingLineStarts).toEqual([10])
 
     const pending = importMarkdown("**hello**")
     for (const boundary of ["tab", "blur", "save"] as const) {
