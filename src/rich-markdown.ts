@@ -90,9 +90,9 @@ interface InlineParse {
 }
 
 const HEADING = /^(#{1,6})([ \t]+)(.*)$/
-const QUOTE = /^>([ \t]?)(.*)$/
-const BULLET = /^([*-])([ \t]+)(.*)$/
-const ORDERED = /^(\d+\.)([ \t]+)(.*)$/
+const QUOTE = /^([ \t]*)>([ \t]?)(.*)$/
+const BULLET = /^([ \t]*)([*-])([ \t]+)(.*)$/
+const ORDERED = /^([ \t]*)(\d+\.)([ \t]+)(.*)$/
 const FENCE = /^\s*(`{3,}|~{3,})(.*)$/
 const MARKER_LIKE = /\^\^/
 // P1 keeps the whole line raw as soon as it recognizes unsupported syntax,
@@ -326,6 +326,134 @@ export function applyInlineInputRule(
   const adjacentMarkers = new Set(document.explicitAdjacentMarkerStarts ?? [])
   const projected = importMarkdownInternal(document.source, adjacentMarkers, remainingPending, punctuationLines)
   return { document: projected, converted: true, caret: sourceToVisible(projected, cursor) }
+}
+
+export type BlockBoundary = "space" | "enter"
+export type BlockEditDirection = "indent" | "outdent"
+export type RichEditableBlock = "heading" | "quote" | "unordered-list"
+
+export interface BlockBoundaryMatch {
+  kind: RichEditableBlock
+  sourceFrom: number
+  sourceTo: number
+  contentFrom: number
+}
+
+export interface BlockEditResult {
+  document: RichDocument
+  anchor: number
+  head: number
+  changed: boolean
+}
+
+function unchangedBlockEdit(document: RichDocument, cursor: number): BlockEditResult {
+  return { document, anchor: cursor, head: cursor, changed: false }
+}
+
+function blockBoundaryKind(prefix: string): RichEditableBlock | null {
+  if (/^#{1,6}[ \t]+$/.test(prefix)) return "heading"
+  if (/^[ \t]*>[ \t]+$/.test(prefix)) return "quote"
+  if (/^[ \t]*[*-][ \t]+$/.test(prefix)) return "unordered-list"
+  return null
+}
+
+/** Classify a complete block prefix at the raw source cursor. */
+export function classifyBlockBoundary(source: string, cursor: number, boundary: BlockBoundary): BlockBoundaryMatch | null {
+  if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > source.length) return null
+  if (boundary === "space" && (cursor === 0 || !/[ \t]/.test(source[cursor - 1]))) return null
+  const lineStart = lineStartAt(source, cursor)
+  const prefix = source.slice(lineStart, cursor)
+  const kind = blockBoundaryKind(prefix)
+  if (!kind) return null
+  return { kind, sourceFrom: lineStart, sourceTo: cursor, contentFrom: cursor }
+}
+
+/** Apply a completed block prefix without exposing its source prefix as content. */
+export function applyBlockInputRule(document: RichDocument, cursor: number, boundary: BlockBoundary): BlockEditResult {
+  if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > document.source.length) return unchangedBlockEdit(document, 0)
+  const match = classifyBlockBoundary(document.source, cursor, boundary)
+  const visibleCursor = sourceToVisible(document, cursor)
+  if (!match) return unchangedBlockEdit(document, visibleCursor)
+  const next = importMarkdown(document.source)
+  const caret = sourceToVisible(next, match.contentFrom)
+  return { document: next, anchor: caret, head: caret, changed: true }
+}
+
+function blockAtVisibleCursor(document: RichDocument, cursor: number): { sourceCursor: number; lineStart: number; lineEnd: number; line: string; info: ReturnType<typeof lineBlock> } | null {
+  if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > document.visible.length) return null
+  const sourceCursor = visibleToSource(document, cursor)
+  const lineStart = lineStartAt(document.source, sourceCursor)
+  const lineEnd = lineContentEnd(document.source, lineStart)
+  const line = document.source.slice(lineStart, lineEnd)
+  return { sourceCursor, lineStart, lineEnd, line, info: lineBlock(line, lineStart) }
+}
+
+/** Continue quote/list blocks on Enter, or exit an empty item without a prefix. */
+export function applyBlockEnter(document: RichDocument, cursor: number): BlockEditResult {
+  const context = blockAtVisibleCursor(document, cursor)
+  if (!context) return unchangedBlockEdit(document, cursor)
+  const { sourceCursor, info } = context
+  const isContinuation = info.block === "quote" || info.block === "unordered-list"
+  const isEmpty = info.body.trim().length === 0
+  const insertion = isContinuation && !isEmpty ? `\n${info.block === "quote" ? "> " : "- "}` : "\n"
+  const nextSource = document.source.slice(0, sourceCursor) + insertion + document.source.slice(sourceCursor)
+  const next = importMarkdown(nextSource)
+  const caretSource = sourceCursor + insertion.length
+  const caret = sourceToVisible(next, caretSource)
+  return { document: next, anchor: caret, head: caret, changed: true }
+}
+
+/** Remove an empty block prefix at its visible content start. */
+export function applyBlockBackspace(document: RichDocument, cursor: number): BlockEditResult {
+  const context = blockAtVisibleCursor(document, cursor)
+  if (!context || context.info.block === "paragraph" || context.info.block === "ordered-list") return unchangedBlockEdit(document, cursor)
+  if (context.info.body.trim().length > 0 || context.sourceCursor !== context.info.prefixTo) return unchangedBlockEdit(document, cursor)
+  const nextSource = document.source.slice(0, context.lineStart) + document.source.slice(context.info.prefixTo)
+  const next = importMarkdown(nextSource)
+  const caret = sourceToVisible(next, context.lineStart)
+  return { document: next, anchor: caret, head: caret, changed: true }
+}
+
+function selectedSourceLineStarts(document: RichDocument, from: number, to: number): number[] | null {
+  if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < 0 || from > document.visible.length || to > document.visible.length) return null
+  const start = Math.min(from, to)
+  const end = Math.max(from, to)
+  const sourceFrom = visibleToSource(document, start)
+  const sourceTo = visibleSourceEnd(document, end)
+  const lastSource = Math.max(sourceFrom, sourceTo - 1)
+  const starts: number[] = []
+  for (let lineStart = lineStartAt(document.source, sourceFrom); lineStart <= lineStartAt(document.source, lastSource); ) {
+    starts.push(lineStart)
+    const newline = document.source.indexOf("\n", lineStart)
+    if (newline < 0) break
+    lineStart = newline + 1
+  }
+  return starts
+}
+
+/** Indent or outdent selected quote/list lines without normalizing other source. */
+export function indentBlocks(document: RichDocument, from: number, to: number, direction: BlockEditDirection): BlockEditResult | null {
+  const starts = selectedSourceLineStarts(document, from, to)
+  if (!starts?.length) return null
+  const replacements: SourceReplacement[] = []
+  for (const lineStart of starts) {
+    const lineEnd = lineContentEnd(document.source, lineStart)
+    const line = document.source.slice(lineStart, lineEnd)
+    const info = lineBlock(line, lineStart)
+    if (info.block === "ordered-list" || info.block === "opaque") return null
+    if (info.block !== "quote" && info.block !== "unordered-list") continue
+    const replacement = direction === "indent"
+      ? `  ${line}`
+      : line.replace(/^[ \t]{1,2}/, "")
+    if (replacement !== line) replacements.push({ sourceFrom: lineStart, sourceTo: lineEnd, text: replacement })
+  }
+  if (!replacements.length) return { document, anchor: from, head: to, changed: false }
+  let nextSource = document.source
+  for (const replacement of [...replacements].sort((a, b) => b.sourceFrom - a.sourceFrom)) {
+    nextSource = nextSource.slice(0, replacement.sourceFrom) + replacement.text + nextSource.slice(replacement.sourceTo)
+  }
+  const next = importMarkdown(nextSource)
+  return { document: next, anchor: from, head: to, changed: true }
 }
 
 function tripleWrapper(document: RichDocument, range: Pick<SourceMapRange, "contentFrom" | "contentTo">, mark: InlineMark): { from: number; to: number; open: string; close: string } | null {
@@ -572,18 +700,18 @@ function lineBlock(line: string, offset: number): { body: string; bodyOffset: nu
   }
   const quote = QUOTE.exec(line)
   if (quote) {
-    const prefixTo = offset + 1 + quote[1].length
-    return { body: quote[2], bodyOffset: prefixTo, block: "quote", prefixTo }
+    const prefixTo = offset + quote[1].length + 1 + quote[2].length
+    return { body: quote[3], bodyOffset: prefixTo, block: "quote", prefixTo }
   }
   const bullet = BULLET.exec(line)
   if (bullet) {
-    const prefixTo = offset + bullet[1].length + bullet[2].length
-    return { body: bullet[3], bodyOffset: prefixTo, block: "unordered-list", prefixTo }
+    const prefixTo = offset + bullet[1].length + 1 + bullet[3].length
+    return { body: bullet[4], bodyOffset: prefixTo, block: "unordered-list", prefixTo }
   }
   const ordered = ORDERED.exec(line)
   if (ordered) {
-    const prefixTo = offset + ordered[1].length + ordered[2].length
-    return { body: ordered[3], bodyOffset: prefixTo, block: "ordered-list", prefixTo }
+    const prefixTo = offset + ordered[1].length + ordered[2].length + ordered[3].length
+    return { body: ordered[4], bodyOffset: prefixTo, block: "ordered-list", prefixTo }
   }
   return { body: line, bodyOffset: offset, block: "paragraph", prefixTo: offset }
 }
