@@ -1354,7 +1354,8 @@ export function createNoteController(
                 // cache entry instead.
                 if (safeToReplaceBuffer()) {
                   contentCache.delete(activeName)
-                  const fallback = pickActiveNote(notes.filter((path) => path !== activeName), null)
+                  notes = notes.filter((path) => path !== activeName)
+                  const fallback = pickActiveNote(notes, null)
                   await activate(snapshot.folder, fallback)
                   return
                 }

@@ -1988,11 +1988,12 @@ describe("refreshFromDisk (FEAT-0014)", () => {
 
   it("treats a deletion between stat and read as a note removal, not an empty reload", async () => {
     const view = mountView()
+    const onListChanged = vi.fn()
     sweepResult.mockReturnValue(["other.md", "start.md"])
     loadActiveNote.mockResolvedValue("start.md")
     readNote.mockResolvedValue({ content: "start body", lastModified: 1 })
     statNote.mockResolvedValue(1)
-    const controller = createNoteController(view, { debounceMs: 10_000 })
+    const controller = createNoteController(view, { onListChanged, debounceMs: 10_000 })
     await controller.open(DIR)
 
     statNote.mockResolvedValue(2)
@@ -2002,6 +2003,7 @@ describe("refreshFromDisk (FEAT-0014)", () => {
     await controller.refreshFromDisk()
 
     expect(view.state.doc.toString()).toBe("other body")
+    expect(onListChanged).toHaveBeenCalledWith(["other.md"], "other.md")
     expect(saveNote).not.toHaveBeenCalledWith(DIR, "start.md", "", expect.anything())
     view.destroy()
   })

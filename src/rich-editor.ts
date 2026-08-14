@@ -521,6 +521,33 @@ function sourceCursorForVisible(document: RichDocument, cursor: number): number 
   return richSelectionToSource(document, { anchor: cursor, head: cursor }).anchor
 }
 
+function sameNumberList(left: readonly number[] | undefined, right: readonly number[] | undefined): boolean {
+  const a = left ?? []
+  const b = right ?? []
+  return a.length === b.length && a.every((value, index) => value === b[index])
+}
+
+function richProjectionChanged(left: RichDocument, right: RichDocument): boolean {
+  if (left.source !== right.source || left.visible !== right.visible) return true
+  if (!sameNumberList(left.pendingLineStarts, right.pendingLineStarts)) return true
+  if (!sameNumberList(left.explicitAdjacentMarkerStarts, right.explicitAdjacentMarkerStarts)) return true
+  if (!sameNumberList(left.explicitPunctuationLineStarts, right.explicitPunctuationLineStarts)) return true
+  if (left.replacements.length !== right.replacements.length) return true
+  return left.ranges.length !== right.ranges.length || left.ranges.some((range, index) => {
+    const other = right.ranges[index]
+    return range.sourceFrom !== other.sourceFrom
+      || range.sourceTo !== other.sourceTo
+      || range.contentFrom !== other.contentFrom
+      || range.contentTo !== other.contentTo
+      || range.visibleFrom !== other.visibleFrom
+      || range.visibleTo !== other.visibleTo
+      || range.visible !== other.visible
+      || range.block !== other.block
+      || range.marks.length !== other.marks.length
+      || range.marks.some((mark, markIndex) => mark !== other.marks[markIndex])
+  })
+}
+
 /** Flush pending inline syntax at a lifecycle/input boundary. */
 export function flushRichEditorInput(view: EditorView, boundary: InlineBoundary): boolean {
   const document = fieldDocument(view.state)
@@ -532,7 +559,7 @@ export function flushRichEditorInput(view: EditorView, boundary: InlineBoundary)
     ? document.source.length
     : sourceCursorForVisible(document, cursor)
   const result = applyInlineInputRule(document, sourceCursor, boundary)
-  if (!result.converted) return false
+  if (!result.converted || !richProjectionChanged(document, result.document)) return false
   dispatchRichUserDocument(view, result.document, { anchor: result.caret, head: result.caret })
   return true
 }

@@ -38,6 +38,7 @@ describe("rich editor boundary (FEAT-0113)", () => {
 
     expect(view.state.doc.toString()).toBe("Hé world\nquote")
     expect(serializedRichMarkdown(view.state)).toBe(source)
+    expect(flushRichEditorInput(view, "save")).toBe(false)
     expect(onChange).not.toHaveBeenCalled()
     expect(hasRichEditor(view.state)).toBe(true)
     expect(richDocumentFromState(view.state)?.visible.replace(/\r\n?/g, "\n")).toBe(view.state.doc.toString())
