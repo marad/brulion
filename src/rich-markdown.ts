@@ -266,7 +266,8 @@ function directWrapper(document: RichDocument, range: SourceMapRange, mark: Inli
   for (const delimiter of delimiters) {
     const from = range.contentFrom - delimiter.length
     const to = range.contentTo + delimiter.length
-    if (from >= 0 && document.source.slice(from, range.contentFrom) === delimiter && document.source.slice(range.contentTo, to) === delimiter) {
+    const closeIsPartOfLongerSingleRun = delimiter.length === 1 && document.source[range.contentTo + 1] === delimiter
+    if (!closeIsPartOfLongerSingleRun && from >= 0 && document.source.slice(from, range.contentFrom) === delimiter && document.source.slice(range.contentTo, to) === delimiter) {
       return { from, to, open: delimiter, close: delimiter }
     }
   }

@@ -46,6 +46,9 @@ describe("rich Markdown document", () => {
     const reverseNested = importMarkdown("*outer **inner***")
     expect(reverseNested.visible).toBe("outer inner")
     expect(reverseNested.ranges.some((r) => r.visible && r.marks.includes("italic") && r.marks.includes("bold"))).toBe(true)
+    expect(toggleInlineMark(reverseNested, 1, 1, "italic")).toBeNull()
+    const innerUnwrapped = toggleInlineMark(reverseNested, 7, 7, "bold")
+    expect(serializeMarkdown(innerUnwrapped!.document)).toBe("*outer inner*")
 
     const strongAroundEmphasis = importMarkdown("**bold *italic***")
     expect(strongAroundEmphasis.visible).toBe("bold italic")
