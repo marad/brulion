@@ -11,7 +11,7 @@ describe("rich Markdown special scanner", () => {
     const scan = scanRichSpecials(source)
     expect(scan.specials).toHaveLength(1)
     const fence = scan.specials[0]!
-    expect(fence.kind).toBe("fence")
+    if (fence.kind !== "fence") throw new Error("expected a fenced node")
     expect(fence.raw).toBe(source.slice(fence.sourceFrom, fence.sourceTo))
     expect(fence.fenceChar).toBe("`")
     expect(fence.fenceLength).toBe(3)
@@ -32,7 +32,7 @@ describe("rich Markdown special scanner", () => {
     const scan = scanRichSpecials(source)
     expect(scan.specials).toHaveLength(1)
     const mermaid = scan.specials[0]!
-    expect(mermaid.kind).toBe("mermaid")
+    if (mermaid.kind !== "mermaid") throw new Error("expected a Mermaid node")
     expect(mermaid.info).toBe("MeRmAiD")
     expect(mermaid.raw).toBe(source)
   })
@@ -42,16 +42,16 @@ describe("rich Markdown special scanner", () => {
     const scan = scanRichSpecials(source)
     expect(scan.specials).toHaveLength(1)
     const table = scan.specials[0]!
-    expect(table.kind).toBe("table")
+    if (table.kind !== "table") throw new Error("expected a table node")
     expect(table.raw).toBe(source)
     expect(table.aligns).toEqual(["left", "right"])
-    expect(table.rows).toHaveLength(3)
+    expect(table.rows).toHaveLength(4)
     const header = table.rows![0]!.cells
     expect(header).toHaveLength(2)
     expect(header[0]!.text).toBe("Name \\| alias")
     expect(source.slice(header[0]!.contentFrom, header[0]!.contentTo)).toBe("Name \\| alias")
-    expect(table.rows![1]!.cells[0]!.text).toBe("café")
-    expect(table.rows![1]!.cells[1]!.text).toBe("42")
+    expect(table.rows![2]!.cells[0]!.text).toBe("café")
+    expect(table.rows![2]!.cells[1]!.text).toBe("42")
   })
 
   it("does not guess ambiguous pipe rows into tables", () => {
@@ -84,14 +84,16 @@ describe("rich Markdown special scanner", () => {
     })
     expect(links[1]).toMatchObject({ kind: "wikilink", target: "target", label: "Alias", alias: "Alias" })
     expect(links[2]).toMatchObject({ kind: "autolink", target: "https://example.test/x", label: "https://example.test/x" })
+    expect(scanRichLinks("https://example.test/a(b).", []).map((link) => link.target)).toEqual(["https://example.test/a(b)"])
     expect(links.every((link) => link.raw === source.slice(link.sourceFrom, link.sourceTo))).toBe(true)
   })
 
-  it("leaves incomplete, empty, multiline, and malformed links untyped", () => {
+  it("leaves incomplete, empty, multiline, malformed, and escaped links untyped", () => {
     const source = "[empty]() [open](target\n[next](ok)\nlabel [[broken|alias]"
     expect(scanRichLinks(source, []).map((link) => link.raw)).toEqual(["[next](ok)"])
     expect(scanRichLinks("[x](a (b).md)", [])).toHaveLength(1)
     expect(scanRichLinks("[x](<a b.md>)", [])).toHaveLength(1)
+    expect(scanRichLinks("\\[x](escaped.md) \\[[wiki]]", [])).toEqual([])
   })
 
   it("never scans links inside any special block", () => {
@@ -105,7 +107,8 @@ describe("rich Markdown special scanner", () => {
     const nodes = scanRichSpecials("```js\nx\n```\n| a |\n| --- |\n").specials
     for (const node of nodes as readonly RichSpecialNode[]) {
       if (node.kind === "table") expect(node.rows.length).toBeGreaterThan(0)
-      else expect(node.fenceChar === "`" || node.fenceChar === "~").toBe(true)
+      else if (node.kind === "fence" || node.kind === "mermaid") expect(node.fenceChar === "`" || node.fenceChar === "~").toBe(true)
+      else expect(node.kind).toBe("frontmatter")
     }
   })
 })

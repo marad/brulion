@@ -63,7 +63,7 @@ describe("rich Markdown document", () => {
     expect(applyBlockBackspace(importMarkdown("1. "), 0).changed).toBe(false)
     expect(applyBlockBackspace(importMarkdown("1. "), 0).document.source).toBe("1. ")
     expect(applyBlockBackspace(importMarkdown("# title"), 0).changed).toBe(false)
-    expect(applyBlockEnter(importMarkdown("> [x](a)"), 0).changed).toBe(false)
+    expect(applyBlockEnter(importMarkdown("> [x](a)"), 0).changed).toBe(true)
 
     const list = importMarkdown("- one\r\n- two\r\n1. keep\nraw")
     expect(indentBlocks(list, 0, 0, "indent")).toBeNull()
@@ -142,8 +142,8 @@ describe("rich Markdown document", () => {
   })
 
   it("preserves unknown syntax as an opaque visible region", () => {
-    const doc = importMarkdown("before ^^future^^ after\n[unknown](target.md)")
-    expect(doc.visible).toBe("before ^^future^^ after\n[unknown](target.md)")
+    const doc = importMarkdown("before ^^future^^ after\n~~unsupported~~")
+    expect(doc.visible).toBe("before ^^future^^ after\n~~unsupported~~")
     const opaque = doc.ranges.find((r) => r.visible && r.sourceFrom === "before ^^future^^ after\n".length)
     expect(opaque?.block).toBe("opaque")
     expect(opaque?.marks).toEqual([])

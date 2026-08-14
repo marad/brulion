@@ -1,4 +1,6 @@
 import {
+  scanRichLinks,
+  scanRichSpecials,
   type RichLinkNode,
   type RichSpecialNode,
   type RichTableCell,
@@ -42,6 +44,14 @@ export type RichBlock =
   | "frontmatter"
   | "mermaid"
   | "opaque"
+
+function isSpecialRichBlock(block: RichBlock): boolean {
+  return block === "fence" || block === "table" || block === "frontmatter" || block === "mermaid"
+}
+
+function isOpaqueRichBlock(block: RichBlock): boolean {
+  return block === "opaque" || isSpecialRichBlock(block)
+}
 
 export interface SourceMapRange {
   /** UTF-16 offsets in the original Markdown source. */
@@ -96,6 +106,8 @@ interface Fragment {
   contentTo: number
   marks: RichMark[]
   block: RichBlock
+  link?: RichLinkNode
+  special?: RichSpecialNode
 }
 
 interface InlineParse {
@@ -127,9 +139,11 @@ function push(
   block: RichBlock,
   contentFrom = from,
   contentTo = to,
+  link?: RichLinkNode,
+  special?: RichSpecialNode,
 ): void {
   if (to <= from && !text) return
-  fragments.push({ text, sourceFrom: from, sourceTo: to, contentFrom, contentTo, marks, block })
+  fragments.push({ text, sourceFrom: from, sourceTo: to, contentFrom, contentTo, marks, block, link, special })
 }
 
 function pushHidden(
@@ -138,9 +152,11 @@ function pushHidden(
   to: number,
   marks: RichMark[],
   block: RichBlock,
+  link?: RichLinkNode,
+  special?: RichSpecialNode,
 ): void {
   if (to <= from) return
-  push(fragments, "", from, to, marks, block, from, to)
+  push(fragments, "", from, to, marks, block, from, to, link, special)
 }
 
 function escapedAt(text: string, position: number): boolean {
@@ -292,7 +308,7 @@ export function classifyInlineBoundary(
       if (delimiter !== "`" && /https?:\/\//i.test(content)) continue
       if (hasBlockPrefixBefore(source, sourceFrom)) continue
       const line = source.slice(lineStart, spanEnd)
-      const inOpaqueSource = projection.ranges.some((range) => range.block === "opaque" && sourceFrom < range.sourceTo && spanEnd > range.sourceFrom)
+      const inOpaqueSource = projection.ranges.some((range) => isOpaqueRichBlock(range.block) && sourceFrom < range.sourceTo && spanEnd > range.sourceFrom)
       if (inOpaqueSource || opaqueLine(line) || !hasInlineBoundaryContext(source, sourceFrom, closeFrom, delimiter)) continue
       return {
         kind: markForDelimiter(delimiter),
@@ -446,7 +462,7 @@ function blockAtVisibleCursor(document: RichDocument, cursor: number): { sourceC
   const mappedSource = visibleToSource(document, cursor)
   const lineStart = lineStartAt(document.source, mappedSource)
   const lineEnd = lineContentEnd(document.source, lineStart)
-  if (document.ranges.some((range) => range.block === "opaque" && range.sourceFrom < lineEnd && range.sourceTo > lineStart)) return null
+  if (document.ranges.some((range) => isOpaqueRichBlock(range.block) && range.sourceFrom < lineEnd && range.sourceTo > lineStart)) return null
   const visibleLineEnd = document.visible.indexOf("\n", cursor)
   const atVisibleLineEnd = visibleLineEnd < 0 ? cursor === document.visible.length : cursor >= visibleLineEnd
   const sourceCursor = atVisibleLineEnd ? lineEnd : mappedSource
@@ -568,9 +584,9 @@ export function indentBlocks(document: RichDocument, from: number, to: number, d
   for (const lineStart of starts) {
     const lineEnd = lineContentEnd(document.source, lineStart)
     const line = document.source.slice(lineStart, lineEnd)
-    if (document.ranges.some((range) => range.block === "opaque" && range.sourceFrom < lineEnd && range.sourceTo > lineStart)) return null
+    if (document.ranges.some((range) => isOpaqueRichBlock(range.block) && range.sourceFrom < lineEnd && range.sourceTo > lineStart)) return null
     const info = lineBlock(line, lineStart)
-    if (info.block === "ordered-list" || info.block === "opaque") return null
+    if (info.block === "ordered-list" || isOpaqueRichBlock(info.block)) return null
     if (info.block !== "quote" && info.block !== "unordered-list") continue
     const replacement = direction === "indent"
       ? `  ${line}`
@@ -676,7 +692,7 @@ export function toggleInlineMark(
   const ranges = selectedVisibleRanges(document, start, end)
   const caretRange = start === end ? visibleRangeAt(document, start, "start") : null
   if (start === end) {
-    if (caretRange?.block === "opaque") return null
+    if (caretRange && isOpaqueRichBlock(caretRange.block)) return null
     if (caretRange?.marks.includes(mark)) {
       const wrapper = caretRange && directWrapper(document, caretRange, mark)
       if (!wrapper) return null
@@ -696,7 +712,7 @@ export function toggleInlineMark(
     const next = importMarkdown(unwrapWrapperSource(document, enclosing))
     return { document: next, anchor: reversed ? end : start, head: reversed ? start : end }
   }
-  if (!ranges.length || ranges.some((range) => range.block === "opaque")) return null
+  if (!ranges.length || ranges.some((range) => isOpaqueRichBlock(range.block))) return null
   if (mark !== "code" && ranges.some((range) => range.marks.includes("code"))) return null
   const target = ranges.length === 1 ? ranges[0] : null
   if (target?.marks.includes(mark)) {
@@ -758,8 +774,10 @@ function inlineFragments(
   inherited: RichMark[] = [],
   allowAdjacent: boolean | ReadonlySet<number> = false,
   allowPunctuation = false,
+  links: readonly RichLinkNode[] = [],
 ): InlineParse {
   const fragments: Fragment[] = []
+  const linksByStart = new Map(links.map((link) => [link.sourceFrom, link]))
   let plainStart = 0
   let unmatched = false
   const flushPlain = (to: number): void => {
@@ -770,6 +788,37 @@ function inlineFragments(
 
   let i = 0
   while (i < text.length) {
+    const link = linksByStart.get(sourceFrom + i)
+    if (link && link.sourceTo <= sourceFrom + text.length) {
+      const labelFrom = link.labelFrom - sourceFrom
+      const labelTo = link.labelTo - sourceFrom
+      if (labelFrom >= i && labelTo > labelFrom && labelTo <= text.length) {
+        flushPlain(i)
+        const linkMark: RichMark = link.kind === "wikilink" ? "wikilink" : "link"
+        const linkMarks = [...inherited, linkMark]
+        if (link.kind === "autolink") {
+          push(fragments, text.slice(labelFrom, labelTo), link.labelFrom, link.labelTo, linkMarks, block, link.labelFrom, link.labelTo, link)
+        } else {
+          pushHidden(fragments, link.sourceFrom, link.labelFrom, linkMarks, block, link)
+          const nested = inlineFragments(
+            text.slice(labelFrom, labelTo),
+            link.labelFrom,
+            block,
+            linkMarks,
+            allowAdjacent,
+            allowPunctuation,
+            links.filter((candidate) => candidate.sourceFrom >= link.labelFrom && candidate.sourceTo <= link.labelTo),
+          )
+          if (nested.unmatched) unmatched = true
+          for (const fragment of nested.fragments) fragment.link = link
+          fragments.push(...nested.fragments)
+          pushHidden(fragments, link.labelTo, link.sourceTo, linkMarks, block, link)
+        }
+        i = link.sourceTo - sourceFrom
+        plainStart = i
+        continue
+      }
+    }
     const delimiterAllowsAdjacent = adjacentAllowedAt(allowAdjacent, sourceFrom + i)
     const delimiter = delimiterAt(text, i, delimiterAllowsAdjacent)
     if (!delimiter) {
@@ -805,7 +854,7 @@ function inlineFragments(
           marks: inheritedMarks,
           block,
         }], unmatched: false }
-      : inlineFragments(text.slice(innerStart, innerEnd), sourceFrom + innerStart, block, inheritedMarks, allowAdjacent, allowPunctuation)
+      : inlineFragments(text.slice(innerStart, innerEnd), sourceFrom + innerStart, block, inheritedMarks, allowAdjacent, allowPunctuation, links)
 
     if (nested.unmatched) unmatched = true
     pushHidden(fragments, sourceFrom + i, sourceFrom + innerStart, inheritedMarks, block)
@@ -843,13 +892,34 @@ function lineBlock(line: string, offset: number): { body: string; bodyOffset: nu
   return { body: line, bodyOffset: offset, block: "paragraph", prefixTo: offset }
 }
 
-function opaqueLine(line: string, sourceFrom = 0, allowAdjacent: boolean | ReadonlySet<number> = false, allowPunctuation = false): boolean {
-  // P1 deliberately does not interpret links, tables, fences, HTML, frontmatter,
-  // or application-specific marker syntax. Keep the complete line visible.
-  if (MARKDOWN_LINK.test(line) || LINK_LIKE.test(line) || WIKILINK.test(line) || MARKER_LIKE.test(line) || STRIKETHROUGH_LIKE.test(line) || HTML_LIKE.test(line)) return true
+function residualLinkSyntax(line: string, sourceFrom: number, links: readonly RichLinkNode[]): string {
+  const lineLinks = links
+    .filter((link) => link.sourceFrom >= sourceFrom && link.sourceTo <= sourceFrom + line.length)
+    .sort((left, right) => left.sourceFrom - right.sourceFrom)
+  let result = ""
+  let cursor = sourceFrom
+  for (const link of lineLinks) {
+    result += line.slice(cursor - sourceFrom, link.sourceFrom - sourceFrom)
+    result += " ".repeat(link.sourceTo - link.sourceFrom)
+    cursor = link.sourceTo
+  }
+  return result + line.slice(cursor - sourceFrom)
+}
+
+function opaqueLine(
+  line: string,
+  sourceFrom = 0,
+  allowAdjacent: boolean | ReadonlySet<number> = false,
+  allowPunctuation = false,
+  links: readonly RichLinkNode[] = [],
+): boolean {
+  // An incomplete or unsupported link-like sequence remains one raw island. A
+  // complete node is removed from this check so its label can be parsed below.
+  const residual = residualLinkSyntax(line, sourceFrom, links)
+  if (MARKDOWN_LINK.test(residual) || LINK_LIKE.test(residual) || WIKILINK.test(residual) || MARKER_LIKE.test(line) || STRIKETHROUGH_LIKE.test(line) || HTML_LIKE.test(line)) return true
   if (/^\s*\|/.test(line)) return true
   const info = lineBlock(line, sourceFrom)
-  return inlineFragments(info.body, info.bodyOffset, info.block, [], allowAdjacent, allowPunctuation).unmatched
+  return inlineFragments(info.body, info.bodyOffset, info.block, [], allowAdjacent, allowPunctuation, links).unmatched
 }
 
 function rangesFromFragments(fragments: readonly Fragment[]): { visible: string; ranges: SourceMapRange[] } {
@@ -868,6 +938,8 @@ function rangesFromFragments(fragments: readonly Fragment[]): { visible: string;
       marks: fragment.marks,
       block: fragment.block,
       visible: fragment.text.length > 0,
+      link: fragment.link,
+      special: fragment.special,
     })
     visibleOffset = visibleTo
   }
@@ -882,6 +954,9 @@ function importMarkdownInternal(
   allowPunctuation: boolean | ReadonlySet<number> = false,
 ): RichDocument {
   const fragments: Fragment[] = []
+  const specialScan = scanRichSpecials(source)
+  const allLinks = scanRichLinks(source, specialScan.protected)
+  const acceptedLinks: RichLinkNode[] = []
   let offset = 0
   let inFence = false
   let fenceChar = ""
@@ -893,16 +968,22 @@ function importMarkdownInternal(
     const line = lines[i] ?? ""
     const newline = lines[i + 1] ?? ""
     const lineStart = offset
+    const lineEnd = lineStart + line.length
     const fence = FENCE.exec(line)
+    const lineSpecial = specialScan.specials.find((special) => lineStart >= special.sourceFrom && lineEnd <= special.sourceTo && lineStart < special.sourceTo)
+    const lineLinks = allLinks.filter((link) => link.sourceFrom >= lineStart && link.sourceTo <= lineEnd)
     const lineIsFrontmatter = inFrontmatter
     const lineIsFence = Boolean(fence || inFence)
     const lineIsHtmlComment = inHtmlComment || HTML_LIKE.test(line)
     const lineIsPending = rawLineStarts.has(lineStart)
     const lineAllowsPunctuation = allowPunctuation === true || (allowPunctuation !== false && allowPunctuation.has(lineStart))
 
-    if (lineIsPending || lineIsFrontmatter || lineIsFence || lineIsHtmlComment || opaqueLine(line, lineStart, allowAdjacent, lineAllowsPunctuation)) {
-      push(fragments, line, lineStart, lineStart + line.length, [], "opaque")
-      if (lineIsFrontmatter && i > 0 && /^---\s*$/.test(line)) inFrontmatter = false
+    if (lineSpecial) {
+      push(fragments, line, lineStart, lineEnd, [], lineSpecial.kind, lineStart, lineEnd, undefined, lineSpecial)
+      if (lineSpecial.kind === "frontmatter" && /^(?:---|\.\.\.)[ \t]*$/.test(line)) inFrontmatter = false
+    } else if (lineIsPending || lineIsFrontmatter || lineIsFence || lineIsHtmlComment || opaqueLine(line, lineStart, allowAdjacent, lineAllowsPunctuation, lineLinks)) {
+      push(fragments, line, lineStart, lineEnd, [], "opaque")
+      if (lineIsFrontmatter && i > 0 && /^(?:---|\.\.\.)\s*$/.test(line)) inFrontmatter = false
       if (fence) {
         if (!inFence) {
           inFence = true
@@ -918,21 +999,24 @@ function importMarkdownInternal(
       }
     } else {
       const info = lineBlock(line, lineStart)
-      const parsed = inlineFragments(info.body, info.bodyOffset, info.block, [], allowAdjacent, lineAllowsPunctuation)
+      const parsed = inlineFragments(info.body, info.bodyOffset, info.block, [], allowAdjacent, lineAllowsPunctuation, lineLinks)
       if (parsed.unmatched) {
         // Keep the entire malformed line as one raw island. Do not emit the
         // otherwise-recognized block prefix first: overlapping source ranges
         // would make delimiter/source mapping ambiguous.
-        push(fragments, line, lineStart, lineStart + line.length, [], "opaque")
+        push(fragments, line, lineStart, lineEnd, [], "opaque")
       } else {
+        acceptedLinks.push(...lineLinks)
         if (info.prefixTo > lineStart) pushHidden(fragments, lineStart, info.prefixTo, [], info.block)
         fragments.push(...parsed.fragments)
       }
     }
 
     if (newline) {
-      const block = fragments.at(-1)?.block ?? "paragraph"
-      push(fragments, newline, lineStart + line.length, lineStart + line.length + newline.length, [], block)
+      const previous = fragments.at(-1)
+      const block = previous?.block ?? "paragraph"
+      const special = previous?.special && lineEnd < (previous.special.sourceTo ?? 0) ? previous.special : undefined
+      push(fragments, newline, lineEnd, lineEnd + newline.length, [], block, lineEnd, lineEnd + newline.length, undefined, special)
     }
     offset += line.length + newline.length
   }
@@ -952,8 +1036,8 @@ function importMarkdownInternal(
     pendingLineStarts: [...rawLineStarts].sort((a, b) => a - b),
     explicitAdjacentMarkerStarts: typeof allowAdjacent === "boolean" ? [] : [...allowAdjacent].sort((a, b) => a - b),
     explicitPunctuationLineStarts: [...punctuationLineStarts].sort((a, b) => a - b),
-    links: [],
-    specials: [],
+    links: acceptedLinks,
+    specials: specialScan.specials,
   }
 }
 
@@ -1049,11 +1133,72 @@ export interface SourceEditRange {
   node: RichLinkNode | RichTableCell | RichSpecialNode
 }
 
+function validSourceRange(document: RichDocument, sourceFrom: number, sourceTo: number): boolean {
+  return Number.isSafeInteger(sourceFrom) && Number.isSafeInteger(sourceTo)
+    && sourceFrom >= 0 && sourceTo >= sourceFrom && sourceTo <= document.source.length
+}
+
+function reimportSourceEdit(document: RichDocument, sourceFrom: number, sourceTo: number, text: string): RichDocument {
+  const nextSource = document.source.slice(0, sourceFrom) + text + document.source.slice(sourceTo)
+  return importMarkdownInternal(nextSource, false)
+}
+
+function freshLink(document: RichDocument, link: RichLinkNode): boolean {
+  return document.links.some((candidate) => candidate.sourceFrom === link.sourceFrom
+    && candidate.sourceTo === link.sourceTo
+    && candidate.raw === link.raw
+    && document.source.slice(link.sourceFrom, link.sourceTo) === link.raw
+    && document.source.slice(link.targetFrom, link.targetTo) === link.target
+    && document.source.slice(link.labelFrom, link.labelTo) === link.label)
+}
+
+function freshSpecial(document: RichDocument, special: RichSpecialNode): boolean {
+  return document.specials.some((candidate) => candidate.kind === special.kind
+    && candidate.sourceFrom === special.sourceFrom
+    && candidate.sourceTo === special.sourceTo
+    && candidate.raw === special.raw
+    && document.source.slice(special.sourceFrom, special.sourceTo) === special.raw)
+}
+
+function freshTableCell(document: RichDocument, cell: RichTableCell): boolean {
+  const table = document.specials.find((candidate) => candidate.kind === "table"
+    && candidate.sourceFrom === cell.tableFrom
+    && candidate.sourceTo === cell.tableTo)
+  return !!table
+    && document.source.slice(cell.tableFrom, cell.tableTo) === document.source.slice(table.sourceFrom, table.sourceTo)
+    && validSourceRange(document, cell.contentFrom, cell.contentTo)
+    && document.source.slice(cell.contentFrom, cell.contentTo) === cell.text
+}
+
+function hasUnescapedPipe(text: string): boolean {
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] !== "|") continue
+    let slashes = 0
+    for (let previous = index - 1; previous >= 0 && text[previous] === "\\"; previous -= 1) slashes += 1
+    if (slashes % 2 === 0) return true
+  }
+  return false
+}
+
 /** Look up the exact source-edit island containing a raw UTF-16 position. */
 export function sourceEditRangeAt(document: RichDocument, sourcePosition: number): SourceEditRange | null {
-  void document
-  void sourcePosition
-  throw new Error("sourceEditRangeAt is not implemented")
+  if (!Number.isSafeInteger(sourcePosition) || sourcePosition < 0 || sourcePosition >= document.source.length) return null
+  const link = document.links.find((candidate) => sourcePosition >= candidate.targetFrom && sourcePosition < candidate.targetTo)
+  if (link) return { sourceFrom: link.targetFrom, sourceTo: link.targetTo, kind: "link-target", node: link }
+  const label = document.links.find((candidate) => sourcePosition >= candidate.labelFrom && sourcePosition < candidate.labelTo)
+  if (label) return { sourceFrom: label.labelFrom, sourceTo: label.labelTo, kind: "link-label", node: label }
+  for (const special of document.specials) {
+    if (special.kind === "table") {
+      for (const row of special.rows) {
+        const cell = row.cells.find((candidate) => sourcePosition >= candidate.contentFrom && sourcePosition < candidate.contentTo)
+        if (cell) return { sourceFrom: cell.contentFrom, sourceTo: cell.contentTo, kind: "table-cell", node: cell }
+      }
+    }
+    if (sourcePosition >= special.sourceFrom && sourcePosition < special.sourceTo) {
+      return { sourceFrom: special.sourceFrom, sourceTo: special.sourceTo, kind: special.kind, node: special }
+    }
+  }
+  return null
 }
 
 /** Replace only a recognized link label or target after freshness checks. */
@@ -1062,35 +1207,43 @@ export function editRichLink(
   link: RichLinkNode,
   edit: { label?: string; target?: string },
 ): RichDocument | null {
-  void document
-  void link
-  void edit
-  throw new Error("editRichLink is not implemented")
+  if (!freshLink(document, link) || (edit.label === undefined && edit.target === undefined)) return null
+  if (edit.label?.includes("\n") || edit.label?.includes("\r") || edit.target?.includes("\n") || edit.target?.includes("\r")) return null
+  if (link.kind === "wikilink" && link.alias === null && edit.label !== undefined && edit.target !== undefined && edit.label !== edit.target) return null
+  const replacements: SourceReplacement[] = []
+  const sameLinkSpan = link.labelFrom === link.targetFrom && link.labelTo === link.targetTo
+  if (sameLinkSpan) {
+    if (edit.label !== undefined && edit.target !== undefined && edit.label !== edit.target) return null
+    const replacement = edit.target ?? edit.label
+    if (replacement !== undefined) replacements.push({ sourceFrom: link.targetFrom, sourceTo: link.targetTo, text: replacement })
+  } else {
+    if (edit.target !== undefined || (link.kind === "wikilink" && link.alias === null && edit.label !== undefined)) {
+      replacements.push({ sourceFrom: link.targetFrom, sourceTo: link.targetTo, text: edit.target ?? edit.label! })
+    }
+    if (edit.label !== undefined && !(link.kind === "wikilink" && link.alias === null)) {
+      replacements.push({ sourceFrom: link.labelFrom, sourceTo: link.labelTo, text: edit.label })
+    }
+  }
+  if (!replacements.length) return null
+  return importMarkdownInternal(applySourceReplacements(document.source, replacements), false)
 }
 
 /** Replace only a table cell's content, excluding pipe and spacing delimiters. */
 export function editTableCell(document: RichDocument, cell: RichTableCell, text: string): RichDocument | null {
-  void document
-  void cell
-  void text
-  throw new Error("editTableCell is not implemented")
+  if (!freshTableCell(document, cell) || text.includes("\n") || text.includes("\r") || hasUnescapedPipe(text)) return null
+  return reimportSourceEdit(document, cell.contentFrom, cell.contentTo, text)
 }
 
 /** Replace one complete fence/table/frontmatter/Mermaid source island. */
 export function editSpecialSource(document: RichDocument, special: RichSpecialNode, text: string): RichDocument | null {
-  void document
-  void special
-  void text
-  throw new Error("editSpecialSource is not implemented")
+  if (!freshSpecial(document, special)) return null
+  return reimportSourceEdit(document, special.sourceFrom, special.sourceTo, text)
 }
 
 /** Explicit escape hatch for malformed or otherwise opaque source. */
 export function editRawSource(document: RichDocument, sourceFrom: number, sourceTo: number, text: string): RichDocument | null {
-  void document
-  void sourceFrom
-  void sourceTo
-  void text
-  throw new Error("editRawSource is not implemented")
+  if (!validSourceRange(document, sourceFrom, sourceTo)) return null
+  return reimportSourceEdit(document, sourceFrom, sourceTo, text)
 }
 
 export function replaceVisible(document: RichDocument, from: number, to: number, text: string): RichDocument {
@@ -1109,6 +1262,9 @@ export function replaceVisible(document: RichDocument, from: number, to: number,
   }
   if (start.sourceFrom !== end.sourceFrom || start.sourceTo !== end.sourceTo) {
     throw new RangeError("Replacement must stay within one mapped fragment")
+  }
+  if (isSpecialRichBlock(start.block)) {
+    throw new RangeError("Special source requires an explicit source edit")
   }
   const sourceFrom = start.contentFrom + (from - start.visibleFrom)
   const sourceTo = end.contentFrom + (to - end.visibleFrom)

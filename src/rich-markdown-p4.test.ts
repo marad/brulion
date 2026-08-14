@@ -5,6 +5,7 @@ import {
   editSpecialSource,
   editTableCell,
   importMarkdown,
+  replaceVisible,
   serializeMarkdown,
   sourceEditRangeAt,
 } from "./rich-markdown"
@@ -22,13 +23,15 @@ describe("rich Markdown P4 projection boundary", () => {
   })
 
   it("keeps special source islands raw and never parses their bodies", () => {
-    const source = "```js\n**raw** [x](inside.md)\n```\n| [cell](inside.md) |\n| --- |\n---\ntitle: **raw**\n---\noutside [x](ok.md)"
+    const source = "---\ntitle: **raw**\n---\n```js\n**raw** [x](inside.md)\n```\n| [cell](inside.md) |\n| --- |\noutside [x](ok.md)"
     const document = importMarkdown(source)
-    expect(document.visible).toBe(source)
-    expect(document.specials.map((special) => special.kind)).toEqual(["fence", "table", "frontmatter"])
+    expect(document.visible).toBe(source.replace("outside [x](ok.md)", "outside x"))
+    expect(document.specials.map((special) => special.kind)).toEqual(["frontmatter", "fence", "table"])
     expect(document.links.map((link) => link.target)).toEqual(["ok.md"])
     expect(document.ranges.filter((range) => range.special).every((range) => range.block !== "paragraph")).toBe(true)
     expect(serializeMarkdown(document)).toBe(source)
+    const fence = document.specials.find((special) => special.kind === "fence")!
+    expect(() => replaceVisible(document, fence.sourceFrom, fence.sourceFrom + 3, "raw")).toThrow(RangeError)
   })
 
   it("edits only an explicitly selected link label or target", () => {
@@ -49,7 +52,7 @@ describe("rich Markdown P4 projection boundary", () => {
     const source = "| A | B \\| C |\r\n| --- | --- |\r\n| one | two |"
     const document = importMarkdown(source)
     const table = document.specials.find((special) => special.kind === "table")!
-    const cell = table.kind === "table" ? table.rows[1]!.cells[1]! : null
+    const cell = table.kind === "table" ? table.rows[2]!.cells[1]! : null
     expect(cell).not.toBeNull()
     const edited = editTableCell(document, cell!, "changed")
     expect(serializeMarkdown(edited!)).toBe("| A | B \\| C |\r\n| --- | --- |\r\n| one | changed |")
@@ -64,7 +67,7 @@ describe("rich Markdown P4 projection boundary", () => {
     const mermaid = document.specials.find((special) => special.kind === "mermaid")!
     expect(sourceEditRangeAt(document, mermaid.sourceFrom + 2)?.kind).toBe("mermaid")
     const table = document.specials.find((special) => special.kind === "table")!
-    const tableCell = table.kind === "table" ? table.rows[1]!.cells[1]! : null
+    const tableCell = table.kind === "table" ? table.rows[2]!.cells[1]! : null
     expect(sourceEditRangeAt(document, tableCell!.contentFrom)?.kind).toBe("table-cell")
     expect(sourceEditRangeAt(document, source.length)).toBeNull()
   })
@@ -82,9 +85,9 @@ describe("rich Markdown P4 projection boundary", () => {
   })
 
   it("preserves UTF-16 mappings and bytes around adjacent special nodes", () => {
-    const source = "😀 [café](n.md)\r\n---\r\ntitle: keep\r\n---\r\nnext"
+    const source = "---\r\ntitle: keep\r\n---\r\n😀 [café](n.md)\r\nnext"
     const document = importMarkdown(source)
-    expect(document.visible).toBe("😀 café\r\n---\r\ntitle: keep\r\n---\r\nnext")
+    expect(document.visible).toBe("---\r\ntitle: keep\r\n---\r\n😀 café\r\nnext")
     expect(serializeMarkdown(document)).toBe(source)
     expect(document.links[0]!.label).toBe("café")
     expect(document.specials[0]!.kind).toBe("frontmatter")
