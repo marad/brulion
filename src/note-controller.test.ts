@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { EditorView } from "codemirror"
+import { mountEditor } from "./editor"
+import { createEditorDocument } from "./editor-document"
 import * as note from "./note"
 import * as session from "./session"
 import { createNoteController, pickActiveNote, classifyDiskCheck } from "./note-controller"
@@ -2504,5 +2506,98 @@ describe("conflict (AC-5 of FEAT-0004 preserved)", () => {
     controller.flush()
     await new Promise((r) => setTimeout(r, 20))
     expect(saveNote).not.toHaveBeenCalled()
+  })
+})
+
+describe("serialized rich source controller boundary (FEAT-0113)", () => {
+  function mountRichControllerView(onChange = vi.fn()) {
+    const view = mountEditor(document.createElement("div"), { rich: true, onChange })
+    return { view, editorDocument: createEditorDocument(view), onChange }
+  }
+
+  it("autosaves serialized Markdown rather than the visible projection", async () => {
+    const { view, editorDocument } = mountRichControllerView()
+    sweepResult.mockReturnValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "**body**", lastModified: 42 })
+    const controller = createNoteController(view, {
+      editorDocument,
+      debounceMs: 10_000,
+    })
+    await controller.open(DIR)
+
+    expect(view.state.doc.toString()).toBe("body")
+    view.dispatch({ changes: { from: 4, insert: "!" } })
+    controller.handleChange()
+    controller.flush()
+
+    await vi.waitFor(() =>
+      expect(saveNote).toHaveBeenCalledWith(DIR, "start.md", "**body!**", 42),
+    )
+    expect(view.state.doc.toString()).toBe("body!")
+  })
+
+  it("adopts a clean external source reload without autosave and preserves source bytes", async () => {
+    const { view, editorDocument, onChange } = mountRichControllerView()
+    sweepResult.mockReturnValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "before **body**\r\n", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, {
+      editorDocument,
+      debounceMs: 10_000,
+    })
+    await controller.open(DIR)
+    onChange.mockClear()
+
+    statNote.mockResolvedValue(2)
+    readNote.mockResolvedValue({ content: "before **new body**\r\n", lastModified: 2 })
+    await controller.refreshFromDisk()
+
+    expect(editorDocument.readMarkdown()).toBe("before **new body**\r\n")
+    expect(view.state.doc.toString()).toBe("before new body\r\n")
+    expect(onChange).not.toHaveBeenCalled()
+    expect(saveNote).not.toHaveBeenCalled()
+  })
+
+  it("uses serialized mine/theirs for conflict and keeps or takes source through the boundary", async () => {
+    const { view, editorDocument } = mountRichControllerView()
+    const onConflict = vi.fn()
+    sweepResult.mockReturnValue(["start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "**body**", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, {
+      editorDocument,
+      onConflict,
+      debounceMs: 10_000,
+    })
+    await controller.open(DIR)
+
+    view.dispatch({ changes: { from: 4, insert: " mine" } })
+    controller.handleChange()
+    expect(editorDocument.readMarkdown()).toBe("**body mine**")
+
+    statNote.mockResolvedValue(2)
+    readNote.mockResolvedValue({ content: "**theirs**", lastModified: 2 })
+    await controller.refreshFromDisk()
+    expect(onConflict).toHaveBeenCalledWith({ mine: "**body mine**", theirs: "**theirs**" })
+    expect(editorDocument.readMarkdown()).toBe("**body mine**")
+
+    statNote.mockResolvedValue(2)
+    saveNote.mockResolvedValue({ status: "saved", lastModified: 3 })
+    await controller.resolveKeepMine()
+    expect(saveNote).toHaveBeenCalledWith(DIR, "start.md", "**body mine**", 2)
+    expect(editorDocument.readMarkdown()).toBe("**body mine**")
+
+    view.dispatch({ changes: { from: view.state.doc.length, insert: "!" } })
+    controller.handleChange()
+    statNote.mockResolvedValue(4)
+    readNote.mockResolvedValue({ content: "**disk wins**", lastModified: 4 })
+    await controller.refreshFromDisk()
+    await controller.resolveTakeTheirs()
+
+    expect(editorDocument.readMarkdown()).toBe("**disk wins**")
+    expect(view.state.doc.toString()).toBe("disk wins")
   })
 })
