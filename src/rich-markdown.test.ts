@@ -8,9 +8,42 @@ import {
   applyInlineInputRule,
   classifyInlineBoundary,
   toggleInlineMark,
+  classifyBlockBoundary,
+  applyBlockInputRule,
+  applyBlockEnter,
+  applyBlockBackspace,
+  indentBlocks,
 } from "./rich-markdown"
 
 describe("rich Markdown document", () => {
+  it("applies block boundaries and block editing without exposing source prefixes", () => {
+    expect(classifyBlockBoundary("# ", 2, "space")?.kind).toBe("heading")
+    expect(classifyBlockBoundary("> ", 2, "space")?.kind).toBe("quote")
+    expect(classifyBlockBoundary("- ", 2, "space")?.kind).toBe("unordered-list")
+    expect(classifyBlockBoundary("#", 1, "space")).toBeNull()
+    expect(applyBlockInputRule(importMarkdown("# "), 2, "space").document.visible).toBe("")
+
+    const continued = applyBlockEnter(importMarkdown("> quote"), 5)
+    expect(continued.document.source).toBe("> quote\n> ")
+    expect(continued.document.visible).toBe("quote\n")
+    expect(continued.document.source.slice(continued.document.source.length - 2)).toBe("> ")
+    const exited = applyBlockEnter(importMarkdown("- "), 0)
+    expect(exited.document.source).toBe("- \n")
+    expect(exited.document.visible).toBe("\n")
+
+    const removed = applyBlockBackspace(importMarkdown("# "), 0)
+    expect(removed.document.source).toBe("")
+    expect(removed.document.visible).toBe("")
+    expect(applyBlockBackspace(importMarkdown("# title"), 0).changed).toBe(false)
+
+    const list = importMarkdown("- one\r\n- two\r\n1. keep\nraw")
+    const indented = indentBlocks(list, 0, 8, "indent")
+    expect(indented?.document.source).toBe("  - one\r\n  - two\r\n1. keep\nraw")
+    expect(indented?.document.visible).toBe(list.visible)
+    const outdented = indentBlocks(indented!.document, 0, 8, "outdent")
+    expect(outdented?.document.source).toBe(list.source)
+    expect(serializeMarkdown(outdented!.document)).toBe(list.source)
+  })
   it("projects supported syntax without exposing delimiters and maps UTF-16 positions", () => {
     const doc = importMarkdown("# Hé **world**\n> *quote*")
     expect(doc.visible).toBe("Hé world\nquote")
