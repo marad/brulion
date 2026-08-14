@@ -432,11 +432,46 @@ function blockAtVisibleCursor(document: RichDocument, cursor: number): { sourceC
   return { sourceCursor, lineStart, lineEnd, line, info: lineBlock(line, lineStart) }
 }
 
+function sameMarks(left: readonly RichMark[], right: readonly RichMark[]): boolean {
+  return left.length === right.length && left.every((mark, index) => mark === right[index])
+}
+
+function inlineSpanEdge(document: RichDocument, cursor: number, side: "start" | "end"): number | null {
+  const rangeIndex = document.ranges.findIndex((range) => range.visible && (side === "start" ? range.visibleFrom === cursor : range.visibleTo === cursor) && range.marks.length > 0)
+  if (rangeIndex < 0) return null
+  const range = document.ranges[rangeIndex]
+  if (side === "start") {
+    let edge = range.sourceFrom
+    for (let index = rangeIndex - 1; index >= 0; index -= 1) {
+      const previous = document.ranges[index]
+      if (previous.visible || !sameMarks(previous.marks, range.marks) || previous.sourceTo !== edge) break
+      edge = previous.sourceFrom
+    }
+    return edge
+  }
+  let edge = range.sourceTo
+  for (let index = rangeIndex + 1; index < document.ranges.length; index += 1) {
+    const next = document.ranges[index]
+    if (next.visible || !sameMarks(next.marks, range.marks) || next.sourceFrom !== edge) break
+    edge = next.sourceTo
+  }
+  return edge
+}
+
+function safeBlockSplitCursor(document: RichDocument, cursor: number, sourceCursor: number): number | null {
+  const inside = document.ranges.some((range) => range.visible && range.marks.length > 0 && range.visibleFrom < cursor && cursor < range.visibleTo)
+  if (inside) return null
+  return inlineSpanEdge(document, cursor, "start") ?? inlineSpanEdge(document, cursor, "end") ?? sourceCursor
+}
+
 /** Continue quote/list blocks on Enter, or exit an empty item without a prefix. */
 export function applyBlockEnter(document: RichDocument, cursor: number): BlockEditResult {
   const context = blockAtVisibleCursor(document, cursor)
   if (!context) return unchangedBlockEdit(document, cursor)
-  const { sourceCursor, info } = context
+  const splitCursor = safeBlockSplitCursor(document, cursor, context.sourceCursor)
+  if (splitCursor === null) return unchangedBlockEdit(document, cursor)
+  const { info } = context
+  const sourceCursor = splitCursor
   const isContinuation = info.block === "quote" || info.block === "unordered-list"
   const isEmpty = info.body.trim().length === 0
   const lineTail = document.source.slice(context.lineEnd)
