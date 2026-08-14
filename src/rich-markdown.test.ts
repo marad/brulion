@@ -20,6 +20,8 @@ describe("rich Markdown document", () => {
     expect(classifyBlockBoundary("# ", 2, "space")?.kind).toBe("heading")
     expect(classifyBlockBoundary("> ", 2, "space")?.kind).toBe("quote")
     expect(classifyBlockBoundary("- ", 2, "space")?.kind).toBe("unordered-list")
+    expect(importMarkdown("* ").visible).toBe("")
+    expect(applyBlockEnter(importMarkdown("* "), 0).document.source).toBe("\n")
     expect(classifyBlockBoundary("#", 1, "space")).toBeNull()
     expect(importMarkdown(">quote").visible).toBe(">quote")
     expect(importMarkdown(">").visible).toBe(">")
