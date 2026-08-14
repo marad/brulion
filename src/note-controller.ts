@@ -428,18 +428,22 @@ export function createNoteController(
     // guard is checked at this same commit boundary for stale extension calls.
     guard?.()
     const previousMarkdown = editorDocument.readMarkdown()
-    const needsProjection = previousMarkdown !== note.content
+    // Rich loading must also re-import when the serialized source is unchanged:
+    // a pending/explicit transient projection can differ from the canonical
+    // import of that same source. The boundary is a no-op for an already exact
+    // rich projection, so calling it here does not create redundant history.
+    const needsProjection = editorDocument.readModel() !== null || previousMarkdown !== note.content
     if (needsProjection) {
       // The editor boundary is part of the same commit: if import/projection
       // fails, do not advance activeName, conflict, cache, mtime, or the saved
-      // source snapshot. Restore the old projection if a boundary implementation
+      // source snapshot. Restore the old source if a boundary implementation
       // throws after dispatching but before returning.
       try {
         trackSync("load editor Markdown", () => editorDocument.loadMarkdown(note.content))
         guard?.()
       } catch (error) {
         try {
-          if (editorDocument.readMarkdown() !== previousMarkdown) editorDocument.loadMarkdown(previousMarkdown)
+          editorDocument.loadMarkdown(previousMarkdown)
         } catch {
           // Preserve the original failure; a boundary that cannot restore is
           // still prevented from committing controller metadata below.

@@ -312,7 +312,7 @@ export function richEditorExtension(): Extension {
   ]
 }
 
-function sourcePositionThroughChange(position: number, change: TextChange | null, assoc: -1 | 1): number {
+function positionThroughChange(position: number, change: TextChange | null, assoc: -1 | 1): number {
   if (!change) return position
   const delta = change.insert.length - (change.to - change.from)
   if (position < change.from) return position
@@ -412,19 +412,31 @@ export function mapRichReload(
 ): RichReloadMapping {
   checkedVisibleSelection(oldDocument, selection)
   checkedVisibleSelection(oldDocument, { anchor: viewport.visiblePosition, head: viewport.visiblePosition })
-  const sourceChange = diffRange(oldDocument.source, nextDocument.source)
-  const sourceSelection = richSelectionToSource(oldDocument, selection)
-  const sourceAnchor = sourcePositionThroughChange(sourceSelection.anchor, sourceChange, sourceSelection.anchor <= sourceSelection.head ? 1 : -1)
-  const sourceHead = sourcePositionThroughChange(sourceSelection.head, sourceChange, sourceSelection.head >= sourceSelection.anchor ? 1 : -1)
-  const oldViewportSource = visibleToSource(oldDocument, viewport.visiblePosition)
-  const nextViewportSource = sourcePositionThroughChange(oldViewportSource, sourceChange, 1)
+  // Map through the visible projection, not a single raw-source diff. A
+  // delimiter-only rewrite (for example `**word**` to `__word__`) has a large
+  // source replacement but no visible replacement; source-coordinate mapping
+  // would therefore jump a caret inside the word to the replacement end.
+  // Visible coordinates are the user's stable frame, while the next model is
+  // still authoritative for clamping the result.
+  const visibleChange = diffRange(oldDocument.visible, nextDocument.visible)
+  const nextAnchor = positionThroughChange(
+    selection.anchor,
+    visibleChange,
+    selection.anchor <= selection.head ? 1 : -1,
+  )
+  const nextHead = positionThroughChange(
+    selection.head,
+    visibleChange,
+    selection.head >= selection.anchor ? 1 : -1,
+  )
+  const nextViewport = positionThroughChange(viewport.visiblePosition, visibleChange, 1)
   return {
     selection: {
-      anchor: sourceToVisible(nextDocument, Math.max(0, Math.min(sourceAnchor, nextDocument.source.length))),
-      head: sourceToVisible(nextDocument, Math.max(0, Math.min(sourceHead, nextDocument.source.length))),
+      anchor: Math.max(0, Math.min(nextAnchor, nextDocument.visible.length)),
+      head: Math.max(0, Math.min(nextHead, nextDocument.visible.length)),
     },
     viewport: {
-      visiblePosition: sourceToVisible(nextDocument, Math.max(0, Math.min(nextViewportSource, nextDocument.source.length))),
+      visiblePosition: Math.max(0, Math.min(nextViewport, nextDocument.visible.length)),
     },
   }
 }

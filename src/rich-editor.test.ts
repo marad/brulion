@@ -185,6 +185,18 @@ describe("rich editor boundary (FEAT-0113)", () => {
 
     expect(mapping.selection).toEqual({ anchor: 2, head: 2 })
     expect(mapping.viewport).toEqual({ visiblePosition: 2 })
+
+    const oldMarks = importMarkdown("before **word** after")
+    const newDelimiter = importMarkdown("before __word__ after")
+    const wordCaret = oldMarks.visible.indexOf("word") + 2
+    const delimiterMapping = mapRichReload(
+      oldMarks,
+      newDelimiter,
+      { anchor: wordCaret, head: wordCaret },
+      { visiblePosition: wordCaret },
+    )
+    expect(delimiterMapping.selection).toEqual({ anchor: wordCaret, head: wordCaret })
+    expect(delimiterMapping.viewport).toEqual({ visiblePosition: wordCaret })
   })
 
   it("applies visible changes against the rich model rather than a rendered projection", () => {

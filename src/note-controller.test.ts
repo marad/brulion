@@ -2537,6 +2537,32 @@ describe("serialized rich source controller boundary (FEAT-0113)", () => {
     expect(view.state.doc.toString()).toBe("body!")
   })
 
+  it("reimports a rich projection when switching to the same serialized source", async () => {
+    const { view, editorDocument } = mountRichControllerView()
+    sweepResult.mockReturnValue(["a.md", "b.md"])
+    loadActiveNote.mockResolvedValue("a.md")
+    readNote.mockImplementation(async (_dir, name) => ({
+      content: "**hello**",
+      lastModified: name === "a.md" ? 1 : 2,
+    }))
+    const controller = createNoteController(view, { editorDocument, debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    // Simulate a transient pending projection whose serialization has already
+    // returned to the note's unchanged source.
+    editorDocument.loadMarkdown("")
+    view.dispatch({ changes: { from: 0, insert: "**hello**" } })
+    expect(editorDocument.readMarkdown()).toBe("**hello**")
+    expect(view.state.doc.toString()).toBe("**hello**")
+    controller.handleChange()
+
+    await controller.switchTo("b.md")
+
+    expect(editorDocument.readMarkdown()).toBe("**hello**")
+    expect(view.state.doc.toString()).toBe("hello")
+    view.destroy()
+  })
+
   it("adopts a clean external source reload without autosave and preserves source bytes", async () => {
     const { view, editorDocument, onChange } = mountRichControllerView()
     sweepResult.mockReturnValue(["start.md"])
