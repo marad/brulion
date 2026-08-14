@@ -2525,3 +2525,23 @@ Rich Vim motions never enter hidden Markdown; opaque blocks and link targets
 remain explicit source-edit operations. Raw workbench/script/diff editors keep
 their existing direct CodeMirror behavior, and extension text/selection APIs
 continue to expose serialized Markdown and UTF-16 source positions.
+
+## M47 P6 limits rich Vim rectangular and wrapper-splitting linewise paste
+
+**What:** Rich Vim handles characterwise registers and linewise `p`/`P` at
+serialized source line boundaries. A blockwise register, or a linewise register
+pasted into a characterwise visual selection that would split an imported mark
+or block prefix, is consumed as a safe no-op rather than delegated to Vim's raw
+`replaceRange` path.
+
+**Why:** CodeMirror's visible column is not a source line boundary when Markdown
+prefixes/delimiters are hidden. Guessing a rectangular source edit would either
+corrupt wrappers or expose raw syntax, violating the file-fidelity moat. A
+no-op is explicit, reversible, and keeps the existing raw/source editing escape
+hatch available for users who need that operation.
+
+**Consequence (UI/project):** Normal and visual-line rich Vim paste preserve
+heading/list/quote prefixes, CRLF, transient pending state, and cursor placement;
+unsupported rectangular or unsafe wrapper-splitting paste does nothing and never
+writes malformed Markdown. The limitation is covered by adapter tests and does
+not affect raw secondary editors or raw-source editing operations.

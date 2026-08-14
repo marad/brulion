@@ -1,8 +1,9 @@
 import { EditorView } from "@codemirror/view"
 import { Vim, getCM, type CodeMirrorV } from "@replit/codemirror-vim"
 import { applyRichPaste, applyRichSourceBoundaryChange } from "./rich-adapters"
-import { hasRichEditor, richDocumentFromState } from "./rich-editor"
+import { hasRichEditor, richDocumentFromState, richEditorRangeToModel } from "./rich-editor"
 import { serializeCopy } from "./copy-markdown"
+import { visibleToSource } from "./rich-markdown"
 
 /**
  * Route Vim's yank through the FEAT-0045 markdown serializer (FEAT-0046). Vim's
@@ -90,6 +91,14 @@ export function handleRichVimPaste(view: EditorView, event: KeyboardEvent): bool
   }
 
   const previous = view.state.selection.main
+  if (register.blockwise) {
+    // Blockwise registers need a per-line rectangular source edit. The rich
+    // boundary has no safe representation for splitting hidden prefixes in a
+    // rectangle yet, so consume the command as an explicit no-op rather than
+    // reintroducing raw Markdown through Vim's stock replaceRange path.
+    finishInput()
+    return true
+  }
   const document = richDocumentFromState(view.state)
   let from = previous.from
   let to = previous.to
@@ -99,6 +108,32 @@ export function handleRichVimPaste(view: EditorView, event: KeyboardEvent): bool
     ? text.endsWith("\r\n") ? text.slice(0, -2) : /[\r\n]$/.test(text) ? text.slice(0, -1) : text
     : text
   const linewiseText = register.linewise ? `${linewiseBody}${defaultLineEnding}` : text
+  if (register.linewise && vim.visualMode && !vim.visualLine) {
+    // Characterwise visual + linewise register is safe only for an unmarked
+    // paragraph fragment. Splitting a hidden wrapper or block prefix would
+    // otherwise create an invalid source island; this is a documented rich Vim
+    // limitation and deliberately leaves the selection untouched.
+    let applied = false
+    if (document && !view.state.sliceDoc(previous.from, previous.to).includes("\n")) {
+      try {
+        const modelRange = richEditorRangeToModel(document, { from: previous.from, to: previous.to })
+        const touched = document.ranges.filter((range) =>
+          range.visible && range.visibleFrom < modelRange.to && range.visibleTo > modelRange.from,
+        )
+        if (touched.length === 1 && touched[0]!.marks.length === 0 && touched[0]!.block === "paragraph") {
+          const sourceFrom = visibleToSource(document, modelRange.from)
+          const sourceTo = visibleToSource(document, modelRange.to)
+          const sourceText = `\n${linewiseBody}\n`
+          applied = applyRichSourceBoundaryChange(view, sourceFrom, sourceTo, sourceText, sourceFrom + firstNonWhitespaceOffset(sourceText))
+        }
+      } catch {
+        applied = false
+      }
+    }
+    if (applied) Vim.exitVisualMode(cm as CodeMirrorV)
+    finishInput()
+    return true
+  }
   if (register.linewise && document && (!vim.visualMode || vim.visualLine)) {
     let sourceFrom: number | null = null
     let sourceTo: number | null = null

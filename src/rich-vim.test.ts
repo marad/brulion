@@ -114,6 +114,28 @@ describe("rich Vim adapter (FEAT-0114)", () => {
     crlf.destroy()
   })
 
+  it("keeps unsupported rectangular or wrapper-splitting Vim pastes lossless", () => {
+    const marked = mountEditor(document.createElement("div"), { rich: true })
+    setEditorText(marked, "**old**")
+    setVimMode(marked, true)
+    marked.focus()
+    press(marked, "v")
+    press(marked, "$")
+    Vim.getRegisterController().unnamedRegister.setText("new", true)
+    press(marked, "p")
+    expect(serializedRichMarkdown(marked.state)).toBe("**old**")
+    marked.destroy()
+
+    const block = mountEditor(document.createElement("div"), { rich: true })
+    setEditorText(block, "old")
+    setVimMode(block, true)
+    Vim.getRegisterController().unnamedRegister.setText("x", false, true)
+    block.focus()
+    press(block, "p")
+    expect(serializedRichMarkdown(block.state)).toBe("old")
+    block.destroy()
+  })
+
   it("preserves Vim counts and does not steal Ctrl-P", () => {
     const view = mountEditor(document.createElement("div"), { rich: true })
     setEditorText(view, "")
