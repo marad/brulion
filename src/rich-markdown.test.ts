@@ -47,6 +47,7 @@ describe("rich Markdown document", () => {
     expect(reverseNested.visible).toBe("outer inner")
     expect(reverseNested.ranges.some((r) => r.visible && r.marks.includes("italic") && r.marks.includes("bold"))).toBe(true)
     expect(toggleInlineMark(reverseNested, 1, 1, "italic")).toBeNull()
+    expect(toggleInlineMark(reverseNested, 12, 12, "italic")).toBeNull()
     const innerUnwrapped = toggleInlineMark(reverseNested, 7, 7, "bold")
     expect(serializeMarkdown(innerUnwrapped!.document)).toBe("*outer inner*")
 
@@ -151,6 +152,8 @@ describe("rich Markdown document", () => {
     expect(eof?.contentTo).toBe(7)
     expect(classifyInlineBoundary("**hello\\** ", 11, "space")).toBeNull()
     expect(classifyInlineBoundary("**hello", 7, "eof")).toBeNull()
+    expect(classifyInlineBoundary("**hello**x", 9, "eof")).toBeNull()
+    expect(applyInlineInputRule(importMarkdown("**hello**http://x"), 9, "enter").converted).toBe(false)
     expect(applyInlineInputRule(importMarkdown("# **hello** "), 13, "space").caret).toBe("hello ".length)
   })
 

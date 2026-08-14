@@ -209,7 +209,8 @@ function hasInlineBoundaryContext(text: string, start: number, end: number, deli
   const prefix = text.slice(0, start)
   const openingBoundary = !previous || /\s/.test(previous) || (isWordCharacter(previous) && prefix.includes(delimiter))
   const closingBoundary = !next || /\s/.test(next) || isWordCharacter(next)
-  return openingBoundary && closingBoundary
+  const urlFollows = /^(?:https?:\/\/|www\.)/i.test(text.slice(end + delimiter.length))
+  return openingBoundary && closingBoundary && !urlFollows
 }
 
 function visibleCaretForSource(document: RichDocument, cursor: number): number {
@@ -224,6 +225,7 @@ export function classifyInlineBoundary(
   boundary: InlineBoundary,
 ): InlineBoundaryMatch | null {
   if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > source.length) return null
+  if (boundary === "eof" && cursor !== source.length) return null
   const boundaryCursor = boundary === "space" ? cursor - 1 : cursor
   if (boundaryCursor < 0) return null
   if (boundary === "space" && source[cursor - 1] !== " ") return null
@@ -281,8 +283,9 @@ function directWrapper(document: RichDocument, range: SourceMapRange, mark: Inli
   for (const delimiter of delimiters) {
     const from = range.contentFrom - delimiter.length
     const to = range.contentTo + delimiter.length
+    const openIsPartOfLongerSingleRun = delimiter.length === 1 && document.source[range.contentFrom - delimiter.length - 1] === delimiter
     const closeIsPartOfLongerSingleRun = delimiter.length === 1 && document.source[range.contentTo + 1] === delimiter
-    if (!closeIsPartOfLongerSingleRun && from >= 0 && document.source.slice(from, range.contentFrom) === delimiter && document.source.slice(range.contentTo, to) === delimiter) {
+    if (!openIsPartOfLongerSingleRun && !closeIsPartOfLongerSingleRun && from >= 0 && document.source.slice(from, range.contentFrom) === delimiter && document.source.slice(range.contentTo, to) === delimiter) {
       return { from, to, open: delimiter, close: delimiter }
     }
   }
