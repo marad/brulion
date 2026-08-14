@@ -105,7 +105,11 @@ export function handleRichVimPaste(view: EditorView, event: KeyboardEvent): bool
   let pasteText = text
   const defaultLineEnding = document?.source.includes("\r\n") ? "\r\n" : "\n"
   const linewiseBody = register.linewise
-    ? text.endsWith("\r\n") ? text.slice(0, -2) : /[\r\n]$/.test(text) ? text.slice(0, -1) : text
+    ? (() => {
+      const normalized = text.replace(/\r\n?/g, "\n")
+      const body = normalized.endsWith("\n") ? normalized.slice(0, -1) : normalized
+      return body.replace(/\n/g, defaultLineEnding)
+    })()
     : text
   const linewiseText = register.linewise ? `${linewiseBody}${defaultLineEnding}` : text
   if (register.linewise && vim.visualMode && !vim.visualLine) {
@@ -123,7 +127,7 @@ export function handleRichVimPaste(view: EditorView, event: KeyboardEvent): bool
         if (touched.length === 1 && touched[0]!.marks.length === 0 && touched[0]!.block === "paragraph") {
           const sourceFrom = visibleToSource(document, modelRange.from)
           const sourceTo = visibleToSource(document, modelRange.to)
-          const sourceText = `\n${linewiseBody}\n`
+          const sourceText = `${defaultLineEnding}${linewiseBody}${defaultLineEnding}`
           applied = applyRichSourceBoundaryChange(view, sourceFrom, sourceTo, sourceText, sourceFrom + firstNonWhitespaceOffset(sourceText))
         }
       } catch {
