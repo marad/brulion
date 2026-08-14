@@ -381,9 +381,13 @@ export function applyBlockInputRule(document: RichDocument, cursor: number, boun
 
 function blockAtVisibleCursor(document: RichDocument, cursor: number): { sourceCursor: number; lineStart: number; lineEnd: number; line: string; info: ReturnType<typeof lineBlock> } | null {
   if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > document.visible.length) return null
-  const sourceCursor = visibleToSource(document, cursor)
-  const lineStart = lineStartAt(document.source, sourceCursor)
+  const mappedSource = visibleToSource(document, cursor)
+  const lineStart = lineStartAt(document.source, mappedSource)
   const lineEnd = lineContentEnd(document.source, lineStart)
+  if (document.ranges.some((range) => range.block === "opaque" && range.sourceFrom < lineEnd && range.sourceTo > lineStart)) return null
+  const visibleLineEnd = document.visible.indexOf("\n", cursor)
+  const atVisibleLineEnd = visibleLineEnd < 0 ? cursor === document.visible.length : cursor >= visibleLineEnd
+  const sourceCursor = atVisibleLineEnd ? lineEnd : mappedSource
   const line = document.source.slice(lineStart, lineEnd)
   return { sourceCursor, lineStart, lineEnd, line, info: lineBlock(line, lineStart) }
 }
@@ -395,7 +399,8 @@ export function applyBlockEnter(document: RichDocument, cursor: number): BlockEd
   const { sourceCursor, info } = context
   const isContinuation = info.block === "quote" || info.block === "unordered-list"
   const isEmpty = info.body.trim().length === 0
-  const insertion = isContinuation && !isEmpty ? `\n${info.block === "quote" ? "> " : "- "}` : "\n"
+  const newline = document.source.slice(context.lineEnd, context.lineEnd + 2) === "\r\n" ? "\r\n" : "\n"
+  const insertion = isContinuation && !isEmpty ? `${newline}${info.block === "quote" ? "> " : "- "}` : newline
   const nextSource = document.source.slice(0, sourceCursor) + insertion + document.source.slice(sourceCursor)
   const next = importMarkdown(nextSource)
   const caretSource = sourceCursor + insertion.length
@@ -415,7 +420,7 @@ export function applyBlockBackspace(document: RichDocument, cursor: number): Blo
 }
 
 function selectedSourceLineStarts(document: RichDocument, from: number, to: number): number[] | null {
-  if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < 0 || from > document.visible.length || to > document.visible.length) return null
+  if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < 0 || from > document.visible.length || to > document.visible.length || from === to) return null
   const start = Math.min(from, to)
   const end = Math.max(from, to)
   const sourceFrom = visibleToSource(document, start)
@@ -439,6 +444,7 @@ export function indentBlocks(document: RichDocument, from: number, to: number, d
   for (const lineStart of starts) {
     const lineEnd = lineContentEnd(document.source, lineStart)
     const line = document.source.slice(lineStart, lineEnd)
+    if (document.ranges.some((range) => range.block === "opaque" && range.sourceFrom < lineEnd && range.sourceTo > lineStart)) return null
     const info = lineBlock(line, lineStart)
     if (info.block === "ordered-list" || info.block === "opaque") return null
     if (info.block !== "quote" && info.block !== "unordered-list") continue
