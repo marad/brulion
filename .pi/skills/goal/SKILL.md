@@ -32,9 +32,11 @@ ownership is clear.
    production edits or tests. Invoke the appropriate excavation/chisel skill
    rather than hand-writing a new module.
 4. Keep one mutation writer per worktree. Reviewers are read-only and run in
-   the writer's current worktree (`worktree:false`) at xhigh effort. Before a
-   review, run the exact-base `workflow:gate -- pre-review` handoff and record
-   its base/HEAD in the milestone review ledger. Use one canonical reviewer
+   the writer's current worktree (`worktree:false`) at xhigh effort. Before the
+   canonical review, complete the writer's focused self-review handoff with
+   risks, probes, results, uncertainties, and suspected root-cause families.
+   Then run the exact-base `workflow:gate -- pre-review` handoff and record its
+   base/HEAD in the milestone review ledger. Use one canonical reviewer
    run/session for the loop, resuming it for follow-up rounds rather than
    launching fresh contexts; use one fresh xhigh pass only for the required
    final-clean check. A worker's `needs_attention` event is not a failure and
@@ -46,6 +48,8 @@ ownership is clear.
    the next edit, inspect status/handoff/ledger, and resume only from the exact
    recorded gate. Never replace a missing reviewer result with a fresh clean
    claim; record the run as blocked until the current-HEAD review completes.
+   At phase close, append the root-cause lesson and generality decision to the
+   milestone retrospective before advancing the ledger.
 
 ## Failure rule
 

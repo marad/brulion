@@ -2429,3 +2429,30 @@ require xhigh effort, `worktree:false`, and resume-based follow-ups, with one
 fresh xhigh final-clean pass. A blocked or failed reviewer is still a blocked
 gate; it is not silently replaced by a clean result. This changes process only and does not alter application behavior
 or user-owned Markdown bytes.
+
+## General workflow: root-cause review, self-review, verification tiers, and retrospectives
+
+**What:** Strengthen the workflow for every phase, not just parser or editor
+work. Before canonical review, the writer records a focused self-review with
+risk-ranked probes, evidence, uncertainties, and suspected root-cause families.
+Review findings carry both a symptom class and a root-cause family; two
+consecutive rounds in one family require restructuring even when the symptom
+labels differ. Verification is tiered into targeted iteration checks, phase
+close verification/sealing, and milestone shipping checks. Phase closure also
+requires a compact retrospective recording the lesson, what caught it, the
+workflow action, and whether it is general.
+
+**Why:** The existing gates already prevent skipped specs, stale review ranges,
+and incomplete shipping checks, but they did not force the author to expose
+uncertainty before review or distinguish repeated symptoms from a shared cause.
+That creates avoidable review rounds and encourages effect-level patching. A
+small self-review and retrospective make the learning durable without adding
+feature-specific ceremony; tiered commands keep cheap feedback cheap while
+preserving the final shipping gate.
+
+**Consequence (project):** `AGENTS.md`, the project workflow skills, and
+`docs/workflow.md` now require the same generic handoff and root-cause language.
+The existing pre-review gate, commit-message hook, preflight checker, and full
+CI gate remain the mechanical enforcement points; semantic risk assessment and
+retrospective judgment stay with the writer. No application behavior or
+user-owned Markdown bytes change.

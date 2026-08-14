@@ -63,6 +63,20 @@ Authoring Kit → `public/` byte pairs. Fix any finding before starting the
 canonical review. Use targeted unit/browser tests while fixing a review round;
 do not rerun the full suite for every small documentation or test correction.
 
+### 3.1 Self-review handoff
+
+Before the canonical reviewer starts, the writer performs a focused self-review
+from the packet rather than relying on memory. The handoff records:
+
+- the highest-risk ACs and failure modes;
+- the targeted commands/probes run and their outputs;
+- remaining uncertainties or untested boundaries;
+- any suspected root-cause family already visible in the diff.
+
+A self-review entry that only says “looks good” is incomplete. The pre-review
+gate supplies base, HEAD, spec, and changed paths mechanically; the writer fills
+only the semantic risk and evidence fields.
+
 ## 4. Canonical adversarial review
 
 Run exactly one canonical reviewer session for the phase loop at **xhigh**
@@ -82,38 +96,46 @@ per round:
 - **Spec:** FEAT-NNNN
 - **Base SHA:** <merge-base or explicit review base>
 - **Reviewed HEAD:** <exact commit>
+- **Self-review:** <risks>; `<command>`; `<result>`; <uncertainties>
 - **Round 1:** clean | findings | blocked
-  - **Findings:** <ids, classes, severities, or none>
+  - **Findings:** <ids, symptom classes, root-cause families, severities, or none>
   - **Disposition:** <fix commit/test, or why no change>
   - **Evidence:** `<command>`; `<test>`; `<validation output>`
 ```
 
 A clean verdict is valid only when the reviewer returned `clean`, all material
 findings are disposed, and the ledger names the commands/tests that support it.
-After two consecutive rounds of the same finding class, restructure the cause
-instead of applying another effect-level patch. Replace the reviewer session
-only when it is genuinely blocked or failed, and record that replacement in the
-ledger before continuing.
+Every finding records both its symptom class and its **root-cause family**.
+After two consecutive rounds in the same root-cause family, restructure the
+cause instead of applying another effect-level patch, even when the symptoms
+have different labels. Replace the reviewer session only when it is genuinely
+blocked or failed, and record that replacement in the ledger before continuing.
 
-## 5. Verify, seal, and ship
+## 5. Verification tiers, seal, and ship
 
-After the review is clean:
+Use three cost tiers:
+
+1. **Iteration/review round:** targeted tests plus relevant typecheck/lint only.
+2. **Phase close:** targeted tests, `specman verify`, `specman seal` (or
+   `--initial` for a new snapshot), and `specman status --verbose`.
+3. **Milestone close:** `specman validate`, full Vitest, build, and E2E.
+
+After the review is clean, the phase-close commands are:
 
 ```bash
 npm test -- --run <targeted files>
 specman verify FEAT-NNNN
 specman seal FEAT-NNNN       # or --initial for a new snapshot
-specman validate
-npm test -- --run
-npm run build
-npm run e2e
+specman status --verbose
 ```
 
 The full gate runs the plan/artifact checks, workflow tests, Vitest, build, and
 Chromium in order, stopping at the first failure. It is the shipping authority;
-local hooks are convenience only. Update the phase ledger and tick its checkbox
-only after verification and sealing. Remove disposable `.pi-subagents/` output
-before the final clean-tree check, then push `main`.
+local hooks are convenience only. Update the phase ledger and tick the phase
+checkbox only after verification and sealing. Remove disposable `.pi-subagents/`
+output before the final clean-tree check, then push `main` only after the whole
+milestone is closed. The commit-message hook mechanically enforces Spec trailers
+for implementation/workflow paths.
 
 ## Evidence rules
 
@@ -124,3 +146,21 @@ before the final clean-tree check, then push `main`.
 - Substantive workers/reviewers have no hard wall-clock, turn, or tool timeout by
 default. Attention is recovered by inspect/steer/resume, never by silently
 accepting partial output.
+
+## 6. Phase retrospective
+
+Before ticking a phase checkbox, append `## Phase retrospective` to its
+milestone ledger. Use this compact record:
+
+```markdown
+## Phase retrospective
+
+- **Root-cause lesson:**
+- **What caught it:**
+- **Workflow action:**
+- **Generality:** general workflow rule | feature-specific exception
+```
+
+Only general lessons change `AGENTS.md`, a project skill, or this document.
+Feature-specific observations stay in the phase ledger and do not become new
+ceremony.

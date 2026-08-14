@@ -20,11 +20,17 @@ test matrix.
 **Output:** `ReviewLoopResult { status, rounds, findingClasses, evidence }`,
 with `status` equal to `clean` or `blocked`.
 
-Each round records the code-review result and the finding class of every
-material issue. A blocked or failed worker is not a clean result.
+Each round records the code-review result, the symptom class, and the
+root-cause family of every material issue. A blocked or failed worker is not a
+clean result.
 
 ## Required protocol
 
+0. Before the first canonical pass, require the writer's focused self-review
+   handoff: highest-risk ACs/failure modes, targeted commands and results,
+   remaining uncertainties, and the suspected root-cause family. A handoff that
+   only says “looks good” is incomplete. The pre-review gate is the source of
+   mechanical base/HEAD/path evidence; the writer supplies semantic evidence.
 1. Run exactly one canonical `/skill:code-review` against the owned diff,
    exact `baseSha...headSha` range, current writer ownership, and the compact
    `reviewPacket`; collect its structured result and append the round to
@@ -40,18 +46,20 @@ material issue. A blocked or failed worker is not a clean result.
    by committing partial work.
 3. If findings remain, the writer fixes all accepted material findings from
    that round in one batch, adds discriminating tests, and runs only the
-   relevant targeted verification before the next round. Every finding gets a
-   recorded disposition; unresolved material findings block `clean`. Update
-   `headSha` and the ledger after the batch; reserve the full Vitest/build/E2E
-   sequence for the final shipping gate.
-4. Follow-up rounds inspect the changed files and prior finding classes narrowly
-   by resuming the retained read-only reviewer. The final clean round is the
+   relevant targeted tests plus typecheck/lint before the next round. Every
+   finding gets a recorded disposition and root-cause family; unresolved
+   material findings block `clean`. Update `headSha` and the ledger after the
+   batch; reserve phase-wide verification and the full Vitest/build/E2E sequence
+   for the appropriate close gate.
+4. Follow-up rounds inspect the changed files and prior root-cause families
+   narrowly by resuming the retained read-only reviewer. The final clean round is the
    only fresh-context pass, and it must run at xhigh effort with `worktree:false`;
    replacing a retained reviewer earlier is allowed only after a blocked or
    failed run is recorded as blocked, never as an implicit clean result.
-5. Track finding classes across rounds. After two consecutive rounds with the
-   same class, stop point-fixing and restructure the underlying cause before
-   reviewing again.
+5. Track symptom classes and root-cause families across rounds. After two
+   consecutive rounds in the same root-cause family, stop point-fixing and
+   restructure the underlying cause before reviewing again, even when the
+   symptom labels differ.
 6. Stop only on `clean` with commands/tests/evidence recorded in the durable
    ledger and no material residual finding. A worker `needs_attention` event is
    not a timeout or a clean result; a failed, stopped, disappeared, or

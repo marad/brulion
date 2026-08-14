@@ -103,34 +103,47 @@ report instead).
    `npm run workflow:gate -- pre-review --base <exact-base-sha> --spec FEAT-NNNN`.
    Before the first review, complete a compact review packet in the phase
    handoff: exact base/HEAD, changed paths, ACs and non-negotiable invariants,
-   explicit non-goals, and the edge-case test matrix. Then run
+   explicit non-goals, and the edge-case test matrix. The read-only `pre-review`
+   gate supplies the mechanical range/path/spec evidence; do not retype it by
+   hand. Before invoking the canonical reviewer, run a focused self-review
+   against the packet: exercise the highest-risk paths, record commands/results,
+   and name remaining uncertainties — never write only “looks good.” Then run
    **`/skill:review-until-clean`**, which loops **`/skill:code-review`** every
    phase — not an ad-hoc reviewer — until no material findings remain. The
    first canonical pass must be exhaustive and report all material findings it
    can establish, not stop after the first one; the writer then fixes all
    accepted material findings from that round in one batch. Every finding gets a
-   recorded disposition, and unresolved material findings block a clean result.
-   Give the reviewer the exact base and current HEAD; keep one canonical reviewer
-   per round and record each result in the phase's `Review ledger`. A failed,
-   stopped, or blocked worker is never clean. Follow-up rounds should inspect the changed files and prior
-   finding classes narrowly by resuming the same reviewer run/session; do not
-   launch a new reviewer context for each round. The retained reviewer runs at
+   recorded disposition and a **root-cause family**, and unresolved material
+   findings block a clean result. Give the reviewer the exact base and current
+   HEAD; keep one canonical reviewer per round and record each result in the
+   phase's `Review ledger`. A failed, stopped, or blocked worker is never clean.
+   Follow-up rounds should inspect the changed files and prior root-cause
+   families narrowly by resuming the same reviewer run/session; do not launch a
+   new reviewer context for each round. The retained reviewer runs at
    **xhigh** effort in the writer's current worktree with `worktree:false` and
    is strictly read-only. Use one fresh xhigh pass only for the required
    final-clean check. Reviewers run only focused checks needed to establish
-   findings — never the full Vitest/build/E2E shipping sequence on every round. The parent
-   owns the final shipping gate. Honor that skill's two rules: **restructure
-   after 2 rounds of the same class of finding** (stop patching effects, fix the
-   cause), and make every test added for a fix **discriminating** (it must fail
-   against the pre-fix behavior).
-5. **Verify & seal**: run the phase's targeted tests, then `specman verify`, then
+   findings — never the full Vitest/build/E2E shipping sequence on every round.
+   The parent owns the final shipping gate. Honor that skill's two rules:
+   **after 2 consecutive rounds in the same root-cause family, restructure the
+   cause** (stop patching effects, even when symptoms have different labels),
+   and make every test added for a fix **discriminating** (it must fail against
+   the pre-fix behavior).
+5. **Verify & seal**: use three verification tiers. During implementation or a
+   review round, run only targeted tests and relevant typecheck/lint checks. At
+   phase close, run the phase's targeted tests, then `specman verify`, then
    `specman seal` (or the explicitly justified initial-seal form for a new
-   snapshot). Confirm the feature is `in-sync` with `specman status --verbose`.
-   Every implementation commit carries a `Spec: FEAT-000N/AC-M` trailer.
-6. **Close the phase**: update the phase ledger and tick its checkbox in
-   `milestones/MX.md` only after its concrete "**Done =**" condition is met.
-   Do not begin the next phase while any previous phase is unverified or
-   unsealed.
+   snapshot), and confirm the feature is `in-sync` with `specman status --verbose`.
+   Only after the whole milestone is closed run the complete Vitest, build, and
+   E2E shipping sequence. Every implementation commit carries a
+   `Spec: FEAT-000N/AC-M` trailer; the checked-in commit hook enforces this for
+   implementation/workflow paths.
+6. **Close the phase**: append a compact `## Phase retrospective` to the
+   milestone ledger before ticking the checkbox. Record the root-cause lesson,
+   what caught it, the workflow action taken, and whether that action is general
+   or deliberately feature-specific. Update the phase ledger and tick its
+   checkbox only after its concrete "**Done =**" condition is met. Do not begin
+   the next phase while any previous phase is unverified or unsealed.
 7. **Ship only after the whole milestone is closed**: require a clean source
    worktree, all active specs `in-sync`, `specman validate`, and these commands:
    `npm test -- --run`, `npm run build`, and `npm run e2e`; then push to `main`.

@@ -48,7 +48,10 @@ test("project-local workflow command mapping", async (t) => {
       "review-until-clean": [
         "ReviewLoopRequest",
         "/skill:code-review",
-        "two consecutive rounds",
+        "consecutive rounds",
+        "root-cause family",
+        "self-review",
+        "targeted tests plus typecheck/lint",
         "clean",
         "blocked",
       ],
@@ -79,7 +82,7 @@ test("project-local workflow command mapping", async (t) => {
     const review = read(skillPaths["code-review"]);
     const loop = read(skillPaths["review-until-clean"]);
 
-    for (const marker of ["pre-review", "base SHA", "review ledger", "targeted tests"]) {
+    for (const marker of ["pre-review", "base SHA", "review ledger", "targeted tests", "self-review", "root-cause family", "Phase retrospective"]) {
       assert.match(agents + workflow + review + loop, new RegExp(marker.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")));
     }
     assert.match(workflow, /one canonical reviewer/);
@@ -96,8 +99,9 @@ test("project-local workflow command mapping", async (t) => {
     assert.match(goal, /Do not claim a skipped gate ran/);
     assert.match(review, /failed or stopped worker/);
     assert.match(review, /hard turn budgets/);
-    assert.match(loop, /A blocked or failed worker is not a clean result/);
+    assert.match(loop, /blocked or failed worker[\s\S]*clean result/);
     assert.match(loop, /restructure/);
+    assert.match(loop, /root-cause family/);
   });
 
   await t.test("passes the mapping check for the repository", () => {

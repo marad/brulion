@@ -16,8 +16,10 @@ this round's status and evidence.
 **Output:** `ReviewResult { status, findings, evidence, changedFiles }`, with
 `status` equal to `clean`, `findings`, or `blocked`.
 
-Each finding has `{ id, class, severity, location, evidence, disposition }`.
-Evidence must identify a command, test, diff fact, or residual risk. A test
+Each finding has `{ id, class, rootCause, severity, location, evidence,
+disposition }`. `class` names the observed symptom; `rootCause` groups related
+symptoms across rounds. Evidence must identify a command, test, diff fact, or
+residual risk. A test
 added for a fix must be discriminating: it must fail against the pre-fix
 behavior.
 
@@ -33,7 +35,9 @@ result.
    working-tree changes. Review the writer's current worktree read-only
    (`worktree:false`); never edit or commit and never review a stale prior HEAD.
 2. Read the relevant spec/ACs and inspect the changed code, tests, and boundary
-   behavior. Report only material findings, with file and line locations.
+   behavior. Report only material findings, with file and line locations. The
+   first pass must be exhaustive; name the root-cause family for every finding
+   so the loop can detect when repeated symptoms require restructuring.
 3. For each fix, add or strengthen a discriminating test when behavior can be
    tested. Never weaken a test to match an implementation.
 4. If the review worker stops or becomes blocked, return `blocked`; never return
