@@ -1986,6 +1986,26 @@ describe("refreshFromDisk (FEAT-0014)", () => {
     expect(view.state.doc.toString()).toBe("body")
   })
 
+  it("treats a deletion between stat and read as a note removal, not an empty reload", async () => {
+    const view = mountView()
+    sweepResult.mockReturnValue(["other.md", "start.md"])
+    loadActiveNote.mockResolvedValue("start.md")
+    readNote.mockResolvedValue({ content: "start body", lastModified: 1 })
+    statNote.mockResolvedValue(1)
+    const controller = createNoteController(view, { debounceMs: 10_000 })
+    await controller.open(DIR)
+
+    statNote.mockResolvedValue(2)
+    readNote.mockImplementation(async (_dir, name) =>
+      name === "start.md" ? { content: "", lastModified: null } : { content: "other body", lastModified: 3 },
+    )
+    await controller.refreshFromDisk()
+
+    expect(view.state.doc.toString()).toBe("other body")
+    expect(saveNote).not.toHaveBeenCalledWith(DIR, "start.md", "", expect.anything())
+    view.destroy()
+  })
+
   it("reloads the open note's external edit and adopts the new mtime (AC-3)", async () => {
     const view = mountView()
     listNotes.mockResolvedValue(["start.md"])
@@ -2590,7 +2610,6 @@ describe("serialized rich source controller boundary (FEAT-0113)", () => {
     loadActiveNote.mockResolvedValue("start.md")
     readNote.mockResolvedValue({ content: "**hello**", lastModified: 1 })
     const controller = createNoteController(view, { editorDocument, debounceMs: 10_000 })
-    await controller.open(DIR)
 
     editorDocument.loadMarkdown("")
     view.dispatch({ changes: { from: 0, insert: "**hello**" } })

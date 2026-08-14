@@ -9,10 +9,13 @@ import {
 } from "./editor"
 import {
   applyRichVisibleChanges,
+  flushRichEditorInput,
   hasRichEditor,
   mapRichReload,
   richDocumentFromState,
   richEditorExtension,
+  richBackspace,
+  richEnter,
   richSelectionToSource,
   richSourceSelectionToVisible,
   reloadRichEditorSource,
@@ -69,6 +72,40 @@ describe("rich editor boundary (FEAT-0113)", () => {
     expect(undo(view)).toBe(true)
     expect(serializedRichMarkdown(view.state)).toBe("")
     expect(onChange).toHaveBeenCalledTimes(2)
+    view.destroy()
+  })
+
+  it("flushes pending inline markers at Enter and save boundaries", () => {
+    const view = mountRich()
+    view.dispatch({ changes: { from: 0, insert: "**hello**" } })
+    view.dispatch({ selection: { anchor: view.state.doc.length } })
+
+    expect(richEnter(view)).toBe(true)
+    expect(view.state.doc.toString()).toBe("hello\n")
+    expect(serializedRichMarkdown(view.state)).toBe("**hello**\n")
+
+    const saveView = mountRich()
+    saveView.dispatch({ changes: { from: 0, insert: "**save**" } })
+    expect(flushRichEditorInput(saveView, "save")).toBe(true)
+    expect(saveView.state.doc.toString()).toBe("save")
+    expect(serializedRichMarkdown(saveView.state)).toBe("**save**")
+    view.destroy()
+    saveView.destroy()
+  })
+
+  it("routes rich block Enter and Backspace through the model", () => {
+    const view = mountRich()
+    setRichEditorSource(view, "- item")
+    view.dispatch({ selection: { anchor: view.state.doc.length } })
+
+    expect(richEnter(view)).toBe(true)
+    expect(serializedRichMarkdown(view.state)).toBe("- item\n- ")
+    expect(view.state.doc.toString()).toBe("item\n")
+
+    setRichEditorSource(view, "- ")
+    view.dispatch({ selection: { anchor: 0 } })
+    expect(richBackspace(view)).toBe(true)
+    expect(serializedRichMarkdown(view.state)).toBe("")
     view.destroy()
   })
 

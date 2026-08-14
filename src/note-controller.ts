@@ -1,5 +1,7 @@
 import type { EditorView } from "codemirror"
+import { setEditorEditable } from "./editor"
 import { createEditorDocument, type EditorDocumentBoundary } from "./editor-document"
+import { flushRichEditorInput } from "./rich-editor"
 import {
   readNote,
   saveNote,
@@ -353,6 +355,7 @@ export function createNoteController(
   // never written concurrently. Awaiting the returned promise drains all edits
   // that were dirty at resolution time (used by switchTo to flush before load).
   const doSave = (guard?: () => void): Promise<void> => {
+    flushRichEditorInput(view, "save")
     if (savePromise) return savePromise.then(() => guard?.())
     if (!dir || conflict || !dirty) {
       guard?.()
@@ -742,6 +745,14 @@ export function createNoteController(
         // failed (rare, but otherwise this would paint over the revert below).
         const previousDocText = editorDocument.readMarkdown()
         const previousSnapshot = editorDocument.capture?.()
+        const previewLock = !conflict
+        if (previewLock) setEditorEditable(view, false)
+        let previewLocked = previewLock
+        const releasePreviewLock = () => {
+          if (!previewLocked) return
+          previewLocked = false
+          setEditorEditable(view, true)
+        }
         let openFailed = false
         let previewAllowed = true
         void speculativeRead.then((note) => {
@@ -764,10 +775,14 @@ export function createNoteController(
         } catch (err) {
           openFailed = true
           previewAllowed = false
-          if (previousSnapshot && editorDocument.restore) {
-            trackSync("load editor state (revert)", () => editorDocument.restore!(previousSnapshot))
-          } else if (editorDocument.readMarkdown() !== previousDocText) {
-            trackSync("load editor Markdown (revert)", () => editorDocument.loadMarkdown(previousDocText))
+          try {
+            if (previousSnapshot && editorDocument.restore) {
+              trackSync("load editor state (revert)", () => editorDocument.restore!(previousSnapshot))
+            } else if (editorDocument.readMarkdown() !== previousDocText) {
+              trackSync("load editor Markdown (revert)", () => editorDocument.loadMarkdown(previousDocText))
+            }
+          } finally {
+            releasePreviewLock()
           }
           throw err
         }
@@ -813,7 +828,11 @@ export function createNoteController(
         // the persisted note vanished since last session) `activate` falls back
         // to its own normal read.
         const prefetched = active === guess ? await speculativeRead : null
-        await activate(folder, active, prefetched ?? undefined)
+        try {
+          await activate(folder, active, prefetched ?? undefined)
+        } finally {
+          releasePreviewLock()
+        }
       })
     },
     openNote(name, expectedFolder, isCurrent) {
@@ -1328,7 +1347,19 @@ export function createNoteController(
               // after the read — a keystroke landing during it turns this into a
               // conflict rather than a silent clobber.
               const note = await readNote(snapshot.folder, activeName)
-              if (safeToReplaceBuffer()) {
+              if (note.lastModified === null) {
+                // The file can disappear after the cheap stat but before the
+                // content read. Do not treat that race as an empty replacement:
+                // choose a real remaining note and discard the vanished path's
+                // cache entry instead.
+                if (safeToReplaceBuffer()) {
+                  contentCache.delete(activeName)
+                  const fallback = pickActiveNote(notes.filter((path) => path !== activeName), null)
+                  await activate(snapshot.folder, fallback)
+                  return
+                }
+                await raiseConflict()
+              } else if (safeToReplaceBuffer()) {
                 // Minimal-diff reload (FEAT-0067): replace only the differing span so the
                 // caret and scroll survive — not a wholesale set that jumps the view. Keep
                 // lifecycle metadata behind the same boundary so a failed reparse leaves

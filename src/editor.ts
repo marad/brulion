@@ -26,6 +26,9 @@ import { installVimMarkdownYank } from "./vim-yank"
 import {
   hasRichEditor,
   isRichDocumentTransaction,
+  richBackspace,
+  richEnter,
+  richTab,
   richDocumentFromState,
   richEditorExtension,
   richEditorSelectionToSource,
@@ -155,11 +158,12 @@ export function mountEditor(
       drawSelection(),
       keymap.of([
         ...completionKeymap,
-        // The old raw-Markdown Enter/Backspace adapters are intentionally not
-        // installed in rich mode. P3 owns block behavior in the rich model; P6
-        // will reconnect command adapters to visible selections.
         ...(opts.rich
-          ? []
+          ? [
+              { key: "Enter", run: richEnter },
+              { key: "Tab", run: richTab },
+              { key: "Backspace", run: richBackspace },
+            ]
           : [
               { key: "Enter", run: continueOrExitMarkup },
               { key: "Backspace", run: deleteMarkerSpaceBackward },

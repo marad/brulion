@@ -71,6 +71,12 @@ export function setRichEditorSource(view: EditorView, source: string): void
 export function captureRichEditorState(view: EditorView): RichEditorSnapshot
 export function restoreRichEditorState(view: EditorView, snapshot: RichEditorSnapshot): void
 
+/** Flush pending inline syntax and route core rich block/input boundaries. */
+export function flushRichEditorInput(view: EditorView, boundary: InlineBoundary): boolean
+export function richEnter(view: EditorView): boolean
+export function richBackspace(view: EditorView): boolean
+export function richTab(view: EditorView): boolean
+
 /** Re-import external source and map selection and viewport without autosave. */
 export function reloadRichEditorSource(view: EditorView, source: string): void
 

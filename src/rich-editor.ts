@@ -11,9 +11,13 @@ import {
   type TransactionSpec,
 } from "@codemirror/state"
 import {
+  applyBlockBackspace,
+  applyBlockEnter,
+  applyInlineInputRule,
   importMarkdown,
   replaceVisibleForEditor,
   serializeMarkdown,
+  type InlineBoundary,
   sourceToVisible,
   visibleToSource,
   type RichDocument,
@@ -311,6 +315,12 @@ export function richEditorExtension(): Extension {
   return [
     richDocumentField,
     EditorState.transactionFilter.of(richTransactionFilter),
+    EditorView.domEventHandlers({
+      blur(_event, view) {
+        flushRichEditorInput(view, "blur")
+        return false
+      },
+    }),
     invertedEffects.of((transaction) => {
       const document = fieldDocument(transaction.startState)
       return document && transaction.effects.some((effect) => effect.is(setRichDocumentEffect))
@@ -491,6 +501,83 @@ export function restoreRichEditorState(view: EditorView, snapshot: RichEditorSna
     filter: false,
     scrollIntoView: true,
   })
+}
+
+function dispatchRichUserDocument(view: EditorView, document: RichDocument, selection: RichVisibleSelection): void {
+  const changes = diffRange(view.state.doc.toString(), editorVisibleText(document))
+  view.dispatch({
+    changes: changes ?? [],
+    selection: {
+      anchor: editorPositionFromModel(document, selection.anchor),
+      head: editorPositionFromModel(document, selection.head),
+    },
+    effects: [setRichDocumentEffect.of(document)],
+    annotations: [Transaction.userEvent.of("input")],
+    filter: false,
+  })
+}
+
+function sourceCursorForVisible(document: RichDocument, cursor: number): number {
+  return richSelectionToSource(document, { anchor: cursor, head: cursor }).anchor
+}
+
+/** Flush pending inline syntax at a lifecycle/input boundary. */
+export function flushRichEditorInput(view: EditorView, boundary: InlineBoundary): boolean {
+  const document = fieldDocument(view.state)
+  if (!document) return false
+  const selection = view.state.selection.main
+  if (selection.anchor !== selection.head && boundary !== "save" && boundary !== "blur" && boundary !== "eof") return false
+  const cursor = modelPositionFromEditor(document, selection.head)
+  const sourceCursor = boundary === "save" || boundary === "blur" || boundary === "eof"
+    ? document.source.length
+    : sourceCursorForVisible(document, cursor)
+  const result = applyInlineInputRule(document, sourceCursor, boundary)
+  if (!result.converted) return false
+  dispatchRichUserDocument(view, result.document, { anchor: result.caret, head: result.caret })
+  return true
+}
+
+/** Rich Enter: flush a pending inline marker, then apply model block behavior. */
+export function richEnter(view: EditorView): boolean {
+  const document = fieldDocument(view.state)
+  if (!document) return false
+  const selection = view.state.selection.main
+  if (selection.anchor !== selection.head) return false
+  const cursor = modelPositionFromEditor(document, selection.head)
+  const sourceCursor = sourceCursorForVisible(document, cursor)
+  const inline = applyInlineInputRule(document, sourceCursor, "enter")
+  const flushed = inline.converted ? inline.document : document
+  const flushedCursor = inline.converted ? inline.caret : cursor
+  const block = applyBlockEnter(flushed, flushedCursor)
+  if (block.changed) {
+    dispatchRichUserDocument(view, block.document, { anchor: block.anchor, head: block.head })
+    return true
+  }
+  if (inline.converted) {
+    const next = replaceVisibleForEditor(flushed, flushedCursor, flushedCursor, "\n")
+    dispatchRichUserDocument(view, next, { anchor: flushedCursor + 1, head: flushedCursor + 1 })
+    return true
+  }
+  return false
+}
+
+/** Rich Backspace: remove a model block prefix only when its contract allows it. */
+export function richBackspace(view: EditorView): boolean {
+  const document = fieldDocument(view.state)
+  if (!document) return false
+  const selection = view.state.selection.main
+  if (selection.anchor !== selection.head) return false
+  const cursor = modelPositionFromEditor(document, selection.head)
+  const result = applyBlockBackspace(document, cursor)
+  if (!result.changed) return false
+  dispatchRichUserDocument(view, result.document, { anchor: result.anchor, head: result.head })
+  return true
+}
+
+/** Tab is an inline boundary; without pending syntax the browser/keymap keeps
+ * its normal focus behavior by returning false. */
+export function richTab(view: EditorView): boolean {
+  return flushRichEditorInput(view, "tab")
 }
 
 function annotationsForProgrammaticLoad(): Annotation<boolean> {
