@@ -967,56 +967,56 @@ function opaqueLine(
   return inlineFragments(info.body, info.bodyOffset, info.block, [], allowAdjacent, allowPunctuation, links).unmatched
 }
 
-function inlineCodeSpans(text: string, sourceFrom: number): Array<{ sourceFrom: number; sourceTo: number }> {
+function delimitedOpaqueSpans(
+  text: string,
+  sourceFrom: number,
+  marker: string,
+  ignoredSpans: readonly { sourceFrom: number; sourceTo: number }[] = [],
+): Array<{ sourceFrom: number; sourceTo: number }> {
   const spans: Array<{ sourceFrom: number; sourceTo: number }> = []
-  for (let index = 0; index < text.length; index += 1) {
-    if (text[index] !== "`" || escapedAt(text, index)) continue
-    for (let close = index + 1; close < text.length; close += 1) {
-      if (text[close] !== "`" || escapedAt(text, close)) continue
-      spans.push({ sourceFrom: sourceFrom + index, sourceTo: sourceFrom + close + 1 })
-      index = close
+  for (let index = 0; index <= text.length - marker.length; index += 1) {
+    const sourcePosition = sourceFrom + index
+    const ignored = ignoredSpans.find((span) => sourcePosition >= span.sourceFrom && sourcePosition < span.sourceTo)
+    if (ignored) {
+      index = Math.max(index, ignored.sourceTo - sourceFrom - 1)
+      continue
+    }
+    if (!text.startsWith(marker, index) || escapedAt(text, index)) continue
+    let close = -1
+    for (let candidate = index + marker.length; candidate <= text.length - marker.length; candidate += 1) {
+      const candidateSource = sourceFrom + candidate
+      if (ignoredSpans.some((span) => candidateSource >= span.sourceFrom && candidateSource < span.sourceTo)) continue
+      if (!text.startsWith(marker, candidate) || escapedAt(text, candidate)) continue
+      close = candidate
       break
     }
+    const sourceTo = sourceFrom + (close < 0 ? text.length : close + marker.length)
+    spans.push({ sourceFrom: sourceFrom + index, sourceTo })
+    index = Math.max(index, (close < 0 ? text.length : close + marker.length) - 1)
   }
   return spans
 }
 
-function linksOutsideInlineCode(line: string, sourceFrom: number, links: readonly RichLinkNode[]): RichLinkNode[] {
-  const codeSpans = inlineCodeSpans(line, sourceFrom)
-  return links.filter((link) => !codeSpans.some((span) => link.sourceFrom >= span.sourceFrom && link.sourceTo <= span.sourceTo))
-}
-
-function maskRawLinkSpans(
-  text: string,
+function linksOutsideInlineCode(
+  line: string,
   sourceFrom: number,
-  spans: readonly { sourceFrom: number; sourceTo: number }[],
-): string {
-  const masked = text.split("")
-  for (const span of spans) {
-    const from = Math.max(0, span.sourceFrom - sourceFrom)
-    const to = Math.min(masked.length, span.sourceTo - sourceFrom)
-    for (let index = from; index < to; index += 1) masked[index] = " "
-  }
-  return masked.join("")
+  links: readonly RichLinkNode[],
+  rawLinkSpans: readonly { sourceFrom: number; sourceTo: number }[],
+): RichLinkNode[] {
+  const opaqueSpans = [
+    ...delimitedOpaqueSpans(line, sourceFrom, "`", rawLinkSpans),
+    ...delimitedOpaqueSpans(line, sourceFrom, "~~", rawLinkSpans),
+    ...delimitedOpaqueSpans(line, sourceFrom, "^^", rawLinkSpans),
+  ]
+  return links.filter((link) => !opaqueSpans.some((span) => link.sourceFrom >= span.sourceFrom && link.sourceTo <= span.sourceTo))
 }
 
 function canProjectLinksAlongsideRaw(
-  line: string,
   sourceFrom: number,
-  allowAdjacent: boolean | ReadonlySet<number>,
-  allowPunctuation: boolean,
-  links: readonly RichLinkNode[],
+  sourceTo: number,
   rawLinkSpans: readonly { sourceFrom: number; sourceTo: number }[],
 ): boolean {
-  const localRawSpans = rawLinkSpans.filter((span) => span.sourceFrom >= sourceFrom && span.sourceTo <= sourceFrom + line.length)
-  if (!localRawSpans.length) return false
-  const residual = maskRawLinkSpans(residualLinkSyntax(line, sourceFrom, links), sourceFrom, localRawSpans)
-  if (MARKER_LIKE.test(residual)
-    || STRIKETHROUGH_LIKE.test(residual)
-    || HTML_LIKE.test(residual)
-    || /^\s*\|/.test(line)) return false
-  const info = lineBlock(residual, sourceFrom)
-  return !inlineFragments(info.body, info.bodyOffset, info.block, [], allowAdjacent, allowPunctuation).unmatched
+  return rawLinkSpans.some((span) => span.sourceFrom >= sourceFrom && span.sourceTo <= sourceTo)
 }
 
 function rangesFromFragments(fragments: readonly Fragment[]): { visible: string; ranges: SourceMapRange[] } {
@@ -1073,20 +1073,21 @@ function importMarkdownInternal(
     const fence = FENCE.exec(line)
     const lineSpecial = specialScan.specials.find((special) => lineStart >= special.sourceFrom && lineEnd <= special.sourceTo && lineStart < special.sourceTo)
     const lineLinks = allLinks.filter((link) => link.sourceFrom >= lineStart && link.sourceTo <= lineEnd)
-    const lineProjectableLinks = linksOutsideInlineCode(line, lineStart, lineLinks)
+    const lineProjectableLinks = linksOutsideInlineCode(line, lineStart, lineLinks, rawLinkSpans)
     const lineIsFrontmatter = inFrontmatter
     const lineIsFence = Boolean(fence || inFence)
     const lineHasHtml = htmlSpans.some((span) => span.sourceFrom < lineEnd && span.sourceTo > lineStart)
     const lineIsHtmlComment = inHtmlComment || lineHasHtml
     const lineIsPending = rawLineStarts.has(lineStart)
     const lineAllowsPunctuation = allowPunctuation === true || (allowPunctuation !== false && allowPunctuation.has(lineStart))
-    const lineIsOpaque = lineIsPending || lineIsFrontmatter || lineIsFence || lineIsHtmlComment || opaqueLine(line, lineStart, allowAdjacent, lineAllowsPunctuation, lineLinks)
+    const hasLocalRawLinkSpan = rawLinkSpans.some((span) => span.sourceFrom >= lineStart && span.sourceTo <= lineEnd)
+    const lineIsOpaque = hasLocalRawLinkSpan || lineIsPending || lineIsFrontmatter || lineIsFence || lineIsHtmlComment || opaqueLine(line, lineStart, allowAdjacent, lineAllowsPunctuation, lineLinks)
     const canProjectLinksInOpaqueLine = lineProjectableLinks.length > 0
       && !lineIsPending
       && !lineIsFrontmatter
       && !lineIsFence
       && !lineIsHtmlComment
-      && canProjectLinksAlongsideRaw(line, lineStart, allowAdjacent, lineAllowsPunctuation, lineProjectableLinks, rawLinkSpans)
+      && canProjectLinksAlongsideRaw(lineStart, lineEnd, rawLinkSpans)
 
     if (lineSpecial) {
       push(fragments, line, lineStart, lineEnd, [], lineSpecial.kind, lineStart, lineEnd, undefined, lineSpecial)
