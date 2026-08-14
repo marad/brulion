@@ -54,10 +54,11 @@ continuation do not auto-renumber or rewrite it.
   canonical continuation prefix and the caret lands at its visible content
   start; given an empty item, when Enter is applied, then the new line exits to
   a plain paragraph without leaving a hidden prefix caret stop.
-- AC-4: Given an empty heading, quote, or list block at its visible content
-  start, when Backspace is applied, then the block prefix is removed or the
-  block exits according to its construct rule, the visible text and caret remain
-  valid, and unrelated source spans are unchanged.
+- AC-4: Given an empty heading, quote, or unordered-list block at its visible
+  content start, when Backspace is applied, then the block prefix is removed or
+  the block exits according to its construct rule, the visible text and caret
+  remain valid, and unrelated source spans are unchanged. Ordered-list prefixes
+  remain source-preserving under Backspace.
 - AC-5: Given one or more selected blocks, when indentation or outdentation is
   applied, then only those blocks' prefixes change, nested quote/list structure
   remains representable, and serialization preserves all untouched bytes,
