@@ -359,8 +359,6 @@ function commentSpans(source: string): SourceSpan[] {
 }
 
 const VOID_HTML_TAGS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"])
-const HTML_TAG = /<\/?[A-Za-z][^>\n]*(?:>|$)/
-
 function removeAngleLinkDestinations(line: string): string {
   return line.replace(/\]\(<[^>\r\n]*>\)/g, (match) => " ".repeat(match.length))
 }
@@ -368,30 +366,41 @@ function removeAngleLinkDestinations(line: string): string {
 function htmlSourceSpans(source: string): SourceSpan[] {
   const spans: SourceSpan[] = []
   const lines = sourceLines(source)
+  const tagPattern = /<\/(?:[A-Za-z][\w:-]*)\s*>|<[A-Za-z][\w:-]*(?:\s[^>]*)?>/g
   let blockFrom = -1
-  let blockTag = ""
+  const stack: string[] = []
   for (const line of lines) {
     const text = removeAngleLinkDestinations(source.slice(line.from, line.to))
-    const closing = /<\/[A-Za-z][^>\n]*>/.test(text)
-    if (blockFrom >= 0) {
-      if (new RegExp(`</${blockTag}\\s*>`, "i").test(text) || closing) {
-        spans.push({ sourceFrom: blockFrom, sourceTo: line.to })
-        blockFrom = -1
-        blockTag = ""
-      }
+    const tags = [...text.matchAll(tagPattern)]
+    if (!tags.length) {
+      if (blockFrom >= 0) continue
       continue
     }
-    if (!HTML_TAG.test(text)) continue
-    const opening = /<([A-Za-z][\w:-]*)(?:\s[^>]*)?>/.exec(text)
-    if (opening && !closing && !opening[0].endsWith("/>") && !VOID_HTML_TAGS.has(opening[1]!.toLowerCase())) {
-      blockFrom = line.from
-      blockTag = opening[1]!
-    } else {
-      spans.push({ sourceFrom: line.from, sourceTo: line.to })
+    if (blockFrom < 0) blockFrom = line.from
+    for (const tag of tags) {
+      const raw = tag[0]
+      const closing = raw.startsWith("</")
+      const nameMatch = /^<\/?([A-Za-z][\w:-]*)/.exec(raw)
+      const name = nameMatch?.[1]?.toLowerCase()
+      if (!name || VOID_HTML_TAGS.has(name) || raw.endsWith("/>") && !closing) continue
+      if (closing) {
+        if (stack.at(-1) === name) stack.pop()
+      } else {
+        stack.push(name)
+      }
+    }
+    if (stack.length === 0) {
+      spans.push({ sourceFrom: blockFrom, sourceTo: line.to })
+      blockFrom = -1
     }
   }
   if (blockFrom >= 0) spans.push({ sourceFrom: blockFrom, sourceTo: source.length })
   return spans
+}
+
+/** Return HTML/unknown markup spans that must stay opaque to link and table scans. */
+export function scanRichHtmlSpans(source: string): readonly SourceSpan[] {
+  return htmlSourceSpans(source)
 }
 
 function trimDestination(source: string, from: number, to: number): { from: number; to: number } {
@@ -534,7 +543,7 @@ function urlNodeAt(source: string, start: number, end: number): RichLinkNode | n
   const url = source.slice(start, sourceTo)
   const previous = source[start - 1]
   const previousIsIntrawordUnderscore = previous === "_" && start > 1 && /[\p{L}\p{N}]/u.test(source[start - 2] ?? "")
-  if (sourceTo <= start || escapedAt(source, start) || /[*`]/.test(url) || /__/.test(url)) return null
+  if (sourceTo <= start || escapedAt(source, start) || /[*`]/.test(url)) return null
   if (start > 0 && /[\p{L}\p{N}]/u.test(previous ?? "")) return null
   if (previousIsIntrawordUnderscore) return null
   return {

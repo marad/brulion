@@ -93,6 +93,7 @@ describe("rich Markdown special scanner", () => {
     expect(scanRichLinks("https://example.test/a(b).", []).map((link) => link.target)).toEqual(["https://example.test/a(b)"])
     expect(scanRichLinks("**https://example.test/path**", []).map((link) => link.target)).toEqual(["https://example.test/path"])
     expect(scanRichLinks("https://example.test/a_b", []).map((link) => link.target)).toEqual(["https://example.test/a_b"])
+    expect(scanRichLinks("https://example.test/a__b", []).map((link) => link.target)).toEqual(["https://example.test/a__b"])
     expect(scanRichLinks("_https://example.test/path_", []).map((link) => link.target)).toEqual(["https://example.test/path"])
     expect(links.every((link) => link.raw === source.slice(link.sourceFrom, link.sourceTo))).toBe(true)
   })
@@ -109,7 +110,7 @@ describe("rich Markdown special scanner", () => {
   })
 
   it("never scans links inside any special block or multiline HTML block", () => {
-    const source = "---\n[x](front.md)\n---\n| [x](table.md) |\n| --- |\n```\n[x](fence.md)\n```\n<div>\n[x](html.md)\n| a | b |\n| --- | --- |\n</div>\n[x](outside.md)"
+    const source = "---\n[x](front.md)\n---\n| [x](table.md) |\n| --- |\n```\n[x](fence.md)\n```\n<div>\n<span>nested</span>\n[x](html.md)\n| a | b |\n| --- | --- |\n</div>\n[x](outside.md)"
     const scan = scanRichSpecials(source)
     const links = scanRichLinks(source, scan.protected)
     expect(links.map((link) => link.target)).toEqual(["outside.md"])
