@@ -346,6 +346,47 @@ export interface BlockEditResult {
   changed: boolean
 }
 
+function mapMarkerStarts(starts: readonly number[], sourceFrom: number, sourceTo: number, delta: number): Set<number> {
+  const mapped = new Set<number>()
+  for (const start of starts) {
+    if (start < sourceFrom) mapped.add(start)
+    else if (start >= sourceTo) mapped.add(start + delta)
+  }
+  return mapped
+}
+
+function mapLineStarts(starts: readonly number[], sourceTo: number, delta: number): Set<number> {
+  return new Set(starts.map((start) => start > sourceTo ? start + delta : start))
+}
+
+function lineContainsInlineMarker(source: string, lineStart: number): boolean {
+  return /[*_`]/.test(source.slice(lineStart, lineContentEnd(source, lineStart)))
+}
+
+function applySourceReplacements(source: string, edits: readonly SourceReplacement[]): string {
+  let result = source
+  for (const edit of [...edits].sort((a, b) => b.sourceFrom - a.sourceFrom || b.sourceTo - a.sourceTo)) {
+    result = result.slice(0, edit.sourceFrom) + edit.text + result.slice(edit.sourceTo)
+  }
+  return result
+}
+
+function reprojectBlockSource(document: RichDocument, nextSource: string, edits: readonly SourceReplacement[]): RichDocument {
+  let adjacent = new Set(document.explicitAdjacentMarkerStarts ?? [])
+  let pending = new Set(document.pendingLineStarts)
+  let punctuation = new Set(document.explicitPunctuationLineStarts ?? [])
+  for (const edit of [...edits].sort((a, b) => b.sourceFrom - a.sourceFrom || b.sourceTo - a.sourceTo)) {
+    const delta = edit.text.length - (edit.sourceTo - edit.sourceFrom)
+    adjacent = mapMarkerStarts([...adjacent], edit.sourceFrom, edit.sourceTo, delta)
+    pending = mapLineStarts([...pending], edit.sourceTo, delta)
+    punctuation = mapLineStarts([...punctuation], edit.sourceTo, delta)
+  }
+  const validAdjacent = new Set([...adjacent].filter((position) => position >= 0 && position < nextSource.length && /[*_`]/.test(nextSource[position] ?? "")))
+  const validPending = new Set([...pending].filter((lineStart) => lineContainsInlineMarker(nextSource, lineStart)))
+  const validPunctuation = new Set([...punctuation].filter((lineStart) => lineContainsInlineMarker(nextSource, lineStart)))
+  return importMarkdownInternal(nextSource, validAdjacent, validPending, validPunctuation)
+}
+
 function unchangedBlockEdit(document: RichDocument, cursor: number): BlockEditResult {
   return { document, anchor: cursor, head: cursor, changed: false }
 }
@@ -374,9 +415,8 @@ export function applyBlockInputRule(document: RichDocument, cursor: number, boun
   const match = classifyBlockBoundary(document.source, cursor, boundary)
   const visibleCursor = sourceToVisible(document, cursor)
   if (!match) return unchangedBlockEdit(document, visibleCursor)
-  const next = importMarkdown(document.source)
-  const caret = sourceToVisible(next, match.contentFrom)
-  return { document: next, anchor: caret, head: caret, changed: true }
+  const caret = sourceToVisible(document, match.contentFrom)
+  return { document, anchor: caret, head: caret, changed: true }
 }
 
 function blockAtVisibleCursor(document: RichDocument, cursor: number): { sourceCursor: number; lineStart: number; lineEnd: number; line: string; info: ReturnType<typeof lineBlock> } | null {
@@ -399,18 +439,30 @@ export function applyBlockEnter(document: RichDocument, cursor: number): BlockEd
   const { sourceCursor, info } = context
   const isContinuation = info.block === "quote" || info.block === "unordered-list"
   const isEmpty = info.body.trim().length === 0
-  const newline = document.source.slice(context.lineEnd, context.lineEnd + 2) === "\r\n" ? "\r\n" : "\n"
-  const hasExistingLineEnding = newline.length === 2
-    ? document.source.slice(context.lineEnd, context.lineEnd + 2) === "\r\n"
-    : document.source[context.lineEnd] === "\n"
+  const lineTail = document.source.slice(context.lineEnd)
+  const lineEndingLength = lineTail.startsWith("\r\n") ? 2 : lineTail.startsWith("\n") ? 1 : 0
+  const newline = lineEndingLength === 2 ? "\r\n" : "\n"
   const exitsEmptyBlock = isContinuation && isEmpty
-  const insertion = exitsEmptyBlock
-    ? hasExistingLineEnding ? "" : newline
-    : isContinuation ? `${newline}${info.block === "quote" ? "> " : "- "}` : newline
-  const sourceBeforeCursor = exitsEmptyBlock ? document.source.slice(0, context.lineStart) : document.source.slice(0, sourceCursor)
-  const nextSource = sourceBeforeCursor + insertion + document.source.slice(context.lineEnd)
-  const next = importMarkdown(nextSource)
-  const caretSource = exitsEmptyBlock ? context.lineStart + insertion.length : sourceCursor + insertion.length
+  if (exitsEmptyBlock) {
+    const replacementText = lineEndingLength ? "" : newline
+    const edits = [{ sourceFrom: context.lineStart, sourceTo: context.lineEnd, text: replacementText }]
+    const nextSource = applySourceReplacements(document.source, edits)
+    const next = reprojectBlockSource(document, nextSource, edits)
+    const caret = sourceToVisible(next, context.lineStart + replacementText.length)
+    return { document: next, anchor: caret, head: caret, changed: true }
+  }
+  const continuation = isContinuation ? `${newline}${info.block === "quote" ? "> " : "- "}` : newline
+  const edits: SourceReplacement[] = [{
+    sourceFrom: sourceCursor,
+    sourceTo: context.lineEnd,
+    text: continuation + document.source.slice(sourceCursor, context.lineEnd),
+  }]
+  if (isContinuation && lineEndingLength > 0 && lineTail.slice(lineEndingLength).length === 0) {
+    edits.push({ sourceFrom: context.lineEnd, sourceTo: context.lineEnd + lineEndingLength, text: "" })
+  }
+  const nextSource = applySourceReplacements(document.source, edits)
+  const next = reprojectBlockSource(document, nextSource, edits)
+  const caretSource = sourceCursor + continuation.length
   const caret = sourceToVisible(next, caretSource)
   return { document: next, anchor: caret, head: caret, changed: true }
 }
@@ -420,8 +472,9 @@ export function applyBlockBackspace(document: RichDocument, cursor: number): Blo
   const context = blockAtVisibleCursor(document, cursor)
   if (!context || context.info.block === "paragraph" || context.info.block === "ordered-list") return unchangedBlockEdit(document, cursor)
   if (context.info.body.trim().length > 0 || context.sourceCursor !== context.info.prefixTo) return unchangedBlockEdit(document, cursor)
-  const nextSource = document.source.slice(0, context.lineStart) + document.source.slice(context.info.prefixTo)
-  const next = importMarkdown(nextSource)
+  const edits = [{ sourceFrom: context.lineStart, sourceTo: context.info.prefixTo, text: "" }]
+  const nextSource = applySourceReplacements(document.source, edits)
+  const next = reprojectBlockSource(document, nextSource, edits)
   const caret = sourceToVisible(next, context.lineStart)
   return { document: next, anchor: caret, head: caret, changed: true }
 }
@@ -461,11 +514,8 @@ export function indentBlocks(document: RichDocument, from: number, to: number, d
     if (replacement !== line) replacements.push({ sourceFrom: lineStart, sourceTo: lineEnd, text: replacement })
   }
   if (!replacements.length) return { document, anchor: from, head: to, changed: false }
-  let nextSource = document.source
-  for (const replacement of [...replacements].sort((a, b) => b.sourceFrom - a.sourceFrom)) {
-    nextSource = nextSource.slice(0, replacement.sourceFrom) + replacement.text + nextSource.slice(replacement.sourceTo)
-  }
-  const next = importMarkdown(nextSource)
+  const nextSource = applySourceReplacements(document.source, replacements)
+  const next = reprojectBlockSource(document, nextSource, replacements)
   return { document: next, anchor: from, head: to, changed: true }
 }
 
