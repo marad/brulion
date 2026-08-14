@@ -65,11 +65,13 @@ do not rerun the full suite for every small documentation or test correction.
 
 ## 4. Canonical adversarial review
 
-Run exactly one canonical reviewer for a round, in a read-only isolated worktree, against
-the current HEAD and the exact base reported by pre-review. Do not launch a
-second reviewer merely because the first emits `needs_attention`; inspect its
-status and handoff first. A disappeared, stopped, or blocked worker is
-**blocked**, never clean.
+Run exactly one canonical reviewer session for the phase loop at **xhigh**
+effort, read-only in the writer's current worktree (`worktree:false`), against
+the current HEAD and exact base reported by pre-review. Resume that same
+reviewer session for every follow-up round; do not launch a fresh context merely
+because a fix changed HEAD. The only fresh context is the required final-clean
+pass, also at xhigh and `worktree:false`. A disappeared, stopped, or blocked
+worker is **blocked**, never clean.
 
 Each phase milestone ledger gets a `## Review ledger` section. Append one record
 per round:
@@ -89,7 +91,9 @@ per round:
 A clean verdict is valid only when the reviewer returned `clean`, all material
 findings are disposed, and the ledger names the commands/tests that support it.
 After two consecutive rounds of the same finding class, restructure the cause
-instead of applying another effect-level patch.
+instead of applying another effect-level patch. Replace the reviewer session
+only when it is genuinely blocked or failed, and record that replacement in the
+ledger before continuing.
 
 ## 5. Verify, seal, and ship
 

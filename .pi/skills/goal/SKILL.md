@@ -31,11 +31,14 @@ ownership is clear.
 3. For each phase, require the phase spec before code and `specman sync` before
    production edits or tests. Invoke the appropriate excavation/chisel skill
    rather than hand-writing a new module.
-4. Keep one mutation writer per worktree. Reviewers are read-only. Before a
+4. Keep one mutation writer per worktree. Reviewers are read-only and run in
+   the writer's current worktree (`worktree:false`) at xhigh effort. Before a
    review, run the exact-base `workflow:gate -- pre-review` handoff and record
-   its base/HEAD in the milestone review ledger. Use one canonical reviewer per
-   round; a worker's `needs_attention` event is not a failure and does not kill
-   it.
+   its base/HEAD in the milestone review ledger. Use one canonical reviewer
+   run/session for the loop, resuming it for follow-up rounds rather than
+   launching fresh contexts; use one fresh xhigh pass only for the required
+   final-clean check. A worker's `needs_attention` event is not a failure and
+   does not kill it.
 5. Substantive workers and reviews run asynchronously without a hard wall-clock,
    hard turn, or hard tool timeout by default. Bound only disposable probes or
    commands safe to abort.

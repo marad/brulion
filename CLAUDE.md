@@ -113,10 +113,12 @@ report instead).
    Give the reviewer the exact base and current HEAD; keep one canonical reviewer
    per round and record each result in the phase's `Review ledger`. A failed,
    stopped, or blocked worker is never clean. Follow-up rounds should inspect the changed files and prior
-   finding classes narrowly; a retained read-only reviewer may be resumed for
-   those targeted checks, but the final clean round must use a fresh-context
-   reviewer. Reviewers run only focused checks needed to establish findings —
-   never the full Vitest/build/E2E shipping sequence on every round. The parent
+   finding classes narrowly by resuming the same reviewer run/session; do not
+   launch a new reviewer context for each round. The retained reviewer runs at
+   **xhigh** effort in the writer's current worktree with `worktree:false` and
+   is strictly read-only. Use one fresh xhigh pass only for the required
+   final-clean check. Reviewers run only focused checks needed to establish
+   findings — never the full Vitest/build/E2E shipping sequence on every round. The parent
    owns the final shipping gate. Honor that skill's two rules: **restructure
    after 2 rounds of the same class of finding** (stop patching effects, fix the
    cause), and make every test added for a fix **discriminating** (it must fail
@@ -136,10 +138,11 @@ report instead).
    derived-artifact drift, and resolves the active milestone from its ledger
    instead of a historical hard-coded path. GitHub Actions redeploys to Pages.
 
-**Subagent isolation and liveness are also gates.** Keep one writer per
-worktree. Mutation-capable workers use `worktree:true`; review/scout agents are
-read-only and must not share a writer's active worktree. Substantive workers and
-reviews run asynchronously without a hard wall-clock timeout by default. Do not
+**Subagent isolation and liveness are also gates.** Keep one mutation writer per
+worktree. Mutation-capable workers use `worktree:true`; read-only reviewers run
+against the writer's current worktree with `worktree:false`, never edit or
+commit, and never launch a competing writer. Substantive workers and reviews run
+asynchronously without a hard wall-clock timeout by default. Do not
 pass `timeoutMs`/`maxRuntimeMs`, a hard turn budget, or a hard tool budget to a
 mutation-capable worker. Use watchdog attention events, progress checkpoints,
 and explicit handoffs to detect inactivity; `needs_attention` is not a failure

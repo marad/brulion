@@ -30,8 +30,8 @@ result.
 1. Confirm the current diff and its ownership before reading for findings. Run
    `git rev-parse HEAD`, verify it equals the requested `headSha`, and inspect
    `git diff --name-status <baseSha>...<headSha>` plus any explicitly owned
-   working-tree changes. Do not review another writer's active worktree or a
-   stale prior HEAD.
+   working-tree changes. Review the writer's current worktree read-only
+   (`worktree:false`); never edit or commit and never review a stale prior HEAD.
 2. Read the relevant spec/ACs and inspect the changed code, tests, and boundary
    behavior. Report only material findings, with file and line locations.
 3. For each fix, add or strengthen a discriminating test when behavior can be

@@ -2407,3 +2407,25 @@ parsed for inline marks or links, and their untouched delimiters, spacing, pipes
 line endings, and Mermaid source survive byte-for-byte. The existing renderers
 remain view adapters until later M47 integration; no frontmatter field is
 interpreted and no SVG/table widget output can enter the file.
+
+## Review workflow: one xhigh read-only reviewer session
+
+**What:** Canonical review loops launch one project-local `reviewer` at xhigh
+thinking effort with read-only tools, `worktree:false`, and the writer's current
+worktree. Follow-up rounds resume that same reviewer session against the updated
+HEAD instead of launching a fresh reviewer context for every fix. The only
+fresh context is the required independent final-clean pass.
+
+**Why:** Repeated fresh reviewers reload the whole diff and rediscover adjacent
+edge cases without carrying the prior finding taxonomy. That makes the loop
+slow and encourages effect-level patching. One retained session keeps the
+review packet, prior findings, and dispositions in context while still checking
+current HEAD after every batch. Read-only tooling removes the need for a
+managed worktree; mutation isolation remains required for implementation
+workers.
+
+**Consequence (project):** `/skill:review-until-clean` and `docs/workflow.md`
+require xhigh effort, `worktree:false`, and resume-based follow-ups, with one
+fresh xhigh final-clean pass. A blocked or failed reviewer is still a blocked
+gate; it is not silently replaced by a clean result. This changes process only and does not alter application behavior
+or user-owned Markdown bytes.

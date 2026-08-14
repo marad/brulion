@@ -28,10 +28,13 @@ material issue. A blocked or failed worker is not a clean result.
 1. Run exactly one canonical `/skill:code-review` against the owned diff,
    exact `baseSha...headSha` range, current writer ownership, and the compact
    `reviewPacket`; collect its structured result and append the round to
-   `reviewLedger`. The first pass must be exhaustive: report every material
-   finding established by the diff and contract, not merely the first finding.
-   Do not launch a duplicate reviewer for the same round or use an ad-hoc
-   reviewer as a silent substitute. The reviewer runs focused checks only and
+   `reviewLedger`. Launch one canonical reviewer run at xhigh effort with
+   `worktree:false`, then resume that same run/session for every follow-up round.
+   The first pass must be exhaustive: report every material finding established
+   by the diff and contract, not merely the first finding. Do not launch a
+   duplicate reviewer for the same round or an ad-hoc reviewer as a silent
+   substitute. The only additional context allowed is the required fresh
+   final-clean pass. The reviewer runs focused checks only and
    must not run the full Vitest/build/E2E shipping sequence for each round.
 2. If the result is `blocked`, stop and surface the owner/action; do not retry
    by committing partial work.
@@ -41,10 +44,11 @@ material issue. A blocked or failed worker is not a clean result.
    recorded disposition; unresolved material findings block `clean`. Update
    `headSha` and the ledger after the batch; reserve the full Vitest/build/E2E
    sequence for the final shipping gate.
-4. Follow-up rounds inspect the changed files and prior finding classes narrowly.
-   A retained read-only reviewer may be resumed for a targeted follow-up to
-   avoid reloading the entire context. The final clean round must always use a
-   fresh-context canonical reviewer to guard against anchoring.
+4. Follow-up rounds inspect the changed files and prior finding classes narrowly
+   by resuming the retained read-only reviewer. The final clean round is the
+   only fresh-context pass, and it must run at xhigh effort with `worktree:false`;
+   replacing a retained reviewer earlier is allowed only after a blocked or
+   failed run is recorded as blocked, never as an implicit clean result.
 5. Track finding classes across rounds. After two consecutive rounds with the
    same class, stop point-fixing and restructure the underlying cause before
    reviewing again.
