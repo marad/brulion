@@ -644,11 +644,15 @@ function projectVisibleEdit(document: RichDocument, nextSource: string, sourceFr
   const pending = new Set<number>()
   for (const lineStart of document.pendingLineStarts) pending.add(lineStart > sourceTo ? lineStart + delta : lineStart)
   const changedLineStart = lineStartAt(nextSource, Math.min(sourceFrom + text.length, nextSource.length))
-  const markerInput = /[*_`]/.test(text) || document.pendingLineStarts.includes(lineStartAt(document.source, sourceFrom))
+  const nextLineEnd = nextSource.indexOf("\n", changedLineStart)
+  const changedLine = nextSource.slice(changedLineStart, nextLineEnd < 0 ? nextSource.length : nextLineEnd)
+  const oldLineStart = lineStartAt(document.source, sourceFrom)
+  const wasPending = document.pendingLineStarts.includes(oldLineStart)
+  const markerInput = /[*_`]/.test(text) || (wasPending && /[*_`]/.test(changedLine))
   const boundaryCursor = sourceFrom + text.length
   const committedSpace = text.endsWith(" ") && classifyInlineBoundary(nextSource, boundaryCursor, "space") !== null
   if (markerInput && !committedSpace) pending.add(changedLineStart)
-  else if (committedSpace) pending.delete(changedLineStart)
+  else pending.delete(changedLineStart)
   const adjacentLines = new Set<number>(pending)
   if (!pending.has(changedLineStart)) adjacentLines.add(changedLineStart)
   return importMarkdownInternal(nextSource, adjacentLines, pending)
