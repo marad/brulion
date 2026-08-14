@@ -227,4 +227,15 @@ describe("rich adapter coordinate and transaction contracts (FEAT-0114)", () => 
     expect(view.state.selection.main.head).toBe(0)
     view.destroy()
   })
+
+  it("replaces a source selection through the visible rich boundary", () => {
+    const view = richView()
+    setEditorText(view, "**café**")
+    setEditorSelection(view, { anchor: 2, head: 6 })
+    view.dispatch(view.state.replaceSelection("tea"))
+
+    expect(view.state.doc.toString()).toBe("tea")
+    expect(serializedRichMarkdown(view.state)).toBe("**tea**")
+    view.destroy()
+  })
 })
