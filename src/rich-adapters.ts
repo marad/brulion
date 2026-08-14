@@ -182,11 +182,12 @@ export function applyRichPaste(view: EditorView, text: string): boolean {
   } catch {
     return false
   }
-  const modelCaret = modelRange.from + text.length
-  candidate = flushRichPaste(candidate, modelRange.from, modelCaret)
-  const flushed = applyInlineInputRule(candidate, modelCaret, "blur")
+  const sourceFrom = visibleToSource(document, modelRange.from)
+  const sourceCaret = sourceFrom + text.length
+  candidate = flushRichPaste(candidate, sourceFrom, sourceCaret)
+  const flushed = applyInlineInputRule(candidate, sourceCaret, "blur")
   const final = flushed.converted ? flushed.document : candidate
-  const caret = flushed.converted ? flushed.caret : sourceToVisible(final, modelCaret)
+  const caret = flushed.converted ? flushed.caret : sourceToVisible(final, sourceCaret)
   dispatchRichDocumentChange(view, final, { anchor: caret, head: caret }, "input.paste")
   return true
 }
@@ -246,6 +247,19 @@ function delimiterFor(
       (candidate.sourceTo === importedFrom || candidate.sourceFrom === importedTo)
   })
   if (imported) return document.source.slice(imported.sourceFrom, imported.sourceTo)
+  const enclosingOpen = [...document.ranges].reverse().find((candidate) => {
+    if (candidate.visible || !sameInlineMarkSet(candidate.marks, [mark]) || candidate.sourceTo > importedFrom) return false
+    const delimiter = document.source.slice(candidate.sourceFrom, candidate.sourceTo)
+    return inlineDelimiterSource(delimiter) && allowed.includes(delimiter)
+  })
+  const enclosingClose = document.ranges.find((candidate) => {
+    if (candidate.visible || !sameInlineMarkSet(candidate.marks, [mark]) || candidate.sourceFrom < importedTo) return false
+    const delimiter = document.source.slice(candidate.sourceFrom, candidate.sourceTo)
+    return inlineDelimiterSource(delimiter) && allowed.includes(delimiter)
+  })
+  if (enclosingOpen && enclosingClose && document.source.slice(enclosingOpen.sourceFrom, enclosingOpen.sourceTo) === document.source.slice(enclosingClose.sourceFrom, enclosingClose.sourceTo)) {
+    return document.source.slice(enclosingOpen.sourceFrom, enclosingOpen.sourceTo)
+  }
   if (marks.includes("bold") && marks.includes("italic")) {
     for (const delimiter of ["***", "___"]) {
       if (document.source.slice(sourceFrom - delimiter.length, sourceFrom) === delimiter && document.source.slice(sourceTo, sourceTo + delimiter.length) === delimiter) return delimiter
@@ -272,7 +286,7 @@ function wrapInline(
     (document.source.slice(importedFrom - 3, importedFrom) === "***" || document.source.slice(importedFrom - 3, importedFrom) === "___") &&
     document.source.slice(importedTo, importedTo + 3) === document.source.slice(importedFrom - 3, importedFrom)
   if (combined) {
-    const delimiter = document.source.slice(sourceFrom - 3, sourceFrom)
+    const delimiter = document.source.slice(importedFrom - 3, importedFrom)
     return `${delimiter}${raw}${delimiter}`
   }
   let result = raw

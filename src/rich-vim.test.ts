@@ -44,6 +44,25 @@ describe("rich Vim adapter (FEAT-0114)", () => {
     view.destroy()
   })
 
+  it("keeps linewise Vim paste separated at EOF and in visual mode", () => {
+    const view = mountEditor(document.createElement("div"), { rich: true })
+    setEditorText(view, "existing")
+    setVimMode(view, true)
+    Vim.getRegisterController().unnamedRegister.setText("line", true)
+    view.focus()
+
+    press(view, "p")
+    expect(view.state.doc.toString()).toBe("existing\nline\n")
+
+    setEditorText(view, "old")
+    view.dispatch({ selection: { anchor: 0 } })
+    press(view, "V")
+    Vim.getRegisterController().unnamedRegister.setText("new", true)
+    press(view, "p")
+    expect(view.state.doc.toString()).toBe("new")
+    view.destroy()
+  })
+
   it("preserves Vim counts and does not steal Ctrl-P", () => {
     const view = mountEditor(document.createElement("div"), { rich: true })
     setEditorText(view, "")

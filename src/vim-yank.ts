@@ -57,6 +57,7 @@ interface RichVimInputState {
 interface RichVimState {
   insertMode?: boolean
   visualMode?: boolean
+  visualLine?: boolean
   inputState?: RichVimInputState
 }
 
@@ -91,12 +92,27 @@ export function handleRichVimPaste(view: EditorView, event: KeyboardEvent): bool
   const previous = view.state.selection.main
   let from = previous.from
   let to = previous.to
-  if (!vim.visualMode) {
+  let pasteText = text
+  const linewiseText = register.linewise && text.endsWith("\n") ? text : register.linewise ? `${text}\n` : text
+  if (vim.visualMode) {
+    if (register.linewise) {
+      const body = linewiseText.slice(0, -1)
+      pasteText = vim.visualLine ? body : `\n${body}\n`
+    }
+  } else {
     const line = view.state.doc.lineAt(previous.head)
     if (register.linewise) {
-      const position = event.key === "p" && line.to < view.state.doc.length ? line.to + 1 : event.key === "P" ? line.from : view.state.doc.length
-      from = position
-      to = position
+      if (event.key === "p") {
+        from = line.to
+        to = line.to
+        pasteText = line.to < view.state.doc.length
+          ? `\n${linewiseText.slice(0, -1)}`
+          : `\n${linewiseText}`
+      } else {
+        from = line.from
+        to = line.from
+        pasteText = linewiseText
+      }
     } else {
       const position = event.key === "p" ? Math.min(line.to, previous.head + 1) : previous.head
       from = position
@@ -106,7 +122,7 @@ export function handleRichVimPaste(view: EditorView, event: KeyboardEvent): bool
 
   try {
     view.dispatch({ selection: { anchor: from, head: to } })
-    if (!applyRichPaste(view, text)) {
+    if (!applyRichPaste(view, pasteText)) {
       view.dispatch({ selection: { anchor: previous.anchor, head: previous.head } })
       finishInput()
       return true

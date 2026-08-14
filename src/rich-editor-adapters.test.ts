@@ -109,6 +109,11 @@ describe("rich adapter coordinate and transaction contracts (FEAT-0114)", () => 
     expect(serializeRichSelection(importedNested, [{ from: 0, to: importedNested.visible.length }])).toBe("_outer **inner** end_")
     expect(serializeRichSelection(importedNested, [{ from: 0, to: "outer inner".length }])).toBe("_outer **inner**_")
     expect(serializeRichSelection(importedNested, [{ from: 0, to: "outer ".length }])).toBe("_outer _")
+    const combined = importMarkdown("***hello***")
+    expect(serializeRichSelection(combined, [{ from: 1, to: 4 }])).toBe("***ell***")
+    const importedOuter = importMarkdown("__outer _inner_ end__")
+    const importedInner = importedOuter.visible.indexOf("inner")
+    expect(serializeRichSelection(importedOuter, [{ from: importedInner, to: importedInner + 5 }])).toBe("___inner___")
 
     const linked = importMarkdown("See [**bold** label](target.md)")
     const bold = linked.visible.indexOf("bold")
@@ -202,6 +207,18 @@ describe("rich adapter coordinate and transaction contracts (FEAT-0114)", () => 
     view.dispatch({ selection: { anchor: raw, head: raw + 3 } })
     expect(applyRichPaste(view, "x")).toBe(false)
     expect(serializedRichMarkdown(view.state)).toBe("```js\nraw\n```")
+    view.destroy()
+  })
+
+  it("keeps the caret in the source-mapped position when pasting into a marked span", () => {
+    const view = richView()
+    setEditorText(view, "**ab**")
+    view.dispatch({ selection: { anchor: view.state.doc.length } })
+
+    expect(applyRichPaste(view, "x")).toBe(true)
+    expect(view.state.doc.toString()).toBe("abx")
+    expect(serializedRichMarkdown(view.state)).toBe("**abx**")
+    expect(view.state.selection.main.head).toBe(3)
     view.destroy()
   })
 
