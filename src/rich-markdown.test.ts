@@ -155,6 +155,11 @@ describe("rich Markdown document", () => {
     const ordinaryEdit = replaceVisible(importMarkdown("**ok** a_b_c"), 3, 4, "A")
     expect(ordinaryEdit.visible).toBe("ok A_b_c")
     expect(serializeMarkdown(ordinaryEdit)).toBe("**ok** A_b_c")
+    const unrelatedFormatting = toggleInlineMark(importMarkdown("a_b_c plain"), 6, 11, "bold")
+    expect(unrelatedFormatting?.document.visible).toBe("a_b_c plain")
+    const editedLiteral = replaceVisible(unrelatedFormatting!.document, 2, 3, "Z")
+    expect(editedLiteral.visible).toBe("a_Z_c plain")
+    expect(serializeMarkdown(editedLiteral)).toBe("a_Z_c **plain**")
     expect(applyInlineInputRule(importMarkdown("# **hello** "), 13, "space").converted).toBe(false)
     const fenced = "```md\n**x**\n```"
     expect(applyInlineInputRule(importMarkdown(fenced), fenced.indexOf("**x**") + 5, "enter").converted).toBe(false)

@@ -68,8 +68,8 @@ export interface RichDocument {
   readonly replacements: readonly SourceReplacement[]
   /** Source line starts kept raw while a user is still typing an inline marker. */
   readonly pendingLineStarts: readonly number[]
-  /** Lines whose explicit selection formatting permits word-adjacent markers. */
-  readonly explicitAdjacentLineStarts?: readonly number[]
+  /** Exact delimiter starts whose explicit selection formatting permits word adjacency. */
+  readonly explicitAdjacentMarkerStarts?: readonly number[]
   /** Lines whose punctuation-only formatting was explicitly requested. */
   readonly explicitPunctuationLineStarts?: readonly number[]
 }
@@ -323,8 +323,8 @@ export function applyInlineInputRule(
   const flushedLines = new Set(matches.map((match) => lineStartAt(document.source, match.sourceFrom)))
   const remainingPending = new Set(document.pendingLineStarts.filter((lineStart) => !flushedLines.has(lineStart)))
   const punctuationLines = new Set(document.explicitPunctuationLineStarts ?? [])
-  const adjacentLines = new Set(document.explicitAdjacentLineStarts ?? [])
-  const projected = importMarkdownInternal(document.source, adjacentLines, remainingPending, punctuationLines)
+  const adjacentMarkers = new Set(document.explicitAdjacentMarkerStarts ?? [])
+  const projected = importMarkdownInternal(document.source, adjacentMarkers, remainingPending, punctuationLines)
   return { document: projected, converted: true, caret: sourceToVisible(projected, cursor) }
 }
 
@@ -463,7 +463,18 @@ export function toggleInlineMark(
     const preservedAfter = after ? wrapper.open + after + wrapper.close : ""
     const replacement = preservedBefore + selected + preservedAfter
     const nextSource = document.source.slice(0, wrapper.from) + replacement + document.source.slice(wrapper.to)
-    const next = importMarkdownInternal(nextSource, new Set([lineStartAt(nextSource, wrapper.from)]), new Set(), new Set([lineStartAt(nextSource, wrapper.from)]))
+    const adjacentMarkers = new Set<number>()
+    if (before) {
+      adjacentMarkers.add(wrapper.from)
+      adjacentMarkers.add(wrapper.from + wrapper.open.length + before.length)
+    }
+    if (after) {
+      const afterFrom = wrapper.from + preservedBefore.length + selected.length
+      adjacentMarkers.add(afterFrom)
+      adjacentMarkers.add(afterFrom + wrapper.open.length + after.length)
+    }
+    const punctuationLines = /^[^\p{L}\p{N}\s]+$/u.test(selected) ? new Set([lineStartAt(nextSource, wrapper.from)]) : new Set<number>()
+    const next = importMarkdownInternal(nextSource, adjacentMarkers, new Set(), punctuationLines)
     return { document: next, anchor: reversed ? end : start, head: reversed ? start : end }
   }
   const sourceFrom = selectionSourceFrom
@@ -472,19 +483,25 @@ export function toggleInlineMark(
   if (hasHiddenInterior || document.source.slice(sourceFrom, sourceTo).includes("\n")) return null
   const marker = delimiterForMark(mark)
   const nextSource = document.source.slice(0, sourceFrom) + marker + document.source.slice(sourceFrom, sourceTo) + marker + document.source.slice(sourceTo)
-  const next = importMarkdownInternal(nextSource, new Set([lineStartAt(nextSource, sourceFrom)]), new Set(), new Set([lineStartAt(nextSource, sourceFrom)]))
+  const adjacentMarkers = new Set([sourceFrom, sourceFrom + marker.length + (sourceTo - sourceFrom)])
+  const punctuationLines = /^[^\p{L}\p{N}\s]+$/u.test(document.visible.slice(start, end)) ? new Set([lineStartAt(nextSource, sourceFrom)]) : new Set<number>()
+  const next = importMarkdownInternal(nextSource, adjacentMarkers, new Set(), punctuationLines)
   const nextStart = start
   const nextEnd = end
   return reversed ? { document: next, anchor: nextEnd, head: nextStart } : { document: next, anchor: nextStart, head: nextEnd }
 }
 
 /** Parse emphasis/code only. Unsupported constructs are handled by opaqueLine. */
+function adjacentAllowedAt(allowAdjacent: boolean | ReadonlySet<number>, sourcePosition: number): boolean {
+  return allowAdjacent === true || (allowAdjacent !== false && allowAdjacent.has(sourcePosition))
+}
+
 function inlineFragments(
   text: string,
   sourceFrom: number,
   block: RichBlock,
   inherited: RichMark[] = [],
-  allowAdjacent = false,
+  allowAdjacent: boolean | ReadonlySet<number> = false,
   allowPunctuation = false,
 ): InlineParse {
   const fragments: Fragment[] = []
@@ -498,13 +515,15 @@ function inlineFragments(
 
   let i = 0
   while (i < text.length) {
-    const delimiter = delimiterAt(text, i, allowAdjacent)
+    const delimiterAllowsAdjacent = adjacentAllowedAt(allowAdjacent, sourceFrom + i)
+    const delimiter = delimiterAt(text, i, delimiterAllowsAdjacent)
     if (!delimiter) {
       i += 1
       continue
     }
     const end = matchingDelimiter(text, delimiter, i + delimiter.length)
-    if (end < 0 || end <= i + delimiter.length || /^\s*$/.test(text.slice(i + delimiter.length, end)) || !hasInlineBoundaryContext(text, i, end, delimiter, allowAdjacent, allowPunctuation)) {
+    const closeAllowsAdjacent = end >= 0 && adjacentAllowedAt(allowAdjacent, sourceFrom + end)
+    if (end < 0 || end <= i + delimiter.length || /^\s*$/.test(text.slice(i + delimiter.length, end)) || !hasInlineBoundaryContext(text, i, end, delimiter, delimiterAllowsAdjacent || closeAllowsAdjacent, allowPunctuation)) {
       unmatched = true
       i += delimiter.length
       continue
@@ -569,12 +588,12 @@ function lineBlock(line: string, offset: number): { body: string; bodyOffset: nu
   return { body: line, bodyOffset: offset, block: "paragraph", prefixTo: offset }
 }
 
-function opaqueLine(line: string, allowAdjacent = false, allowPunctuation = false): boolean {
+function opaqueLine(line: string, sourceFrom = 0, allowAdjacent: boolean | ReadonlySet<number> = false, allowPunctuation = false): boolean {
   // P1 deliberately does not interpret links, tables, fences, HTML, frontmatter,
   // or application-specific marker syntax. Keep the complete line visible.
   if (MARKDOWN_LINK.test(line) || LINK_LIKE.test(line) || WIKILINK.test(line) || MARKER_LIKE.test(line) || STRIKETHROUGH_LIKE.test(line) || HTML_LIKE.test(line)) return true
   if (/^\s*\|/.test(line)) return true
-  return inlineFragments(line, 0, "paragraph", [], allowAdjacent, allowPunctuation).unmatched
+  return inlineFragments(line, sourceFrom, "paragraph", [], allowAdjacent, allowPunctuation).unmatched
 }
 
 function rangesFromFragments(fragments: readonly Fragment[]): { visible: string; ranges: SourceMapRange[] } {
@@ -623,10 +642,9 @@ function importMarkdownInternal(
     const lineIsFence = Boolean(fence || inFence)
     const lineIsHtmlComment = inHtmlComment || HTML_LIKE.test(line)
     const lineIsPending = rawLineStarts.has(lineStart)
-    const lineAllowsAdjacent = allowAdjacent === true || (allowAdjacent !== false && allowAdjacent.has(lineStart))
     const lineAllowsPunctuation = allowPunctuation === true || (allowPunctuation !== false && allowPunctuation.has(lineStart))
 
-    if (lineIsPending || lineIsFrontmatter || lineIsFence || lineIsHtmlComment || opaqueLine(line, lineAllowsAdjacent, lineAllowsPunctuation)) {
+    if (lineIsPending || lineIsFrontmatter || lineIsFence || lineIsHtmlComment || opaqueLine(line, lineStart, allowAdjacent, lineAllowsPunctuation)) {
       push(fragments, line, lineStart, lineStart + line.length, [], "opaque")
       if (lineIsFrontmatter && i > 0 && /^---\s*$/.test(line)) inFrontmatter = false
       if (fence) {
@@ -644,7 +662,7 @@ function importMarkdownInternal(
       }
     } else {
       const info = lineBlock(line, lineStart)
-      const parsed = inlineFragments(info.body, info.bodyOffset, info.block, [], lineAllowsAdjacent, lineAllowsPunctuation)
+      const parsed = inlineFragments(info.body, info.bodyOffset, info.block, [], allowAdjacent, lineAllowsPunctuation)
       if (parsed.unmatched) {
         // Keep the entire malformed line as one raw island. Do not emit the
         // otherwise-recognized block prefix first: overlapping source ranges
@@ -676,7 +694,7 @@ function importMarkdownInternal(
     changed: new Map(),
     replacements: [],
     pendingLineStarts: [...rawLineStarts].sort((a, b) => a - b),
-    explicitAdjacentLineStarts: typeof allowAdjacent === "boolean" ? [] : [...allowAdjacent].sort((a, b) => a - b),
+    explicitAdjacentMarkerStarts: typeof allowAdjacent === "boolean" ? [] : [...allowAdjacent].sort((a, b) => a - b),
     explicitPunctuationLineStarts: [...punctuationLineStarts].sort((a, b) => a - b),
   }
 }
@@ -695,8 +713,10 @@ function projectVisibleEdit(document: RichDocument, nextSource: string, sourceFr
   const oldLineStart = lineStartAt(document.source, sourceFrom)
   const wasPending = document.pendingLineStarts.includes(oldLineStart)
   const adjacent = new Set<number>()
-  for (const lineStart of document.explicitAdjacentLineStarts ?? []) adjacent.add(lineStart > sourceTo ? lineStart + delta : lineStart)
-  const wasExplicitAdjacent = (document.explicitAdjacentLineStarts ?? []).includes(oldLineStart)
+  for (const markerStart of document.explicitAdjacentMarkerStarts ?? []) {
+    if (markerStart < sourceFrom) adjacent.add(markerStart)
+    else if (markerStart >= sourceTo) adjacent.add(markerStart + delta)
+  }
   const punctuation = new Set<number>()
   for (const lineStart of document.explicitPunctuationLineStarts ?? []) punctuation.add(lineStart > sourceTo ? lineStart + delta : lineStart)
   const wasExplicitPunctuation = (document.explicitPunctuationLineStarts ?? []).includes(oldLineStart)
@@ -705,8 +725,6 @@ function projectVisibleEdit(document: RichDocument, nextSource: string, sourceFr
   const committedSpace = text.endsWith(" ") && classifyInlineBoundary(nextSource, boundaryCursor, "space") !== null
   if (markerInput && !committedSpace) pending.add(changedLineStart)
   else pending.delete(changedLineStart)
-  if (wasExplicitAdjacent && /[*_`]/.test(changedLine)) adjacent.add(changedLineStart)
-  else adjacent.delete(changedLineStart)
   if (wasExplicitPunctuation && /[*_`]/.test(changedLine)) punctuation.add(changedLineStart)
   else punctuation.delete(changedLineStart)
   return importMarkdownInternal(nextSource, adjacent, pending, punctuation)
