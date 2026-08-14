@@ -123,9 +123,11 @@ describe("rich Markdown document", () => {
 
     const marker = replaceVisible(importMarkdown("x"), 0, 1, "**y**")
     expect(serializeMarkdown(marker)).toBe("**y**")
-    expect(marker.visible).toBe("y")
-    expect(marker.ranges.some((r) => r.visible && r.marks.includes("bold"))).toBe(true)
-    const markerEdited = replaceVisible(marker, 0, 1, "z")
+    expect(marker.visible).toBe("**y**")
+    const markerFlushed = applyInlineInputRule(marker, marker.source.length, "eof")
+    expect(markerFlushed.document.visible).toBe("y")
+    expect(markerFlushed.document.ranges.some((r) => r.visible && r.marks.includes("bold"))).toBe(true)
+    const markerEdited = replaceVisible(markerFlushed.document, 0, 1, "z")
     expect(serializeMarkdown(markerEdited)).toBe("**z**")
     expect(markerEdited.visible).toBe("z")
   })
@@ -161,6 +163,11 @@ describe("rich Markdown document", () => {
     expect(applyInlineInputRule(importMarkdown("**hello**http://x"), 9, "enter").converted).toBe(false)
     expect(applyInlineInputRule(importMarkdown("**ok** http://foo**bad** "), 25, "space").converted).toBe(false)
     expect(applyInlineInputRule(importMarkdown("# **hello** "), 13, "space").caret).toBe("hello ".length)
+
+    const typed = replaceVisible(importMarkdown(""), 0, 0, "**hello**")
+    expect(typed.visible).toBe("**hello**")
+    expect(typed.pendingLineStarts).toEqual([0])
+    expect(applyInlineInputRule(typed, typed.source.length, "eof").document.visible).toBe("hello")
 
     const pending = importMarkdown("**hello**")
     for (const boundary of ["tab", "blur", "save"] as const) {

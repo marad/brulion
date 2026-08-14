@@ -66,6 +66,8 @@ export interface RichDocument {
   /** Compatibility/debug view of explicit changes, keyed by source start. */
   readonly changed: ReadonlyMap<number, string>
   readonly replacements: readonly SourceReplacement[]
+  /** Source line starts kept raw while a user is still typing an inline marker. */
+  readonly pendingLineStarts: readonly number[]
 }
 
 interface Fragment {
@@ -293,7 +295,7 @@ export function applyInlineInputRule(
 ): InlineInputResult {
   const match = classifyInlineBoundary(document.source, cursor, boundary)
   if (!match) return { document, converted: false, caret: visibleCaretForSource(document, cursor) }
-  const projected = importMarkdown(document.source)
+  const projected = importMarkdownInternal(document.source, false)
   return { document: projected, converted: true, caret: sourceToVisible(projected, cursor) }
 }
 
@@ -429,7 +431,8 @@ export function toggleInlineMark(
     const preservedBefore = before ? wrapper.open + before + wrapper.close : ""
     const preservedAfter = after ? wrapper.open + after + wrapper.close : ""
     const replacement = preservedBefore + selected + preservedAfter
-    const next = importMarkdownInternal(document.source.slice(0, wrapper.from) + replacement + document.source.slice(wrapper.to), true)
+    const nextSource = document.source.slice(0, wrapper.from) + replacement + document.source.slice(wrapper.to)
+    const next = importMarkdownInternal(nextSource, new Set([lineStartAt(nextSource, wrapper.from)]))
     return { document: next, anchor: reversed ? end : start, head: reversed ? start : end }
   }
   const sourceFrom = selectionSourceFrom
@@ -437,7 +440,8 @@ export function toggleInlineMark(
   const hasHiddenInterior = document.ranges.some((range) => !range.visible && range.sourceFrom >= sourceFrom && range.sourceTo <= sourceTo)
   if (hasHiddenInterior || document.source.slice(sourceFrom, sourceTo).includes("\n")) return null
   const marker = delimiterForMark(mark)
-  const next = importMarkdownInternal(document.source.slice(0, sourceFrom) + marker + document.source.slice(sourceFrom, sourceTo) + marker + document.source.slice(sourceTo), true)
+  const nextSource = document.source.slice(0, sourceFrom) + marker + document.source.slice(sourceFrom, sourceTo) + marker + document.source.slice(sourceTo)
+  const next = importMarkdownInternal(nextSource, new Set([lineStartAt(nextSource, sourceFrom)]))
   const nextStart = start
   const nextEnd = end
   return reversed ? { document: next, anchor: nextEnd, head: nextStart } : { document: next, anchor: nextStart, head: nextEnd }
@@ -564,7 +568,7 @@ function rangesFromFragments(fragments: readonly Fragment[]): { visible: string;
 }
 
 /** Import Markdown into a visible projection. All positions are JavaScript UTF-16 offsets. */
-function importMarkdownInternal(source: string, allowAdjacent: boolean): RichDocument {
+function importMarkdownInternal(source: string, allowAdjacent: boolean | ReadonlySet<number>, rawLineStarts: ReadonlySet<number> = new Set()): RichDocument {
   const fragments: Fragment[] = []
   let offset = 0
   let inFence = false
@@ -581,8 +585,10 @@ function importMarkdownInternal(source: string, allowAdjacent: boolean): RichDoc
     const lineIsFrontmatter = inFrontmatter
     const lineIsFence = Boolean(fence || inFence)
     const lineIsHtmlComment = inHtmlComment || HTML_LIKE.test(line)
+    const lineIsPending = rawLineStarts.has(lineStart)
+    const lineAllowsAdjacent = allowAdjacent === true || (allowAdjacent !== false && allowAdjacent.has(lineStart))
 
-    if (lineIsFrontmatter || lineIsFence || lineIsHtmlComment || opaqueLine(line, allowAdjacent)) {
+    if (lineIsPending || lineIsFrontmatter || lineIsFence || lineIsHtmlComment || opaqueLine(line, lineAllowsAdjacent)) {
       push(fragments, line, lineStart, lineStart + line.length, [], "opaque")
       if (lineIsFrontmatter && i > 0 && /^---\s*$/.test(line)) inFrontmatter = false
       if (fence) {
@@ -600,7 +606,7 @@ function importMarkdownInternal(source: string, allowAdjacent: boolean): RichDoc
       }
     } else {
       const info = lineBlock(line, lineStart)
-      const parsed = inlineFragments(info.body, info.bodyOffset, info.block, [], allowAdjacent)
+      const parsed = inlineFragments(info.body, info.bodyOffset, info.block, [], lineAllowsAdjacent)
       if (parsed.unmatched) {
         // Keep the entire malformed line as one raw island. Do not emit the
         // otherwise-recognized block prefix first: overlapping source ranges
@@ -620,11 +626,26 @@ function importMarkdownInternal(source: string, allowAdjacent: boolean): RichDoc
   }
 
   const projection = rangesFromFragments(fragments)
-  return { source, visible: projection.visible, ranges: projection.ranges, changed: new Map(), replacements: [] }
+  return { source, visible: projection.visible, ranges: projection.ranges, changed: new Map(), replacements: [], pendingLineStarts: [...rawLineStarts].sort((a, b) => a - b) }
 }
 
 export function importMarkdown(source: string): RichDocument {
   return importMarkdownInternal(source, false)
+}
+
+function projectVisibleEdit(document: RichDocument, nextSource: string, sourceFrom: number, sourceTo: number, text: string): RichDocument {
+  const delta = text.length - (sourceTo - sourceFrom)
+  const pending = new Set<number>()
+  for (const lineStart of document.pendingLineStarts) pending.add(lineStart >= sourceTo ? lineStart + delta : lineStart)
+  const changedLineStart = lineStartAt(nextSource, Math.min(sourceFrom + text.length, nextSource.length))
+  const markerInput = /[*_`]/.test(text) || document.pendingLineStarts.includes(lineStartAt(document.source, sourceFrom))
+  const boundaryCursor = sourceFrom + text.length
+  const committedSpace = text.endsWith(" ") && classifyInlineBoundary(nextSource, boundaryCursor, "space") !== null
+  if (markerInput && !committedSpace) pending.add(changedLineStart)
+  else if (committedSpace) pending.delete(changedLineStart)
+  const adjacentLines = new Set<number>(pending)
+  if (!pending.has(changedLineStart)) adjacentLines.add(changedLineStart)
+  return importMarkdownInternal(nextSource, adjacentLines, pending)
 }
 
 /** Serialize a document. Untouched source spans are returned byte-for-byte. */
@@ -671,28 +692,25 @@ export function sourceToVisible(document: RichDocument, position: number): numbe
 
 /** Replace one visible mapped fragment.
  *
- * The replacement text is Markdown source for that fragment. Re-importing the
- * resulting source immediately is intentional: a caller may insert a marker
- * sequence such as `**new**`, and the returned visible document must then agree
- * with the source map rather than exposing the delimiters as ordinary text.
- * Since the returned source is the new authoritative snapshot, later edits use
- * its current coordinates and remain composable. Untouched source bytes are
- * copied directly; P2 expands this primitive to rich operations and
- * cross-fragment selections.
+ * The replacement text is Markdown source for that fragment. A user edit that
+ * contains an inline marker keeps its changed line raw until an explicit
+ * boundary flushes it; this is what lets `**hello**` remain editable before the
+ * terminating space/Enter/EOF/blur/save. Unchanged lines keep their rich
+ * projection and all source bytes remain authoritative.
  */
 export function replaceVisible(document: RichDocument, from: number, to: number, text: string): RichDocument {
   if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from || to > document.visible.length) {
     throw new RangeError("Visible range out of bounds")
   }
   if (from === to && from === document.visible.length) {
-    return importMarkdown(document.source + text)
+    return projectVisibleEdit(document, document.source + text, document.source.length, document.source.length, text)
   }
 
   const start = visibleRangeAt(document, from, "start")
   const end = from === to ? start : visibleRangeAt(document, to, "end")
   if (!start || !end) {
     if (from !== 0 || to !== 0 || document.visible.length !== 0) throw new RangeError("Visible range is not mapped")
-    return importMarkdown(document.source + text)
+    return projectVisibleEdit(document, document.source + text, document.source.length, document.source.length, text)
   }
   if (start.sourceFrom !== end.sourceFrom || start.sourceTo !== end.sourceTo) {
     throw new RangeError("Replacement must stay within one mapped fragment")
@@ -700,5 +718,5 @@ export function replaceVisible(document: RichDocument, from: number, to: number,
   const sourceFrom = start.contentFrom + (from - start.visibleFrom)
   const sourceTo = end.contentFrom + (to - end.visibleFrom)
   const nextSource = document.source.slice(0, sourceFrom) + text + document.source.slice(sourceTo)
-  return importMarkdown(nextSource)
+  return projectVisibleEdit(document, nextSource, sourceFrom, sourceTo, text)
 }
