@@ -561,6 +561,38 @@ function urlNodeAt(source: string, start: number, end: number): RichLinkNode | n
   }
 }
 
+function escapedWikiSpan(source: string, start: number, lineEnd: number): SourceSpan {
+  for (let index = start + 2; index + 1 < lineEnd; index += 1) {
+    if (source[index] === "]" && source[index + 1] === "]" && !escapedAt(source, index)) {
+      return { sourceFrom: start, sourceTo: index + 2 }
+    }
+  }
+  return { sourceFrom: start, sourceTo: lineEnd }
+}
+
+function escapedBracketSpan(source: string, start: number, lineEnd: number): SourceSpan {
+  let closeBracket = -1
+  for (let index = start + 1; index < lineEnd; index += 1) {
+    if (source[index] === "]" && !escapedAt(source, index)) {
+      closeBracket = index
+      break
+    }
+  }
+  if (closeBracket < 0 || source[closeBracket + 1] !== "(") {
+    return { sourceFrom: start, sourceTo: closeBracket < 0 ? lineEnd : closeBracket + 1 }
+  }
+  let depth = 1
+  for (let index = closeBracket + 2; index < lineEnd; index += 1) {
+    if (escapedAt(source, index)) continue
+    if (source[index] === "(") depth += 1
+    else if (source[index] === ")") {
+      depth -= 1
+      if (depth === 0) return { sourceFrom: start, sourceTo: index + 1 }
+    }
+  }
+  return { sourceFrom: start, sourceTo: lineEnd }
+}
+
 /** Scan complete links outside the supplied special-block spans. */
 export function scanRichLinks(
   source: string,
@@ -569,7 +601,7 @@ export function scanRichLinks(
   const blocked = [...protectedSpans, ...commentSpans(source), ...htmlSourceSpans(source)]
   const links: RichLinkNode[] = []
   const occupied: SourceSpan[] = []
-  const malformedLinkLines: SourceSpan[] = []
+  const malformedLinkSpans: SourceSpan[] = []
   const lines = sourceLines(source)
 
   for (const line of lines) {
@@ -583,8 +615,11 @@ export function scanRichLinks(
         continue
       }
       if (source.startsWith("[[", index)) {
-        malformedLinkLines.push({ sourceFrom: line.from, sourceTo: line.to })
-        index = line.to
+        const malformed = escapedAt(source, index)
+          ? escapedWikiSpan(source, index, line.to)
+          : { sourceFrom: line.from, sourceTo: line.to }
+        malformedLinkSpans.push(malformed)
+        index = malformed.sourceTo - 1
         continue
       }
       const markdown = markdownLinkAt(source, index, line.to)
@@ -593,10 +628,13 @@ export function scanRichLinks(
         occupied.push(markdown)
         index = markdown.sourceTo - 1
       } else if (source[index] === "[") {
-        // A nested/ambiguous or escaped bracket sequence makes the complete
-        // line raw; do not salvage an inner link or URL from it.
-        malformedLinkLines.push({ sourceFrom: line.from, sourceTo: line.to })
-        index = line.to
+        // A nested/ambiguous bracket sequence makes the complete line raw;
+        // an escaped sequence only protects its own literal span.
+        const malformed = escapedAt(source, index)
+          ? escapedBracketSpan(source, index, line.to)
+          : { sourceFrom: line.from, sourceTo: line.to }
+        malformedLinkSpans.push(malformed)
+        index = malformed.sourceTo - 1
       }
     }
   }
@@ -608,7 +646,7 @@ export function scanRichLinks(
     const candidate = urlNodeAt(source, start, start + match[0].length)
     if (!candidate
       || insideAny(blocked, candidate.sourceFrom, candidate.sourceTo)
-      || insideAny(malformedLinkLines, candidate.sourceFrom, candidate.sourceTo)
+      || insideAny(malformedLinkSpans, candidate.sourceFrom, candidate.sourceTo)
       || insideAny(occupied, candidate.sourceFrom, candidate.sourceTo)) continue
     links.push(candidate)
     occupied.push(candidate)

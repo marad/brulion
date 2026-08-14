@@ -97,6 +97,8 @@ describe("rich Markdown special scanner", () => {
     expect(scanRichLinks("_https://example.test/path_", []).map((link) => link.target)).toEqual(["https://example.test/path"])
     expect(scanRichLinks("[x](https://example.test/a", [])).toEqual([])
     expect(scanRichLinks("\\[x](https://x.test/a)", [])).toEqual([])
+    expect(scanRichLinks("\\[literal] [ok](y)", []).map((link) => link.target)).toEqual(["y"])
+    expect(scanRichLinks("[ok](y) \\[literal]", []).map((link) => link.target)).toEqual(["y"])
     expect(scanRichLinks("[x]( <a b.md> )", []).map((link) => link.target)).toEqual(["a b.md"])
     expect(links.every((link) => link.raw === source.slice(link.sourceFrom, link.sourceTo))).toBe(true)
   })

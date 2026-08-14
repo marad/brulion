@@ -869,6 +869,49 @@ function inlineFragments(
   return { fragments, unmatched }
 }
 
+function inlineFragmentsWithRawIslands(
+  text: string,
+  sourceFrom: number,
+  block: RichBlock,
+  links: readonly RichLinkNode[],
+  allowAdjacent: boolean | ReadonlySet<number> = false,
+  allowPunctuation = false,
+): InlineParse {
+  const fragments: Fragment[] = []
+  let cursor = 0
+  let unmatched = false
+  for (const link of [...links].sort((left, right) => left.sourceFrom - right.sourceFrom)) {
+    const linkFrom = link.sourceFrom - sourceFrom
+    const linkTo = link.sourceTo - sourceFrom
+    if (linkFrom < cursor || linkFrom < 0 || linkTo > text.length) continue
+    if (linkFrom > cursor) push(fragments, text.slice(cursor, linkFrom), sourceFrom + cursor, sourceFrom + linkFrom, [], "opaque")
+    const labelFrom = link.labelFrom - sourceFrom
+    const labelTo = link.labelTo - sourceFrom
+    const linkMarks: RichMark[] = [link.kind === "wikilink" ? "wikilink" : "link"]
+    if (link.kind === "autolink") {
+      push(fragments, text.slice(labelFrom, labelTo), link.labelFrom, link.labelTo, linkMarks, block, link.labelFrom, link.labelTo, link)
+    } else {
+      pushHidden(fragments, link.sourceFrom, link.labelFrom, linkMarks, block, link)
+      const nested = inlineFragments(
+        text.slice(labelFrom, labelTo),
+        link.labelFrom,
+        block,
+        linkMarks,
+        allowAdjacent,
+        allowPunctuation,
+        links.filter((candidate) => candidate.sourceFrom >= link.labelFrom && candidate.sourceTo <= link.labelTo),
+      )
+      if (nested.unmatched) unmatched = true
+      for (const fragment of nested.fragments) fragment.link = link
+      fragments.push(...nested.fragments)
+      pushHidden(fragments, link.labelTo, link.sourceTo, linkMarks, block, link)
+    }
+    cursor = linkTo
+  }
+  if (cursor < text.length) push(fragments, text.slice(cursor), sourceFrom + cursor, sourceFrom + text.length, [], "opaque")
+  return { fragments, unmatched }
+}
+
 function lineBlock(line: string, offset: number): { body: string; bodyOffset: number; block: RichBlock; prefixTo: number } {
   const heading = HEADING.exec(line)
   if (heading) {
@@ -982,11 +1025,25 @@ function importMarkdownInternal(
     const lineIsHtmlComment = inHtmlComment || lineHasHtml
     const lineIsPending = rawLineStarts.has(lineStart)
     const lineAllowsPunctuation = allowPunctuation === true || (allowPunctuation !== false && allowPunctuation.has(lineStart))
+    const lineIsOpaque = lineIsPending || lineIsFrontmatter || lineIsFence || lineIsHtmlComment || opaqueLine(line, lineStart, allowAdjacent, lineAllowsPunctuation, lineLinks)
+    const canProjectLinksInOpaqueLine = lineLinks.length > 0 && !lineIsPending && !lineIsFrontmatter && !lineIsFence && !lineIsHtmlComment
 
     if (lineSpecial) {
       push(fragments, line, lineStart, lineEnd, [], lineSpecial.kind, lineStart, lineEnd, undefined, lineSpecial)
       if (lineSpecial.kind === "frontmatter" && i > 0 && /^(?:---|\.\.\.)[ \t]*$/.test(line)) inFrontmatter = false
-    } else if (lineIsPending || lineIsFrontmatter || lineIsFence || lineIsHtmlComment || opaqueLine(line, lineStart, allowAdjacent, lineAllowsPunctuation, lineLinks)) {
+    } else if (lineIsOpaque && canProjectLinksInOpaqueLine) {
+      const info = lineBlock(line, lineStart)
+      const parsed = inlineFragmentsWithRawIslands(info.body, info.bodyOffset, info.block, lineLinks, allowAdjacent, lineAllowsPunctuation)
+      if (parsed.unmatched) {
+        push(fragments, line, lineStart, lineEnd, [], "opaque")
+      } else {
+        for (const link of lineLinks) {
+          if (parsed.fragments.some((fragment) => fragment.link === link)) acceptedLinks.push(link)
+        }
+        if (info.prefixTo > lineStart) pushHidden(fragments, lineStart, info.prefixTo, [], info.block)
+        fragments.push(...parsed.fragments)
+      }
+    } else if (lineIsOpaque) {
       push(fragments, line, lineStart, lineEnd, [], "opaque")
       if (lineIsFrontmatter && i > 0 && /^(?:---|\.\.\.)\s*$/.test(line)) inFrontmatter = false
       if (fence) {
