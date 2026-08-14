@@ -68,6 +68,8 @@ export interface RichDocument {
   readonly replacements: readonly SourceReplacement[]
   /** Source line starts kept raw while a user is still typing an inline marker. */
   readonly pendingLineStarts: readonly number[]
+  /** Lines whose punctuation-only formatting was explicitly requested. */
+  readonly explicitPunctuationLineStarts?: readonly number[]
 }
 
 interface Fragment {
@@ -234,8 +236,8 @@ function hasInlineBoundaryContext(text: string, start: number, end: number, deli
   const prefix = text.slice(0, start)
   const content = text.slice(start + delimiter.length, end)
   const punctuationOnly = Boolean(content) && /^[^\p{L}\p{N}\s]+$/u.test(content)
-  const openingBoundary = (allowAdjacent && (!previous || isWordCharacter(previous))) || (allowPunctuation && punctuationOnly) || !previous || /\s/.test(previous) || (isWordCharacter(previous) && prefix.includes(delimiter))
-  const closingBoundary = (allowAdjacent && (!next || isWordCharacter(next))) || (allowPunctuation && punctuationOnly) || !next || /\s/.test(next) || isWordCharacter(next)
+  const openingBoundary = (allowAdjacent && !punctuationOnly && (!previous || isWordCharacter(previous))) || (allowPunctuation && punctuationOnly) || !previous || /\s/.test(previous) || (isWordCharacter(previous) && prefix.includes(delimiter))
+  const closingBoundary = (allowAdjacent && !punctuationOnly && (!next || isWordCharacter(next))) || (allowPunctuation && punctuationOnly) || !next || /\s/.test(next) || isWordCharacter(next)
   const urlBefore = /(?:https?:\/\/|www\.)[^\s]*$/i.test(prefix)
   const urlFollows = /^(?:https?:\/\/|www\.)/i.test(text.slice(end + delimiter.length))
   return openingBoundary && closingBoundary && !urlBefore && !urlFollows
@@ -299,7 +301,8 @@ export function applyInlineInputRule(
   if (!match) return { document, converted: false, caret: visibleCaretForSource(document, cursor) }
   const flushedLine = lineStartAt(document.source, match.sourceFrom)
   const remainingPending = new Set(document.pendingLineStarts.filter((lineStart) => lineStart !== flushedLine))
-  const projected = importMarkdownInternal(document.source, false, remainingPending)
+  const punctuationLines = new Set(document.explicitPunctuationLineStarts ?? [])
+  const projected = importMarkdownInternal(document.source, false, remainingPending, punctuationLines)
   return { document: projected, converted: true, caret: sourceToVisible(projected, cursor) }
 }
 
@@ -438,7 +441,7 @@ export function toggleInlineMark(
     const preservedAfter = after ? wrapper.open + after + wrapper.close : ""
     const replacement = preservedBefore + selected + preservedAfter
     const nextSource = document.source.slice(0, wrapper.from) + replacement + document.source.slice(wrapper.to)
-    const next = importMarkdownInternal(nextSource, new Set([lineStartAt(nextSource, wrapper.from)]), new Set(), true)
+    const next = importMarkdownInternal(nextSource, new Set([lineStartAt(nextSource, wrapper.from)]), new Set(), new Set([lineStartAt(nextSource, wrapper.from)]))
     return { document: next, anchor: reversed ? end : start, head: reversed ? start : end }
   }
   const sourceFrom = selectionSourceFrom
@@ -447,7 +450,7 @@ export function toggleInlineMark(
   if (hasHiddenInterior || document.source.slice(sourceFrom, sourceTo).includes("\n")) return null
   const marker = delimiterForMark(mark)
   const nextSource = document.source.slice(0, sourceFrom) + marker + document.source.slice(sourceFrom, sourceTo) + marker + document.source.slice(sourceTo)
-  const next = importMarkdownInternal(nextSource, new Set([lineStartAt(nextSource, sourceFrom)]), new Set(), true)
+  const next = importMarkdownInternal(nextSource, new Set([lineStartAt(nextSource, sourceFrom)]), new Set(), new Set([lineStartAt(nextSource, sourceFrom)]))
   const nextStart = start
   const nextEnd = end
   return reversed ? { document: next, anchor: nextEnd, head: nextStart } : { document: next, anchor: nextStart, head: nextEnd }
@@ -639,7 +642,20 @@ function importMarkdownInternal(
   }
 
   const projection = rangesFromFragments(fragments)
-  return { source, visible: projection.visible, ranges: projection.ranges, changed: new Map(), replacements: [], pendingLineStarts: [...rawLineStarts].sort((a, b) => a - b) }
+  const punctuationLineStarts = new Set<number>()
+  for (let i = 0, offset = 0; i < lines.length; i += 2) {
+    if (allowPunctuation === true || (allowPunctuation !== false && allowPunctuation.has(offset))) punctuationLineStarts.add(offset)
+    offset += (lines[i] ?? "").length + (lines[i + 1] ?? "").length
+  }
+  return {
+    source,
+    visible: projection.visible,
+    ranges: projection.ranges,
+    changed: new Map(),
+    replacements: [],
+    pendingLineStarts: [...rawLineStarts].sort((a, b) => a - b),
+    explicitPunctuationLineStarts: [...punctuationLineStarts].sort((a, b) => a - b),
+  }
 }
 
 export function importMarkdown(source: string): RichDocument {
@@ -655,14 +671,19 @@ function projectVisibleEdit(document: RichDocument, nextSource: string, sourceFr
   const changedLine = nextSource.slice(changedLineStart, nextLineEnd < 0 ? nextSource.length : nextLineEnd)
   const oldLineStart = lineStartAt(document.source, sourceFrom)
   const wasPending = document.pendingLineStarts.includes(oldLineStart)
+  const punctuation = new Set<number>()
+  for (const lineStart of document.explicitPunctuationLineStarts ?? []) punctuation.add(lineStart > sourceTo ? lineStart + delta : lineStart)
+  const wasExplicitPunctuation = (document.explicitPunctuationLineStarts ?? []).includes(oldLineStart)
   const markerInput = /[*_`]/.test(text) || (wasPending && /[*_`]/.test(changedLine))
   const boundaryCursor = sourceFrom + text.length
   const committedSpace = text.endsWith(" ") && classifyInlineBoundary(nextSource, boundaryCursor, "space") !== null
   if (markerInput && !committedSpace) pending.add(changedLineStart)
   else pending.delete(changedLineStart)
+  if (wasExplicitPunctuation && /[*_`]/.test(changedLine)) punctuation.add(changedLineStart)
+  else punctuation.delete(changedLineStart)
   const adjacentLines = new Set<number>(pending)
   if (!pending.has(changedLineStart)) adjacentLines.add(changedLineStart)
-  return importMarkdownInternal(nextSource, adjacentLines, pending)
+  return importMarkdownInternal(nextSource, adjacentLines, pending, punctuation)
 }
 
 /** Serialize a document. Untouched source spans are returned byte-for-byte. */

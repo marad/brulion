@@ -256,6 +256,9 @@ describe("rich Markdown document", () => {
     const punctuation = toggleInlineMark(importMarkdown("a,. next"), 1, 2, "bold")
     expect(serializeMarkdown(punctuation!.document)).toBe("a**,**. next")
     expect(punctuation!.document.visible).toBe("a,. next")
+    const stablePunctuation = replaceVisible(punctuation!.document, 0, 0, "")
+    expect(stablePunctuation.visible).toBe("a,. next")
+    expect(stablePunctuation.ranges.some((range) => range.visible && range.marks.includes("bold"))).toBe(true)
 
     expect(toggleInlineMark(importMarkdown("~~raw~~"), 0, 5, "bold")).toBeNull()
     expect(toggleInlineMark(importMarkdown("**a** b"), 0, 3, "italic")).toBeNull()
