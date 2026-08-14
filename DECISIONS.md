@@ -2456,3 +2456,30 @@ The existing pre-review gate, commit-message hook, preflight checker, and full
 CI gate remain the mechanical enforcement points; semantic risk assessment and
 retrospective judgment stay with the writer. No application behavior or
 user-owned Markdown bytes change.
+
+## M47 P5 uses a serialized editor boundary between CodeMirror and storage
+
+**What:** The primary note editor keeps a `RichDocument` in a CodeMirror state
+field and projects its visible text into the CodeMirror document. A transaction
+filter applies visible edits to the model before committing them, so a Markdown
+input conversion and its visible projection remain one editor history unit. The
+note controller reads a serialized Markdown snapshot through an
+`EditorDocumentBoundary`; it no longer treats `view.state.doc.toString()` as
+file content. `mountEditor` keeps rich mode opt-in so workbench, script, and
+conflict/diff editors remain raw.
+
+**Why:** The rich projection and the Markdown file are intentionally different
+representations. Saving the visible projection would drop delimiters, targets,
+opaque syntax, and source spelling; keeping a second controller-side model would
+let it drift from CodeMirror transactions. A state-owned model plus a thin source
+facade makes the source map the only persistence boundary while preserving the
+existing CodeMirror engine and secondary-editor contracts.
+
+**Consequence (UI/project):** Existing Markdown opens as visible rich text in the
+main editor, and completed input boundaries such as `**hello** ` show `hello `
+while saving `**hello** `. Autosave, lazy creation, switching, rename/move,
+external refresh, conflicts, and extension text/selection reads use serialized
+UTF-16 source. External refresh reparses Markdown and maps the visible caret and
+viewport; a dirty buffer still raises the existing conflict instead of being
+replaced. P6 still owns rich clipboard/command/Vim adapters, and P7 owns removal
+of obsolete renderers and full browser migration validation.
