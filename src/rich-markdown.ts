@@ -480,7 +480,7 @@ export function applyBlockEnter(document: RichDocument, cursor: number): BlockEd
   if (splitCursor === null) return unchangedBlockEdit(document, cursor)
   const { info } = context
   const sourceCursor = splitCursor
-  const isContinuation = info.block === "quote" || info.block === "unordered-list" || info.block === "ordered-list"
+  const isContinuation = info.block === "quote" || info.block === "unordered-list"
   const isEmpty = info.body.trim().length === 0
   const lineTail = document.source.slice(context.lineEnd)
   const lineEndingLength = lineTail.startsWith("\r\n") ? 2 : lineTail.startsWith("\n") ? 1 : 0
@@ -494,9 +494,7 @@ export function applyBlockEnter(document: RichDocument, cursor: number): BlockEd
     const caret = sourceToVisible(next, context.lineStart + replacementText.length)
     return { document: next, anchor: caret, head: caret, changed: true }
   }
-  const ordered = info.block === "ordered-list" ? ORDERED.exec(context.line) : null
-  const orderedNumber = ordered ? Number.parseInt(ordered[2], 10) + 1 : 1
-  const continuationPrefix = info.block === "quote" ? "> " : info.block === "ordered-list" ? `${orderedNumber}. ` : "- "
+  const continuationPrefix = info.block === "quote" ? "> " : "- "
   const continuation = isContinuation ? `${newline}${continuationPrefix}` : newline
   const edits: SourceReplacement[] = [{
     sourceFrom: sourceCursor,
@@ -516,7 +514,7 @@ export function applyBlockEnter(document: RichDocument, cursor: number): BlockEd
 /** Remove an empty block prefix at its visible content start. */
 export function applyBlockBackspace(document: RichDocument, cursor: number): BlockEditResult {
   const context = blockAtVisibleCursor(document, cursor)
-  if (!context || context.info.block === "paragraph") return unchangedBlockEdit(document, cursor)
+  if (!context || context.info.block === "paragraph" || context.info.block === "ordered-list") return unchangedBlockEdit(document, cursor)
   if (context.info.body.trim().length > 0 || context.sourceCursor !== context.info.prefixTo) return unchangedBlockEdit(document, cursor)
   const edits = [{ sourceFrom: context.lineStart, sourceTo: context.info.prefixTo, text: "" }]
   const nextSource = applySourceReplacements(document.source, edits)
