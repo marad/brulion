@@ -44,7 +44,7 @@ describe("rich Markdown document", () => {
     expect(crlfContinuation.document.source).toBe("- **x**\r\n- ")
     expect(crlfContinuation.document.source.includes("\n\r\n")).toBe(false)
     const orderedContinuation = applyBlockEnter(importMarkdown("1. one"), 3)
-    expect(orderedContinuation.document.source).toBe("1. one\n2. ")
+    expect(orderedContinuation.document.source).toBe("1. one\n")
     expect(orderedContinuation.document.visible).toBe("one\n")
     const exited = applyBlockEnter(importMarkdown("- "), 0)
     expect(exited.document.source).toBe("\n")
@@ -54,7 +54,8 @@ describe("rich Markdown document", () => {
     const removed = applyBlockBackspace(importMarkdown("# "), 0)
     expect(removed.document.source).toBe("")
     expect(removed.document.visible).toBe("")
-    expect(applyBlockBackspace(importMarkdown("1. "), 0).document.source).toBe("")
+    expect(applyBlockBackspace(importMarkdown("1. "), 0).changed).toBe(false)
+    expect(applyBlockBackspace(importMarkdown("1. "), 0).document.source).toBe("1. ")
     expect(applyBlockBackspace(importMarkdown("# title"), 0).changed).toBe(false)
     expect(applyBlockEnter(importMarkdown("> [x](a)"), 0).changed).toBe(false)
 
