@@ -13,15 +13,17 @@ import { ProgrammaticLoad } from "./editor-load"
 import { diffRange } from "./text-diff"
 import {
   markdownCommands,
+  richMarkdownCommands,
   continueOrExitMarkup,
   deleteMarkerSpaceBackward,
 } from "./markdown-commands"
-import { slashCommands } from "./slash-commands"
-import { wikilinkCompletions } from "./link-complete"
+import { slashCommands, slashSource } from "./slash-commands"
+import { wikilinkCompletions, wikilinkSource } from "./link-complete"
 import { contextMenu } from "./context-menu"
 import { selectionToolbar } from "./selection-toolbar"
 import { vimCaretGuard, vimCaretGuardEscape } from "./vim-caret"
 import { copyMarkdown } from "./copy-markdown"
+import { richRendering } from "./rich-render"
 import { installVimMarkdownYank } from "./vim-yank"
 import {
   hasRichEditor,
@@ -147,7 +149,7 @@ export function mountEditor(
       // bracket matching, active-line highlight) but keep undo history and
       // autocomplete (the slash-command menu rides on it).
       history(),
-      autocompletion(),
+      autocompletion(opts.rich ? { override: [slashSource, wikilinkSource] } : undefined),
       highlightSpecialChars(),
       // `drawSelection` paints CodeMirror's own selection/cursor. It's needed so
       // Vim's visual-mode selection is visible (Vim hides the native selection),
@@ -202,7 +204,14 @@ export function mountEditor(
         },
       }),
       ...(opts.rich
-        ? [richEditorExtension()]
+        ? [
+            richEditorExtension(),
+            richRendering(),
+            richMarkdownCommands,
+            contextMenu,
+            selectionToolbar,
+            copyMarkdown,
+          ]
         : [
             markdownRendering, // hide markdown markup; render text as rich content
             mermaidRendering, // render ```mermaid blocks as diagrams (lazy-loaded)
@@ -358,7 +367,8 @@ export function setEditorEditable(view: EditorView, value: boolean): void {
  * the default caret already steps over hidden markup via CodeMirror's atomic
  * ranges, so off-Vim the guard would only add a per-keystroke no-op. */
 export function setVimMode(view: EditorView, on: boolean): void {
-  view.dispatch({ effects: vimMode.reconfigure(on ? [vim(), vimCaretGuard] : []) })
+  const guard = hasRichEditor(view.state) ? [] : [vimCaretGuard]
+  view.dispatch({ effects: vimMode.reconfigure(on ? [vim(), ...guard] : []) })
 }
 
 /** Tell the editor which note is open and which notes exist, so links render

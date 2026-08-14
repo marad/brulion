@@ -1,6 +1,8 @@
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view"
 import { type Extension } from "@codemirror/state"
 import { FORMAT_ITEMS } from "./format-actions"
+import { applyRichFormat, type RichFormatAction } from "./rich-adapters"
+import { hasRichEditor } from "./rich-editor"
 
 /**
  * A floating formatting toolbar over a non-empty selection — the single formatting
@@ -113,8 +115,12 @@ class SelectionToolbar {
       // handler runs; prevent it so the selection survives until we act (as the menu).
       button.addEventListener("mousedown", (e) => e.preventDefault())
       button.addEventListener("click", () => {
-        const spec = item.run(this.view.state)
-        if (spec) this.view.dispatch(spec) // its update() re-renders (reposition/hide)
+        if (hasRichEditor(this.view.state)) {
+          applyRichFormat(this.view, item.label as RichFormatAction)
+        } else {
+          const spec = item.run(this.view.state)
+          if (spec) this.view.dispatch(spec) // its update() re-renders (reposition/hide)
+        }
         this.view.focus()
       })
       bar.appendChild(button)

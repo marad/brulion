@@ -13,6 +13,8 @@ import {
   isEmptyMarkerLine,
   markerSpaceDeletion,
 } from "./markdown-transforms"
+import { applyRichFormat, applyRichHeadingStep } from "./rich-adapters"
+import { hasRichEditor } from "./rich-editor"
 
 /**
  * Wrap a pure transform into a CodeMirror command. Dispatches only when the
@@ -88,5 +90,24 @@ export const markdownCommands = Prec.high(
     { key: "Mod-Shift-1", preventDefault: true, run: command(setHeading(1)) },
     { key: "Mod-Shift-2", preventDefault: true, run: command(setHeading(2)) },
     { key: "Mod-Shift-3", preventDefault: true, run: command(setHeading(3)) },
+  ]),
+)
+
+const richCommand = (action: Parameters<typeof applyRichFormat>[1]) => (view: Parameters<typeof applyRichFormat>[0]): boolean =>
+  hasRichEditor(view.state) ? applyRichFormat(view, action) : false
+const richHeadingStep = (direction: Parameters<typeof applyRichHeadingStep>[1]) => (view: Parameters<typeof applyRichHeadingStep>[0]): boolean =>
+  hasRichEditor(view.state) ? applyRichHeadingStep(view, direction) : false
+
+/** Formatting keymap for the visible rich projection. */
+export const richMarkdownCommands = Prec.high(
+  keymap.of([
+    { key: "Mod-b", preventDefault: true, run: richCommand("Bold") },
+    { key: "Mod-i", preventDefault: true, run: richCommand("Italic") },
+    { key: "Mod-e", preventDefault: true, run: richCommand("Code") },
+    { key: "Mod-ArrowUp", preventDefault: true, run: richHeadingStep("promote") },
+    { key: "Mod-ArrowDown", preventDefault: true, run: richHeadingStep("demote") },
+    { key: "Mod-Shift-1", preventDefault: true, run: richCommand("Heading 1") },
+    { key: "Mod-Shift-2", preventDefault: true, run: richCommand("Heading 2") },
+    { key: "Mod-Shift-3", preventDefault: true, run: richCommand("Heading 3") },
   ]),
 )

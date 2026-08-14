@@ -2501,3 +2501,27 @@ read could overwrite a valid fallback note.
 state without rewriting or re-importing its transient projection. Preview remains
 available where safe, but stale guesses are ignored after note selection; no
 user-owned Markdown bytes or save metadata are changed by a failed preview.
+
+## M47 P6 uses visible rich adapters with a plain-Markdown clipboard
+
+**What:** Formatting commands, slash commands, wikilink completion, copy/cut,
+paste, heading-anchor selection, and Vim edits operate on CodeMirror's visible
+rich projection internally. A decoration-only renderer paints marks, blocks, and
+link metadata without adding hidden or atomic source ranges. Browser copy/cut and
+Vim yank share a source-map serializer that writes only `text/plain` Markdown;
+paste consumes `text/plain` and flushes complete Markdown boundaries in one rich
+transaction. HTML clipboard data is deliberately ignored.
+
+**Why:** Reusing the old raw-Markdown transforms after P5 would treat visible
+positions as source positions, reintroduce hidden delimiter caret stops, and risk
+writing the rendered projection to disk. A single model dispatch preserves the
+one-action/one-undo contract, while an ephemeral clipboard serialization keeps
+formatting and link meaning without adding a sidecar or changing the file.
+
+**Consequence (UI/project):** Selecting `bold` text can copy `**bold**`, a
+heading selection carries its `# ` prefix, partial link labels retain their
+link target, and cutting a complete formatted span removes its empty wrapper.
+Rich Vim motions never enter hidden Markdown; opaque blocks and link targets
+remain explicit source-edit operations. Raw workbench/script/diff editors keep
+their existing direct CodeMirror behavior, and extension text/selection APIs
+continue to expose serialized Markdown and UTF-16 source positions.

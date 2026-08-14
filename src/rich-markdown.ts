@@ -602,6 +602,93 @@ export function indentBlocks(document: RichDocument, from: number, to: number, d
   return { document: next, anchor: from, head: to, changed: true }
 }
 
+function commandLineStarts(document: RichDocument, from: number, to: number): number[] | null {
+  if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < 0 || from > document.visible.length || to > document.visible.length) return null
+  const start = Math.min(from, to)
+  const end = Math.max(from, to)
+  const first = lineStartAt(document.source, visibleToSource(document, start))
+  const probe = end > start ? Math.max(start, end - 1) : start
+  const last = lineStartAt(document.source, visibleToSource(document, probe))
+  const starts: number[] = []
+  for (let lineStart = first; lineStart <= last; ) {
+    starts.push(lineStart)
+    const newline = document.source.indexOf("\n", lineStart)
+    if (newline < 0 || lineStart === last) break
+    lineStart = newline + 1
+  }
+  return starts
+}
+
+function commandLineEdits(
+  document: RichDocument,
+  from: number,
+  to: number,
+  rewrite: (line: string, lineStart: number, lineEnd: number, info: ReturnType<typeof lineBlock>) => string | null,
+): BlockEditResult | null {
+  const starts = commandLineStarts(document, from, to)
+  if (!starts?.length) return null
+  const replacements: SourceReplacement[] = []
+  for (const lineStart of starts) {
+    const lineEnd = lineContentEnd(document.source, lineStart)
+    if (document.ranges.some((range) => isOpaqueRichBlock(range.block) && range.sourceFrom < lineEnd && range.sourceTo > lineStart)) return null
+    const line = document.source.slice(lineStart, lineEnd)
+    const replacement = rewrite(line, lineStart, lineEnd, lineBlock(line, lineStart))
+    if (replacement !== null && replacement !== line) replacements.push({ sourceFrom: lineStart, sourceTo: lineEnd, text: replacement })
+  }
+  if (!replacements.length) return { document, anchor: from, head: to, changed: false }
+  const nextSource = applySourceReplacements(document.source, replacements)
+  const next = reprojectBlockSource(document, nextSource, replacements)
+  return { document: next, anchor: from, head: to, changed: true }
+}
+
+/** Set the selected visible lines to an ATX heading level, or remove only an
+ * existing heading prefix for level zero. Source body text and line endings are
+ * retained; the new prefix is the canonical `# ` form. */
+export function setHeadingLevel(document: RichDocument, from: number, to: number, level: number): BlockEditResult | null {
+  if (!Number.isSafeInteger(level) || level < 0 || level > 6) return null
+  return commandLineEdits(document, from, to, (_line, _lineStart, _lineEnd, info) => {
+    if (level === 0) return info.block === "heading" ? document.source.slice(info.prefixTo, _lineEnd) : null
+    const body = info.block === "heading" || info.block === "quote" || info.block === "unordered-list"
+      ? document.source.slice(info.prefixTo, _lineEnd)
+      : document.source.slice(_lineStart, _lineEnd)
+    return `${"#".repeat(level)} ${body}`
+  })
+}
+
+function isInlineDelimiterSource(text: string): boolean {
+  return /^(?:\*{1,3}|_{1,3}|`)$/.test(text)
+}
+
+/** Remove supported inline delimiters and heading/quote/unordered-list prefixes
+ * on the selected visible lines. Links remain links; ordered lists and opaque
+ * special/unknown lines are rejected rather than partially rewritten. */
+export function clearRichFormatting(document: RichDocument, from: number, to: number): BlockEditResult | null {
+  const starts = commandLineStarts(document, from, to)
+  if (!starts?.length) return null
+  const lineSet = new Set(starts)
+  const replacements: SourceReplacement[] = []
+  for (const lineStart of starts) {
+    const lineEnd = lineContentEnd(document.source, lineStart)
+    if (document.ranges.some((range) => isOpaqueRichBlock(range.block) && range.sourceFrom < lineEnd && range.sourceTo > lineStart)) return null
+    const line = document.source.slice(lineStart, lineEnd)
+    const info = lineBlock(line, lineStart)
+    if (info.block === "heading" || info.block === "quote" || info.block === "unordered-list") {
+      replacements.push({ sourceFrom: lineStart, sourceTo: info.prefixTo, text: "" })
+    }
+  }
+  for (const range of document.ranges) {
+    if (range.visible || !isInlineDelimiterSource(document.source.slice(range.sourceFrom, range.sourceTo))) continue
+    const lineStart = lineStartAt(document.source, range.sourceFrom)
+    if (!lineSet.has(lineStart) || !range.marks.some((mark) => mark === "bold" || mark === "italic" || mark === "code")) continue
+    replacements.push({ sourceFrom: range.sourceFrom, sourceTo: range.sourceTo, text: "" })
+  }
+  const unique = [...new Map(replacements.map((replacement) => [`${replacement.sourceFrom}:${replacement.sourceTo}`, replacement])).values()]
+  if (!unique.length) return { document, anchor: from, head: to, changed: false }
+  const nextSource = applySourceReplacements(document.source, unique)
+  const next = reprojectBlockSource(document, nextSource, unique)
+  return { document: next, anchor: from, head: to, changed: true }
+}
+
 function tripleWrapper(document: RichDocument, range: Pick<SourceMapRange, "contentFrom" | "contentTo">, mark: InlineMark): { from: number; to: number; open: string; close: string } | null {
   if (mark === "code") return null
   const rawOpen = document.source.slice(range.contentFrom - 3, range.contentFrom)
@@ -635,7 +722,7 @@ function unwrapWrapperSource(document: RichDocument, wrapper: { from: number; to
   return document.source.slice(0, wrapper.from) + document.source.slice(wrapper.from + wrapper.open.length, wrapper.to - wrapper.close.length) + document.source.slice(wrapper.to)
 }
 
-function visibleSourceEnd(document: RichDocument, position: number): number {
+export function visibleSourceEnd(document: RichDocument, position: number): number {
   const range = visibleRangeAt(document, position, "end")
   if (!range) return document.source.length
   if (position >= range.visibleTo) return range.contentTo
@@ -1530,6 +1617,32 @@ function editorSourceStartAt(document: RichDocument, position: number): number {
   return visibleToSource(document, position)
 }
 
+function emptyWrapperEdits(
+  document: RichDocument,
+  visibleFrom: number,
+  visibleTo: number,
+  sourceFrom: number,
+  sourceTo: number,
+): SourceReplacement[] {
+  if (visibleFrom === visibleTo) return []
+  const fullLink = document.links.find((link) => {
+    const from = sourceToVisible(document, link.labelFrom)
+    const to = sourceToVisible(document, link.labelTo)
+    return visibleFrom <= from && visibleTo >= to && from !== to
+  })
+  if (fullLink) return [{ sourceFrom: fullLink.sourceFrom, sourceTo: fullLink.sourceTo, text: "" }]
+
+  const edits: SourceReplacement[] = []
+  for (const delimiter of ["***", "___", "**", "__", "*", "_", "`"]) {
+    if (document.source.slice(sourceFrom - delimiter.length, sourceFrom) !== delimiter) continue
+    if (document.source.slice(sourceTo, sourceTo + delimiter.length) !== delimiter) continue
+    edits.push({ sourceFrom: sourceFrom - delimiter.length, sourceTo: sourceFrom, text: "" })
+    edits.push({ sourceFrom: sourceTo, sourceTo: sourceTo + delimiter.length, text: "" })
+    break
+  }
+  return edits
+}
+
 /** Replace a visible range for the CodeMirror rich boundary.
  *
  * Unlike {@link replaceVisible}, which deliberately rejects cross-fragment and
@@ -1547,6 +1660,14 @@ export function replaceVisibleForEditor(document: RichDocument, from: number, to
   const sourceFrom = editorSourceStartAt(document, from)
   const sourceTo = from === to ? sourceFrom : visibleSourceEnd(document, to)
   if (sourceFrom > sourceTo) throw new RangeError("Visible range is not mapped")
+  const cleanup = text === "" ? emptyWrapperEdits(document, from, to, sourceFrom, sourceTo) : []
+  if (cleanup.length > 0) {
+    const replacement = cleanup.length === 1 && cleanup[0]!.sourceFrom <= sourceFrom && cleanup[0]!.sourceTo >= sourceTo
+      ? cleanup
+      : [{ sourceFrom, sourceTo, text }, ...cleanup]
+    const nextSource = applySourceReplacements(document.source, replacement)
+    return reprojectBlockSource(document, nextSource, replacement)
+  }
   const nextSource = document.source.slice(0, sourceFrom) + text + document.source.slice(sourceTo)
   return projectVisibleEdit(document, nextSource, sourceFrom, sourceTo, text)
 }

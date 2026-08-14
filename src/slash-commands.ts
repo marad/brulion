@@ -7,6 +7,8 @@ import { type EditorView } from "@codemirror/view"
 import { EditorState, type Line } from "@codemirror/state"
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown"
 import { withHeadingLevel, clearFormattingRanges } from "./markdown-transforms"
+import { applyRichSlash } from "./rich-adapters"
+import { hasRichEditor } from "./rich-editor"
 
 /**
  * Slash commands: type `/` (at the start of a line or after a space) to open a
@@ -26,6 +28,10 @@ function lineWithoutToken(line: Line, from: number, to: number): string {
 /** Reshape the token's line to heading `level` (0 = plain paragraph). */
 function applyLevel(level: number) {
   return (view: EditorView, _completion: Completion, from: number, to: number) => {
+    if (hasRichEditor(view.state)) {
+      applyRichSlash(view, from, to, `/h${level}` as "/h1" | "/h2" | "/h3")
+      return
+    }
     const line = view.state.doc.lineAt(from)
     const text = withHeadingLevel(lineWithoutToken(line, from, to), level)
     view.dispatch({
@@ -45,6 +51,10 @@ function applyLevel(level: number) {
  * the `#` off the line start and hide the heading from the parser.
  */
 function applyClear(view: EditorView, _completion: Completion, from: number, to: number) {
+  if (hasRichEditor(view.state)) {
+    applyRichSlash(view, from, to, "/clear")
+    return
+  }
   const line = view.state.doc.lineAt(from)
   const withoutToken = lineWithoutToken(line, from, to)
   // Parse the de-tokened line in isolation and delete its markup runs, descending

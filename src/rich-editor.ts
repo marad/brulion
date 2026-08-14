@@ -104,9 +104,11 @@ export function isRichDocumentTransaction(transaction: Transaction): boolean {
 
 /** CodeMirror stores LF line separators. The pure model keeps source line
  * endings, so the rich boundary maps only the visible projection here. */
-function editorVisibleText(document: RichDocument): string {
+export function richEditorVisibleText(document: RichDocument): string {
   return document.visible.replace(/\r\n?/g, "\n")
 }
+
+const editorVisibleText = richEditorVisibleText
 
 interface LineEndingMap {
   modelToEditor: readonly number[]
@@ -151,6 +153,27 @@ function editorPositionFromModel(document: RichDocument, position: number): numb
   return map[position] ?? editorVisibleText(document).length
 }
 
+/** Convert a CodeMirror LF-visible position into the model-visible position. */
+export function richEditorPositionToModel(document: RichDocument, position: number): number {
+  return modelPositionFromEditor(document, position)
+}
+
+/** Convert a model-visible position into a CodeMirror LF-visible position. */
+export function richModelPositionToEditor(document: RichDocument, position: number): number {
+  return editorPositionFromModel(document, position)
+}
+
+/** Convert one CodeMirror-visible range into model-visible coordinates. */
+export function richEditorRangeToModel(
+  document: RichDocument,
+  range: { from: number; to: number },
+): { from: number; to: number } {
+  const from = modelPositionFromEditor(document, range.from)
+  const to = modelPositionFromEditor(document, range.to)
+  if (to < from) throw new RangeError("Visible range is reversed")
+  return { from, to }
+}
+
 function mapInterimPosition(position: number, change: TextChange | null): number {
   if (!change) return position
   if (position <= change.from) return position
@@ -177,13 +200,26 @@ function isPendingRange(document: RichDocument, range: RichDocument["ranges"][nu
   return document.pendingLineStarts.includes(lineStart)
 }
 
+function isIncompleteWikilinkRange(document: RichDocument, range: RichDocument["ranges"][number]): boolean {
+  if (range.block !== "opaque") return false
+  const lineStart = document.source.lastIndexOf("\n", Math.max(0, range.sourceFrom - 1)) + 1
+  const newline = document.source.indexOf("\n", lineStart)
+  const line = document.source.slice(lineStart, newline < 0 ? document.source.length : newline)
+  const open = line.lastIndexOf("[[")
+  return open >= 0 && line.indexOf("]]", open + 2) < 0
+}
+
 function assertVisibleEditorChangeSafe(document: RichDocument, change: RichVisibleChange): void {
   const modelFrom = modelPositionFromEditor(document, change.from)
   const modelTo = modelPositionFromEditor(document, change.to)
   const touched = document.ranges.filter((range) =>
     range.visible && range.visibleFrom < modelTo && range.visibleTo > modelFrom,
   )
-  const opaque = touched.filter((range) => isOpaqueBlock(range.block) && !isPendingRange(document, range))
+  const opaque = touched.filter((range) =>
+    isOpaqueBlock(range.block) &&
+    !isPendingRange(document, range) &&
+    !isIncompleteWikilinkRange(document, range),
+  )
   if (opaque.length) throw new RangeError("Opaque source requires an explicit source edit")
   if (change.from !== change.to && touched.length > 1) {
     throw new RangeError("Visible replacement must stay within one mapped fragment")
@@ -192,7 +228,11 @@ function assertVisibleEditorChangeSafe(document: RichDocument, change: RichVisib
     const at = document.ranges.filter((range) =>
       range.visible && range.visibleFrom <= modelFrom && modelFrom <= range.visibleTo,
     )
-    if (at.some((range) => isOpaqueBlock(range.block) && !isPendingRange(document, range))) {
+    if (at.some((range) =>
+      isOpaqueBlock(range.block) &&
+      !isPendingRange(document, range) &&
+      !isIncompleteWikilinkRange(document, range),
+    )) {
       throw new RangeError("Opaque source requires an explicit source edit")
     }
   }
@@ -421,6 +461,18 @@ export function richSourceSelectionToEditor(
   }
 }
 
+/** Convert a model-visible selection to CodeMirror's LF-visible coordinates. */
+export function richModelSelectionToEditor(
+  document: RichDocument,
+  selection: RichVisibleSelection,
+): RichVisibleSelection {
+  checkedVisibleSelection(document, selection)
+  return {
+    anchor: editorPositionFromModel(document, selection.anchor),
+    head: editorPositionFromModel(document, selection.head),
+  }
+}
+
 /** Map a visible selection and viewport through a source reload. */
 export function mapRichReload(
   oldDocument: RichDocument,
@@ -503,7 +555,13 @@ export function restoreRichEditorState(view: EditorView, snapshot: RichEditorSna
   })
 }
 
-function dispatchRichUserDocument(view: EditorView, document: RichDocument, selection: RichVisibleSelection): void {
+/** Commit one complete rich model change and its visible projection. */
+export function dispatchRichDocumentChange(
+  view: EditorView,
+  document: RichDocument,
+  selection: RichVisibleSelection,
+  userEvent = "input",
+): void {
   const changes = diffRange(view.state.doc.toString(), editorVisibleText(document))
   view.dispatch({
     changes: changes ?? [],
@@ -512,7 +570,7 @@ function dispatchRichUserDocument(view: EditorView, document: RichDocument, sele
       head: editorPositionFromModel(document, selection.head),
     },
     effects: [setRichDocumentEffect.of(document)],
-    annotations: [Transaction.userEvent.of("input")],
+    annotations: [Transaction.userEvent.of(userEvent)],
     filter: false,
   })
 }
@@ -560,7 +618,7 @@ export function flushRichEditorInput(view: EditorView, boundary: InlineBoundary)
     : sourceCursorForVisible(document, cursor)
   const result = applyInlineInputRule(document, sourceCursor, boundary)
   if (!result.converted || !richProjectionChanged(document, result.document)) return false
-  dispatchRichUserDocument(view, result.document, { anchor: result.caret, head: result.caret })
+  dispatchRichDocumentChange(view, result.document, { anchor: result.caret, head: result.caret })
   return true
 }
 
@@ -577,12 +635,12 @@ export function richEnter(view: EditorView): boolean {
   const flushedCursor = inline.converted ? inline.caret : cursor
   const block = applyBlockEnter(flushed, flushedCursor)
   if (block.changed) {
-    dispatchRichUserDocument(view, block.document, { anchor: block.anchor, head: block.head })
+    dispatchRichDocumentChange(view, block.document, { anchor: block.anchor, head: block.head })
     return true
   }
   if (inline.converted) {
     const next = replaceVisibleForEditor(flushed, flushedCursor, flushedCursor, "\n")
-    dispatchRichUserDocument(view, next, { anchor: flushedCursor + 1, head: flushedCursor + 1 })
+    dispatchRichDocumentChange(view, next, { anchor: flushedCursor + 1, head: flushedCursor + 1 })
     return true
   }
   return false
@@ -597,7 +655,7 @@ export function richBackspace(view: EditorView): boolean {
   const cursor = modelPositionFromEditor(document, selection.head)
   const result = applyBlockBackspace(document, cursor)
   if (!result.changed) return false
-  dispatchRichUserDocument(view, result.document, { anchor: result.anchor, head: result.head })
+  dispatchRichDocumentChange(view, result.document, { anchor: result.anchor, head: result.head })
   return true
 }
 

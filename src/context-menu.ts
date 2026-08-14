@@ -3,21 +3,26 @@ import { type Extension } from "@codemirror/state"
 import { type MenuItem } from "./format-actions"
 import { linkContext } from "./markdown-render"
 import { computeWikilinkToggle } from "./wikilink"
+import { editRichLink } from "./rich-markdown"
+import {
+  dispatchRichDocumentChange,
+  hasRichEditor,
+  richDocumentFromState,
+  richEditorPositionToModel,
+} from "./rich-editor"
 import { openPositionedMenu, closePositionedMenu } from "./positioned-menu"
 
 /**
  * The right-click menu (FEAT-0009), reduced in M17 P3 (FEAT-0053) to its one
- * position-based item: the **wikilink-form toggle**. Formatting moved to the selection
- * toolbar (FEAT-0052/FEAT-0053). So this menu opens *only* when the click lands on a
- * togglable wikilink; on plain text it does nothing and the browser's native menu is
- * left to show. Built on the shared `positioned-menu.ts` primitive it has in common
- * with the sidebar tree's context menu (M35/FEAT-0071).
+ * position-based item: the **wikilink-form toggle**. Formatting moved to the
+ * selection toolbar (FEAT-0052/FEAT-0053). The same toggle is adapted to the
+ * rich source map for the primary editor; raw secondary editors retain the
+ * original syntax-tree-free text path.
  */
 
-/** The wikilink-form toggle item for a right-click at `(x, y)`, when the click lands
- * on a wikilink that points at a nested note with a unique basename — else `null` (no
- * menu). The single item this menu still hosts (FEAT-0053). */
-function toggleItemFor(view: EditorView, x: number, y: number): MenuItem | null {
+type ContextItem = { label: string; run: (view: EditorView) => boolean }
+
+function rawToggleItem(view: EditorView, x: number, y: number): ContextItem | null {
   const pos = view.posAtCoords({ x, y })
   if (pos == null) return null
   const toggle = computeWikilinkToggle(
@@ -28,19 +33,65 @@ function toggleItemFor(view: EditorView, x: number, y: number): MenuItem | null 
   if (!toggle) return null
   return {
     label: toggle.label,
-    run: () => ({ changes: { from: toggle.from, to: toggle.to, insert: toggle.insert } }),
+    run: (current) => {
+      const item: MenuItem = {
+        label: toggle.label,
+        run: () => ({ changes: { from: toggle.from, to: toggle.to, insert: toggle.insert } }),
+      }
+      const spec = item.run(current.state)
+      if (!spec) return false
+      current.dispatch(spec)
+      return true
+    },
   }
 }
 
-function openMenu(view: EditorView, x: number, y: number, items: MenuItem[]) {
+function richToggleItem(view: EditorView, x: number, y: number): ContextItem | null {
+  const position = view.posAtCoords({ x, y })
+  const document = richDocumentFromState(view.state)
+  if (position == null || !document) return null
+  const modelPosition = richEditorPositionToModel(document, position)
+  const link = document.links.find((candidate) =>
+    candidate.kind === "wikilink" && modelPosition >= candidate.labelFrom && modelPosition <= candidate.labelTo,
+  )
+  if (!link) return null
+  const toggle = computeWikilinkToggle(document.source, link.targetFrom, view.state.facet(linkContext).notePaths)
+  if (!toggle) return null
+  return {
+    label: toggle.label,
+    run: (current) => {
+      const currentDocument = richDocumentFromState(current.state)
+      if (!currentDocument) return false
+      const currentLink = currentDocument.links.find((candidate) =>
+        candidate.kind === "wikilink" && candidate.sourceFrom === link.sourceFrom && candidate.sourceTo === link.sourceTo,
+      )
+      if (!currentLink) return false
+      const next = editRichLink(currentDocument, currentLink, { target: toggle.insert })
+      if (!next) return false
+      const selection = current.state.selection.main
+      const mapped = {
+        anchor: richEditorPositionToModel(currentDocument, selection.anchor),
+        head: richEditorPositionToModel(currentDocument, selection.head),
+      }
+      dispatchRichDocumentChange(current, next, mapped, "input.link")
+      return true
+    },
+  }
+}
+
+/** The wikilink-form toggle item for a right-click at `(x, y)`, when applicable. */
+function toggleItemFor(view: EditorView, x: number, y: number): ContextItem | null {
+  return hasRichEditor(view.state) ? richToggleItem(view, x, y) : rawToggleItem(view, x, y)
+}
+
+function openMenu(view: EditorView, x: number, y: number, items: ContextItem[]) {
   openPositionedMenu(
     x,
     y,
     items.map((item) => ({
       label: item.label,
       onPick: () => {
-        const spec = item.run(view.state)
-        if (spec) view.dispatch(spec)
+        item.run(view)
         view.focus()
       },
     })),
@@ -61,9 +112,9 @@ const contextMenuHandler = EditorView.domEventHandlers({
 })
 
 // The menu DOM lives on document.body, outside CodeMirror's tree, so tear it
-// down when the view is destroyed (e.g. unmount / HMR) — otherwise the
-// orphaned node and its document listeners would leak and reference a dead view.
+// down when the view is destroyed (e.g. unmount / HMR) — otherwise the orphaned
+// node and its document listeners would leak and reference a dead view.
 const contextMenuCleanup = ViewPlugin.define(() => ({ destroy: closePositionedMenu }))
 
-/** The right-click formatting menu extension. */
+/** The right-click wikilink-form menu extension. */
 export const contextMenu: Extension = [contextMenuHandler, contextMenuCleanup]

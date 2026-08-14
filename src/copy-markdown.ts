@@ -3,6 +3,8 @@ import { EditorView } from "@codemirror/view"
 import { syntaxTree } from "@codemirror/language"
 import { type SyntaxNode } from "@lezer/common"
 import { frontmatterRange } from "./frontmatter"
+import { applyRichPaste, serializeRichSelection } from "./rich-adapters"
+import { hasRichEditor, richDocumentFromState, richEditorRangeToModel } from "./rich-editor"
 
 /**
  * Copy fidelity (FEAT-0045). CodeMirror's default copy hands the clipboard the raw
@@ -130,6 +132,16 @@ function lineMarkerPrefix(state: EditorState, from: number): string {
  * Pure & total: an empty range contributes `""`.
  */
 export function serializeCopy(state: EditorState, ranges: readonly SelRange[]): string {
+  const rich = richDocumentFromState(state)
+  if (rich) {
+    try {
+      return serializeRichSelection(rich, ranges
+        .filter(({ from, to }) => from !== to)
+        .map((range) => richEditorRangeToModel(rich, range)))
+    } catch {
+      return ""
+    }
+  }
   return ranges
     .filter(({ from, to }) => from !== to) // skip empty ranges (CodeMirror's own copy does too)
     .map(({ from, to }) => {
@@ -151,6 +163,34 @@ function handleCopyCut(event: ClipboardEvent, view: EditorView, isCut: boolean):
   if (ranges.every((r) => r.empty)) return false
   const data = event.clipboardData
   if (!data) return false
+  if (hasRichEditor(state)) {
+    const document = richDocumentFromState(state)
+    if (!document) return false
+    let modelRanges
+    try {
+      modelRanges = ranges.map((range) => richEditorRangeToModel(document, { from: range.from, to: range.to }))
+    } catch {
+      return false
+    }
+    if (isCut && modelRanges.some((range) => document.ranges.some((candidate) =>
+      candidate.visible &&
+      ["opaque", "fence", "table", "frontmatter", "mermaid"].includes(candidate.block) &&
+      candidate.visibleFrom < range.to && candidate.visibleTo > range.from,
+    ))) return false
+    const text = serializeRichSelection(document, modelRanges)
+    if (text.length === 0) return false
+    data.clearData()
+    data.setData("text/plain", text)
+    if (isCut && !state.readOnly) {
+      view.dispatch({
+        changes: ranges.map((r) => ({ from: r.from, to: r.to })),
+        scrollIntoView: true,
+        userEvent: "delete.cut",
+      })
+    }
+    event.preventDefault()
+    return true
+  }
   data.clearData()
   data.setData("text/plain", serializeCopy(state, ranges))
   if (isCut && !state.readOnly) {
@@ -164,6 +204,23 @@ function handleCopyCut(event: ClipboardEvent, view: EditorView, isCut: boolean):
   return true
 }
 
+function handlePaste(event: ClipboardEvent, view: EditorView): boolean {
+  if (!hasRichEditor(view.state)) return false
+  const data = event.clipboardData
+  if (!data) return false
+  const text = data.getData("text/plain")
+  if (!text) {
+    if (data.types?.includes("text/html")) {
+      event.preventDefault()
+      return true
+    }
+    return false
+  }
+  if (!applyRichPaste(view, text)) return false
+  event.preventDefault()
+  return true
+}
+
 /**
  * The editor extension: `copy`/`cut` DOM handlers that put the re-serialized markdown
  * on the clipboard and, on cut, delete the selected ranges. Runs before CodeMirror's
@@ -173,4 +230,5 @@ function handleCopyCut(event: ClipboardEvent, view: EditorView, isCut: boolean):
 export const copyMarkdown: Extension = EditorView.domEventHandlers({
   copy: (event, view) => handleCopyCut(event, view, false),
   cut: (event, view) => handleCopyCut(event, view, true),
+  paste: (event, view) => handlePaste(event, view),
 })
