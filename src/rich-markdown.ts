@@ -97,7 +97,7 @@ const MARKDOWN_LINK = /\[[^\]\n]+\]\([^\)\n]+\)/
 const LINK_LIKE = /\[[^\n]*$/
 const WIKILINK = /\[\[[^\]\n]+\]\]/
 const HTML_LIKE = /<!--[\s\S]*?(?:-->|$)|<\/?[A-Za-z][^>\n]*(?:>|$)/
-const INLINE_DELIMITER = /^(\*\*|__|\*|_|`)([^\n]*?)\1([ \t]*)$/
+const INLINE_DELIMITER = /(^|[\s])(\*\*|__|\*|_|`)([^\n]*?)\2([ \t]*)$/
 
 function push(
   fragments: Fragment[],
@@ -178,6 +178,27 @@ function delimiterForMark(mark: InlineMark): string {
   return mark === "bold" ? "**" : mark === "italic" ? "*" : "`"
 }
 
+function lineStartAt(source: string, position: number): number {
+  return source.lastIndexOf("\n", Math.max(0, position - 1)) + 1
+}
+
+function hasBlockPrefixBefore(source: string, position: number): boolean {
+  const lineStart = lineStartAt(source, position)
+  const before = source.slice(lineStart, position)
+  return /^(?:#{1,6}[ \t]+|>[ \t]?|[*-][ \t]+|\d+\.[ \t]+)$/.test(before)
+}
+
+function hasInlineBoundaryContext(text: string, start: number, end: number, delimiter: string): boolean {
+  const previous = text[start - 1]
+  const next = text[end + delimiter.length]
+  return (!previous || /\s/.test(previous)) && (!next || /\s/.test(next))
+}
+
+function visibleCaretForSource(document: RichDocument, cursor: number): number {
+  const safe = Math.max(0, Math.min(cursor, document.source.length))
+  return sourceToVisible(document, safe)
+}
+
 /** Classify a complete inline span immediately before an explicit boundary. */
 export function classifyInlineBoundary(
   source: string,
@@ -190,20 +211,23 @@ export function classifyInlineBoundary(
   const before = source.slice(0, boundaryCursor)
   const match = INLINE_DELIMITER.exec(before)
   if (!match) return null
-  const delimiter = match[1]
-  const content = match[2]
-  if (!content || /^\s*$/.test(content) || escapedAt(before, match.index)) return null
-  if (delimiter !== "`" && /https?:\/\//i.test(content)) return null
+  const delimiter = match[2]
+  const content = match[3]
+  const sourceFrom = match.index + match[1].length
+  const closeFrom = boundaryCursor - delimiter.length
+  if (!content || /^\s*$/.test(content) || escapedAt(source, sourceFrom) || escapedAt(source, closeFrom)) return null
   if (boundary === "space" && source[cursor - 1] !== " ") return null
-  const sourceFrom = match.index
-  const contentFrom = sourceFrom + delimiter.length
+  if (hasBlockPrefixBefore(source, sourceFrom)) return null
+  const lineStart = lineStartAt(source, sourceFrom)
+  const line = source.slice(lineStart, boundaryCursor)
+  if (opaqueLine(line) || !hasInlineBoundaryContext(source, sourceFrom, closeFrom, delimiter)) return null
   return {
     kind: markForDelimiter(delimiter),
     delimiter,
     sourceFrom,
     sourceTo: boundaryCursor,
-    contentFrom,
-    contentTo: contentFrom + content.length,
+    contentFrom: sourceFrom + delimiter.length,
+    contentTo: closeFrom,
   }
 }
 
@@ -214,34 +238,85 @@ export function applyInlineInputRule(
   boundary: InlineBoundary,
 ): InlineInputResult {
   const match = classifyInlineBoundary(document.source, cursor, boundary)
-  if (!match) return { document, converted: false, caret: cursor }
+  if (!match) return { document, converted: false, caret: visibleCaretForSource(document, cursor) }
   const projected = importMarkdown(document.source)
-  const visibleCaret = sourceToVisible(projected, cursor)
-  return { document: projected, converted: true, caret: visibleCaret }
+  return { document: projected, converted: true, caret: sourceToVisible(projected, cursor) }
 }
 
-/** Toggle a visible range using canonical markers or unwrap its matching mark. */
+function directWrapper(document: RichDocument, range: SourceMapRange, mark: InlineMark): { from: number; to: number; open: string; close: string } | null {
+  const delimiters = mark === "bold" ? ["**", "__"] : mark === "italic" ? ["*", "_"] : ["`"]
+  for (const delimiter of delimiters) {
+    const from = range.contentFrom - delimiter.length
+    const to = range.contentTo + delimiter.length
+    if (from >= 0 && document.source.slice(from, range.contentFrom) === delimiter && document.source.slice(range.contentTo, to) === delimiter) {
+      return { from, to, open: delimiter, close: delimiter }
+    }
+  }
+  if (mark !== "code" && document.source.slice(range.contentFrom - 3, range.contentFrom) === "***" && document.source.slice(range.contentTo, range.contentTo + 3) === "***") {
+    const replacement = mark === "bold" ? "*" : "**"
+    return { from: range.contentFrom - 3, to: range.contentTo + 3, open: replacement, close: replacement }
+  }
+  return null
+}
+
+function visibleSourceEnd(document: RichDocument, position: number): number {
+  const range = visibleRangeAt(document, position, "end")
+  if (!range) return document.source.length
+  if (position >= range.visibleTo) return range.contentTo
+  return range.contentFrom + (position - range.visibleFrom)
+}
+
+function selectedVisibleRanges(document: RichDocument, from: number, to: number): SourceMapRange[] {
+  return document.ranges.filter((range) => range.visible && range.visibleFrom < to && range.visibleTo > from)
+}
+
+/** Toggle a visible selection using canonical markers or unwrap its direct
+ * imported wrapper. Unsafe cross-fragment/opaque edits are rejected rather than
+ * rewriting source the model cannot map losslessly. */
 export function toggleInlineMark(
   document: RichDocument,
   from: number,
   to: number,
   mark: InlineMark,
 ): { document: RichDocument; anchor: number; head: number } | null {
-  if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from || to > document.visible.length) return null
-  if (from === to || /^\s*$/.test(document.visible.slice(from, to))) return null
-  const target = document.ranges.find((range) => range.visible && from >= range.visibleFrom && to <= range.visibleTo)
-  const marker = delimiterForMark(mark)
-  if (target?.marks.includes(mark)) {
-    const sourceFrom = target.contentFrom - marker.length
-    const sourceTo = target.contentTo + marker.length
-    const inner = document.source.slice(target.contentFrom, target.contentTo)
-    const next = importMarkdown(document.source.slice(0, sourceFrom) + inner + document.source.slice(sourceTo))
-    return { document: next, anchor: from, head: to }
+  if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < 0 || from > document.visible.length || to > document.visible.length) return null
+  const reversed = from > to
+  const start = Math.min(from, to)
+  const end = Math.max(from, to)
+  if (start !== end && /^\s*$/.test(document.visible.slice(start, end))) return null
+  const ranges = selectedVisibleRanges(document, start, end)
+  const caretRange = start === end ? visibleRangeAt(document, start, "start") : null
+  if (start === end) {
+    if (caretRange?.block === "opaque") return null
+    if (caretRange?.marks.includes(mark)) {
+      const wrapper = caretRange && directWrapper(document, caretRange, mark)
+      if (!wrapper) return null
+      const next = importMarkdown(document.source.slice(0, wrapper.from) + document.source.slice(wrapper.from + wrapper.open.length, wrapper.to - wrapper.close.length) + document.source.slice(wrapper.to))
+      return { document: next, anchor: start, head: start }
+    }
+    // A standalone caret has no representable visible content yet. Keep it a
+    // no-op; P3/input-state handling can introduce pending empty spans without
+    // manufacturing an opaque source island here.
+    return null
   }
-  const sourceFrom = visibleToSource(document, from)
-  const sourceTo = visibleToSource(document, to)
+  if (!ranges.length || ranges.some((range) => range.block === "opaque")) return null
+  const target = ranges.length === 1 ? ranges[0] : null
+  if (target?.marks.includes(mark)) {
+    const wrapper = directWrapper(document, target, mark)
+    if (!wrapper) return null
+    const inner = document.source.slice(wrapper.from + wrapper.open.length, wrapper.to - wrapper.close.length)
+    const next = importMarkdown(document.source.slice(0, wrapper.from) + inner + document.source.slice(wrapper.to))
+    return { document: next, anchor: reversed ? end : start, head: reversed ? start : end }
+  }
+  const sourceFrom = visibleToSource(document, start)
+  const sourceTo = visibleSourceEnd(document, end)
+  const hasHiddenInterior = document.ranges.some((range) => !range.visible && range.sourceFrom >= sourceFrom && range.sourceTo <= sourceTo)
+  if (hasHiddenInterior || document.source.slice(sourceFrom, sourceTo).includes("\n")) return null
+  const marker = delimiterForMark(mark)
   const next = importMarkdown(document.source.slice(0, sourceFrom) + marker + document.source.slice(sourceFrom, sourceTo) + marker + document.source.slice(sourceTo))
-  return { document: next, anchor: from + marker.length, head: to + marker.length }
+  const nextStart = start
+  const nextEnd = end
+  return reversed ? { document: next, anchor: nextEnd, head: nextStart } : { document: next, anchor: nextStart, head: nextEnd }
 }
 
 /** Parse emphasis/code only. Unsupported constructs are handled by opaqueLine. */
@@ -268,7 +343,7 @@ function inlineFragments(
       continue
     }
     const end = matchingDelimiter(text, delimiter, i + delimiter.length)
-    if (end < 0 || end <= i + delimiter.length || /^\s*$/.test(text.slice(i + delimiter.length, end))) {
+    if (end < 0 || end <= i + delimiter.length || /^\s*$/.test(text.slice(i + delimiter.length, end)) || !hasInlineBoundaryContext(text, i, end, delimiter)) {
       unmatched = true
       i += delimiter.length
       continue

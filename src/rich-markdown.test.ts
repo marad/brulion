@@ -130,9 +130,15 @@ describe("rich Markdown document", () => {
     expect(applyInlineInputRule(importMarkdown("**hello"), 7, "eof").converted).toBe(false)
     expect(applyInlineInputRule(importMarkdown("**hello**."), 10, "eof").converted).toBe(false)
     expect(applyInlineInputRule(importMarkdown("http://**hello** "), 17, "space").converted).toBe(false)
+    expect(importMarkdown("http://**hello** ").visible).toBe("http://**hello** ")
+    expect(importMarkdown("say **hello**.").visible).toBe("say **hello**.")
+    expect(importMarkdown("say **hello**.").ranges[0]?.block).toBe("opaque")
     expect(applyInlineInputRule(importMarkdown("# **hello** "), 13, "space").converted).toBe(false)
     expect(classifyInlineBoundary("**hello** ", 10, "space")?.kind).toBe("bold")
+    expect(classifyInlineBoundary("say **hello** ", 14, "space")?.sourceFrom).toBe(4)
+    expect(classifyInlineBoundary("**hello\\** ", 11, "space")).toBeNull()
     expect(classifyInlineBoundary("**hello", 7, "eof")).toBeNull()
+    expect(applyInlineInputRule(importMarkdown("# **hello** "), 13, "space").caret).toBe("hello ".length)
   })
 
   it("toggles rich inline marks canonically and unwraps imported spelling", () => {
@@ -140,8 +146,8 @@ describe("rich Markdown document", () => {
     const wrapped = toggleInlineMark(plain, 0, 5, "bold")
     expect(wrapped?.document.visible).toBe("hello")
     expect(serializeMarkdown(wrapped!.document)).toBe("**hello**")
-    expect(wrapped!.anchor).toBe(2)
-    expect(wrapped!.head).toBe(7)
+    expect(wrapped!.anchor).toBe(0)
+    expect(wrapped!.head).toBe(5)
 
     const imported = importMarkdown("__hello__")
     const unwrapped = toggleInlineMark(imported, 0, 5, "bold")
@@ -150,6 +156,17 @@ describe("rich Markdown document", () => {
 
     expect(toggleInlineMark(importMarkdown("  "), 0, 2, "italic")).toBeNull()
     expect(toggleInlineMark(importMarkdown("`hello`"), 0, 5, "code")?.document.visible).toBe("hello")
+
+    expect(toggleInlineMark(importMarkdown("hello"), 2, 2, "italic")).toBeNull()
+    const caretUnwrap = toggleInlineMark(importMarkdown("**hello**"), 2, 2, "bold")
+    expect(serializeMarkdown(caretUnwrap!.document)).toBe("hello")
+
+    const reverse = toggleInlineMark(importMarkdown("hello"), 5, 0, "bold")
+    expect(reverse?.anchor).toBe(5)
+    expect(reverse?.head).toBe(0)
+
+    expect(toggleInlineMark(importMarkdown("~~raw~~"), 0, 5, "bold")).toBeNull()
+    expect(toggleInlineMark(importMarkdown("**a** b"), 0, 3, "italic")).toBeNull()
   })
 
   it("keeps incomplete markers literal and handles deterministic empty boundaries", () => {
