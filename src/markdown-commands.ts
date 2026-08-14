@@ -93,10 +93,16 @@ export const markdownCommands = Prec.high(
   ]),
 )
 
-const richCommand = (action: Parameters<typeof applyRichFormat>[1]) => (view: Parameters<typeof applyRichFormat>[0]): boolean =>
-  hasRichEditor(view.state) ? applyRichFormat(view, action) : false
-const richHeadingStep = (direction: Parameters<typeof applyRichHeadingStep>[1]) => (view: Parameters<typeof applyRichHeadingStep>[0]): boolean =>
-  hasRichEditor(view.state) ? applyRichHeadingStep(view, direction) : false
+const richCommand = (action: Parameters<typeof applyRichFormat>[1]) => (view: Parameters<typeof applyRichFormat>[0]): boolean => {
+  if (!hasRichEditor(view.state)) return false
+  applyRichFormat(view, action)
+  return true
+}
+const richHeadingStep = (direction: Parameters<typeof applyRichHeadingStep>[1]) => (view: Parameters<typeof applyRichHeadingStep>[0]): boolean => {
+  if (!hasRichEditor(view.state)) return false
+  applyRichHeadingStep(view, direction)
+  return true
+}
 
 /** Formatting keymap for the visible rich projection. */
 export const richMarkdownCommands = Prec.high(
