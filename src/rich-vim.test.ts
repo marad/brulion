@@ -3,16 +3,18 @@ import { EditorState } from "@codemirror/state"
 import { Vim } from "@replit/codemirror-vim"
 import {
   mountEditor,
+  setEditorEditable,
   setEditorText,
   setVimMode,
 } from "./editor"
 import { serializedRichMarkdown } from "./rich-editor"
 
-function press(view: ReturnType<typeof mountEditor>, key: string): void {
+function press(view: ReturnType<typeof mountEditor>, key: string, modifiers: Partial<KeyboardEventInit> = {}): void {
   view.contentDOM.dispatchEvent(new KeyboardEvent("keydown", {
     key,
     bubbles: true,
     cancelable: true,
+    ...modifiers,
   }))
 }
 
@@ -39,6 +41,36 @@ describe("rich Vim adapter (FEAT-0114)", () => {
     // The register's Markdown meaning survives while delimiters stay out of the
     // visible Vim motion surface.
     expect(serializedRichMarkdown(view.state)).toBe("**hello**")
+    view.destroy()
+  })
+
+  it("preserves Vim counts and does not steal Ctrl-P", () => {
+    const view = mountEditor(document.createElement("div"), { rich: true })
+    setEditorText(view, "")
+    setVimMode(view, true)
+    Vim.getRegisterController().unnamedRegister.setText("x")
+    view.focus()
+
+    press(view, "3")
+    press(view, "p")
+    expect(view.state.doc.toString()).toBe("xxx")
+
+    setEditorText(view, "abc")
+    view.dispatch({ selection: { anchor: 0 } })
+    press(view, "p", { ctrlKey: true })
+    expect(view.state.doc.toString()).toBe("abc")
+    view.destroy()
+  })
+
+  it("does not mutate a read-only rich editor through Vim paste", () => {
+    const view = mountEditor(document.createElement("div"), { rich: true })
+    setEditorText(view, "plain")
+    setVimMode(view, true)
+    Vim.getRegisterController().unnamedRegister.setText("**x**")
+    view.dispatch({ selection: { anchor: 0 } })
+    setEditorEditable(view, false)
+    press(view, "p")
+    expect(view.state.doc.toString()).toBe("plain")
     view.destroy()
   })
 

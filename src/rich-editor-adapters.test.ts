@@ -18,6 +18,7 @@ import {
 import {
   getEditorSelection,
   mountEditor,
+  setEditorEditable,
   setEditorSelection,
   setEditorText,
   setLinkContext,
@@ -75,6 +76,18 @@ describe("rich adapter coordinate and transaction contracts (FEAT-0114)", () => 
     view.destroy()
   })
 
+  it("rejects rich mutations while the editor is read-only", () => {
+    const view = richView()
+    setEditorText(view, "plain")
+    view.dispatch({ selection: { anchor: 0, head: 5 } })
+    setEditorEditable(view, false)
+
+    expect(applyRichFormat(view, "Bold")).toBe(false)
+    expect(applyRichPaste(view, "x")).toBe(false)
+    expect(serializedRichMarkdown(view.state)).toBe("plain")
+    view.destroy()
+  })
+
   it("rejects formatting that crosses or touches an opaque source island without dispatch", () => {
     const view = richView()
     setEditorText(view, "before\r\n```js\r\nraw\r\n```\r\nafter")
@@ -94,6 +107,8 @@ describe("rich adapter coordinate and transaction contracts (FEAT-0114)", () => 
     expect(serializeRichSelection(nested, [{ from: inner, to: inner + "inner".length }])).toBe("***inner***")
     const importedNested = importMarkdown("_outer **inner** end_")
     expect(serializeRichSelection(importedNested, [{ from: 0, to: importedNested.visible.length }])).toBe("_outer **inner** end_")
+    expect(serializeRichSelection(importedNested, [{ from: 0, to: "outer inner".length }])).toBe("_outer **inner**_")
+    expect(serializeRichSelection(importedNested, [{ from: 0, to: "outer ".length }])).toBe("_outer _")
 
     const linked = importMarkdown("See [**bold** label](target.md)")
     const bold = linked.visible.indexOf("bold")
@@ -166,6 +181,15 @@ describe("rich adapter coordinate and transaction contracts (FEAT-0114)", () => 
     view.destroy()
   })
 
+  it("rejects edits to unrelated text on an incomplete-wikilink opaque line", () => {
+    const view = richView()
+    setEditorText(view, "~~unknown [[open")
+    view.dispatch({ selection: { anchor: 0, head: 2 } })
+    expect(applyRichPaste(view, "x")).toBe(false)
+    expect(serializedRichMarkdown(view.state)).toBe("~~unknown [[open")
+    view.destroy()
+  })
+
   it("rejects paste over cross-fragment or opaque visible selections without mutation", () => {
     const view = richView()
     setEditorText(view, "**bold** plain")
@@ -179,6 +203,17 @@ describe("rich adapter coordinate and transaction contracts (FEAT-0114)", () => 
     expect(applyRichPaste(view, "x")).toBe(false)
     expect(serializedRichMarkdown(view.state)).toBe("```js\nraw\n```")
     view.destroy()
+  })
+
+  it("flushes complete block and inline Markdown from one paste", () => {
+    for (const [source, visible] of [["# **title**", "title"], ["> *quote*", "quote"], ["- **item**", "item"]] as const) {
+      const view = richView()
+      setEditorText(view, "")
+      expect(applyRichPaste(view, source)).toBe(true)
+      expect(view.state.doc.toString()).toBe(visible)
+      expect(serializedRichMarkdown(view.state)).toBe(source)
+      view.destroy()
+    }
   })
 
   it("pastes only text/plain Markdown at one undo boundary", () => {

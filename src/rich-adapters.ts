@@ -2,6 +2,7 @@ import type { EditorView } from "@codemirror/view"
 import {
   applyInlineInputRule,
   clearRichFormatting,
+  flushRichPaste,
   replaceVisibleForEditor,
   setHeadingLevel,
   sourceToVisible,
@@ -9,6 +10,7 @@ import {
   visibleToSource,
   type InlineMark,
   type RichDocument,
+  type RichMark,
 } from "./rich-markdown"
 import {
   dispatchRichDocumentChange,
@@ -62,6 +64,7 @@ function modelSelection(view: EditorView, document: RichDocument): RichVisibleSe
 
 /** Apply one visible rich formatting action, or return false without dispatch. */
 export function applyRichFormat(view: EditorView, action: RichFormatAction): boolean {
+  if (view.state.readOnly) return false
   const document = modelFor(view)
   if (!document || !["Bold", "Italic", "Code", "Heading 1", "Heading 2", "Heading 3", "Clear formatting"].includes(action)) return false
   try {
@@ -88,6 +91,7 @@ export function applyRichFormat(view: EditorView, action: RichFormatAction): boo
 
 /** Move the current visible line through the agreed heading cycle. */
 export function applyRichHeadingStep(view: EditorView, direction: RichHeadingDirection): boolean {
+  if (view.state.readOnly) return false
   const document = modelFor(view)
   if (!document) return false
   try {
@@ -131,6 +135,7 @@ export function applyRichSlash(
   tokenTo: number,
   command: "/h1" | "/h2" | "/h3" | "/clear",
 ): boolean {
+  if (view.state.readOnly) return false
   const document = modelFor(view)
   if (!document || !Number.isSafeInteger(tokenFrom) || !Number.isSafeInteger(tokenTo) || tokenFrom < 0 || tokenTo < tokenFrom || tokenTo > view.state.doc.length) return false
   if (view.state.sliceDoc(tokenFrom, tokenTo) !== command) return false
@@ -160,6 +165,7 @@ export function applyRichSlash(
 
 /** Paste plain text into the current CodeMirror-visible selection. */
 export function applyRichPaste(view: EditorView, text: string): boolean {
+  if (view.state.readOnly) return false
   const document = modelFor(view)
   if (!document || text.length === 0) return false
   const selection = view.state.selection.main
@@ -177,6 +183,7 @@ export function applyRichPaste(view: EditorView, text: string): boolean {
     return false
   }
   const modelCaret = modelRange.from + text.length
+  candidate = flushRichPaste(candidate, modelRange.from, modelCaret)
   const flushed = applyInlineInputRule(candidate, modelCaret, "blur")
   const final = flushed.converted ? flushed.document : candidate
   const caret = flushed.converted ? flushed.caret : sourceToVisible(final, modelCaret)
@@ -222,7 +229,23 @@ function sameLink(left: NonNullable<RichRange["link"]>, right: NonNullable<RichR
   return left.kind === right.kind && left.sourceFrom === right.sourceFrom && left.sourceTo === right.sourceTo && left.raw === right.raw
 }
 
-function delimiterFor(document: RichDocument, mark: InlineMark, sourceFrom: number, sourceTo: number, marks: readonly InlineMark[]): string {
+function delimiterFor(
+  document: RichDocument,
+  mark: InlineMark,
+  sourceFrom: number,
+  sourceTo: number,
+  marks: readonly InlineMark[],
+  importedFrom = sourceFrom,
+  importedTo = sourceTo,
+): string {
+  const allowed = mark === "bold" ? ["**", "__"] : mark === "italic" ? ["*", "_"] : ["`"]
+  const imported = document.ranges.find((candidate) => {
+    if (candidate.visible || !sameInlineMarkSet(candidate.marks, marks)) return false
+    const delimiter = document.source.slice(candidate.sourceFrom, candidate.sourceTo)
+    return inlineDelimiterSource(delimiter) && allowed.includes(delimiter) &&
+      (candidate.sourceTo === importedFrom || candidate.sourceFrom === importedTo)
+  })
+  if (imported) return document.source.slice(imported.sourceFrom, imported.sourceTo)
   if (marks.includes("bold") && marks.includes("italic")) {
     for (const delimiter of ["***", "___"]) {
       if (document.source.slice(sourceFrom - delimiter.length, sourceFrom) === delimiter && document.source.slice(sourceTo, sourceTo + delimiter.length) === delimiter) return delimiter
@@ -235,18 +258,26 @@ function delimiterFor(document: RichDocument, mark: InlineMark, sourceFrom: numb
   return canonicalDelimiter[mark]
 }
 
-function wrapInline(document: RichDocument, raw: string, sourceFrom: number, sourceTo: number, marks: readonly InlineMark[]): string {
+function wrapInline(
+  document: RichDocument,
+  raw: string,
+  sourceFrom: number,
+  sourceTo: number,
+  marks: readonly InlineMark[],
+  importedFrom = sourceFrom,
+  importedTo = sourceTo,
+): string {
   if (!marks.length) return raw
   const combined = marks.includes("bold") && marks.includes("italic") &&
-    (document.source.slice(sourceFrom - 3, sourceFrom) === "***" || document.source.slice(sourceFrom - 3, sourceFrom) === "___") &&
-    document.source.slice(sourceTo, sourceTo + 3) === document.source.slice(sourceFrom - 3, sourceFrom)
+    (document.source.slice(importedFrom - 3, importedFrom) === "***" || document.source.slice(importedFrom - 3, importedFrom) === "___") &&
+    document.source.slice(importedTo, importedTo + 3) === document.source.slice(importedFrom - 3, importedFrom)
   if (combined) {
     const delimiter = document.source.slice(sourceFrom - 3, sourceFrom)
     return `${delimiter}${raw}${delimiter}`
   }
   let result = raw
   for (const mark of [...marks].filter((value): value is InlineMark => INLINE_MARKS.includes(value)).reverse()) {
-    const delimiter = delimiterFor(document, mark, sourceFrom, sourceTo, marks)
+    const delimiter = delimiterFor(document, mark, sourceFrom, sourceTo, marks, importedFrom, importedTo)
     result = `${delimiter}${result}${delimiter}`
   }
   return result
@@ -254,6 +285,11 @@ function wrapInline(document: RichDocument, raw: string, sourceFrom: number, sou
 
 function inlineDelimiterSource(text: string): boolean {
   return ["***", "___", "**", "__", "*", "_", "`"].includes(text)
+}
+
+function sameInlineMarkSet(left: readonly RichMark[], right: readonly InlineMark[]): boolean {
+  const marks = left.filter((mark): mark is InlineMark => INLINE_MARKS.includes(mark as InlineMark))
+  return marks.length === right.length && right.every((mark) => marks.includes(mark))
 }
 
 /** Preserve an imported enclosing mark run when every visible fragment in the
@@ -265,25 +301,46 @@ function serializeFullInlineRun(document: RichDocument, entries: readonly CopyEn
   const last = entries.at(-1)!
   const common = INLINE_MARKS.filter((mark) => entries.every((entry) => entry.range.marks.includes(mark)))
   if (!common.length) return null
-  let sourceFrom = first.sourceFrom
-  let sourceTo = last.sourceTo
-  for (const mark of common) {
-    const open = document.ranges.find((candidate) =>
-      !candidate.visible && candidate.sourceTo === first.range.contentFrom &&
-      candidate.marks.includes(mark) && inlineDelimiterSource(document.source.slice(candidate.sourceFrom, candidate.sourceTo)),
+
+  const open = [...document.ranges]
+    .filter((candidate) =>
+      !candidate.visible && candidate.sourceTo <= first.range.contentFrom &&
+      sameInlineMarkSet(candidate.marks, common) && inlineDelimiterSource(document.source.slice(candidate.sourceFrom, candidate.sourceTo)),
     )
-    const close = document.ranges.find((candidate) =>
-      !candidate.visible && candidate.sourceFrom === last.range.contentTo &&
-      candidate.marks.includes(mark) && inlineDelimiterSource(document.source.slice(candidate.sourceFrom, candidate.sourceTo)),
+    .at(-1)
+  const close = document.ranges.find((candidate) =>
+    !candidate.visible && candidate.sourceFrom >= last.range.contentTo &&
+    sameInlineMarkSet(candidate.marks, common) && inlineDelimiterSource(document.source.slice(candidate.sourceFrom, candidate.sourceTo)),
+  )
+  if (!open || !close || open.sourceFrom >= first.sourceFrom || close.sourceTo <= last.sourceTo) return null
+
+  const leading: string[] = []
+  let leadingPosition = first.range.contentFrom
+  while (true) {
+    const candidate = document.ranges.find((range) =>
+      !range.visible && range.sourceTo === leadingPosition && range !== open &&
+      inlineDelimiterSource(document.source.slice(range.sourceFrom, range.sourceTo)),
     )
-    if (open && close) {
-      sourceFrom = Math.min(sourceFrom, open.sourceFrom)
-      sourceTo = Math.max(sourceTo, close.sourceTo)
-    }
+    if (!candidate) break
+    leading.unshift(document.source.slice(candidate.sourceFrom, candidate.sourceTo))
+    leadingPosition = candidate.sourceFrom
   }
-  return sourceFrom === first.sourceFrom && sourceTo === last.sourceTo
-    ? null
-    : document.source.slice(sourceFrom, sourceTo)
+  const trailing: string[] = []
+  let trailingPosition = last.range.contentTo
+  while (true) {
+    const candidate = document.ranges.find((range) =>
+      !range.visible && range.sourceFrom === trailingPosition && range !== close &&
+      inlineDelimiterSource(document.source.slice(range.sourceFrom, range.sourceTo)),
+    )
+    if (!candidate) break
+    trailing.push(document.source.slice(candidate.sourceFrom, candidate.sourceTo))
+    trailingPosition = candidate.sourceTo
+  }
+  return document.source.slice(open.sourceFrom, open.sourceTo)
+    + leading.join("")
+    + document.source.slice(first.sourceFrom, last.sourceTo)
+    + trailing.join("")
+    + document.source.slice(close.sourceFrom, close.sourceTo)
 }
 
 function blockPrefix(document: RichDocument, visibleFrom: number): string {
@@ -300,7 +357,7 @@ function blockPrefix(document: RichDocument, visibleFrom: number): string {
 function serializeEntry(document: RichDocument, entry: CopyEntry): string {
   const raw = document.source.slice(entry.sourceFrom, entry.sourceTo)
   const marks = entry.range.marks.filter((mark): mark is InlineMark => INLINE_MARKS.includes(mark as InlineMark))
-  return wrapInline(document, raw, entry.sourceFrom, entry.sourceTo, marks)
+  return wrapInline(document, raw, entry.sourceFrom, entry.sourceTo, marks, entry.range.contentFrom, entry.range.contentTo)
 }
 
 function serializeLinkGroup(document: RichDocument, entries: CopyEntry[], selectedFrom: number, selectedTo: number): string {

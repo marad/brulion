@@ -200,13 +200,28 @@ function isPendingRange(document: RichDocument, range: RichDocument["ranges"][nu
   return document.pendingLineStarts.includes(lineStart)
 }
 
-function isIncompleteWikilinkRange(document: RichDocument, range: RichDocument["ranges"][number]): boolean {
-  if (range.block !== "opaque") return false
+function incompleteWikilinkToken(
+  document: RichDocument,
+  range: RichDocument["ranges"][number],
+): { from: number; to: number } | null {
+  if (range.block !== "opaque") return null
   const lineStart = document.source.lastIndexOf("\n", Math.max(0, range.sourceFrom - 1)) + 1
   const newline = document.source.indexOf("\n", lineStart)
-  const line = document.source.slice(lineStart, newline < 0 ? document.source.length : newline)
+  const lineEnd = newline < 0 ? document.source.length : newline
+  const line = document.source.slice(lineStart, lineEnd).replace(/\r$/, "")
   const open = line.lastIndexOf("[[")
-  return open >= 0 && line.indexOf("]]", open + 2) < 0
+  if (open < 0 || line.indexOf("]]", open + 2) >= 0) return null
+  return { from: lineStart + open, to: lineStart + line.length }
+}
+
+function isIncompleteWikilinkChange(
+  document: RichDocument,
+  range: RichDocument["ranges"][number],
+  from: number,
+  to: number,
+): boolean {
+  const token = incompleteWikilinkToken(document, range)
+  return token !== null && from >= token.from && to <= token.to
 }
 
 function assertVisibleEditorChangeSafe(document: RichDocument, change: RichVisibleChange): void {
@@ -218,7 +233,7 @@ function assertVisibleEditorChangeSafe(document: RichDocument, change: RichVisib
   const opaque = touched.filter((range) =>
     isOpaqueBlock(range.block) &&
     !isPendingRange(document, range) &&
-    !isIncompleteWikilinkRange(document, range),
+    !isIncompleteWikilinkChange(document, range, modelFrom, modelTo),
   )
   if (opaque.length) throw new RangeError("Opaque source requires an explicit source edit")
   if (change.from !== change.to && touched.length > 1 && change.insert.length > 0) {
@@ -231,7 +246,7 @@ function assertVisibleEditorChangeSafe(document: RichDocument, change: RichVisib
     if (at.some((range) =>
       isOpaqueBlock(range.block) &&
       !isPendingRange(document, range) &&
-      !isIncompleteWikilinkRange(document, range),
+      !isIncompleteWikilinkChange(document, range, modelFrom, modelTo),
     )) {
       throw new RangeError("Opaque source requires an explicit source edit")
     }
@@ -578,7 +593,8 @@ export function dispatchRichDocumentChange(
   document: RichDocument,
   selection: RichVisibleSelection,
   userEvent = "input",
-): void {
+): boolean {
+  if (view.state.readOnly) return false
   const changes = diffRange(view.state.doc.toString(), editorVisibleText(document))
   view.dispatch({
     changes: changes ?? [],
@@ -590,6 +606,7 @@ export function dispatchRichDocumentChange(
     annotations: [Transaction.userEvent.of(userEvent)],
     filter: false,
   })
+  return true
 }
 
 function sourceCursorForVisible(document: RichDocument, cursor: number): number {
@@ -625,6 +642,7 @@ function richProjectionChanged(left: RichDocument, right: RichDocument): boolean
 
 /** Flush pending inline syntax at a lifecycle/input boundary. */
 export function flushRichEditorInput(view: EditorView, boundary: InlineBoundary): boolean {
+  if (view.state.readOnly) return false
   const document = fieldDocument(view.state)
   if (!document) return false
   const selection = view.state.selection.main
@@ -641,6 +659,7 @@ export function flushRichEditorInput(view: EditorView, boundary: InlineBoundary)
 
 /** Rich Enter: flush a pending inline marker, then apply model block behavior. */
 export function richEnter(view: EditorView): boolean {
+  if (view.state.readOnly) return false
   const document = fieldDocument(view.state)
   if (!document) return false
   const selection = view.state.selection.main
@@ -665,6 +684,7 @@ export function richEnter(view: EditorView): boolean {
 
 /** Rich Backspace: remove a model block prefix only when its contract allows it. */
 export function richBackspace(view: EditorView): boolean {
+  if (view.state.readOnly) return false
   const document = fieldDocument(view.state)
   if (!document) return false
   const selection = view.state.selection.main

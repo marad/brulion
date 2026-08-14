@@ -1404,6 +1404,36 @@ function projectVisibleEdit(document: RichDocument, nextSource: string, sourceFr
   return importMarkdownInternal(nextSource, adjacent, pending, punctuation)
 }
 
+/** Re-project complete Markdown pasted into a visible editor range. Paste is an
+ * explicit boundary, so only source lines touched by the inserted span lose
+ * their transient pending state; untouched lines retain their raw spelling. */
+export function flushRichPaste(document: RichDocument, sourceFrom: number, sourceTo: number): RichDocument {
+  if (!Number.isSafeInteger(sourceFrom) || !Number.isSafeInteger(sourceTo) || sourceFrom < 0 || sourceTo < sourceFrom || sourceTo > document.source.length) return document
+  const touchedLines = new Set<number>()
+  let lineStart = lineStartAt(document.source, sourceFrom)
+  while (lineStart <= sourceTo) {
+    touchedLines.add(lineStart)
+    const newline = document.source.indexOf("\n", lineStart)
+    if (newline < 0 || newline >= sourceTo) break
+    lineStart = newline + 1
+  }
+  const pending = new Set(document.pendingLineStarts.filter((start) => !touchedLines.has(start)))
+  const adjacent = new Set(document.explicitAdjacentMarkerStarts ?? [])
+  for (let position = sourceFrom; position < sourceTo; position += 1) {
+    const delimiter = delimiterAt(document.source, position, true)
+    if (delimiter) {
+      adjacent.add(position)
+      position += delimiter.length - 1
+    }
+  }
+  return importMarkdownInternal(
+    document.source,
+    adjacent,
+    pending,
+    new Set(document.explicitPunctuationLineStarts ?? []),
+  )
+}
+
 /** Serialize a document. Untouched source spans are returned byte-for-byte. */
 export function serializeMarkdown(document: RichDocument): string {
   if (!document.replacements.length) return document.source

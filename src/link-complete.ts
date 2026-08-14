@@ -31,6 +31,7 @@ import { shortestLinkText } from "./wikilink"
 function applyWikilink(insert: string, query: string) {
   return (view: EditorView, _completion: Completion, from: number, to: number): void => {
     try {
+      if (view.state.readOnly) return
       if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 2 || to < from || to > view.state.doc.length) return
       if (view.state.sliceDoc(from - 2, from) !== "[[" || view.state.sliceDoc(from, to) !== query) return
       if (!insert || /[\[\]\r\n]/.test(insert)) return

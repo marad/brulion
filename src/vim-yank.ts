@@ -46,24 +46,47 @@ export function installVimMarkdownYank(): void {
   })
 }
 
+interface RichVimInputState {
+  registerName?: string | null
+  prefixRepeat?: string[]
+  motionRepeat?: string[]
+  keyBuffer?: string[]
+  getRepeat?: () => number
+}
+
 interface RichVimState {
   insertMode?: boolean
   visualMode?: boolean
-  inputState?: { registerName?: string | null }
+  inputState?: RichVimInputState
 }
 
 /** Handle character/linewise Vim paste on the rich projection before the Vim
  * adapter dispatches a raw `replaceRange`. Raw editors return false and keep
  * the package's stock behavior. */
 export function handleRichVimPaste(view: EditorView, event: KeyboardEvent): boolean {
-  if (!hasRichEditor(view.state) || (event.key !== "p" && event.key !== "P")) return false
+  if (!hasRichEditor(view.state) || view.state.readOnly || (event.key !== "p" && event.key !== "P")) return false
+  if (event.ctrlKey || event.metaKey || event.altKey) return false
   const cm = getCM(view)
   if (!cm) return false
   const vim = (cm.state as unknown as { vim?: RichVimState }).vim
   if (!vim || vim.insertMode) return false
-  const register = Vim.getRegisterController().getRegister(vim.inputState?.registerName ?? undefined)
-  const text = register.toString()
-  if (!text) return true
+  const input = vim.inputState
+  const register = Vim.getRegisterController().getRegister(input?.registerName ?? undefined)
+  const bufferedCount = /^(?:[1-9]\d*)/.exec(input?.keyBuffer?.join("") ?? "")?.[0]
+  const parsedRepeat = bufferedCount ? Number(bufferedCount) : input?.getRepeat?.() ?? 1
+  const repeat = Number.isSafeInteger(parsedRepeat) && parsedRepeat > 0 ? parsedRepeat : 1
+  const text = register.toString().repeat(repeat)
+  const finishInput = () => {
+    if (!input) return
+    input.prefixRepeat = []
+    input.motionRepeat = []
+    input.keyBuffer = []
+    input.registerName = undefined
+  }
+  if (!text) {
+    finishInput()
+    return true
+  }
 
   const previous = view.state.selection.main
   let from = previous.from
@@ -85,12 +108,15 @@ export function handleRichVimPaste(view: EditorView, event: KeyboardEvent): bool
     view.dispatch({ selection: { anchor: from, head: to } })
     if (!applyRichPaste(view, text)) {
       view.dispatch({ selection: { anchor: previous.anchor, head: previous.head } })
+      finishInput()
       return true
     }
     if (vim.visualMode) Vim.exitVisualMode(cm as CodeMirrorV)
+    finishInput()
     return true
   } catch {
     view.dispatch({ selection: { anchor: previous.anchor, head: previous.head } })
+    finishInput()
     return true
   }
 }
