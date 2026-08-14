@@ -23,6 +23,15 @@ import { selectionToolbar } from "./selection-toolbar"
 import { vimCaretGuard, vimCaretGuardEscape } from "./vim-caret"
 import { copyMarkdown } from "./copy-markdown"
 import { installVimMarkdownYank } from "./vim-yank"
+import {
+  hasRichEditor,
+  richDocumentFromState,
+  richEditorExtension,
+  richEditorSelectionToSource,
+  richSourceSelectionToEditor,
+  reloadRichEditorSource,
+  setRichEditorSource,
+} from "./rich-editor"
 
 // Route Vim's yank through the same markdown serializer as clipboard copy/cut
 // (FEAT-0046). Global + idempotent; only ever invoked while Vim mode is active.
@@ -95,7 +104,9 @@ const vimMode = new Compartment()
 const linkCtx = new Compartment()
 
 export interface EditorOptions {
-  /** Called on a user edit (the document text is read from the view on save). */
+  /** Use the M47 loss-aware rich source boundary for the primary note editor. */
+  rich?: boolean
+  /** Called on a user edit (serialized source is read from the boundary on save). */
   onChange?: () => void
   /** Called when the user presses Ctrl/Cmd+S. */
   onSave?: () => void
@@ -142,20 +153,16 @@ export function mountEditor(
       drawSelection(),
       keymap.of([
         ...completionKeymap,
-        // Markdown-aware Enter (FEAT-0018): continue a list/blockquote, and on an
-        // empty item remove the marker to exit. After completionKeymap so the
-        // slash menu still accepts on Enter; before defaultKeymap, to which it
-        // falls through on a plain line (the command returns false there).
-        { key: "Enter", run: continueOrExitMarkup },
-        // Backspace right after a completed marker (`* `/`- `, `# `, `> `) removes
-        // only the trailing space, leaving the bare marker — the inverse of typing
-        // the space that completed it (FEAT-0019). Falls through when it doesn't
-        // apply.
-        { key: "Backspace", run: deleteMarkerSpaceBackward },
-        // Backspace at the start of a list/quote marker removes the marker — the
-        // counterpart the language keymap used to provide (now off, see
-        // markdownRendering). Falls through to the default delete otherwise.
-        { key: "Backspace", run: deleteMarkupBackward },
+        // The old raw-Markdown Enter/Backspace adapters are intentionally not
+        // installed in rich mode. P3 owns block behavior in the rich model; P6
+        // will reconnect command adapters to visible selections.
+        ...(opts.rich
+          ? []
+          : [
+              { key: "Enter", run: continueOrExitMarkup },
+              { key: "Backspace", run: deleteMarkerSpaceBackward },
+              { key: "Backspace", run: deleteMarkupBackward },
+            ]),
         ...defaultKeymap,
         ...historyKeymap,
       ]),
@@ -188,16 +195,20 @@ export function mountEditor(
           return true
         },
       }),
-      markdownRendering, // hide markdown markup; render text as rich content
-      mermaidRendering, // render ```mermaid blocks as diagrams (lazy-loaded)
-      tableRendering, // render pipe tables as aligned tables (FEAT-0063)
-      frontmatterRendering, // collapse a leading `---…---` block into a metadata chip
-      markdownCommands, // Ctrl+B/I/E and heading shortcuts reshape the markdown
-      slashCommands, // "/" at line start opens a menu to reshape the line
-      wikilinkCompletions, // "[[" opens a list of existing notes, ranked like Ctrl+K
-      contextMenu, // right-click opens a formatting popup over the selection
-      selectionToolbar, // touch/narrow: a floating format toolbar over a selection (FEAT-0052)
-      copyMarkdown, // copy/cut re-serialize the selection to valid markdown (FEAT-0045)
+      ...(opts.rich
+        ? [richEditorExtension()]
+        : [
+            markdownRendering, // hide markdown markup; render text as rich content
+            mermaidRendering, // render ```mermaid blocks as diagrams (lazy-loaded)
+            tableRendering, // render pipe tables as aligned tables (FEAT-0063)
+            frontmatterRendering, // collapse a leading `---…---` block into a metadata chip
+            markdownCommands, // Ctrl+B/I/E and heading shortcuts reshape the markdown
+            slashCommands, // "/" at line start opens a menu to reshape the line
+            wikilinkCompletions, // "[[" opens a list of existing notes, ranked like Ctrl+K
+            contextMenu, // right-click opens a formatting popup over the selection
+            selectionToolbar, // touch/narrow: a floating format toolbar over a selection (FEAT-0052)
+            copyMarkdown, // copy/cut re-serialize the selection to valid markdown (FEAT-0045)
+          ]),
       typography,
       keymap.of([
         {
@@ -249,6 +260,8 @@ export interface EditorSelectionRequest {
 /** Read the raw primary CodeMirror selection without exposing editor objects. */
 export function getEditorSelection(view: EditorView): EditorSelection {
   const selection = view.state.selection.main
+  const document = richDocumentFromState(view.state)
+  if (document) return richEditorSelectionToSource(document, { anchor: selection.anchor, head: selection.head })
   return {
     anchor: selection.anchor,
     head: selection.head,
@@ -258,16 +271,20 @@ export function getEditorSelection(view: EditorView): EditorSelection {
 
 /** Move the primary selection without dispatching document changes. */
 export function setEditorSelection(view: EditorView, selection: EditorSelectionRequest): void {
+  const document = richDocumentFromState(view.state)
+  const visibleSelection = document
+    ? richSourceSelectionToEditor(document, selection)
+    : selection
   if (
-    !Number.isSafeInteger(selection.anchor) ||
-    !Number.isSafeInteger(selection.head) ||
-    selection.anchor < 0 ||
-    selection.head < 0 ||
-    selection.anchor > view.state.doc.length ||
-    selection.head > view.state.doc.length
+    !Number.isSafeInteger(visibleSelection.anchor) ||
+    !Number.isSafeInteger(visibleSelection.head) ||
+    visibleSelection.anchor < 0 ||
+    visibleSelection.head < 0 ||
+    visibleSelection.anchor > view.state.doc.length ||
+    visibleSelection.head > view.state.doc.length
   ) throw new Error("Selection is out of bounds")
   view.dispatch({
-    selection: { anchor: selection.anchor, head: selection.head },
+    selection: visibleSelection,
     scrollIntoView: true,
     annotations: vimCaretGuardEscape.of(true),
   })
@@ -275,6 +292,10 @@ export function setEditorSelection(view: EditorView, selection: EditorSelectionR
 }
 
 export function setEditorText(view: EditorView, text: string): void {
+  if (hasRichEditor(view.state)) {
+    setRichEditorSource(view, text)
+    return
+  }
   view.dispatch({
     changes: { from: 0, to: view.state.doc.length, insert: text },
     annotations: ProgrammaticLoad.of(true),
@@ -291,6 +312,10 @@ export function setEditorText(view: EditorView, text: string): void {
  * Carries the {@link ProgrammaticLoad} annotation so it isn't treated as a user edit.
  */
 export function reloadEditorText(view: EditorView, text: string): void {
+  if (hasRichEditor(view.state)) {
+    reloadRichEditorSource(view, text)
+    return
+  }
   const change = diffRange(view.state.doc.toString(), text)
   if (!change) return // already in sync — dispatch nothing
   const anchor = topViewportPos(view)
@@ -345,6 +370,34 @@ export function setLinkContext(view: EditorView, ctx: LinkContext): void {
 export function scrollEditorToHeading(view: EditorView, anchor: string): boolean {
   const wanted = headingSlug(anchor)
   if (!wanted) return false
+  const rich = richDocumentFromState(view.state)
+  if (rich) {
+    let offset = 0
+    let fence: string | null = null
+    const lines = rich.source.split(/(\r?\n)/)
+    for (let index = 0; index < lines.length; index += 2) {
+      const line = lines[index] ?? ""
+      const lineText = line.replace(/\r$/, "")
+      const fenceMatch = /^\s*(```+|~~~+)/.exec(lineText)
+      if (fenceMatch) {
+        const char = fenceMatch[1][0]
+        if (fence === null) fence = char
+        else if (char === fence) fence = null
+      } else if (fence === null) {
+        const match = /^(?:#{1,6})\s+(.+?)\s*$/.exec(lineText)
+        if (match && headingSlug(match[1]) === wanted) {
+          const selection = richSourceSelectionToEditor(rich, { anchor: offset, head: offset })
+          view.dispatch({
+            selection,
+            effects: EditorView.scrollIntoView(selection.anchor, { y: "start" }),
+          })
+          return true
+        }
+      }
+      offset += line.length + (lines[index + 1] ?? "").length
+    }
+    return false
+  }
   const doc = view.state.doc
   // The opening fence char (`` ` `` or `~`) while inside a code block, else null. A
   // block opened with one fence char is closed only by the *same* char, so a literal

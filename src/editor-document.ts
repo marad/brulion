@@ -1,4 +1,12 @@
 import type { EditorView } from "codemirror"
+import { reloadEditorText, setEditorText } from "./editor"
+import {
+  hasRichEditor,
+  richDocumentFromState,
+  reloadRichEditorSource,
+  serializedRichMarkdown,
+  setRichEditorSource,
+} from "./rich-editor"
 import type { RichDocument } from "./rich-markdown"
 
 export interface EditorDocumentBoundary {
@@ -14,6 +22,24 @@ export interface EditorDocumentBoundary {
   reloadMarkdown(source: string): void
 }
 
-export function createEditorDocument(_view: EditorView): EditorDocumentBoundary {
-  throw new Error("createEditorDocument is not implemented")
+export function createEditorDocument(view: EditorView): EditorDocumentBoundary {
+  return {
+    readMarkdown() {
+      return serializedRichMarkdown(view.state) ?? view.state.doc.toString()
+    },
+    readVisible() {
+      return view.state.doc.toString()
+    },
+    readModel() {
+      return richDocumentFromState(view.state)
+    },
+    loadMarkdown(source) {
+      if (hasRichEditor(view.state)) setRichEditorSource(view, source)
+      else setEditorText(view, source)
+    },
+    reloadMarkdown(source) {
+      if (hasRichEditor(view.state)) reloadRichEditorSource(view, source)
+      else reloadEditorText(view, source)
+    },
+  }
 }

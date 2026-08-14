@@ -2555,7 +2555,7 @@ describe("serialized rich source controller boundary (FEAT-0113)", () => {
     await controller.refreshFromDisk()
 
     expect(editorDocument.readMarkdown()).toBe("before **new body**\r\n")
-    expect(view.state.doc.toString()).toBe("before new body\r\n")
+    expect(view.state.doc.toString()).toBe("before new body\n")
     expect(onChange).not.toHaveBeenCalled()
     expect(saveNote).not.toHaveBeenCalled()
   })

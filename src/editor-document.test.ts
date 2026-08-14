@@ -16,7 +16,7 @@ describe("editor document source boundary (FEAT-0113)", () => {
     document.loadMarkdown(source)
 
     expect(document.readMarkdown()).toBe(source)
-    expect(document.readVisible()).toBe("title\r\nbody")
+    expect(document.readVisible()).toBe("title\nbody")
     expect(document.readModel()?.source).toBe(source)
     view.destroy()
   })

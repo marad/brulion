@@ -23,6 +23,7 @@ import {
   setLinkContext,
   scrollEditorToHeading,
 } from "./editor"
+import { createEditorDocument } from "./editor-document"
 import {
   createNote,
   deleteNote,
@@ -468,6 +469,7 @@ const openNotePath = (path: string, anchor: string | null = null) => {
   }
 }
 const view = mountEditor(editorEl, {
+  rich: true,
   onChange: () => controller.handleChange(),
   onSave: () => controller.flush(),
   onFollowLink: (href, anchor) => {
@@ -493,6 +495,7 @@ const view = mountEditor(editorEl, {
   // A wikilink (FEAT-0027) already carries its resolved absolute note path.
   onFollowNote: (path, anchor) => openNotePath(path, anchor),
 })
+const editorDocument = createEditorDocument(view)
 // User settings (M16/FEAT-0047): font, text size, editor width, Vim. The single
 // source of truth is `.brulion.json` in the open folder — no idb cache. Before a
 // folder opens the built-in defaults apply (the editor theme's var fallbacks cover
@@ -525,7 +528,7 @@ const reloadExtensions = async (): Promise<void> => {
       editor: {
         getText: () => {
           assertActive()
-          return view.state.doc.toString()
+          return editorDocument.readMarkdown()
         },
         getSelection: () => {
           assertActive()
@@ -1048,6 +1051,7 @@ function promptRenameFolder(path: string): void {
   promptRenameTo(path, current, (target) => controller.moveFolder(path, target))
 }
 controller = createNoteController(view, {
+  editorDocument,
   onConflict: (versions) => {
     // Modal: show the choice and lock the editor; navigation is blocked in the
     // controller. The only way forward is one of the two resolution buttons.

@@ -1524,6 +1524,33 @@ export function editRawSource(document: RichDocument, sourceFrom: number, source
   return reimportSourceEdit(document, sourceFrom, sourceTo, text)
 }
 
+function editorSourceStartAt(document: RichDocument, position: number): number {
+  const startingRange = document.ranges.find((candidate) => candidate.visible && candidate.visibleFrom === position)
+  if (startingRange?.marks.length) return startingRange.contentFrom
+  return visibleToSource(document, position)
+}
+
+/** Replace a visible range for the CodeMirror rich boundary.
+ *
+ * Unlike {@link replaceVisible}, which deliberately rejects cross-fragment and
+ * special-node edits for the pure model API, the editor boundary has already
+ * chosen the visible projection as its editing surface. This helper maps the
+ * complete visible range back to source (including any hidden delimiters crossed
+ * by a selection), reprojects once, and is used only by the editor transaction
+ * filter. It never serializes rendered output: special/opaque ranges map to
+ * their raw source bytes.
+ */
+export function replaceVisibleForEditor(document: RichDocument, from: number, to: number, text: string): RichDocument {
+  if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from || to > document.visible.length) {
+    throw new RangeError("Visible range out of bounds")
+  }
+  const sourceFrom = editorSourceStartAt(document, from)
+  const sourceTo = from === to ? sourceFrom : visibleSourceEnd(document, to)
+  if (sourceFrom > sourceTo) throw new RangeError("Visible range is not mapped")
+  const nextSource = document.source.slice(0, sourceFrom) + text + document.source.slice(sourceTo)
+  return projectVisibleEdit(document, nextSource, sourceFrom, sourceTo, text)
+}
+
 export function replaceVisible(document: RichDocument, from: number, to: number, text: string): RichDocument {
   if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from || to > document.visible.length) {
     throw new RangeError("Visible range out of bounds")

@@ -33,11 +33,11 @@ describe("rich editor boundary (FEAT-0113)", () => {
 
     setRichEditorSource(view, source)
 
-    expect(view.state.doc.toString()).toBe("Hé world\r\nquote")
+    expect(view.state.doc.toString()).toBe("Hé world\nquote")
     expect(serializedRichMarkdown(view.state)).toBe(source)
     expect(onChange).not.toHaveBeenCalled()
     expect(hasRichEditor(view.state)).toBe(true)
-    expect(richDocumentFromState(view.state)?.visible).toBe(view.state.doc.toString())
+    expect(richDocumentFromState(view.state)?.visible.replace(/\r\n?/g, "\n")).toBe(view.state.doc.toString())
     view.destroy()
   })
 
@@ -81,7 +81,7 @@ describe("rich editor boundary (FEAT-0113)", () => {
     expect(serializedRichMarkdown(view.state)).toBe(
       "before **naïve** after\r\n~~unknown~~\r\n```mermaid\r\n**raw**\r\n```\r\n",
     )
-    expect(view.state.doc.toString()).toContain("~~unknown~~\r\n```mermaid\r\n**raw**")
+    expect(view.state.doc.toString()).toContain("~~unknown~~\n```mermaid\n**raw**")
     expect(serializedRichMarkdown(view.state)?.match(/\r\n/g)?.length).toBe(5)
     view.destroy()
   })
@@ -106,11 +106,24 @@ describe("rich editor boundary (FEAT-0113)", () => {
       head: 0,
     })
     const unicode = importMarkdown("**café 😀**")
-    expect(richSelectionToSource(unicode, { anchor: 6, head: 8 })).toEqual({
+    expect(richSelectionToSource(unicode, { anchor: 5, head: 7 })).toEqual({
       anchor: 7,
       head: 9,
       text: "😀",
     })
+    view.destroy()
+  })
+
+  it("maps edits after a CRLF through CodeMirror's LF projection without changing source bytes", () => {
+    const view = mountRich()
+    const source = "first **one**\r\nsecond **two**"
+    setRichEditorSource(view, source)
+    const from = view.state.doc.toString().indexOf("two")
+
+    view.dispatch({ changes: { from, to: from + 3, insert: "dos" } })
+
+    expect(view.state.doc.toString()).toBe("first one\nsecond dos")
+    expect(serializedRichMarkdown(view.state)).toBe("first **one**\r\nsecond **dos**")
     view.destroy()
   })
 
@@ -122,7 +135,7 @@ describe("rich editor boundary (FEAT-0113)", () => {
 
     reloadRichEditorSource(view, "prefix **longer word**\r\nend")
 
-    expect(view.state.doc.toString()).toBe("prefix longer word\r\nend")
+    expect(view.state.doc.toString()).toBe("prefix longer word\nend")
     expect(serializedRichMarkdown(view.state)).toBe("prefix **longer word**\r\nend")
     expect(view.state.selection.main.head).toBe(2)
     expect(onChange).not.toHaveBeenCalled()

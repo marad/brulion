@@ -210,6 +210,15 @@ describe("scrollEditorToHeading (FEAT-0061)", () => {
     view.destroy()
   })
 
+  it("finds a heading through the rich source map", () => {
+    const view = mountEditor(document.createElement("div"), { rich: true })
+    setEditorText(view, "intro\n\n## Target\n\nbody")
+
+    expect(scrollEditorToHeading(view, "target")).toBe(true)
+    expect(view.state.doc.sliceString(view.state.selection.main.head, view.state.doc.lineAt(view.state.selection.main.head).to)).toBe("Target")
+    view.destroy()
+  })
+
   it("returns false and does not move the caret when no heading matches", () => {
     const view = mountEditor(document.createElement("div"))
     setEditorText(view, doc)

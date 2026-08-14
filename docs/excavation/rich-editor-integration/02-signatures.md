@@ -76,6 +76,18 @@ export function richSourceSelectionToVisible(
   selection: RichVisibleSelection,
 ): RichVisibleSelection
 
+/** Translate CodeMirror's LF-normalized positions to source coordinates. */
+export function richEditorSelectionToSource(
+  document: RichDocument,
+  selection: RichVisibleSelection,
+): RichSourceSelection
+
+/** Translate source-map visible positions back to CodeMirror positions. */
+export function richSourceSelectionToEditor(
+  document: RichDocument,
+  selection: RichVisibleSelection,
+): RichVisibleSelection
+
 /** Map a visible selection and viewport through a source reload. */
 export function mapRichReload(
   oldDocument: RichDocument,
@@ -87,8 +99,11 @@ export function mapRichReload(
 
 `richSourceSelectionToVisible` maps hidden delimiter/source positions to the
 nearest visible boundary deterministically; it does not claim that hidden source
-characters are normal caret stops. Explicit source-island mutation remains a
-separate P4/model operation and is not silently synthesized by this mapping.
+characters are normal caret stops. `richEditorSelectionToSource` and
+`richSourceSelectionToEditor` additionally account for CodeMirror's LF-only
+line-separator storage while the source/model keeps CRLF bytes. Explicit
+source-island mutation remains a separate P4/model operation and is not
+silently synthesized by this mapping.
 
 ## `editor-document.ts`
 

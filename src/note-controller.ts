@@ -1,5 +1,5 @@
 import type { EditorView } from "codemirror"
-import { setEditorText, reloadEditorText } from "./editor"
+import { createEditorDocument, type EditorDocumentBoundary } from "./editor-document"
 import {
   readNote,
   saveNote,
@@ -177,6 +177,8 @@ export interface ConflictVersions {
 }
 
 export interface NoteControllerOptions {
+  /** Source/model boundary for the primary editor; raw views get a fallback. */
+  editorDocument?: EditorDocumentBoundary
   /** Called when the open note changed on disk under unsaved edits (conflict). */
   onConflict?: (versions: ConflictVersions) => void
   /** Called when a standing conflict is resolved (either way) — clears the UI. */
@@ -303,10 +305,12 @@ export function createNoteController(
   view: EditorView,
   opts: NoteControllerOptions = {},
 ): NoteController {
+  const editorDocument = opts.editorDocument ?? createEditorDocument(view)
   let dir: FileSystemDirectoryHandle | null = null
   let activeName = SEED_NOTE
   let notes: string[] = []
   let lastModified: number | null = null
+  let savedMarkdown = editorDocument.readMarkdown()
   let dirty = false
   let conflict = false
   let savePromise: Promise<void> | null = null
@@ -360,14 +364,16 @@ export function createNoteController(
           guard?.()
           dirty = false // claim the current edits before the await
           try {
-            const result = await saveNote(dir!, activeName, view.state.doc.toString(), lastModified)
+            const markdown = editorDocument.readMarkdown()
+            const result = await saveNote(dir!, activeName, markdown, lastModified)
             if (result.status === "conflict") {
               guard?.()
               await raiseConflict(guard) // the reactive path into the one conflict state
               return
             }
             lastModified = result.lastModified
-            contentCache.set(activeName, { content: view.state.doc.toString(), lastModified: result.lastModified })
+            savedMarkdown = markdown
+            contentCache.set(activeName, { content: markdown, lastModified: result.lastModified })
             guard?.()
             // A first save can materialize a note that wasn't listed yet (the
             // lazy seed). Surface it in the list.
@@ -433,9 +439,10 @@ export function createNoteController(
     // just the confirming call once the listing succeeds. Avoids a redundant
     // full-document replace (a stray undo-history entry, a wasted decoration
     // rebuild) for what amounts to a no-op.
-    if (view.state.doc.toString() !== note.content) {
-      trackSync("setEditorText", () => setEditorText(view, note.content))
+    if (editorDocument.readMarkdown() !== note.content) {
+      trackSync("load editor Markdown", () => editorDocument.loadMarkdown(note.content))
     }
+    savedMarkdown = note.content
     dirty = false // discard any stray edit typed on the old content during the read
   }
 
@@ -499,7 +506,7 @@ export function createNoteController(
   const raiseConflict = async (guard?: () => void): Promise<void> => {
     guard?.()
     conflict = true // stop autosaving so we never clobber the on-disk change
-    const mine = view.state.doc.toString()
+    const mine = editorDocument.readMarkdown()
     let theirs: string | null = null
     if (dir) {
       try {
@@ -706,17 +713,18 @@ export function createNoteController(
 
         // Preview the guess as soon as it's ready, instead of making the user
         // watch a loading screen for however long the listing takes on top of
-        // that. Pure UI: `setEditorText` never marks the buffer dirty or
+        // that. Pure UI: the document facade's programmatic load never marks
+        // the buffer dirty or
         // touches saved state, so there is nothing to unwind if the guess
         // later turns out wrong — `activate` below corrects the display to
         // the real note once the listing confirms it either way. `openFailed`
         // guards against the read resolving *after* the listing has already
         // failed (rare, but otherwise this would paint over the revert below).
-        const previousDocText = view.state.doc.toString()
+        const previousDocText = editorDocument.readMarkdown()
         let openFailed = false
         void speculativeRead.then((note) => {
           if (note && !openFailed) {
-            trackSync("setEditorText (preview)", () => setEditorText(view, note.content))
+            trackSync("load editor Markdown (preview)", () => editorDocument.loadMarkdown(note.content))
             opts.onPreviewReady?.(guess)
           }
         })
@@ -733,8 +741,8 @@ export function createNoteController(
           complete = await track("open: sweep", () => sweepPromise)
         } catch (err) {
           openFailed = true
-          if (view.state.doc.toString() !== previousDocText) {
-            trackSync("setEditorText (revert)", () => setEditorText(view, previousDocText))
+          if (editorDocument.readMarkdown() !== previousDocText) {
+            trackSync("load editor Markdown (revert)", () => editorDocument.loadMarkdown(previousDocText))
           }
           throw err
         }
@@ -1162,8 +1170,9 @@ export function createNoteController(
     },
     handleChange() {
       if (conflict) return
-      dirty = true
-      autosave.trigger()
+      dirty = editorDocument.readMarkdown() !== savedMarkdown
+      if (dirty) autosave.trigger()
+      else autosave.cancel()
     },
     flush() {
       void flushAndWait()
@@ -1294,7 +1303,8 @@ export function createNoteController(
                 lastModified = note.lastModified
                 // Minimal-diff reload (FEAT-0067): replace only the differing span so the
                 // caret and scroll survive — not a wholesale set that jumps the view.
-                reloadEditorText(view, note.content)
+                editorDocument.reloadMarkdown(note.content)
+                savedMarkdown = note.content
                 dirty = false
                 contentCache.set(activeName, note)
               } else {
@@ -1314,10 +1324,12 @@ export function createNoteController(
         // Re-base on the file's current on-disk state so the guarded write goes
         // through (a deleted file has no handle, so it is simply re-created).
         const current = await statNote(folder, activeName)
-        const result = await saveNote(folder, activeName, view.state.doc.toString(), current)
+        const markdown = editorDocument.readMarkdown()
+        const result = await saveNote(folder, activeName, markdown, current)
         if (result.status !== "saved") return // raced again — leave the conflict standing
         lastModified = result.lastModified
-        contentCache.set(activeName, { content: view.state.doc.toString(), lastModified: result.lastModified })
+        savedMarkdown = markdown
+        contentCache.set(activeName, { content: markdown, lastModified: result.lastModified })
         conflict = false
         dirty = false
         if (!notes.includes(activeName)) notes = await listNotes(folder) // re-created note
