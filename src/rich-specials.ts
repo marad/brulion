@@ -249,6 +249,7 @@ function makeTableNode(source: string, rows: readonly ParsedTableRow[], aligns: 
 export function scanRichSpecials(source: string): RichSpecialScan {
   const lines = sourceLines(source)
   const comments = commentSpans(source)
+  const html = htmlSourceSpans(source)
   const specials: RichSpecialNode[] = []
   const protectedSpans: ProtectedSourceSpan[] = []
 
@@ -276,7 +277,9 @@ export function scanRichSpecials(source: string): RichSpecialScan {
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index]!
-    if (protectedSpans.some((span) => overlaps(span, line.from, line.to)) || comments.some((span) => overlaps(span, line.from, line.to))) continue
+    if (protectedSpans.some((span) => overlaps(span, line.from, line.to))
+      || comments.some((span) => overlaps(span, line.from, line.to))
+      || html.some((span) => overlaps(span, line.from, line.to))) continue
     const opening = fenceOpen(source.slice(line.from, line.to))
     if (!opening) continue
     let closeIndex = -1
@@ -302,7 +305,8 @@ export function scanRichSpecials(source: string): RichSpecialScan {
     const headerLine = lines[index]!
     const separatorLine = lines[index + 1]!
     if (protectedSpans.some((span) => overlaps(span, headerLine.from, separatorLine.to))
-      || comments.some((span) => overlaps(span, headerLine.from, separatorLine.to))) continue
+      || comments.some((span) => overlaps(span, headerLine.from, separatorLine.to))
+      || html.some((span) => overlaps(span, headerLine.from, separatorLine.to))) continue
     const header = parseTableRow(source, headerLine, 0)
     const separator = parseTableRow(source, separatorLine, 1)
     if (!header || !separator || !separatorAligns(separator) || header.cells.length !== separator.cells.length) continue
@@ -314,7 +318,8 @@ export function scanRichSpecials(source: string): RichSpecialScan {
       const bodyLine = lines[bodyIndex]!
       if (bodyLine.from === bodyLine.to
         || protectedSpans.some((span) => overlaps(span, bodyLine.from, bodyLine.to))
-        || comments.some((span) => overlaps(span, bodyLine.from, bodyLine.to))) break
+        || comments.some((span) => overlaps(span, bodyLine.from, bodyLine.to))
+        || html.some((span) => overlaps(span, bodyLine.from, bodyLine.to))) break
       const body = parseTableRow(source, bodyLine, rows.length)
       if (!body || body.cells.length === 0) break
       rows.push(body)
@@ -350,6 +355,42 @@ function commentSpans(source: string): SourceSpan[] {
     spans.push({ sourceFrom: start, sourceTo })
     start = source.indexOf("<!--", sourceTo)
   }
+  return spans
+}
+
+const VOID_HTML_TAGS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"])
+const HTML_TAG = /<\/?[A-Za-z][^>\n]*(?:>|$)/
+
+function removeAngleLinkDestinations(line: string): string {
+  return line.replace(/\]\(<[^>\r\n]*>\)/g, (match) => " ".repeat(match.length))
+}
+
+function htmlSourceSpans(source: string): SourceSpan[] {
+  const spans: SourceSpan[] = []
+  const lines = sourceLines(source)
+  let blockFrom = -1
+  let blockTag = ""
+  for (const line of lines) {
+    const text = removeAngleLinkDestinations(source.slice(line.from, line.to))
+    const closing = /<\/[A-Za-z][^>\n]*>/.test(text)
+    if (blockFrom >= 0) {
+      if (new RegExp(`</${blockTag}\\s*>`, "i").test(text) || closing) {
+        spans.push({ sourceFrom: blockFrom, sourceTo: line.to })
+        blockFrom = -1
+        blockTag = ""
+      }
+      continue
+    }
+    if (!HTML_TAG.test(text)) continue
+    const opening = /<([A-Za-z][\w:-]*)(?:\s[^>]*)?>/.exec(text)
+    if (opening && !closing && !opening[0].endsWith("/>") && !VOID_HTML_TAGS.has(opening[1]!.toLowerCase())) {
+      blockFrom = line.from
+      blockTag = opening[1]!
+    } else {
+      spans.push({ sourceFrom: line.from, sourceTo: line.to })
+    }
+  }
+  if (blockFrom >= 0) spans.push({ sourceFrom: blockFrom, sourceTo: source.length })
   return spans
 }
 
@@ -461,6 +502,12 @@ function wikilinkAt(source: string, start: number, lineEnd: number): RichLinkNod
   }
 }
 
+function hasOpeningMarker(source: string, start: number, marker: string): boolean {
+  const openingFrom = start - marker.length
+  if (openingFrom < 0 || source.slice(openingFrom, start) !== marker || escapedAt(source, openingFrom)) return false
+  return openingFrom === 0 || /\s/.test(source[openingFrom - 1] ?? "")
+}
+
 function urlNodeAt(source: string, start: number, end: number): RichLinkNode | null {
   let sourceTo = end
   while (sourceTo > start) {
@@ -473,11 +520,12 @@ function urlNodeAt(source: string, start: number, end: number): RichLinkNode | n
       sourceTo -= 1
       continue
     }
-    if (sourceTo - start >= 2 && /[*_]/.test(source[sourceTo - 2] ?? "") && source[sourceTo - 2] === last) {
+    if (sourceTo - start >= 2 && /[*_]/.test(source[sourceTo - 2] ?? "") && source[sourceTo - 2] === last
+      && hasOpeningMarker(source, start, source.slice(sourceTo - 2, sourceTo))) {
       sourceTo -= 2
       continue
     }
-    if (last === "*" || last === "_" || last === "`") {
+    if ((last === "*" || last === "_" || last === "`") && hasOpeningMarker(source, start, last)) {
       sourceTo -= 1
       continue
     }
@@ -509,7 +557,7 @@ export function scanRichLinks(
   source: string,
   protectedSpans: readonly ProtectedSourceSpan[],
 ): readonly RichLinkNode[] {
-  const blocked = [...protectedSpans, ...commentSpans(source)]
+  const blocked = [...protectedSpans, ...commentSpans(source), ...htmlSourceSpans(source)]
   const links: RichLinkNode[] = []
   const occupied: SourceSpan[] = []
   const lines = sourceLines(source)

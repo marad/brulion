@@ -30,6 +30,10 @@ describe("rich Markdown P4 projection boundary", () => {
     const unclosedFrontmatter = importMarkdown("---   \ntitle: **raw**")
     expect(unclosedFrontmatter.visible).toBe("---   \ntitle: **raw**")
     expect(unclosedFrontmatter.specials).toEqual([])
+    expect(importMarkdown("https://x.test/a_b_").links[0]?.target).toBe("https://x.test/a_b_")
+    const html = importMarkdown("<div>\n[x](inside.md)\n| a | b |\n| --- | --- |\n</div>\n[x](outside.md)")
+    expect(html.links.map((link) => link.target)).toEqual(["outside.md"])
+    expect(html.specials).toEqual([])
   })
 
   it("keeps special source islands raw and never parses their bodies", () => {

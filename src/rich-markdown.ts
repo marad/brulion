@@ -961,6 +961,7 @@ function importMarkdownInternal(
   let inFence = false
   let fenceChar = ""
   let inHtmlComment = false
+  let inHtmlBlock = false
   const firstNewline = source.indexOf("\n")
   const firstLine = source.slice(0, firstNewline < 0 ? source.length : firstNewline).replace(/\r$/, "")
   let inFrontmatter = /^---[ \t]*$/.test(firstLine)
@@ -976,7 +977,9 @@ function importMarkdownInternal(
     const lineLinks = allLinks.filter((link) => link.sourceFrom >= lineStart && link.sourceTo <= lineEnd)
     const lineIsFrontmatter = inFrontmatter
     const lineIsFence = Boolean(fence || inFence)
-    const lineIsHtmlComment = inHtmlComment || HTML_LIKE.test(residualLinkSyntax(line, lineStart, lineLinks))
+    const residual = residualLinkSyntax(line, lineStart, lineLinks)
+    const lineHasHtml = HTML_LIKE.test(residual)
+    const lineIsHtmlComment = inHtmlComment || inHtmlBlock || lineHasHtml
     const lineIsPending = rawLineStarts.has(lineStart)
     const lineAllowsPunctuation = allowPunctuation === true || (allowPunctuation !== false && allowPunctuation.has(lineStart))
 
@@ -998,6 +1001,13 @@ function importMarkdownInternal(
         if (line.includes("-->")) inHtmlComment = false
       } else if (line.includes("<!--") && !line.includes("-->")) {
         inHtmlComment = true
+      }
+      if (inHtmlBlock) {
+        if (/<\/[A-Za-z][^>\n]*>\s*$/.test(residual)) inHtmlBlock = false
+      } else if (lineHasHtml && !/<\/[A-Za-z][^>\n]*>\s*$/.test(residual)) {
+        const opening = /<([A-Za-z][\w:-]*)(?:\s[^>]*)?>/.exec(residual)
+        const voidTag = opening && /^(?:area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)$/i.test(opening[1] ?? "")
+        if (opening && !opening[0].endsWith("/>") && !voidTag) inHtmlBlock = true
       }
     } else {
       const info = lineBlock(line, lineStart)

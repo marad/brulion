@@ -108,11 +108,12 @@ describe("rich Markdown special scanner", () => {
     expect(scanRichLinks("[outer [inner](x)](y)", [])).toEqual([])
   })
 
-  it("never scans links inside any special block", () => {
-    const source = "---\n[x](front.md)\n---\n| [x](table.md) |\n| --- |\n```\n[x](fence.md)\n```\n[x](outside.md)"
+  it("never scans links inside any special block or multiline HTML block", () => {
+    const source = "---\n[x](front.md)\n---\n| [x](table.md) |\n| --- |\n```\n[x](fence.md)\n```\n<div>\n[x](html.md)\n| a | b |\n| --- | --- |\n</div>\n[x](outside.md)"
     const scan = scanRichSpecials(source)
     const links = scanRichLinks(source, scan.protected)
     expect(links.map((link) => link.target)).toEqual(["outside.md"])
+    expect(scan.specials.some((special) => special.kind === "table" && special.raw.includes("html.md"))).toBe(false)
   })
 
   it("keeps the special-node union discriminated", () => {
