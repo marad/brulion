@@ -360,7 +360,7 @@ function commentSpans(source: string): SourceSpan[] {
 
 const VOID_HTML_TAGS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"])
 function removeAngleLinkDestinations(line: string): string {
-  return line.replace(/\]\(<[^>\r\n]*>\)/g, (match) => " ".repeat(match.length))
+  return line.replace(/\]\([ \t]*<[^>\r\n]*>[ \t]*\)/g, (match) => " ".repeat(match.length))
 }
 
 function htmlSourceSpans(source: string): SourceSpan[] {
@@ -569,6 +569,7 @@ export function scanRichLinks(
   const blocked = [...protectedSpans, ...commentSpans(source), ...htmlSourceSpans(source)]
   const links: RichLinkNode[] = []
   const occupied: SourceSpan[] = []
+  const malformedLinkLines: SourceSpan[] = []
   const lines = sourceLines(source)
 
   for (const line of lines) {
@@ -582,6 +583,7 @@ export function scanRichLinks(
         continue
       }
       if (source.startsWith("[[", index)) {
+        malformedLinkLines.push({ sourceFrom: line.from, sourceTo: line.to })
         index = line.to
         continue
       }
@@ -590,9 +592,10 @@ export function scanRichLinks(
         links.push(markdown)
         occupied.push(markdown)
         index = markdown.sourceTo - 1
-      } else if (source[index] === "[") {
+      } else if (source[index] === "[" && !escapedAt(source, index)) {
         // A nested/ambiguous bracket sequence makes the complete line raw;
-        // do not salvage an inner link from malformed outer Markdown.
+        // do not salvage an inner link or URL from malformed outer Markdown.
+        malformedLinkLines.push({ sourceFrom: line.from, sourceTo: line.to })
         index = line.to
       }
     }
@@ -603,7 +606,10 @@ export function scanRichLinks(
   while ((match = urlPattern.exec(source)) !== null) {
     const start = match.index
     const candidate = urlNodeAt(source, start, start + match[0].length)
-    if (!candidate || insideAny(blocked, candidate.sourceFrom, candidate.sourceTo) || insideAny(occupied, candidate.sourceFrom, candidate.sourceTo)) continue
+    if (!candidate
+      || insideAny(blocked, candidate.sourceFrom, candidate.sourceTo)
+      || insideAny(malformedLinkLines, candidate.sourceFrom, candidate.sourceTo)
+      || insideAny(occupied, candidate.sourceFrom, candidate.sourceTo)) continue
     links.push(candidate)
     occupied.push(candidate)
   }

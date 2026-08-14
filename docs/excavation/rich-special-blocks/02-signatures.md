@@ -83,6 +83,9 @@ export function scanRichLinks(
   source: string,
   protectedSpans: readonly ProtectedSourceSpan[],
 ): readonly RichLinkNode[]
+
+/** Find multiline HTML/unknown-markup spans that protect nested content. */
+export function scanRichHtmlSpans(source: string): readonly SourceSpan[]
 ```
 
 Projection additions attach `link?: RichLinkNode` and `special?:
@@ -127,7 +130,8 @@ export function editSpecialSource(
   text: string,
 ): RichDocument | null
 
-/** Explicit escape hatch for an opaque source range, including malformed syntax. */
+/** Explicit escape hatch for an opaque source range, including malformed syntax.
+ * Recognized link/special islands and ranges crossing them are rejected. */
 export function editRawSource(
   document: RichDocument,
   sourceFrom: number,

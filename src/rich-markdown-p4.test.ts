@@ -59,6 +59,7 @@ describe("rich Markdown P4 projection boundary", () => {
     const wiki = targetChanged!.links.find((link) => link.kind === "wikilink")!
     const labelChanged = editRichLink(targetChanged!, wiki, { label: "New alias" })
     expect(serializeMarkdown(labelChanged!)).toBe("before [label](new.md#part) after [[old|New alias]]")
+    expect(editRichLink(targetChanged!, { ...markdown, targetFrom: wiki.targetFrom, targetTo: wiki.targetTo, target: wiki.target }, { target: "forged.md" })).toBeNull()
     expect(editRichLink(targetChanged!, markdown, { target: "stale.md" })).toBeNull()
   })
 
@@ -70,6 +71,7 @@ describe("rich Markdown P4 projection boundary", () => {
     expect(cell).not.toBeNull()
     const edited = editTableCell(document, cell!, "changed")
     expect(serializeMarkdown(edited!)).toBe("| A | B \\| C |\r\n| --- | --- |\r\n| one | changed |")
+    expect(editTableCell(document, { ...cell!, column: cell!.column + 1 }, "forged")).toBeNull()
     expect(editTableCell(document, { ...cell!, text: "stale" }, "no")).toBeNull()
   })
 
@@ -96,6 +98,10 @@ describe("rich Markdown P4 projection boundary", () => {
     const rawFrom = changed!.source.indexOf("[open]")
     const repaired = editRawSource(changed!, rawFrom, changed!.source.length, "[open](done.md)")
     expect(serializeMarkdown(repaired!)).toBe("```ts\nnew\n```\nplain [open](done.md)")
+
+    const guarded = importMarkdown("[a](x) [b](y)\n```js\nbody\n```")
+    expect(editRawSource(guarded, 0, guarded.source.length, "rewritten")).toBeNull()
+    expect(editRawSource(guarded, guarded.links[0]!.sourceFrom, guarded.links[0]!.sourceTo, "[a](z)")).toBeNull()
   })
 
   it("preserves UTF-16 mappings and bytes around adjacent special nodes", () => {

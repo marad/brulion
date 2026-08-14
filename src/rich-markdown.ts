@@ -1150,10 +1150,22 @@ function reimportSourceEdit(document: RichDocument, sourceFrom: number, sourceTo
   return importMarkdownInternal(nextSource, false)
 }
 
+function sameRichLink(left: RichLinkNode, right: RichLinkNode): boolean {
+  return left.kind === right.kind
+    && left.sourceFrom === right.sourceFrom
+    && left.sourceTo === right.sourceTo
+    && left.raw === right.raw
+    && left.labelFrom === right.labelFrom
+    && left.labelTo === right.labelTo
+    && left.targetFrom === right.targetFrom
+    && left.targetTo === right.targetTo
+    && left.target === right.target
+    && left.label === right.label
+    && left.alias === right.alias
+}
+
 function freshLink(document: RichDocument, link: RichLinkNode): boolean {
-  return document.links.some((candidate) => candidate.sourceFrom === link.sourceFrom
-    && candidate.sourceTo === link.sourceTo
-    && candidate.raw === link.raw
+  return document.links.some((candidate) => sameRichLink(candidate, link)
     && document.source.slice(link.sourceFrom, link.sourceTo) === link.raw
     && document.source.slice(link.targetFrom, link.targetTo) === link.target
     && document.source.slice(link.labelFrom, link.labelTo) === link.label)
@@ -1167,14 +1179,28 @@ function freshSpecial(document: RichDocument, special: RichSpecialNode): boolean
     && document.source.slice(special.sourceFrom, special.sourceTo) === special.raw)
 }
 
+function sameTableCell(left: RichTableCell, right: RichTableCell): boolean {
+  return left.tableFrom === right.tableFrom
+    && left.tableTo === right.tableTo
+    && left.row === right.row
+    && left.column === right.column
+    && left.sourceFrom === right.sourceFrom
+    && left.sourceTo === right.sourceTo
+    && left.contentFrom === right.contentFrom
+    && left.contentTo === right.contentTo
+    && left.text === right.text
+}
+
 function freshTableCell(document: RichDocument, cell: RichTableCell): boolean {
+  if (!validSourceRange(document, cell.tableFrom, cell.tableTo)
+    || !validSourceRange(document, cell.sourceFrom, cell.sourceTo)
+    || !validSourceRange(document, cell.contentFrom, cell.contentTo)) return false
   const table = document.specials.find((candidate) => candidate.kind === "table"
     && candidate.sourceFrom === cell.tableFrom
-    && candidate.sourceTo === cell.tableTo)
-  return !!table
-    && document.source.slice(cell.tableFrom, cell.tableTo) === document.source.slice(table.sourceFrom, table.sourceTo)
-    && validSourceRange(document, cell.contentFrom, cell.contentTo)
-    && document.source.slice(cell.contentFrom, cell.contentTo) === cell.text
+    && candidate.sourceTo === cell.tableTo
+    && document.source.slice(candidate.sourceFrom, candidate.sourceTo) === candidate.raw)
+  if (!table || table.kind !== "table") return false
+  return table.rows.some((row) => row.cells.some((candidate) => sameTableCell(candidate, cell)))
 }
 
 function hasUnescapedPipe(text: string): boolean {
@@ -1247,9 +1273,16 @@ export function editSpecialSource(document: RichDocument, special: RichSpecialNo
   return reimportSourceEdit(document, special.sourceFrom, special.sourceTo, text)
 }
 
+function touchesRecognizedSource(document: RichDocument, sourceFrom: number, sourceTo: number): boolean {
+  const recognized = [...document.links, ...document.specials]
+  return recognized.some((node) => sourceFrom === sourceTo
+    ? sourceFrom >= node.sourceFrom && sourceFrom < node.sourceTo
+    : sourceFrom < node.sourceTo && sourceTo > node.sourceFrom)
+}
+
 /** Explicit escape hatch for malformed or otherwise opaque source. */
 export function editRawSource(document: RichDocument, sourceFrom: number, sourceTo: number, text: string): RichDocument | null {
-  if (!validSourceRange(document, sourceFrom, sourceTo)) return null
+  if (!validSourceRange(document, sourceFrom, sourceTo) || touchesRecognizedSource(document, sourceFrom, sourceTo)) return null
   return reimportSourceEdit(document, sourceFrom, sourceTo, text)
 }
 
