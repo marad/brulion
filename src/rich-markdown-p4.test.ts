@@ -26,6 +26,7 @@ describe("rich Markdown P4 projection boundary", () => {
     const markedUrl = importMarkdown("**https://example.test/path**")
     expect(markedUrl.links[0]?.kind).toBe("autolink")
     expect(markedUrl.ranges.some((range) => range.marks.includes("link") && range.marks.includes("bold"))).toBe(true)
+    expect(importMarkdown("`https://example.test/path` ").links).toEqual([])
   })
 
   it("keeps special source islands raw and never parses their bodies", () => {

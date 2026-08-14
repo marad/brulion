@@ -101,7 +101,9 @@ describe("rich Markdown special scanner", () => {
     expect(scanRichLinks("[x](a (b).md)", [])).toHaveLength(1)
     expect(scanRichLinks("[x](<a b.md>)", [])).toHaveLength(1)
     expect(scanRichLinks("\\[x](escaped.md) \\[[wiki]]", [])).toEqual([])
+    expect(scanRichLinks("[[target\\|alias]]", [])).toEqual([])
     expect(scanRichLinks("[[outer [[inner]]", [])).toEqual([])
+    expect(scanRichLinks("[outer [inner](x)](y)", [])).toEqual([])
   })
 
   it("never scans links inside any special block", () => {

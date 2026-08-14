@@ -1006,7 +1006,9 @@ function importMarkdownInternal(
         // would make delimiter/source mapping ambiguous.
         push(fragments, line, lineStart, lineEnd, [], "opaque")
       } else {
-        acceptedLinks.push(...lineLinks)
+        for (const link of lineLinks) {
+          if (parsed.fragments.some((fragment) => fragment.link === link)) acceptedLinks.push(link)
+        }
         if (info.prefixTo > lineStart) pushHidden(fragments, lineStart, info.prefixTo, [], info.block)
         fragments.push(...parsed.fragments)
       }

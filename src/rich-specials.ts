@@ -429,7 +429,14 @@ function wikilinkAt(source: string, start: number, lineEnd: number): RichLinkNod
   }
   const bodyFrom = start + 2
   const bodyTo = close
-  const pipe = source.indexOf("|", bodyFrom)
+  if (source.slice(bodyFrom, bodyTo).includes("\\|")) return null
+  let pipe = -1
+  for (let index = bodyFrom; index < bodyTo; index += 1) {
+    if (source[index] === "|" && !escapedAt(source, index)) {
+      pipe = index
+      break
+    }
+  }
   const hasAlias = pipe >= bodyFrom && pipe < bodyTo
   const rawTargetFrom = bodyFrom
   const rawTargetTo = hasAlias ? pipe : bodyTo
@@ -522,6 +529,10 @@ export function scanRichLinks(
         links.push(markdown)
         occupied.push(markdown)
         index = markdown.sourceTo - 1
+      } else if (source[index] === "[") {
+        // A nested/ambiguous bracket sequence makes the complete line raw;
+        // do not salvage an inner link from malformed outer Markdown.
+        index = line.to
       }
     }
   }
