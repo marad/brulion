@@ -346,11 +346,19 @@ export interface BlockEditResult {
   changed: boolean
 }
 
-function mapMarkerStarts(starts: readonly number[], sourceFrom: number, sourceTo: number, delta: number): Set<number> {
+function mapMarkerStarts(starts: readonly number[], source: string, edit: SourceReplacement): Set<number> {
   const mapped = new Set<number>()
+  const original = source.slice(edit.sourceFrom, edit.sourceTo)
+  let suffixLength = 0
+  while (suffixLength < original.length && suffixLength < edit.text.length && original[original.length - suffixLength - 1] === edit.text[edit.text.length - suffixLength - 1]) suffixLength += 1
+  const originalSuffixStart = original.length - suffixLength
+  const replacementSuffixStart = edit.text.length - suffixLength
   for (const start of starts) {
-    if (start < sourceFrom) mapped.add(start)
-    else if (start >= sourceTo) mapped.add(start + delta)
+    if (start < edit.sourceFrom) mapped.add(start)
+    else if (start >= edit.sourceTo) mapped.add(start + edit.text.length - original.length)
+    else if (start - edit.sourceFrom >= originalSuffixStart) {
+      mapped.add(edit.sourceFrom + replacementSuffixStart + (start - edit.sourceFrom - originalSuffixStart))
+    }
   }
   return mapped
 }
@@ -377,7 +385,7 @@ function reprojectBlockSource(document: RichDocument, nextSource: string, edits:
   let punctuation = new Set(document.explicitPunctuationLineStarts ?? [])
   for (const edit of [...edits].sort((a, b) => b.sourceFrom - a.sourceFrom || b.sourceTo - a.sourceTo)) {
     const delta = edit.text.length - (edit.sourceTo - edit.sourceFrom)
-    adjacent = mapMarkerStarts([...adjacent], edit.sourceFrom, edit.sourceTo, delta)
+    adjacent = mapMarkerStarts([...adjacent], document.source, edit)
     pending = mapLineStarts([...pending], edit.sourceTo, delta)
     punctuation = mapLineStarts([...punctuation], edit.sourceTo, delta)
   }
@@ -472,7 +480,7 @@ export function applyBlockEnter(document: RichDocument, cursor: number): BlockEd
   if (splitCursor === null) return unchangedBlockEdit(document, cursor)
   const { info } = context
   const sourceCursor = splitCursor
-  const isContinuation = info.block === "quote" || info.block === "unordered-list"
+  const isContinuation = info.block === "quote" || info.block === "unordered-list" || info.block === "ordered-list"
   const isEmpty = info.body.trim().length === 0
   const lineTail = document.source.slice(context.lineEnd)
   const lineEndingLength = lineTail.startsWith("\r\n") ? 2 : lineTail.startsWith("\n") ? 1 : 0
@@ -486,7 +494,10 @@ export function applyBlockEnter(document: RichDocument, cursor: number): BlockEd
     const caret = sourceToVisible(next, context.lineStart + replacementText.length)
     return { document: next, anchor: caret, head: caret, changed: true }
   }
-  const continuation = isContinuation ? `${newline}${info.block === "quote" ? "> " : "- "}` : newline
+  const ordered = info.block === "ordered-list" ? ORDERED.exec(context.line) : null
+  const orderedNumber = ordered ? Number.parseInt(ordered[2], 10) + 1 : 1
+  const continuationPrefix = info.block === "quote" ? "> " : info.block === "ordered-list" ? `${orderedNumber}. ` : "- "
+  const continuation = isContinuation ? `${newline}${continuationPrefix}` : newline
   const edits: SourceReplacement[] = [{
     sourceFrom: sourceCursor,
     sourceTo: context.lineEnd,
@@ -505,7 +516,7 @@ export function applyBlockEnter(document: RichDocument, cursor: number): BlockEd
 /** Remove an empty block prefix at its visible content start. */
 export function applyBlockBackspace(document: RichDocument, cursor: number): BlockEditResult {
   const context = blockAtVisibleCursor(document, cursor)
-  if (!context || context.info.block === "paragraph" || context.info.block === "ordered-list") return unchangedBlockEdit(document, cursor)
+  if (!context || context.info.block === "paragraph") return unchangedBlockEdit(document, cursor)
   if (context.info.body.trim().length > 0 || context.sourceCursor !== context.info.prefixTo) return unchangedBlockEdit(document, cursor)
   const edits = [{ sourceFrom: context.lineStart, sourceTo: context.info.prefixTo, text: "" }]
   const nextSource = applySourceReplacements(document.source, edits)
