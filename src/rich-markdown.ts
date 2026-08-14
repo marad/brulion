@@ -1014,13 +1014,9 @@ function unclosedDelimiterSpans(
     if (!text.startsWith(marker, index) || escapedAt(text, index)) continue
     if (marker.length === 1 && (text.startsWith(marker + marker, index) || text[index - 1] === marker)) continue
     if (marker === "_" && isWordCharacter(text[index - 1]) && isWordCharacter(text[index + 1])) continue
-    let close = -1
-    for (let candidate = index + marker.length; candidate <= text.length - marker.length; candidate += 1) {
-      const candidateSource = sourceFrom + candidate
-      if (ignoredSpans.some((span) => candidateSource >= span.sourceFrom && candidateSource < span.sourceTo)) continue
-      if (!text.startsWith(marker, candidate) || escapedAt(text, candidate)) continue
-      close = candidate
-      break
+    let close = matchingDelimiter(text, marker, index + marker.length)
+    while (close >= 0 && ignoredSpans.some((span) => sourceFrom + close >= span.sourceFrom && sourceFrom + close < span.sourceTo)) {
+      close = matchingDelimiter(text, marker, close + 1)
     }
     if (close < 0) {
       spans.push({ sourceFrom: sourceFrom + index, sourceTo: sourceFrom + text.length })
