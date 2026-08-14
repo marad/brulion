@@ -90,7 +90,7 @@ interface InlineParse {
 }
 
 const HEADING = /^(#{1,6})([ \t]+)(.*)$/
-const QUOTE = /^([ \t]*)>([ \t]?)(.*)$/
+const QUOTE = /^([ \t]*)>([ \t]+)(.*)$/
 const BULLET = /^([ \t]*)([*-])([ \t]+)(.*)$/
 const ORDERED = /^([ \t]*)(\d+\.)([ \t]+)(.*)$/
 const FENCE = /^\s*(`{3,}|~{3,})(.*)$/
@@ -400,10 +400,17 @@ export function applyBlockEnter(document: RichDocument, cursor: number): BlockEd
   const isContinuation = info.block === "quote" || info.block === "unordered-list"
   const isEmpty = info.body.trim().length === 0
   const newline = document.source.slice(context.lineEnd, context.lineEnd + 2) === "\r\n" ? "\r\n" : "\n"
-  const insertion = isContinuation && !isEmpty ? `${newline}${info.block === "quote" ? "> " : "- "}` : newline
-  const nextSource = document.source.slice(0, sourceCursor) + insertion + document.source.slice(sourceCursor)
+  const hasExistingLineEnding = newline.length === 2
+    ? document.source.slice(context.lineEnd, context.lineEnd + 2) === "\r\n"
+    : document.source[context.lineEnd] === "\n"
+  const exitsEmptyBlock = isContinuation && isEmpty
+  const insertion = exitsEmptyBlock
+    ? hasExistingLineEnding ? "" : newline
+    : isContinuation ? `${newline}${info.block === "quote" ? "> " : "- "}` : newline
+  const sourceBeforeCursor = exitsEmptyBlock ? document.source.slice(0, context.lineStart) : document.source.slice(0, sourceCursor)
+  const nextSource = sourceBeforeCursor + insertion + document.source.slice(context.lineEnd)
   const next = importMarkdown(nextSource)
-  const caretSource = sourceCursor + insertion.length
+  const caretSource = exitsEmptyBlock ? context.lineStart + insertion.length : sourceCursor + insertion.length
   const caret = sourceToVisible(next, caretSource)
   return { document: next, anchor: caret, head: caret, changed: true }
 }
