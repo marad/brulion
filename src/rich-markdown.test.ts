@@ -228,6 +228,12 @@ describe("rich Markdown document", () => {
     expect(insideWord!.document.ranges.some((r) => r.visible && r.marks.includes("bold"))).toBe(true)
     expect(toggleInlineMark(importMarkdown("http://example.com"), 7, 14, "bold")).toBeNull()
 
+    const underscorePartial = toggleInlineMark(importMarkdown("__hello__"), 1, 4, "bold")
+    expect(serializeMarkdown(underscorePartial!.document)).toBe("__h__ell__o__")
+    expect(underscorePartial!.document.visible).toBe("hello")
+    const singleUnderscorePartial = toggleInlineMark(importMarkdown("_hello_"), 1, 4, "italic")
+    expect(singleUnderscorePartial!.document.visible).toBe("hello")
+
     const outerUnwrapped = toggleInlineMark(importMarkdown("*outer **inner** end*"), 0, 15, "italic")
     expect(serializeMarkdown(outerUnwrapped!.document)).toBe("outer **inner** end")
     expect(outerUnwrapped!.document.visible).toBe("outer inner end")

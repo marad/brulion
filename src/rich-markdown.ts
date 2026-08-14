@@ -176,19 +176,19 @@ function invalidTripleUnderscoreAt(text: string, position: number): boolean {
   return false
 }
 
-function delimiterAt(text: string, position: number): string {
-  if (escapedAt(text, position) || invalidTripleUnderscoreAt(text, position)) return ""
+function delimiterAt(text: string, position: number, allowAdjacent = false): string {
+  if (escapedAt(text, position) || (!allowAdjacent && invalidTripleUnderscoreAt(text, position))) return ""
   const triple = text.slice(position, position + 3)
   if (triple === "***") return triple
   if (triple === "___") {
-    if (isWordCharacter(text[position - 1]) && isWordCharacter(text[position + 3])) return ""
-    if (isWordCharacter(text[position - 1]) && !hasValidTripleUnderscoreOpen(text, position)) return ""
+    if (!allowAdjacent && isWordCharacter(text[position - 1]) && isWordCharacter(text[position + 3])) return ""
+    if (!allowAdjacent && isWordCharacter(text[position - 1]) && !hasValidTripleUnderscoreOpen(text, position)) return ""
     return triple
   }
   const pair = text.slice(position, position + 2)
   const previous = text[position - 1]
   const afterPair = text[position + 2]
-  if (pair === "__" && isWordCharacter(previous) && isWordCharacter(afterPair)) return ""
+  if (!allowAdjacent && pair === "__" && isWordCharacter(previous) && isWordCharacter(afterPair)) return ""
   if (pair === "**" || pair === "__") return pair
   if (text[position] === "_") {
     const previous = text[position - 1]
@@ -196,7 +196,7 @@ function delimiterAt(text: string, position: number): string {
     // CommonMark-style intraword underscores are literal text. Use Unicode
     // letters/numbers so names such as `café_bar` are not split either.
     const word = /[\p{L}\p{N}_]/u
-    if (previous && next && word.test(previous) && word.test(next)) return ""
+    if (!allowAdjacent && previous && next && word.test(previous) && word.test(next)) return ""
   }
   if (text[position] === "`" || text[position] === "*") return text[position]
   if (text[position] === "_") return text[position]
@@ -470,7 +470,7 @@ function inlineFragments(
 
   let i = 0
   while (i < text.length) {
-    const delimiter = delimiterAt(text, i)
+    const delimiter = delimiterAt(text, i, allowAdjacent)
     if (!delimiter) {
       i += 1
       continue
