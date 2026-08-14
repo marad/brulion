@@ -14,6 +14,7 @@ import {
 } from "./note-name"
 import { linkContext, type LinkContext } from "./markdown-render"
 import {
+  isRichDocumentTransaction,
   richDocumentFromState,
   richModelPositionToEditor,
 } from "./rich-editor"
@@ -138,7 +139,8 @@ class RichProjectionRenderer {
 
   update(update: ViewUpdate): void {
     const contextChanged = update.startState.facet(linkContext) !== update.state.facet(linkContext)
-    if (update.docChanged || update.viewportChanged || contextChanged) this.decorations = buildDecorations(update.view)
+    const modelChanged = update.transactions.some((transaction) => isRichDocumentTransaction(transaction))
+    if (update.docChanged || update.viewportChanged || contextChanged || modelChanged) this.decorations = buildDecorations(update.view)
   }
 }
 

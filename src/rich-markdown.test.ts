@@ -15,6 +15,7 @@ import {
   indentBlocks,
   setHeadingLevel,
   clearRichFormatting,
+  flushRichPaste,
 } from "./rich-markdown"
 
 describe("rich Markdown document", () => {
@@ -291,6 +292,12 @@ describe("rich Markdown document", () => {
     const firstFlushed = applyInlineInputRule(twoPending, 9, "enter")
     expect(firstFlushed.document.visible).toBe("hello\n**b**")
     expect(firstFlushed.document.pendingLineStarts).toEqual([10])
+
+    const followingPending = replaceVisible(importMarkdown("a\n"), 2, 2, "**b**")
+    expect(followingPending.pendingLineStarts).toEqual([2])
+    const boundaryFlush = flushRichPaste(followingPending, 0, 2)
+    expect(boundaryFlush.pendingLineStarts).toEqual([2])
+    expect(boundaryFlush.visible).toBe(followingPending.visible)
 
     const pending = importMarkdown("**hello**")
     for (const boundary of ["tab", "blur", "save"] as const) {

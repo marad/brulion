@@ -2,6 +2,7 @@ import type { EditorView } from "@codemirror/view"
 import {
   applyInlineInputRule,
   clearRichFormatting,
+  importMarkdown,
   flushRichPaste,
   replaceVisibleForEditor,
   setHeadingLevel,
@@ -189,6 +190,26 @@ export function applyRichPaste(view: EditorView, text: string): boolean {
   const final = flushed.converted ? flushed.document : candidate
   const caret = flushed.converted ? flushed.caret : sourceToVisible(final, sourceCaret)
   dispatchRichDocumentChange(view, final, { anchor: caret, head: caret }, "input.paste")
+  return true
+}
+
+/** Apply a Vim linewise insertion/replacement at a serialized source line
+ * boundary. Hidden heading/list/quote prefixes are structural source bytes, so
+ * a visible-position insertion would land after the prefix instead. */
+export function applyRichSourceBoundaryChange(
+  view: EditorView,
+  sourceFrom: number,
+  sourceTo: number,
+  text: string,
+): boolean {
+  if (view.state.readOnly) return false
+  const document = modelFor(view)
+  if (!document || !Number.isSafeInteger(sourceFrom) || !Number.isSafeInteger(sourceTo) || sourceFrom < 0 || sourceTo < sourceFrom || sourceTo > document.source.length) return false
+  const opaque = document.ranges.filter((range) => ["opaque", "fence", "table", "frontmatter", "mermaid"].includes(range.block))
+  if (opaque.some((range) => sourceFrom < range.sourceTo && sourceTo > range.sourceFrom || sourceFrom === sourceTo && sourceFrom > range.sourceFrom && sourceFrom < range.sourceTo)) return false
+  const next = importMarkdown(document.source.slice(0, sourceFrom) + text + document.source.slice(sourceTo))
+  const caret = sourceToVisible(next, sourceFrom + text.length)
+  dispatchRichDocumentChange(view, next, { anchor: caret, head: caret }, "input.vim-paste")
   return true
 }
 

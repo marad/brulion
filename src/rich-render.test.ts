@@ -7,6 +7,7 @@ import {
   setLinkContext,
 } from "./editor"
 import { richRendering } from "./rich-render"
+import { applyRichFormat } from "./rich-adapters"
 
 function richView(): EditorView {
   return mountEditor(document.createElement("div"), { rich: true })
@@ -29,6 +30,20 @@ describe("rich projection renderer (FEAT-0114)", () => {
     expect(view.dom.textContent).not.toContain("**")
     expect(view.dom.textContent).not.toContain("[site]")
     expect(view.state.facet(EditorView.atomicRanges)).toHaveLength(0)
+    view.destroy()
+  })
+
+  it("rebuilds decorations when a rich model-only transaction changes formatting", () => {
+    const view = richView()
+    setEditorText(view, "plain")
+    view.dispatch({ selection: { anchor: 0, head: 5 } })
+
+    expect(view.dom.querySelector(".cm-strong")).toBeNull()
+    expect(applyRichFormat(view, "Bold")).toBe(true)
+    expect(view.dom.querySelector(".cm-strong")?.textContent).toBe("plain")
+
+    expect(applyRichFormat(view, "Clear formatting")).toBe(true)
+    expect(view.dom.querySelector(".cm-strong")).toBeNull()
     view.destroy()
   })
 

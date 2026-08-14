@@ -63,6 +63,32 @@ describe("rich Vim adapter (FEAT-0114)", () => {
     view.destroy()
   })
 
+  it("uses serialized line boundaries for rich block linewise paste", () => {
+    for (const source of ["# title", "> quote", "- item"]) {
+      const view = mountEditor(document.createElement("div"), { rich: true })
+      setEditorText(view, source)
+      setVimMode(view, true)
+      Vim.getRegisterController().unnamedRegister.setText("line", true)
+      view.focus()
+
+      press(view, "P")
+
+      expect(serializedRichMarkdown(view.state)).toBe(`line\n${source}`)
+      view.destroy()
+    }
+
+    const visual = mountEditor(document.createElement("div"), { rich: true })
+    setEditorText(visual, "# old")
+    setVimMode(visual, true)
+    visual.focus()
+    press(visual, "V")
+    Vim.getRegisterController().unnamedRegister.setText("# new", true)
+    press(visual, "p")
+    expect(serializedRichMarkdown(visual.state)).toBe("# new")
+    expect(visual.state.doc.toString()).toBe("new")
+    visual.destroy()
+  })
+
   it("preserves Vim counts and does not steal Ctrl-P", () => {
     const view = mountEditor(document.createElement("div"), { rich: true })
     setEditorText(view, "")

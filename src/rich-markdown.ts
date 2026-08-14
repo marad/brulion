@@ -1411,7 +1411,7 @@ export function flushRichPaste(document: RichDocument, sourceFrom: number, sourc
   if (!Number.isSafeInteger(sourceFrom) || !Number.isSafeInteger(sourceTo) || sourceFrom < 0 || sourceTo < sourceFrom || sourceTo > document.source.length) return document
   const touchedLines = new Set<number>()
   let lineStart = lineStartAt(document.source, sourceFrom)
-  while (lineStart <= sourceTo) {
+  while (lineStart < sourceTo) {
     touchedLines.add(lineStart)
     const newline = document.source.indexOf("\n", lineStart)
     if (newline < 0 || newline >= sourceTo) break

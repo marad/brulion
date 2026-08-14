@@ -1,7 +1,7 @@
 import { EditorView } from "@codemirror/view"
 import { Vim, getCM, type CodeMirrorV } from "@replit/codemirror-vim"
-import { applyRichPaste } from "./rich-adapters"
-import { hasRichEditor } from "./rich-editor"
+import { applyRichPaste, applyRichSourceBoundaryChange } from "./rich-adapters"
+import { hasRichEditor, richDocumentFromState } from "./rich-editor"
 import { serializeCopy } from "./copy-markdown"
 
 /**
@@ -90,10 +90,46 @@ export function handleRichVimPaste(view: EditorView, event: KeyboardEvent): bool
   }
 
   const previous = view.state.selection.main
+  const document = richDocumentFromState(view.state)
   let from = previous.from
   let to = previous.to
   let pasteText = text
   const linewiseText = register.linewise && text.endsWith("\n") ? text : register.linewise ? `${text}\n` : text
+  if (register.linewise && document && (!vim.visualMode || vim.visualLine)) {
+    let sourceFrom: number | null = null
+    let sourceTo: number | null = null
+    let sourceText = linewiseText
+    if (vim.visualMode) {
+      const firstPosition = Math.min(previous.from, previous.to)
+      const lastPosition = Math.max(previous.from, previous.to) - 1
+      const first = sourceLineAt(document, view.state.doc.lineAt(firstPosition).number)
+      const last = sourceLineAt(document, view.state.doc.lineAt(Math.max(firstPosition, lastPosition)).number)
+      if (first && last) {
+        sourceFrom = first.from
+        sourceTo = last.to
+        sourceText = linewiseText.slice(0, -1) + document.source.slice(last.contentTo, last.to)
+      }
+    } else {
+      const line = view.state.doc.lineAt(previous.head)
+      const sourceLine = sourceLineAt(document, line.number)
+      if (sourceLine) {
+        if (event.key === "p") {
+          sourceFrom = sourceLine.to
+          sourceTo = sourceLine.to
+          sourceText = sourceLine.to < document.source.length ? linewiseText : `\n${linewiseText}`
+        } else {
+          sourceFrom = sourceLine.from
+          sourceTo = sourceLine.from
+          sourceText = linewiseText
+        }
+      }
+    }
+    const applied = sourceFrom !== null && sourceTo !== null
+      && applyRichSourceBoundaryChange(view, sourceFrom, sourceTo, sourceText)
+    if (applied && vim.visualMode) Vim.exitVisualMode(cm as CodeMirrorV)
+    finishInput()
+    return true
+  }
   if (vim.visualMode) {
     if (register.linewise) {
       const body = linewiseText.slice(0, -1)
@@ -135,6 +171,26 @@ export function handleRichVimPaste(view: EditorView, event: KeyboardEvent): bool
     finishInput()
     return true
   }
+}
+
+interface SourceLineRange {
+  from: number
+  contentTo: number
+  to: number
+}
+
+function sourceLineAt(document: NonNullable<ReturnType<typeof richDocumentFromState>>, lineNumber: number): SourceLineRange | null {
+  if (!Number.isSafeInteger(lineNumber) || lineNumber < 1) return null
+  let from = 0
+  for (let line = 1; line < lineNumber; line += 1) {
+    const newline = document.source.indexOf("\n", from)
+    if (newline < 0) return null
+    from = newline + 1
+  }
+  const newline = document.source.indexOf("\n", from)
+  const to = newline < 0 ? document.source.length : newline + 1
+  const contentTo = newline < 0 ? document.source.length : newline > from && document.source[newline - 1] === "\r" ? newline - 1 : newline
+  return { from, contentTo, to }
 }
 
 interface VimPos {
