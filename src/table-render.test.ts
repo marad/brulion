@@ -2,18 +2,18 @@ import { describe, it, expect } from "vitest"
 import { EditorState } from "@codemirror/state"
 import { markdown } from "@codemirror/lang-markdown"
 import { ensureSyntaxTree } from "@codemirror/language"
-import { findTableBlocks, type TableBlock } from "./table-render"
+import {
+  buildAddRowChange,
+  buildCellEditChange,
+  cellSourceOffset,
+  findTableBlocks,
+  parseRowCells,
+  safeTableEditSelection,
+  type TableBlock,
+} from "./table-render"
+import { mountEditor, setEditorEditable, setEditorText, setVimMode } from "./editor"
 
-// FEAT-0063 — UNIT tests for the table renderer's CONTRACT (happy-dom).
-//
-// `findTableBlocks` is a pure LINE SCAN — it reads `state.doc` lines and does not
-// need the syntax tree. For consistency with mermaid-render.test.ts we still build
-// the state with the `markdown()` extension and force a complete parse; the scan
-// ignores the tree.
-//
-// These tests assert OBSERVABLE behaviour only: the returned blocks' fields
-// (from/to, aligns, header, rows) and the sliced source range
-// (`state.doc.sliceString(from, to)`). No widget / private-state assertions.
+// FEAT-0063 + inline table cell editing (<br> multiline + nested CodeMirror/Vim) — UNIT tests.
 
 /** Build a state whose markdown syntax tree is fully populated (for consistency). */
 const state = (doc: string) => {
@@ -26,6 +26,16 @@ const blocks = (doc: string): TableBlock[] => findTableBlocks(state(doc))
 
 /** Slice the exact source spanned by a block's [from, to). */
 const sourceOf = (doc: string, b: TableBlock) => state(doc).doc.sliceString(b.from, b.to)
+
+/** Apply a cell edit to `doc` and return the resulting document text (or `doc` on no-op). */
+function applyCellEdit(doc: string, row: number, col: number, value: string): string {
+  const s = state(doc)
+  const found = findTableBlocks(s)
+  expect(found).toHaveLength(1)
+  const change = buildCellEditChange(s, found[0], row, col, value)
+  if (!change) return doc
+  return s.doc.replace(change.from, change.to, s.toText(change.insert)).toString()
+}
 
 // --- AC-1: a header + separator + body renders as a table --------------------
 
@@ -43,7 +53,6 @@ describe("findTableBlocks — basic table (FEAT-0063 AC-1)", () => {
     const doc = "| a | b |\n| --- | --- |\n| 1 | 2 |\n"
     const found = blocks(doc)
     expect(found).toHaveLength(1)
-    // The slice is the three table lines verbatim, without the trailing newline.
     expect(sourceOf(doc, found[0])).toBe("| a | b |\n| --- | --- |\n| 1 | 2 |")
   })
 })
@@ -150,7 +159,6 @@ describe("findTableBlocks — block boundaries (FEAT-0063 AC-1)", () => {
     const doc = "| a | b |\n| --- | --- |\n| 1 | 2 |"
     const found = blocks(doc)
     expect(found).toHaveLength(1)
-    // `to` is the document end (no trailing newline to exclude).
     expect(found[0].to).toBe(doc.length)
     expect(sourceOf(doc, found[0])).toBe("| a | b |\n| --- | --- |\n| 1 | 2 |")
   })
@@ -160,7 +168,231 @@ describe("findTableBlocks — block boundaries (FEAT-0063 AC-1)", () => {
     const found = blocks(doc)
     expect(found).toHaveLength(1)
     expect(found[0].rows).toEqual([["1", "2"]])
-    // The span stops at the end of the last body line, before the blank line.
     expect(sourceOf(doc, found[0])).toBe("| a | b |\n| --- | --- |\n| 1 | 2 |")
+  })
+})
+
+// --- Escaped pipes, <br> line breaks, & cell span parsing -------------------
+
+describe("parseRowCells — cell spans, escaped pipes, and <br>", () => {
+  it("keeps escaped pipes inside a cell and unescapes them for display", () => {
+    const parsed = parseRowCells("| a \\| b | c |")
+    expect(parsed.hasLeadingPipe).toBe(true)
+    expect(parsed.hasTrailingPipe).toBe(true)
+    expect(parsed.cells.map((c) => c.value)).toEqual(["a | b", "c"])
+  })
+
+  it("does not treat a trailing escaped pipe as an outer pipe", () => {
+    const parsed = parseRowCells("| a | b\\|")
+    expect(parsed.hasLeadingPipe).toBe(true)
+    expect(parsed.hasTrailingPipe).toBe(false)
+    expect(parsed.cells.map((c) => c.value)).toEqual(["a", "b|"])
+  })
+
+  it("treats an even number of backslashes before a pipe as a real delimiter", () => {
+    const parsed = parseRowCells("| a \\\\| b |")
+    expect(parsed.cells.map((c) => c.value)).toEqual(["a \\\\", "b"])
+  })
+
+  it("decodes <br>, <br/>, and <br /> tags into editable newlines", () => {
+    const parsed = parseRowCells("| line 1<br>line 2<br/>line 3<BR />line 4 | ok |")
+    expect(parsed.cells.map((c) => c.value)).toEqual(["line 1\nline 2\nline 3\nline 4", "ok"])
+  })
+})
+
+// --- Minimal cell patching (file fidelity) ----------------------------------
+
+describe("buildCellEditChange — minimal file-faithful cell edits", () => {
+  it("patches only the edited body cell and preserves all other spacing/rows verbatim", () => {
+    const doc =
+      "| Name   | Count | Notes   |\n| :----- | ----: | ------- |\n| Foo    | 42    | ok      |\n| Bar    | 7     | kept    |\n"
+    const next = applyCellEdit(doc, 0, 1, "999")
+    expect(next).toBe(
+      "| Name   | Count | Notes   |\n| :----- | ----: | ------- |\n| Foo    | 999    | ok      |\n| Bar    | 7     | kept    |\n",
+    )
+  })
+
+  it("patches a header cell (row = -1) without touching separator or body", () => {
+    const doc = "| a | b |\n| :--- | ---: |\n| 1 | 2 |\n"
+    expect(applyCellEdit(doc, -1, 1, "Total")).toBe("| a | Total |\n| :--- | ---: |\n| 1 | 2 |\n")
+  })
+
+  it("returns null (no-op) when the normalized cell text is unchanged, preserving <br/> spelling", () => {
+    const doc = "| a | b |\n| --- | --- |\n| one<br/>two | 2 |\n"
+    const s = state(doc)
+    const block = findTableBlocks(s)[0]
+    expect(buildCellEditChange(s, block, 0, 0, "  one\ntwo  ")).toBeNull()
+  })
+
+  it("fills a previously empty cell cleanly", () => {
+    const doc = "| a | b | c |\n| --- | --- | --- |\n| 1 || 3 |\n"
+    expect(applyCellEdit(doc, 0, 1, "two")).toBe("| a | b | c |\n| --- | --- | --- |\n| 1 | two | 3 |\n")
+  })
+
+  it("clears a cell in a pipe-wrapped row without losing its column", () => {
+    const doc = "| a | b |\n| --- | --- |\n| 1 | 2 |\n"
+    const next = applyCellEdit(doc, 0, 0, "")
+    expect(next).toBe("| a | b |\n| --- | --- |\n|  | 2 |\n")
+    expect(blocks(next)[0].rows).toEqual([["", "2"]])
+  })
+
+  it("clears column 0 of an outer-pipe-less row without shifting column 1 into column 0", () => {
+    const doc = "a | b\n--- | ---\n1 | 2\n"
+    const next = applyCellEdit(doc, 0, 0, "")
+    expect(blocks(next)).toHaveLength(1)
+    expect(blocks(next)[0].rows).toEqual([["", "2"]])
+  })
+
+  it("escapes literal pipes as \\| and encodes newlines as <br> without breaking the table", () => {
+    const doc = "| a | b |\n| --- | --- |\n| 1 | 2 |\n"
+    const next = applyCellEdit(doc, 0, 0, "x | y\nz")
+    expect(next).toBe("| a | b |\n| --- | --- |\n| x \\| y<br>z | 2 |\n")
+    expect(blocks(next)[0].rows).toEqual([["x | y\nz", "2"]])
+  })
+
+  it("pads a trailing space when a cell without spaces ends with a backslash before a pipe", () => {
+    const doc = "|a|b|\n|---|---|\n|1|2|\n"
+    const next = applyCellEdit(doc, 0, 0, "foo\\")
+    expect(blocks(next)[0].rows).toEqual([["foo\\", "2"]])
+  })
+
+  it("pads missing cells when editing a ragged short row", () => {
+    const doc = "| a | b | c |\n| --- | --- | --- |\n| 1 |\n"
+    const next = applyCellEdit(doc, 0, 2, "3")
+    expect(next).toBe("| a | b | c |\n| --- | --- | --- |\n| 1 |  | 3 |\n")
+    expect(blocks(next)[0].rows).toEqual([["1", "", "3"]])
+  })
+
+  it("pads missing cells in an outer-pipe-less ragged row", () => {
+    const doc = "a | b | c\n--- | --- | ---\n1\n"
+    const next = applyCellEdit(doc, 0, 2, "3")
+    expect(next).toBe("a | b | c\n--- | --- | ---\n1 | | 3\n")
+    expect(blocks(next)[0].rows).toEqual([["1", "", "3"]])
+  })
+})
+
+describe("buildAddRowChange & cellSourceOffset & safeTableEditSelection", () => {
+  it("appends a matching empty row at block.to without touching earlier lines", () => {
+    const doc = "| a | b | c |\n| --- | --- | --- |\n| 1 | 2 | 3 |\n\nafter\n"
+    const s = state(doc)
+    const block = findTableBlocks(s)[0]
+    const change = buildAddRowChange(s, block)
+    const next = s.doc.replace(change.from, change.to, s.toText(change.insert)).toString()
+    expect(next).toBe("| a | b | c |\n| --- | --- | --- |\n| 1 | 2 | 3 |\n|  |  |  |\n\nafter\n")
+    expect(blocks(next)[0].rows).toEqual([["1", "2", "3"], ["", "", ""]])
+  })
+
+  it("computes exact raw source offsets strictly inside (block.from, block.to)", () => {
+    const doc = "| a | b |\n| --- | --- |\n| alpha | beta |\n"
+    const s = state(doc)
+    const block = findTableBlocks(s)[0]
+    const pos = cellSourceOffset(s, block, 0, 1)
+    expect(pos).toBeGreaterThan(block.from)
+    expect(pos).toBeLessThanOrEqual(block.to)
+    expect(doc.slice(pos, pos + 4)).toBe("beta")
+  })
+
+  it("keeps a boundary caret at block.to outside the table when appending a new row", () => {
+    const doc = "| a | b |\n| --- | --- |\n| 1 | 2 |"
+    const s = EditorState.create({ doc, selection: { anchor: doc.length }, extensions: [markdown()] })
+    const block = findTableBlocks(s)[0]
+    const change = buildAddRowChange(s, block)
+    const sel = safeTableEditSelection(s, block, change)
+    expect(sel).toBeDefined()
+    expect(sel!.main.anchor).toBe(doc.length + change.insert.length)
+    expect(sel!.main.head).toBe(doc.length + change.insert.length)
+  })
+})
+
+// --- Mounted EditorView DOM behavior (happy-dom) -----------------------------
+
+describe("TableWidget — mounted inline editing behavior", () => {
+  it("mounts a nested CodeMirror editor on cell click and syncs Enter as <br>", () => {
+    const parent = document.createElement("div")
+    document.body.append(parent)
+    const view = mountEditor(parent)
+    setEditorText(view, "a | b\n--- | ---\n1 | 2\n\nafter\n")
+
+    const cell = parent.querySelector<HTMLElement>('.cm-table-cell[data-row="0"][data-col="0"]')!
+    cell.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }))
+
+    expect(cell.classList.contains("cm-table-cell-editing")).toBe(true)
+    const innerContent = cell.querySelector<HTMLElement>(".cm-content")!
+    expect(innerContent).not.toBeNull()
+
+    // Plain Enter inserts a newline inside the cell, serialized as <br> in the outer doc.
+    innerContent.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    )
+    expect(view.state.doc.toString()).toBe("a | b\n--- | ---\n<br>1 | 2\n\nafter\n")
+    expect(parent.querySelector(".cm-table")).not.toBeNull()
+
+    view.destroy()
+    parent.remove()
+  })
+
+  it("enables Vim mode inside the active cell when Vim is enabled on the outer editor", () => {
+    const parent = document.createElement("div")
+    document.body.append(parent)
+    const view = mountEditor(parent)
+    setEditorText(view, "| a | b |\n| --- | --- |\n| hello | world |\n")
+    setVimMode(view, true)
+
+    const cell = parent.querySelector<HTMLElement>('.cm-table-cell[data-row="0"][data-col="0"]')!
+    cell.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }))
+
+    expect(cell.querySelector(".cm-vimMode")).not.toBeNull()
+
+    // Toggling Vim off live reconfigures the active cell editor too.
+    setVimMode(view, false)
+    expect(cell.querySelector(".cm-vimMode")).toBeNull()
+
+    view.destroy()
+    parent.remove()
+  })
+
+  it("closes active cell editing and ignores clicks when the editor becomes read-only", () => {
+    const parent = document.createElement("div")
+    document.body.append(parent)
+    const view = mountEditor(parent)
+    setEditorText(view, "| a | b |\n| --- | --- |\n| 1 | 2 |\n")
+
+    const cell = parent.querySelector<HTMLElement>('.cm-table-cell[data-row="0"][data-col="0"]')!
+    cell.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }))
+    expect(cell.classList.contains("cm-table-cell-editing")).toBe(true)
+
+    setEditorEditable(view, false)
+    expect(cell.classList.contains("cm-table-cell-editing")).toBe(false)
+
+    // Clicking while read-only does not open the cell editor.
+    cell.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }))
+    expect(cell.classList.contains("cm-table-cell-editing")).toBe(false)
+
+    setEditorEditable(view, true)
+    cell.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }))
+    expect(cell.classList.contains("cm-table-cell-editing")).toBe(true)
+
+    view.destroy()
+    parent.remove()
+  })
+
+  it("reveals raw markdown on Ctrl+Click and positions the caret at the clicked cell", () => {
+    const parent = document.createElement("div")
+    document.body.append(parent)
+    const view = mountEditor(parent)
+    const doc = "| a | b |\n| --- | --- |\n| alpha | beta |\n\nafter\n"
+    setEditorText(view, doc)
+
+    const cell = parent.querySelector<HTMLElement>('.cm-table-cell[data-row="0"][data-col="1"]')!
+    cell.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, ctrlKey: true }),
+    )
+
+    expect(parent.querySelector(".cm-table")).toBeNull()
+    const head = view.state.selection.main.head
+    expect(doc.slice(head, head + 4)).toBe("beta")
+
+    view.destroy()
+    parent.remove()
   })
 })

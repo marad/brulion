@@ -2323,3 +2323,45 @@ recorded behavior matrix before implementation. A loaded file is parsed directly
 into rich/opaque state; only user input follows the pending-marker path. The raw
 Markdown API and M46 source-position contract remain stable through source-map
 translation, while visible selections and carets use the rich projection.
+
+## Inline table cell editing via nested CodeMirror cell editor, `<br>` multiline cells, and full Vim support
+
+**What:** clicking any cell (`<th>` or `<td>`) in a rendered Markdown table now
+edits that cell directly inside the rendered `<table>` instead of exploding the
+entire block back to raw pipe-delimited Markdown. Inactive cells remain plain
+text nodes; activating a cell mounts a minimal nested CodeMirror `EditorView`
+inside that `.cm-table-cell` (reusing the table DOM across edits via
+`WidgetType.updateDOM` and tearing the cell editor down on blur/destroy). When
+Vim mode is enabled on the outer editor (`tableVimMode` facet), the active cell
+editor mounts `@replit/codemirror-vim` (`vim()`) directly, sharing Vim registers
+and supporting full Normal/Insert/Visual motions, operators, `o`/`O` multiline
+edits, `j`/`k` row jumps at cell boundaries, and two-stage `Escape` (Insert →
+Normal → exit table). Multiline cells are supported via plain `Enter` (and
+`o`/`O` in Vim), decoding `<br>`/`<br/>`/`<br />` to real newlines while editing
+and serializing edited line breaks as `<br>` (untouched `<br/>` spelling stays
+byte-identical). Edits patch only the modified cell's exact slice in the
+underlying Markdown document (`buildCellEditChange`), escaping literal pipes as
+`\|`, preserving surrounding whitespace and untouched rows byte-for-byte, and
+inserting a matching empty row on `Tab` from the last cell. Raw Markdown remains
+reachable via `Ctrl/Cmd+Click` (matching Brulion's link convention), a discreet
+`</>` button on the table wrapper (also usable on touch), or moving the editor
+caret inside the table from outside, landing the raw caret on the active cell.
+
+**Why:** exploding a rendered table to raw pipes on plain click caused users to
+lose their exact position in the table whenever they clicked to edit a single
+value. Mounting a nested CodeMirror instance only on the single active cell
+avoids `contenteditable` browser quirks and delivers real Vim keybindings
+without re-implementing Vim by hand. Using `<br>` for multiline cells is an
+explicit, user-requested exception to the no-HTML preference because GFM tables
+have no native multiline cell syntax and `<br>` is the portable de facto
+standard across Markdown tools; untouched cells and `<br/>` variants are never
+rewritten.
+
+**Consequence (UI/project):** plain click edits the clicked table cell in place
+with no extra focus frame; plain `Enter` adds a `<br>` line break;
+`Tab`/`Shift+Tab`, `↑`/`↓` (and `j`/`k` in Vim Normal mode), `Escape`,
+`Ctrl/Cmd+A`, `Ctrl/Cmd+Z`/`Y`, and `Ctrl/Cmd+S` work cleanly inside cells; Vim
+mode works inside cells with matching active block/insert cursors (including
+live toggling via `Ctrl+;`); read-only conflict mode closes and locks cells; and
+`Ctrl/Cmd+Click` or `</>` opens the raw source when changing column alignments
+or structure.

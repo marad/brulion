@@ -8,7 +8,7 @@ import { markdownRendering, linkContext, type LinkContext } from "./markdown-ren
 import { frontmatterRendering } from "./frontmatter"
 import { headingSlug } from "./note-name"
 import { mermaidRendering } from "./mermaid-render"
-import { tableRendering } from "./table-render"
+import { tableRendering, tableVimMode } from "./table-render"
 import { ProgrammaticLoad } from "./editor-load"
 import { diffRange } from "./text-diff"
 import {
@@ -324,7 +324,9 @@ export function setEditorEditable(view: EditorView, value: boolean): void {
  * the default caret already steps over hidden markup via CodeMirror's atomic
  * ranges, so off-Vim the guard would only add a per-keystroke no-op. */
 export function setVimMode(view: EditorView, on: boolean): void {
-  view.dispatch({ effects: vimMode.reconfigure(on ? [vim(), vimCaretGuard] : []) })
+  view.dispatch({
+    effects: vimMode.reconfigure(on ? [vim(), vimCaretGuard, tableVimMode.of(true)] : []),
+  })
 }
 
 /** Tell the editor which note is open and which notes exist, so links render
