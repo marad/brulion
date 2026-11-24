@@ -117,9 +117,12 @@ test("pre-review plan is observational and excludes the full browser suite", () 
 });
 
 test("pre-review CLI reports the owned range without mutating or running E2E", () => {
+  const hasParent =
+    spawnSync("git", ["rev-parse", "--verify", "HEAD~1^{commit}"], { cwd: root }).status === 0;
+  const base = hasParent ? "HEAD~1" : "HEAD";
   const result = spawnSync(
     process.execPath,
-    ["scripts/workflow-gate.mjs", "pre-review", "--base", "HEAD~1", "--spec", "FEAT-0108", "--milestone", "milestones/M45.md"],
+    ["scripts/workflow-gate.mjs", "pre-review", "--base", base, "--spec", "FEAT-0108", "--milestone", "milestones/M45.md"],
     { cwd: root, encoding: "utf8" },
   );
 
