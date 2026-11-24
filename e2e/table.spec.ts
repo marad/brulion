@@ -173,10 +173,16 @@ test("keyboard navigation moves between cells, Tab on last cell adds a row, and 
     .poll(() => readNote(page, "t.md"))
     .toBe("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |\n\nafter\n")
 
-  // Escape exits the cell without exploding the table into raw markdown.
+  // Escape exits the cell onto the line below the table, so typing writes below it
+  // rather than silently appending to the last table row.
   await page.keyboard.press("Escape")
   await expect(table(page)).toHaveCount(1)
   await expect(cell(page, 1, 1)).not.toHaveClass(/cm-table-cell-editing/)
+  await page.keyboard.type("below")
+  await page.keyboard.press("ControlOrMeta+s")
+  await expect
+    .poll(() => readNote(page, "t.md"))
+    .toBe("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |\nbelow\nafter\n")
 })
 
 test("Vim keybindings and cursors work properly inside table cells (Normal filled block + Insert visible caret)", async ({
@@ -225,6 +231,13 @@ test("Vim keybindings and cursors work properly inside table cells (Normal fille
   await expect
     .poll(() => readNote(page, "t.md"))
     .toBe("| a | b |\n| --- | --- |\n| hi<br>second | world |\n| oo | bar |\n\nafter\n")
+
+  // Vim `u` in Normal mode uses the outer editor's unified history (undoes `x` -> `foo`,
+  // and `Ctrl+r` redoes it -> `oo`).
+  await page.keyboard.press("u")
+  await expect(below).toHaveText("foo")
+  await page.keyboard.press("Control+r")
+  await expect(below).toHaveText("oo")
 
   // Escape in clean Normal mode exits the table cleanly.
   await page.keyboard.press("Escape")
@@ -275,6 +288,17 @@ test("Ctrl/Cmd+Click and the source button reveal raw markdown at the targeted c
   await page.locator(".cm-table-source-btn").click()
   await expect(table(page)).toHaveCount(0)
   await expect(editor(page)).toContainText("| --- | --- |")
+})
+
+test("Ctrl/Cmd+Click on a ragged last-row padded cell still reveals raw markdown", async ({
+  page,
+}) => {
+  await openNote(page, "t.md", "| a | b | c |\n| --- | --- | --- |\n| 1 |")
+  await expect(table(page)).toHaveCount(1)
+
+  await cell(page, 0, 2).click({ modifiers: ["ControlOrMeta"] })
+  await expect(table(page)).toHaveCount(0)
+  await expect(editor(page)).toContainText("| --- | --- | --- |")
 })
 
 test("rendering and focusing without editing does not change the document bytes (AC-8)", async ({

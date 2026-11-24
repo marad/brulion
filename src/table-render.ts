@@ -5,7 +5,7 @@
  * (header + separator + body) with a rendered, aligned `<table>` whose cells are
  * directly editable in place. Inactive cells render as lightweight text nodes;
  * activating a cell mounts a minimal nested CodeMirror `EditorView` inside that cell,
- * giving native selection, multiline `<br>` editing (`Shift+Enter`), and full
+ * giving native selection, multiline `<br>` editing (`Enter`), and full
  * `@replit/codemirror-vim` keybindings when Vim mode is enabled.
  *
  * Untouched cells, rows, spacing, and separator syntax stay byte-for-byte unchanged —
@@ -26,7 +26,7 @@ import {
   RangeSetBuilder,
   StateField,
 } from "@codemirror/state"
-import { defaultKeymap, history, isolateHistory, undo, redo } from "@codemirror/commands"
+import { defaultKeymap, isolateHistory, undo, redo } from "@codemirror/commands"
 import {
   type DecorationSet,
   Decoration,
@@ -119,10 +119,12 @@ function hasOddTrailingBackslashes(text: string): boolean {
   return slashes % 2 === 1
 }
 
-/** Unescape GFM-escaped pipes (`\|` → `|`) and `<br>` line breaks (`<br>` → `\n`)
- * for display/editing inside a cell. */
+/** Unescape GFM-escaped pipes (`\|` → `|`, `\\\|` → `\|`, preserving backslash parity)
+ * and `<br>` line breaks (`<br>` → `\n`) for display/editing inside a cell. */
 export function unescapeCellText(raw: string): string {
-  return raw.replace(/<br\s*\/?>/gi, "\n").replace(/\\\|/g, "|")
+  return raw
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/(\\+)\|/g, (_m, slashes: string) => "\\".repeat(Math.floor(slashes.length / 2)) + "|")
 }
 
 /** Normalize raw editable cell text: standardize line endings to `\n` and trim
@@ -131,10 +133,14 @@ export function normalizeCellInput(raw: string): string {
   return raw.replace(/\r\n?/g, "\n").replace(/^[ \t]+|[ \t]+$/g, "")
 }
 
-/** Serialize editable cell text back to Markdown table cell syntax: escape literal
- * pipes (`|` → `\|`) and encode multiline breaks (`\n` → `<br>`). */
+/** Serialize editable cell text back to Markdown table cell syntax: escape every
+ * `\*|` run to `(2k + 1)` backslashes + `|` (always odd so `isUnescapedPipe` never
+ * treats it as a column delimiter, bijective with `unescapeCellText`) and encode
+ * multiline breaks (`\n` → `<br>`). */
 export function escapeCellText(value: string): string {
-  return normalizeCellInput(value).replace(/\|/g, "\\|").replace(/\n/g, "<br>")
+  return normalizeCellInput(value)
+    .replace(/(\\*)\|/g, (_m, slashes: string) => "\\".repeat(slashes.length * 2 + 1) + "|")
+    .replace(/\n/g, "<br>")
 }
 
 /**
@@ -402,7 +408,8 @@ export function cellSourceOffset(
     ? line.from + (cell.trimmed !== "" ? cell.contentFrom : cell.rawFrom)
     : line.to
   if (block.from >= block.to) return block.from
-  return Math.min(Math.max(rawPos, block.from + 1), block.to)
+  const maxPos = Math.max(block.from + 1, block.to - 1)
+  return Math.min(Math.max(rawPos, block.from + 1), maxPos)
 }
 
 /**
@@ -601,13 +608,21 @@ function syncActiveCellToDoc(domState: TableDomState): void {
   dispatchTableChange(domState, block, change, isolation)
 }
 
-function closeActiveCell(domState: TableDomState): void {
+function closeActiveCell(domState: TableDomState, restoreEditorFocus = false): void {
   const active = domState.active
   if (!active) return
+  const hadFocus = active.cellEl.contains(active.cellEl.ownerDocument.activeElement)
   domState.active = null
   active.cellView.destroy()
   active.cellEl.classList.remove("cm-table-cell-editing")
   active.cellEl.textContent = cellTextFromBlock(domState.block, active.row, active.col)
+  if (restoreEditorFocus && hadFocus && !domState.readOnly) {
+    // Defer until after CodeMirror finishes the current updateDOM/destroy cycle so
+    // the outer DOMObserver doesn't read a mid-update selection.
+    queueMicrotask(() => {
+      if (!domState.readOnly && !domState.active) domState.view.focus()
+    })
+  }
 }
 
 function revealRawSource(domState: TableDomState, coord: CellCoord | null): void {
@@ -626,7 +641,17 @@ function exitTableToEditor(domState: TableDomState, edge: "before" | "after"): v
   syncActiveCellToDoc(domState)
   closeActiveCell(domState)
   const block = resolveLiveBlock(domState) ?? domState.block
-  const anchor = edge === "before" ? block.from : block.to
+  const docLen = domState.view.state.doc.length
+  // Land on the neighboring line outside the table block (when one exists) so
+  // subsequent typing writes above/below the table instead of mutating its outer row.
+  const anchor =
+    edge === "before"
+      ? block.from > 0
+        ? block.from - 1
+        : 0
+      : block.to < docLen
+        ? block.to + 1
+        : block.to
   domState.view.dispatch({ selection: { anchor } })
   domState.view.focus()
 }
@@ -685,6 +710,7 @@ function activateCell(
   const cellKeyHandler = Prec.highest(
     EditorView.domEventHandlers({
       keydown(event, cellView) {
+        if (event.isComposing || event.keyCode === 229) return false
         const active = domState.active
         if (!active || active.cellView !== cellView) return false
         const mod = event.ctrlKey || event.metaKey
@@ -695,7 +721,8 @@ function activateCell(
         const pending = vimOn && hasPendingVimInput(cellView)
         const cleanNormal = vimOn && !inInsert && !inVisual && !pending
 
-        // Route Mod-z / Mod-Shift-z / Mod-y to the outer editor's unified history.
+        // Route Mod-z / Mod-Shift-z / Mod-y (and Vim Normal Ctrl-r) to the outer
+        // editor's single unified history.
         if (mod && !event.altKey) {
           const lower = key.toLowerCase()
           if (lower === "z") {
@@ -711,10 +738,24 @@ function activateCell(
             redo(domState.view)
             return true
           }
+          if (cleanNormal && event.ctrlKey && !event.metaKey && !event.shiftKey && lower === "r") {
+            event.preventDefault()
+            active.historyIsolated = false
+            redo(domState.view)
+            return true
+          }
           return false
         }
 
         if (event.altKey) return false
+
+        // Route Vim Normal-mode `u` to the outer editor's unified history too.
+        if (cleanNormal && !event.shiftKey && key === "u") {
+          event.preventDefault()
+          active.historyIsolated = false
+          undo(domState.view)
+          return true
+        }
 
         const cols = domState.block.aligns.length
         const rowCount = domState.block.rows.length
@@ -837,7 +878,6 @@ function activateCell(
     extensions: [
       cellKeyHandler,
       vimComp.of(domState.vimEnabled ? [vim()] : []),
-      history(),
       drawSelection(),
       EditorView.lineWrapping,
       keymap.of(defaultKeymap),
@@ -965,12 +1005,13 @@ function syncTableDom(
     closeActiveCell(domState)
   }
 
-  // If the active cell's row or column disappeared (e.g. outer undo removed an added row), close it.
+  // If the active cell's row or column disappeared (e.g. outer undo removed an added row),
+  // close it and return focus to the outer editor so subsequent undo/redo stays reachable.
   if (
     domState.active &&
     (domState.active.col >= block.aligns.length || domState.active.row >= block.rows.length)
   ) {
-    closeActiveCell(domState)
+    closeActiveCell(domState, true)
   }
 
   // Live-reconfigure Vim mode on the active cell if toggled while editing inside the table.
@@ -1082,7 +1123,7 @@ export class TableWidget extends WidgetType {
       const target = event.target as HTMLElement | null
       if (!target) return
 
-      if (target.closest(".cm-table-source-btn")) {
+      if (event.button === 0 && target.closest(".cm-table-source-btn")) {
         event.preventDefault()
         revealRawSource(domState, domState.lastCell)
         return
@@ -1136,7 +1177,7 @@ export class TableWidget extends WidgetType {
 
   destroy(dom: HTMLElement): void {
     const domState = domStates.get(dom)
-    if (domState) closeActiveCell(domState)
+    if (domState) closeActiveCell(domState, true)
   }
 
   /** Keep inline editing events isolated from the outer CodeMirror/Vim instance,

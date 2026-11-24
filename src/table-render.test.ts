@@ -250,6 +250,15 @@ describe("buildCellEditChange — minimal file-faithful cell edits", () => {
     expect(blocks(next)[0].rows).toEqual([["x | y\nz", "2"]])
   })
 
+  it("bijectively escapes backslash-before-pipe sequences (\\|, \\\\|) without splitting columns", () => {
+    const doc = "| a | b |\n| --- | --- |\n| 1 | 2 |\n"
+    const next1 = applyCellEdit(doc, 0, 0, "foo\\|bar")
+    expect(blocks(next1)[0].rows).toEqual([["foo\\|bar", "2"]])
+
+    const next2 = applyCellEdit(doc, 0, 0, "foo\\\\|bar")
+    expect(blocks(next2)[0].rows).toEqual([["foo\\\\|bar", "2"]])
+  })
+
   it("pads a trailing space when a cell without spaces ends with a backslash before a pipe", () => {
     const doc = "|a|b|\n|---|---|\n|1|2|\n"
     const next = applyCellEdit(doc, 0, 0, "foo\\")
@@ -282,14 +291,22 @@ describe("buildAddRowChange & cellSourceOffset & safeTableEditSelection", () => 
     expect(blocks(next)[0].rows).toEqual([["1", "2", "3"], ["", "", ""]])
   })
 
-  it("computes exact raw source offsets strictly inside (block.from, block.to)", () => {
+  it("computes exact raw source offsets strictly inside (block.from, block.to), including ragged last rows", () => {
     const doc = "| a | b |\n| --- | --- |\n| alpha | beta |\n"
     const s = state(doc)
     const block = findTableBlocks(s)[0]
     const pos = cellSourceOffset(s, block, 0, 1)
     expect(pos).toBeGreaterThan(block.from)
-    expect(pos).toBeLessThanOrEqual(block.to)
+    expect(pos).toBeLessThan(block.to)
     expect(doc.slice(pos, pos + 4)).toBe("beta")
+
+    // Ragged last row: padded cell (0, 2) must still clamp strictly < block.to so reveal works.
+    const ragged = "| a | b | c |\n| --- | --- | --- |\n| 1 |"
+    const rs = state(ragged)
+    const rblock = findTableBlocks(rs)[0]
+    const rpos = cellSourceOffset(rs, rblock, 0, 2)
+    expect(rpos).toBeGreaterThan(rblock.from)
+    expect(rpos).toBeLessThan(rblock.to)
   })
 
   it("keeps a boundary caret at block.to outside the table when appending a new row", () => {
@@ -391,6 +408,89 @@ describe("TableWidget — mounted inline editing behavior", () => {
     expect(parent.querySelector(".cm-table")).toBeNull()
     const head = view.state.selection.main.head
     expect(doc.slice(head, head + 4)).toBe("beta")
+
+    view.destroy()
+    parent.remove()
+  })
+
+  it("lands the outer caret on the line after/before the table on Escape/ArrowUp so typing never corrupts rows", () => {
+    const parent = document.createElement("div")
+    document.body.append(parent)
+    const view = mountEditor(parent)
+    const doc = "before\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\nafter\n"
+    setEditorText(view, doc)
+    const block = findTableBlocks(view.state)[0]
+
+    // Exit downward via Escape → caret lands on the line after the table (`block.to + 1`).
+    const bodyCell = parent.querySelector<HTMLElement>('.cm-table-cell[data-row="0"][data-col="1"]')!
+    bodyCell.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }))
+    bodyCell
+      .querySelector<HTMLElement>(".cm-content")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))
+    expect(view.state.selection.main.head).toBe(block.to + 1)
+
+    // Exit upward via ArrowUp on header → caret lands on the line before the table (`block.from - 1`).
+    const headerCell = parent.querySelector<HTMLElement>('.cm-table-cell[data-row="-1"][data-col="0"]')!
+    headerCell.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }))
+    headerCell
+      .querySelector<HTMLElement>(".cm-content")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }))
+    expect(view.state.selection.main.head).toBe(block.from - 1)
+
+    view.destroy()
+    parent.remove()
+  })
+
+  it("ignores IME composition keydown events and non-primary clicks on the source button", () => {
+    const parent = document.createElement("div")
+    document.body.append(parent)
+    const view = mountEditor(parent)
+    const doc = "| a | b |\n| --- | --- |\n| 1 | 2 |\n\nafter\n"
+    setEditorText(view, doc)
+
+    // Right-clicking </> does not reveal raw markdown.
+    const btn = parent.querySelector<HTMLElement>(".cm-table-source-btn")!
+    btn.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 2 }))
+    expect(parent.querySelector(".cm-table")).not.toBeNull()
+
+    // IME composing Escape/Tab does not close the cell or jump columns.
+    const cell = parent.querySelector<HTMLElement>('.cm-table-cell[data-row="0"][data-col="0"]')!
+    cell.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }))
+    const innerContent = cell.querySelector<HTMLElement>(".cm-content")!
+    for (const key of ["Escape", "Tab"]) {
+      const composing = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })
+      Object.defineProperty(composing, "isComposing", { value: true })
+      innerContent.dispatchEvent(composing)
+    }
+    expect(view.state.doc.toString()).toBe(doc)
+    expect(cell.classList.contains("cm-table-cell-editing")).toBe(true)
+
+    view.destroy()
+    parent.remove()
+  })
+
+  it("restores focus to the outer editor when undo removes the active added row", async () => {
+    const parent = document.createElement("div")
+    document.body.append(parent)
+    const view = mountEditor(parent)
+    setEditorText(view, "| a | b |\n| --- | --- |\n| 1 | 2 |\n")
+
+    const lastCell = parent.querySelector<HTMLElement>('.cm-table-cell[data-row="0"][data-col="1"]')!
+    lastCell.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }))
+    lastCell
+      .querySelector<HTMLElement>(".cm-content")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }))
+
+    const addedCell = parent.querySelector<HTMLElement>('.cm-table-cell[data-row="1"][data-col="0"]')!
+    expect(addedCell.classList.contains("cm-table-cell-editing")).toBe(true)
+
+    addedCell
+      .querySelector<HTMLElement>(".cm-content")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true, cancelable: true }))
+
+    await Promise.resolve()
+    expect(view.state.doc.toString()).toBe("| a | b |\n| --- | --- |\n| 1 | 2 |\n")
+    expect(document.activeElement).toBe(view.contentDOM)
 
     view.destroy()
     parent.remove()
